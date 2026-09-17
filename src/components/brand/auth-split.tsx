@@ -3,7 +3,7 @@ import { LogoMark, LogoSwoosh } from "@/components/brand/logo"
 import { ThemeToggle } from "@/components/theme/toggle"
 
 export const AUTH_FIELD =
-  "h-11 rounded-full border-border bg-card px-3.5 text-[14px] text-foreground placeholder:text-muted-foreground"
+  "h-11 rounded-full border border-border bg-muted px-3.5 text-[14px] text-foreground placeholder:text-muted-foreground"
 export const AUTH_LABEL = "text-[12.5px] font-medium text-foreground"
 export const AUTH_HINT = "text-[13.5px] leading-relaxed text-muted-foreground"
 export const AUTH_SUBMIT = "h-11 w-full rounded-full text-[14px] font-medium"
