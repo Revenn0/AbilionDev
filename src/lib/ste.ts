@@ -47,7 +47,7 @@ const OPENERS = [
 ]
 
 const HOSTILE =
-  /\b(vai se f|vai tomar|vsf|fdp|filho da|sua mãe|sua mae|idiota|imbecil|lixo humano|te foder|cuz[aã]o|arrombado|otári[oa] de merda|cala a boca)\b/i
+  /(vai se f|vai tomar|\bvsf\b|\bfdp\b|filho da|sua m[aã]e|\bidiota\b|\bimbecil\b|lixo humano|te foder|cuz[aã]o|arrombado|otári[oa] de merda|cala a boca)/i
 
 const PAIN =
   /\b(perco|perdendo|perdi|loss|tilt|devolver|furado|quebrado|viciad|frustrad|raiva|medo|sozinho|não ganho|nao ganho|no vermelho)\b/i

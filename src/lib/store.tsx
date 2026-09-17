@@ -63,6 +63,7 @@ type Store = {
   saveFunnel: (funnel: SalesFunnel) => void
   deleteFunnel: (id: string) => void
   createLead: (lead: Lead) => void
+  createLeads: (leads: Lead[]) => void
   saveLead: (lead: Lead) => void
   deleteLead: (id: string) => void
   saveSettings: (patch: Partial<Settings>) => void
@@ -148,6 +149,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         })),
       deleteFunnel: (id) => setState((prev) => ({ ...prev, funnels: prev.funnels.filter((item) => item.id !== id) })),
       createLead: (lead) => setState((prev) => ({ ...prev, leads: [lead, ...prev.leads] })),
+      createLeads: (leads) => setState((prev) => ({ ...prev, leads: [...leads, ...prev.leads] })),
       saveLead: (lead) =>
         setState((prev) => ({
           ...prev,

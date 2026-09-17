@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button"
 import { useStore } from "@/lib/store"
 import { workerUrl } from "@/lib/channel"
 import { adsDeepLink } from "@/lib/telegram-start"
+import { burstFacebookLeads, burstStats } from "@/lib/burst"
+import { toast } from "sonner"
 
 export function TelegramPage() {
-  const { state } = useStore()
+  const { state, createLeads } = useStore()
   const { settings, leads } = state
   const tokenOn = Boolean(settings.telegramBotToken.trim())
   const inGroup = leads.filter((lead) => lead.channel === "telegram" && (lead.origin === "group_join" || lead.stage === "group")).length
@@ -38,6 +40,21 @@ export function TelegramPage() {
     <div className="h-full overflow-y-auto">
       <div className="page-shell">
         <PageChrome icon={Send} title="Telegram">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-8 rounded-full px-3.5"
+            onClick={() => {
+              const batch = burstFacebookLeads(state.funnels, 100)
+              createLeads(batch)
+              const stats = burstStats(batch)
+              toast.success(
+                `${stats.facebook} /start Facebook. ${stats.talking} responderam. ${stats.blocked} encerrados. ${stats.offered} na oferta.`
+              )
+            }}
+          >
+            Simular 100 /start
+          </Button>
           <Button asChild className="h-8 rounded-full px-3.5">
             <Link to="/configuracoes?tab=bot">Configurar bot</Link>
           </Button>
