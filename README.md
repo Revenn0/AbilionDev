@@ -48,9 +48,13 @@ Projecto já usado no wrangler:
 - Correr [`supabase/migrations/001_flow.sql`](supabase/migrations/001_flow.sql), [`002_ste_chat.sql`](supabase/migrations/002_ste_chat.sql) e [`003_facebook_scale.sql`](supabase/migrations/003_facebook_scale.sql) no SQL editor
 - Anon em `.env`. Service role só no Worker
 
-## Cloudflare
+## Produção
 
-Este recorte publica no Worker **`abiliondev`**, não no `abilion` antigo.
+URL no ar: [https://abiliondev.indispensable-fact.workers.dev](https://abiliondev.indispensable-fact.workers.dev)
+
+O Worker `abiliondev` serve o painel e `/api/*`. O Worker antigo `abilion` / `*.vsanches1060.workers.dev` ficou de fora.
+
+Login: qualquer e-mail + senha com 6+ caracteres. Token do Telegram e chave de IA **não** entram no git — grava em Configurações e `wrangler secret put`.
 
 ```bash
 npm install
