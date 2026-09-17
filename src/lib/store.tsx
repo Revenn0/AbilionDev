@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { nameFromEmail, uid } from "@/lib/format"
-import type { AppState, SalesFunnel, User } from "@/lib/types"
+import { emptyOps, type AppState, type SalesFunnel, type User } from "@/lib/types"
 
 const KEY = "abilion.dev.v1"
 const SESSION = "abilion.dev.session"
@@ -8,6 +8,7 @@ const SESSION = "abilion.dev.session"
 const empty: AppState = {
   user: null,
   funnels: [],
+  ops: emptyOps,
 }
 
 function readState(): AppState {
@@ -18,6 +19,7 @@ function readState(): AppState {
     return {
       user: parsed.user ?? null,
       funnels: Array.isArray(parsed.funnels) ? parsed.funnels : [],
+      ops: { ...emptyOps, ...(parsed.ops ?? {}) },
     }
   } catch {
     return empty

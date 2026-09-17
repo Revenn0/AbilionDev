@@ -68,7 +68,32 @@ export type SalesFunnel = {
   production?: SalesSnapshot | null
 }
 
+export type OpsStats = {
+  leads: number
+  newToday: number
+  conversations: number
+  startedToday: number
+  whatsapp: number
+  telegram: number
+  cold: number
+  warm: number
+  hot: number
+}
+
+export const emptyOps: OpsStats = {
+  leads: 0,
+  newToday: 0,
+  conversations: 0,
+  startedToday: 0,
+  whatsapp: 0,
+  telegram: 0,
+  cold: 0,
+  warm: 0,
+  hot: 0,
+}
+
 export type AppState = {
   user: User | null
   funnels: SalesFunnel[]
+  ops: OpsStats
 }

@@ -13,12 +13,12 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
-import { AlignHorizontalSpaceAround, ArrowLeft } from "lucide-react"
+import { AlignHorizontalSpaceAround, ArrowLeft, Pencil } from "lucide-react"
 import { Link } from "react-router-dom"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { ThemeToggle } from "@/components/theme/toggle"
+import { RenameFunnelDialog } from "./rename-dialog"
 import { autoLayout, positionFromPointer } from "@/components/canvas/layout"
 import { cn } from "@/lib/utils"
 import type { SalesFunnel, SalesKind, SalesSnapshot } from "@/lib/types"
@@ -51,6 +51,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
   const [production, setProduction] = useState<SalesSnapshot | null | undefined>(funnel.production)
   const [selected, setSelected] = useState<SalesCanvasNode | undefined>()
   const [rf, setRf] = useState<ReactFlowInstance<SalesCanvasNode, Edge> | null>(null)
+  const [renameOpen, setRenameOpen] = useState(false)
   const keepDropSelection = useRef(false)
   const didFit = useRef(false)
 
@@ -75,10 +76,14 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
 
   const displayed = version === "production" && production ? toRf(production) : { nodes, edges }
 
-  const persist = (prod = production, status: SalesFunnel["status"] = funnel.status) => {
+  const persist = (
+    prod = production,
+    status: SalesFunnel["status"] = funnel.status,
+    nextName = name
+  ) => {
     const next: SalesFunnel = {
       ...funnel,
-      name,
+      name: nextName,
       status,
       production: prod ?? null,
       updatedAt: new Date().toISOString(),
@@ -129,12 +134,18 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
             <ArrowLeft className="size-3.5" /> Voltar
           </Link>
         </Button>
-        <Input
-          value={name}
+        <p className="max-w-[240px] truncate text-[15px] font-semibold">{name}</p>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Alterar nome do funil"
+          title="Alterar nome"
           disabled={readOnly}
-          onChange={(e) => setName(e.target.value)}
-          className="h-8 w-[280px] border-0 bg-transparent text-[15px] font-semibold shadow-none focus-visible:ring-0"
-        />
+          onClick={() => setRenameOpen(true)}
+        >
+          <Pencil className="size-3.5" />
+        </Button>
         <span className="rounded-full bg-white/6 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">Funil de vendas</span>
         <div className="flex rounded-full border p-0.5 text-[11px]">
           <button
@@ -260,6 +271,16 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
           />
         </div>
       </div>
+      <RenameFunnelDialog
+        open={renameOpen}
+        name={name}
+        onOpenChange={setRenameOpen}
+        onSave={(next) => {
+          setName(next)
+          persist(production, funnel.status, next)
+          toast.success("Nome actualizado.")
+        }}
+      />
     </div>
   )
 }

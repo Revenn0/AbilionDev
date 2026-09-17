@@ -27,10 +27,10 @@ export function AuthSplit({ children }: { children: React.ReactNode }) {
           <div className="max-w-[420px]">
             <p className="text-[12px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Operações</p>
             <h2 className="mt-3 text-[34px] font-semibold leading-[1.15] tracking-[-0.03em]">
-              Um quadro para funis, conversas e canais.
+              Leads, conversas e o pulso dos canais.
             </h2>
             <p className="mt-4 text-[15px] leading-relaxed text-muted-foreground">
-              Desenha o fluxo, publica o rascunho e acompanha o que está activo.
+              O dashboard mostra o que entra. O funil é só o quadro visual.
             </p>
           </div>
           <p className="text-[12px] text-muted-foreground">Abilion · CRM</p>

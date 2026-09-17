@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom"
-import { MessagesSquare, Send, Users, Workflow } from "lucide-react"
+import { MessagesSquare, Send, Thermometer, Users } from "lucide-react"
 import { useStore } from "@/lib/store"
 import { dayGreeting, longDate } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -7,10 +7,11 @@ import { cn } from "@/lib/utils"
 export function DashboardPage() {
   const { state } = useStore()
   const first = state.user?.name.split(" ")[0] ?? "olá"
-  const total = state.funnels.length
-  const published = state.funnels.filter((item) => item.status === "active").length
-  const drafts = total - published
-  const liveShare = total === 0 ? 0 : Math.round((published / total) * 100)
+  const ops = state.ops
+  const channelTotal = ops.whatsapp + ops.telegram
+  const whatsappShare = channelTotal === 0 ? 0 : Math.round((ops.whatsapp / channelTotal) * 100)
+  const heatTotal = ops.cold + ops.warm + ops.hot
+  const empty = ops.leads === 0 && ops.conversations === 0
 
   return (
     <div className="h-full overflow-y-auto">
@@ -20,170 +21,159 @@ export function DashboardPage() {
           <h1 className="page-title">
             {dayGreeting()}, {first}
           </h1>
-          <p className="page-hint">O estado da operação — o que está publicado e o que ainda é rascunho.</p>
+          <p className="page-hint">Leads, conversas iniciadas e o pulso dos canais.</p>
         </header>
 
         <section className="surface relative overflow-hidden">
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-y-0 right-0 hidden w-[46%] bg-[radial-gradient(circle_at_70%_20%,color-mix(in_oklch,var(--forecast)_28%,transparent),transparent_42%),radial-gradient(circle_at_30%_80%,color-mix(in_oklch,var(--success)_18%,transparent),transparent_46%)] md:block"
+            className="pointer-events-none absolute inset-y-0 right-0 hidden w-[42%] bg-[radial-gradient(circle_at_70%_18%,color-mix(in_oklch,var(--whatsapp)_22%,transparent),transparent_44%),radial-gradient(circle_at_20%_86%,color-mix(in_oklch,var(--forecast)_22%,transparent),transparent_48%)] md:block"
           />
-          <div className="relative grid gap-8 p-6 md:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] md:p-8">
+          <div className="relative grid gap-8 p-6 md:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] md:p-8">
             <div>
-              <p className="text-[12px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Quadro</p>
-              <p className="mt-3 text-[40px] font-semibold leading-none tracking-[-0.04em]">{total}</p>
-              <p className="mt-2 text-[14px] text-muted-foreground">{total === 1 ? "funil no quadro" : "funis no quadro"}</p>
-
-              <div className="mt-6 h-1.5 overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-success transition-[width] duration-500 ease-out"
-                  style={{ width: `${liveShare}%` }}
-                />
-              </div>
-              <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[12.5px] text-muted-foreground">
+              <p className="text-[12px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Hoje</p>
+              <p className="mt-3 text-[40px] font-semibold leading-none tracking-[-0.04em]">{ops.startedToday}</p>
+              <p className="mt-2 text-[14px] text-muted-foreground">
+                {ops.startedToday === 1 ? "conversa iniciada" : "conversas iniciadas"}
+              </p>
+              <div className="mt-5 flex flex-wrap gap-x-5 gap-y-1 text-[12.5px] text-muted-foreground">
                 <span>
-                  <strong className="font-medium text-foreground">{published}</strong> em produção
+                  <strong className="font-medium text-foreground">{ops.newToday}</strong> leads novos
                 </span>
                 <span>
-                  <strong className="font-medium text-foreground">{drafts}</strong> em rascunho
+                  <strong className="font-medium text-foreground">{ops.whatsapp}</strong> no WhatsApp
                 </span>
-                {total > 0 && (
-                  <span>
-                    <strong className="font-medium text-foreground">{liveShare}%</strong> publicados
-                  </span>
-                )}
+                <span>
+                  <strong className="font-medium text-foreground">{ops.telegram}</strong> no Telegram
+                </span>
               </div>
-
-              {total === 0 && (
-                <p className="mt-5 max-w-sm text-[13.5px] leading-relaxed text-muted-foreground">
-                  Ainda não há funis. Abre Funil no menu para desenhar o primeiro quadro.
+              {empty && (
+                <p className="mt-5 max-w-md text-[13.5px] leading-relaxed text-muted-foreground">
+                  Ainda não há movimento. Os números entram quando WhatsApp e Telegram estiverem ligados.
                 </p>
               )}
             </div>
-
-            <div className="relative hidden min-h-[168px] items-center justify-center md:flex">
-              <FunnelSketch />
+            <div className="grid content-center gap-3">
+              <PulseRow label="WhatsApp" value={ops.whatsapp} share={empty ? 0 : whatsappShare} tone="whatsapp" />
+              <PulseRow label="Telegram" value={ops.telegram} share={empty ? 0 : 100 - whatsappShare} tone="forecast" />
             </div>
           </div>
         </section>
 
-        <section className="grid gap-3 sm:grid-cols-3">
-          <Metric label="No quadro" value={total} hint="funis criados" />
-          <Metric label="Em produção" value={published} hint="já publicados" accent="success" />
-          <Metric label="Rascunhos" value={drafts} hint="ainda por publicar" />
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Metric href="/leads" label="Leads" value={ops.leads} hint="na base" icon={Users} />
+          <Metric href="/conversas" label="Conversas" value={ops.conversations} hint="inbox aberta" icon={MessagesSquare} />
+          <Metric href="/conversas" label="Iniciadas hoje" value={ops.startedToday} hint="primeiro contacto" icon={Send} />
+          <Metric href="/leads" label="Quentes" value={ops.hot} hint="prontos a fechar" icon={Thermometer} accent="success" />
         </section>
 
-        <section>
-          <div className="mb-3">
-            <p className="text-[14px] font-semibold">Áreas</p>
-            <p className="mt-0.5 text-[12.5px] text-muted-foreground">O que já está pronto e o que vem a seguir.</p>
+        <section className="grid gap-3 lg:grid-cols-2">
+          <div className="surface p-5">
+            <p className="text-[14px] font-semibold">Temperatura</p>
+            <p className="mt-0.5 text-[12.5px] text-muted-foreground">Como está a base de contactos.</p>
+            <div className="mt-4 flex h-2 overflow-hidden rounded-full bg-muted">
+              <div className="bg-foreground/25" style={{ width: `${pct(ops.cold, heatTotal)}%` }} />
+              <div className="bg-chart-4" style={{ width: `${pct(ops.warm, heatTotal)}%` }} />
+              <div className="bg-success" style={{ width: `${pct(ops.hot, heatTotal)}%` }} />
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-2 text-[12.5px]">
+              <HeatStat label="Frios" value={ops.cold} />
+              <HeatStat label="Mornos" value={ops.warm} />
+              <HeatStat label="Quentes" value={ops.hot} />
+            </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <AreaCard
-              href="/fluxo"
-              icon={Workflow}
-              title="Funil"
-              hint="Tráfego, divisor, páginas e mensagens."
-              status="Pronto"
-              ready
-            />
-            <AreaCard href="/leads" icon={Users} title="Leads" hint="Base de contactos e temperatura." status="Em preparação" />
-            <AreaCard
-              href="/conversas"
-              icon={MessagesSquare}
-              title="Conversas"
-              hint="Inbox de WhatsApp e Telegram."
-              status="Em preparação"
-            />
-            <AreaCard href="/telegram" icon={Send} title="Telegram" hint="Ligação do bot e estado do canal." status="Em preparação" />
+
+          <div className="surface p-5">
+            <p className="text-[14px] font-semibold">Inbox</p>
+            <p className="mt-0.5 text-[12.5px] text-muted-foreground">Conversas à espera de resposta.</p>
+            {empty ? (
+              <div className="mt-8 text-center">
+                <MessagesSquare className="mx-auto size-5 text-muted-foreground" />
+                <p className="mt-3 text-[14px] font-medium">Nenhuma conversa ainda</p>
+                <p className="mx-auto mt-1 max-w-xs text-[13px] text-muted-foreground">
+                  Quando um lead escrever, a conversa aparece aqui e no inbox.
+                </p>
+                <Link to="/conversas" className="mt-4 inline-flex text-[13px] font-medium hover:underline">
+                  Abrir conversas
+                </Link>
+              </div>
+            ) : (
+              <div className="mt-6 grid grid-cols-2 gap-3">
+                <HeatStat label="WhatsApp" value={ops.whatsapp} />
+                <HeatStat label="Telegram" value={ops.telegram} />
+              </div>
+            )}
           </div>
         </section>
       </div>
     </div>
   )
+}
+
+function pct(value: number, total: number) {
+  if (total === 0) return 0
+  return Math.round((value / total) * 100)
 }
 
 function Metric({
+  href,
   label,
   value,
   hint,
+  icon: Icon,
   accent,
 }: {
+  href: string
   label: string
   value: number
   hint: string
+  icon: typeof Users
   accent?: "success"
 }) {
   return (
-    <div className="surface p-5">
-      <p className="text-[12px] text-muted-foreground">{label}</p>
+    <Link to={href} className="surface p-5 transition-colors hover:bg-muted/30">
+      <div className="flex items-center justify-between">
+        <p className="text-[12px] text-muted-foreground">{label}</p>
+        <Icon className="size-3.5 text-muted-foreground" strokeWidth={1.75} />
+      </div>
       <p className={cn("mt-2 text-[28px] font-semibold tracking-tight", accent === "success" && "text-success")}>{value}</p>
       <p className="mt-1 text-[12px] text-muted-foreground">{hint}</p>
-    </div>
-  )
-}
-
-function AreaCard({
-  href,
-  icon: Icon,
-  title,
-  hint,
-  status,
-  ready,
-}: {
-  href: string
-  icon: typeof Workflow
-  title: string
-  hint: string
-  status: string
-  ready?: boolean
-}) {
-  return (
-    <Link to={href} className="surface flex items-start gap-3.5 p-5 transition-colors hover:bg-muted/30">
-      <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-foreground">
-        <Icon className="size-4" strokeWidth={1.75} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-[14px] font-medium">{title}</p>
-          <span
-            className={cn(
-              "rounded-full px-2 py-0.5 text-[11px] font-medium",
-              ready ? "bg-success/12 text-success" : "bg-muted text-muted-foreground"
-            )}
-          >
-            {status}
-          </span>
-        </div>
-        <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">{hint}</p>
-      </div>
     </Link>
   )
 }
 
-function FunnelSketch() {
+function PulseRow({
+  label,
+  value,
+  share,
+  tone,
+}: {
+  label: string
+  value: number
+  share: number
+  tone: "whatsapp" | "forecast"
+}) {
   return (
-    <div className="flex items-center gap-3 text-[11px] font-medium text-muted-foreground">
-      <SketchNode label="Tráfego" tone="slate" />
-      <span className="h-px w-8 bg-border" />
-      <SketchNode label="Divisor" tone="forecast" />
-      <span className="h-px w-8 bg-border" />
-      <SketchNode label="Página" tone="primary" />
+    <div>
+      <div className="flex items-center justify-between text-[12.5px]">
+        <span className="text-muted-foreground">{label}</span>
+        <span className="font-medium">{value}</span>
+      </div>
+      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+        <div
+          className={cn("h-full rounded-full", tone === "whatsapp" ? "bg-whatsapp" : "bg-forecast")}
+          style={{ width: `${share}%` }}
+        />
+      </div>
     </div>
   )
 }
 
-function SketchNode({ label, tone }: { label: string; tone: "slate" | "forecast" | "primary" }) {
+function HeatStat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="flex flex-col items-center gap-2">
-      <div
-        className={cn(
-          "size-12 rounded-2xl border border-border bg-card shadow-[0_10px_30px_-18px_rgb(0_0_0/0.45)]",
-          tone === "forecast" && "bg-forecast/15",
-          tone === "primary" && "bg-foreground/6"
-        )}
-      />
-      <span>{label}</span>
+    <div>
+      <p className="text-muted-foreground">{label}</p>
+      <p className="mt-1 text-[18px] font-semibold tracking-tight">{value}</p>
     </div>
   )
 }
