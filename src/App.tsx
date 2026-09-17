@@ -6,6 +6,7 @@ import { ForgotPage } from "@/pages/forgot"
 import { FunnelEditorPage } from "@/pages/funnel-editor"
 import { LoginPage } from "@/pages/login"
 import { PrivacyPage } from "@/pages/privacy"
+import { SettingsPage } from "@/pages/settings"
 import { SoonPage } from "@/pages/soon"
 import { useStore } from "@/lib/store"
 
@@ -47,6 +48,7 @@ function AppRoutes() {
               <Route path="/leads" element={<SoonPage title="Leads" hint="Base de contactos e temperatura." />} />
               <Route path="/conversas" element={<SoonPage title="Conversas" hint="Inbox unificada de WhatsApp e Telegram." />} />
               <Route path="/telegram" element={<SoonPage title="Telegram" hint="Ligação do bot e estado do canal." />} />
+              <Route path="/configuracoes" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </AppShell>

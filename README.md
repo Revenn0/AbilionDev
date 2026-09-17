@@ -10,6 +10,7 @@ A UI veio do CRM-ABILION (`web/`). O resto — inbox, bots, campanhas, Baileys, 
 - Shell interno (sidebar recolhível)
 - Dashboard de operação: leads, conversas iniciadas e canais
 - Página Funil: quadro visual com preview e rename — sem ligação a dados
+- Configurações: plugins, canais, workspace, notificações e aparência
 - Canvas com paleta, inspector, rascunho e publicação
 - Variáveis do Supabase e Cloudflare do projecto anterior
 

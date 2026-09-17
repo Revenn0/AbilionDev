@@ -92,8 +92,36 @@ export const emptyOps: OpsStats = {
   hot: 0,
 }
 
+export type PluginId = "whatsapp" | "telegram" | "webhooks" | "forms" | "reports" | "calendar"
+
+export type Settings = {
+  workspaceName: string
+  timezone: string
+  notifyNewLead: boolean
+  notifyConversation: boolean
+  notifyChannelFail: boolean
+  plugins: Record<PluginId, boolean>
+}
+
+export const defaultSettings: Settings = {
+  workspaceName: "Abilion",
+  timezone: "America/Sao_Paulo",
+  notifyNewLead: true,
+  notifyConversation: true,
+  notifyChannelFail: true,
+  plugins: {
+    whatsapp: false,
+    telegram: false,
+    webhooks: false,
+    forms: false,
+    reports: false,
+    calendar: false,
+  },
+}
+
 export type AppState = {
   user: User | null
   funnels: SalesFunnel[]
   ops: OpsStats
+  settings: Settings
 }

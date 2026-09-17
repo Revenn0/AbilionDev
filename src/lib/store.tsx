@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { nameFromEmail, uid } from "@/lib/format"
-import { emptyOps, type AppState, type SalesFunnel, type User } from "@/lib/types"
+import { defaultSettings, emptyOps, type AppState, type PluginId, type SalesFunnel, type Settings, type User } from "@/lib/types"
 
 const KEY = "abilion.dev.v1"
 const SESSION = "abilion.dev.session"
@@ -9,6 +9,7 @@ const empty: AppState = {
   user: null,
   funnels: [],
   ops: emptyOps,
+  settings: defaultSettings,
 }
 
 function readState(): AppState {
@@ -20,6 +21,11 @@ function readState(): AppState {
       user: parsed.user ?? null,
       funnels: Array.isArray(parsed.funnels) ? parsed.funnels : [],
       ops: { ...emptyOps, ...(parsed.ops ?? {}) },
+      settings: {
+        ...defaultSettings,
+        ...(parsed.settings ?? {}),
+        plugins: { ...defaultSettings.plugins, ...(parsed.settings?.plugins ?? {}) },
+      },
     }
   } catch {
     return empty
@@ -43,6 +49,8 @@ type Store = {
   createFunnel: (funnel: SalesFunnel) => void
   saveFunnel: (funnel: SalesFunnel) => void
   deleteFunnel: (id: string) => void
+  saveSettings: (patch: Partial<Settings>) => void
+  togglePlugin: (id: PluginId) => void
 }
 
 const StoreContext = createContext<Store | null>(null)
@@ -82,6 +90,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           funnels: prev.funnels.map((item) => (item.id === funnel.id ? funnel : item)),
         })),
       deleteFunnel: (id) => setState((prev) => ({ ...prev, funnels: prev.funnels.filter((item) => item.id !== id) })),
+      saveSettings: (patch) =>
+        setState((prev) => ({
+          ...prev,
+          settings: { ...prev.settings, ...patch, plugins: patch.plugins ?? prev.settings.plugins },
+        })),
+      togglePlugin: (id) =>
+        setState((prev) => ({
+          ...prev,
+          settings: {
+            ...prev.settings,
+            plugins: { ...prev.settings.plugins, [id]: !prev.settings.plugins[id] },
+          },
+        })),
     }),
     [ready, state]
   )
