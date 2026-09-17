@@ -3,7 +3,6 @@ import {
   Background,
   BackgroundVariant,
   Controls,
-  MiniMap,
   ReactFlow,
   addEdge,
   useEdgesState,
@@ -264,6 +263,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
             nodesDraggable={!readOnly}
             nodesConnectable={!readOnly}
             onlyRenderVisibleElements
+            elevateNodesOnSelect={false}
             selectNodesOnDrag={false}
             proOptions={{ hideAttribution: true }}
             deleteKeyCode={readOnly ? [] : ["Delete"]}
@@ -271,28 +271,8 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
             maxZoom={1.5}
             defaultEdgeOptions={{ style: { stroke: "#94A3B8", strokeWidth: 1.8 }, type: "smoothstep" }}
           >
-            <Background id="sales-dots" variant={BackgroundVariant.Dots} gap={20} size={1.6} color="#3a404c" />
+            <Background id="sales-dots" variant={BackgroundVariant.Dots} gap={28} size={1.2} color="#3a404c" />
             <Controls showInteractive={false} />
-            <MiniMap
-              pannable
-              zoomable
-              className="!bg-card"
-              nodeColor={(n) =>
-                n.type === "message"
-                  ? "#38bdf8"
-                  : n.type === "handoff"
-                    ? "#f472b6"
-                    : n.type === "offer"
-                      ? "#34d399"
-                      : n.type === "condition"
-                        ? "#a78bfa"
-                        : n.type === "split"
-                          ? "#7C3AED"
-                          : n.type === "landing"
-                            ? "#2F6BFF"
-                            : "#64748B"
-              }
-            />
           </ReactFlow>
           <FlowSimulator
             funnel={{

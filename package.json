@@ -11,7 +11,6 @@
     "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
-    "@fontsource-variable/geist": "^5.3.0",
     "@supabase/supabase-js": "^2.116.0",
     "@tailwindcss/vite": "^4.3.3",
     "@xyflow/react": "^12.11.6",

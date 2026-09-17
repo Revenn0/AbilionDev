@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { useLocation, useNavigate } from "react-router-dom"
+import { Navigate, useLocation, useNavigate } from "react-router-dom"
 import { Menu, X } from "lucide-react"
 import { Sidebar } from "./sidebar"
 import { Button } from "@/components/ui/button"
@@ -48,16 +48,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (!state.user) navigate("/login", { replace: true })
   }, [ready, state.user, navigate])
 
-  if (!ready || !state.user) {
-    return (
-      <div className="grid min-h-screen place-items-center bg-background">
-        <div className="flex flex-col items-center gap-3">
-          <LogoWord />
-          <div className="size-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-        </div>
-      </div>
-    )
-  }
+  if (!ready || !state.user) return <Navigate to="/login" replace />
 
   return (
     <div className={cn("flex h-screen overflow-hidden bg-background", !canvasEditor && "p-2 md:p-2.5")}>

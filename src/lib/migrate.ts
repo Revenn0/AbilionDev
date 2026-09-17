@@ -67,10 +67,22 @@ export function migrateLead(raw: Partial<Lead> & { id: string }): Lead {
   }
 }
 
+const PLACEHOLDER_BOT = /@vjungerfka/i
+
+export function cleanBotUsername(value?: string) {
+  const next = (value ?? "").trim()
+  if (!next || PLACEHOLDER_BOT.test(next)) return ""
+  return next.startsWith("@") ? next : `@${next}`
+}
+
 export function migrateSettings(raw: Partial<Settings> | undefined): Settings {
-  return {
+  const merged = {
     ...defaultSettings,
     ...(raw ?? {}),
     plugins: { ...defaultSettings.plugins, ...(raw?.plugins ?? {}) },
+  }
+  return {
+    ...merged,
+    telegramBotUsername: cleanBotUsername(merged.telegramBotUsername),
   }
 }

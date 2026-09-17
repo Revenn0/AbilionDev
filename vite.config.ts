@@ -36,4 +36,7 @@ export default defineConfig({
     port: 43173,
     strictPort: true,
   },
+  optimizeDeps: {
+    include: ["react", "react-dom", "react-router-dom", "@xyflow/react"],
+  },
 })

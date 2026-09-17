@@ -15,9 +15,15 @@ export function TelegramPage() {
   const [health, setHealth] = useState<"off" | "ok" | "down">("off")
 
   useEffect(() => {
-    fetch(`${workerUrl()}/api/health`)
+    const ctrl = new AbortController()
+    const timer = window.setTimeout(() => ctrl.abort(), 1500)
+    fetch(`${workerUrl()}/api/health`, { signal: ctrl.signal })
       .then((res) => (res.ok ? setHealth("ok") : setHealth("down")))
       .catch(() => setHealth("down"))
+    return () => {
+      window.clearTimeout(timer)
+      ctrl.abort()
+    }
   }, [])
 
   return (
@@ -32,9 +38,11 @@ export function TelegramPage() {
         <section className="grid gap-3 md:grid-cols-3">
           <article className="surface p-5">
             <p className="text-[12.5px] text-muted-foreground">Bot</p>
-            <p className="mt-2 text-[18px] font-medium">{settings.telegramBotUsername || "—"}</p>
+            <p className="mt-2 text-[18px] font-medium">{settings.telegramBotUsername || "Por configurar"}</p>
             <div className="mt-3 flex flex-wrap gap-1.5">
-              <StatusPill tone={tokenOn ? "success" : "muted"}>{tokenOn ? "Token local" : "Sem token local"}</StatusPill>
+              <StatusPill tone={settings.telegramBotUsername || tokenOn ? "success" : "muted"}>
+                {settings.telegramBotUsername || tokenOn ? "Configurado" : "Ainda sem bot"}
+              </StatusPill>
               <StatusPill tone={health === "ok" ? "success" : "muted"}>{health === "ok" ? "Worker ok" : "Worker por ligar"}</StatusPill>
             </div>
           </article>

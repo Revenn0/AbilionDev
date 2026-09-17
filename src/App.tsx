@@ -1,22 +1,27 @@
+import { lazy, Suspense } from "react"
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom"
 import { AppShell } from "@/components/layout/app-shell"
 import { DashboardPage } from "@/pages/dashboard"
-import { FluxoPage } from "@/pages/fluxo"
 import { ForgotPage } from "@/pages/forgot"
-import { FunnelEditorPage } from "@/pages/funnel-editor"
 import { LoginPage } from "@/pages/login"
 import { PrivacyPage } from "@/pages/privacy"
-import { ConversationsPage } from "@/pages/conversations"
-import { LeadsPage } from "@/pages/leads"
-import { SettingsPage } from "@/pages/settings"
-import { TelegramPage } from "@/pages/telegram"
 import { useStore } from "@/lib/store"
 
+const FluxoPage = lazy(() => import("@/pages/fluxo").then((m) => ({ default: m.FluxoPage })))
+const FunnelEditorPage = lazy(() => import("@/pages/funnel-editor").then((m) => ({ default: m.FunnelEditorPage })))
+const LeadsPage = lazy(() => import("@/pages/leads").then((m) => ({ default: m.LeadsPage })))
+const ConversationsPage = lazy(() => import("@/pages/conversations").then((m) => ({ default: m.ConversationsPage })))
+const SettingsPage = lazy(() => import("@/pages/settings").then((m) => ({ default: m.SettingsPage })))
+const TelegramPage = lazy(() => import("@/pages/telegram").then((m) => ({ default: m.TelegramPage })))
+
 function AuthGate({ children }: { children: React.ReactNode }) {
-  const { ready, state } = useStore()
-  if (!ready) return null
+  const { state } = useStore()
   if (state.user) return <Navigate to="/" replace />
   return children
+}
+
+function PageFallback() {
+  return <div className="h-full bg-background" />
 }
 
 function AppRoutes() {
@@ -43,16 +48,18 @@ function AppRoutes() {
         path="/*"
         element={
           <AppShell>
-            <Routes>
-              <Route path="/" element={<DashboardPage />} />
-              <Route path="/fluxo" element={<FluxoPage />} />
-              <Route path="/fluxo/funil/:id" element={<FunnelEditorPage />} />
-              <Route path="/leads" element={<LeadsPage />} />
-              <Route path="/conversas" element={<ConversationsPage />} />
-              <Route path="/telegram" element={<TelegramPage />} />
-              <Route path="/configuracoes" element={<SettingsPage />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
+            <Suspense fallback={<PageFallback />}>
+              <Routes>
+                <Route path="/" element={<DashboardPage />} />
+                <Route path="/fluxo" element={<FluxoPage />} />
+                <Route path="/fluxo/funil/:id" element={<FunnelEditorPage />} />
+                <Route path="/leads" element={<LeadsPage />} />
+                <Route path="/conversas" element={<ConversationsPage />} />
+                <Route path="/telegram" element={<TelegramPage />} />
+                <Route path="/configuracoes" element={<SettingsPage />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </Suspense>
           </AppShell>
         }
       />

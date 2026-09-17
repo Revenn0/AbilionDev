@@ -72,4 +72,4 @@ Webhook Telegram: `https://abilion.vsanches1060.workers.dev/api/telegram`
 Cron de espera: hora a hora, ou `GET /api/cron?secret=…`  
 WhatsApp Cloud: `POST /api/whatsapp` (mesmo contrato; token opcional)
 
-O token do `@vjungerfkaaiii_bot` **não** entra no repositório.
+O bot configura-se em Configurações e fica gravado no workspace. O token **não** entra no repositório.

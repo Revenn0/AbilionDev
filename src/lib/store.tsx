@@ -46,6 +46,13 @@ function withSeed(state: AppState, firstVisit: boolean): AppState {
   return { ...state, funnels: [seededOperation()] }
 }
 
+function bootState(): AppState {
+  const firstVisit = !localStorage.getItem(KEY) && !localStorage.getItem(LEGACY)
+  const saved = withSeed(readState(), firstVisit)
+  saved.user = readUser()
+  return saved
+}
+
 type Store = {
   ready: boolean
   remote: "off" | "local" | "cloud"
@@ -65,24 +72,15 @@ type Store = {
 const StoreContext = createContext<Store | null>(null)
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [ready, setReady] = useState(false)
-  const [remote, setRemote] = useState<Store["remote"]>("off")
-  const [state, setState] = useState<AppState>(empty)
+  const [ready] = useState(true)
+  const [remote, setRemote] = useState<Store["remote"]>(supabaseEnabled() ? "off" : "local")
+  const [state, setState] = useState<AppState>(bootState)
   const skipPush = useRef(true)
+  const persistTimer = useRef(0)
 
   useEffect(() => {
+    if (!supabaseEnabled()) return
     let cancelled = false
-    const firstVisit = !localStorage.getItem(KEY) && !localStorage.getItem(LEGACY)
-    const saved = withSeed(readState(), firstVisit)
-    saved.user = readUser()
-    setState(saved)
-    setReady(true)
-
-    if (!supabaseEnabled()) {
-      setRemote("local")
-      return
-    }
-
     pullRemote().then((bundle) => {
       if (cancelled || !bundle) {
         setRemote("local")
@@ -92,41 +90,43 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setState((prev) => {
         const funnels = bundle.funnels.length ? bundle.funnels : prev.funnels
         const leads = bundle.leads.length ? bundle.leads : prev.leads
+        const remoteSettings = migrateSettings(bundle.settings)
         return {
           ...prev,
-          funnels: funnels.length ? funnels.map(migrateFunnel) : [seededOperation()],
+          funnels: funnels.length ? funnels.map(migrateFunnel) : prev.funnels,
           leads: leads.map((lead) => migrateLead(lead)),
           settings: {
-            ...migrateSettings(bundle.settings),
-            telegramBotToken: prev.settings.telegramBotToken,
+            ...remoteSettings,
+            telegramBotToken: prev.settings.telegramBotToken || remoteSettings.telegramBotToken,
+            telegramBotUsername: prev.settings.telegramBotUsername || remoteSettings.telegramBotUsername,
+            telegramGroupUrl: prev.settings.telegramGroupUrl || remoteSettings.telegramGroupUrl,
           },
         }
       })
     })
-
     return () => {
       cancelled = true
     }
   }, [])
 
   useEffect(() => {
-    if (!ready) return
-    localStorage.setItem(KEY, JSON.stringify({ ...state, user: null }))
-    if (state.user) localStorage.setItem(SESSION, JSON.stringify(state.user))
-    else localStorage.removeItem(SESSION)
-    if (skipPush.current) {
-      skipPush.current = false
-      return
-    }
-    if (!supabaseEnabled()) return
-    const timer = window.setTimeout(() => {
+    window.clearTimeout(persistTimer.current)
+    persistTimer.current = window.setTimeout(() => {
+      localStorage.setItem(KEY, JSON.stringify({ ...state, user: null }))
+      if (state.user) localStorage.setItem(SESSION, JSON.stringify(state.user))
+      else localStorage.removeItem(SESSION)
+      if (skipPush.current) {
+        skipPush.current = false
+        return
+      }
+      if (!supabaseEnabled()) return
       void pushRemote({
         ...state,
         settings: { ...state.settings, telegramBotToken: "" },
       })
-    }, 600)
-    return () => window.clearTimeout(timer)
-  }, [ready, state])
+    }, 120)
+    return () => window.clearTimeout(persistTimer.current)
+  }, [state])
 
   const api = useMemo<Store>(
     () => ({

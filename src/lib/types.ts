@@ -178,7 +178,7 @@ export const defaultSettings: Settings = {
     reports: false,
     calendar: false,
   },
-  telegramBotUsername: "@vjungerfkaaiii_bot",
+  telegramBotUsername: "",
   telegramBotToken: "",
   telegramGroupUrl: "",
   steLinkedTelegram: false,

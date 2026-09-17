@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
+import { cleanBotUsername } from "@/lib/migrate"
 import { useStore } from "@/lib/store"
 import { workerUrl } from "@/lib/channel"
 import { cn } from "@/lib/utils"
@@ -112,25 +113,31 @@ function BotPane() {
     <section className="surface max-w-xl p-6">
       <p className="text-[14px] font-medium">Canal Telegram</p>
       <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
-        Join e /start entram no fluxo publicado. Token neste browser é só local. Em produção:{" "}
-        <code className="text-foreground">wrangler secret put TELEGRAM_BOT_TOKEN</code> — nunca no git.
+        Configura o bot quando estiver pronto. Username e token ficam gravados neste workspace. Em produção o token vai
+        em <code className="text-foreground">wrangler secret</code>, nunca no git.
       </p>
       <form
         className="mt-5 space-y-4"
         onSubmit={(event) => {
           event.preventDefault()
           saveSettings({
-            telegramBotUsername: username.trim() || "@vjungerfkaaiii_bot",
+            telegramBotUsername: cleanBotUsername(username),
             telegramBotToken: token.trim(),
             telegramGroupUrl: group.trim(),
           })
           if (token.trim() && !state.settings.plugins.telegram) togglePlugin("telegram")
-          toast.success("Bot guardado neste browser.")
+          toast.success("Bot guardado. Fica gravado até altera.")
         }}
       >
         <div className="space-y-1.5">
           <Label htmlFor="bot-user">Username</Label>
-          <Input id="bot-user" value={username} onChange={(event) => setUsername(event.target.value)} />
+          <Input
+            id="bot-user"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            placeholder="@teu_bot"
+            autoComplete="off"
+          />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="bot-token">Token</Label>
