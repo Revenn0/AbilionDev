@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { useStore } from "@/lib/store"
 import { LogoWord } from "@/components/brand/logo"
 import { ThemeToggle } from "@/components/theme/toggle"
+import { cn } from "@/lib/utils"
 
 function isCanvasEditor(pathname: string) {
   return /^\/fluxo\/funil\/[^/]+$/.test(pathname)
@@ -60,14 +61,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       {!canvasEditor && (
-        <div className="hidden h-full md:block">
+        <div className="relative z-20 hidden h-full md:block">
           <Sidebar expanded={expanded} onToggle={toggleSidebar} />
         </div>
       )}
-      {open && !canvasEditor && (
-        <div className="fixed inset-0 z-50 md:hidden">
-          <div className="absolute inset-0 bg-foreground/25 backdrop-blur-sm" onClick={() => setOpen(false)} />
-          <div className="relative h-full w-[240px] shadow-xl">
+      {!canvasEditor && (
+        <div className={cn("fixed inset-0 z-50 md:hidden", open ? "pointer-events-auto" : "pointer-events-none")}>
+          <div
+            className={cn(
+              "absolute inset-0 bg-foreground/25 backdrop-blur-sm transition-opacity duration-300 motion-reduce:transition-none",
+              open ? "opacity-100" : "opacity-0"
+            )}
+            onClick={() => setOpen(false)}
+          />
+          <div
+            className={cn(
+              "relative h-full w-[240px] shadow-xl transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+              open ? "translate-x-0" : "-translate-x-full"
+            )}
+          >
             <Sidebar expanded onNavigate={() => setOpen(false)} />
           </div>
         </div>

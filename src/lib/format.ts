@@ -27,3 +27,19 @@ export function nameFromEmail(email: string) {
 export function uid() {
   return crypto.randomUUID()
 }
+
+export function dayGreeting(date = new Date()) {
+  const hour = date.getHours()
+  if (hour < 12) return "Bom dia"
+  if (hour < 19) return "Boa tarde"
+  return "Boa noite"
+}
+
+export function longDate(date = new Date()) {
+  const label = new Intl.DateTimeFormat("pt-PT", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(date)
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}
