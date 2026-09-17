@@ -3,15 +3,15 @@ import { LayoutDashboard, Radio } from "lucide-react"
 import { FilterChip, PageChrome } from "@/components/layout/chrome"
 import { SparkBars, TrendLine } from "@/components/ui/spark"
 import { useStore } from "@/lib/store"
-
-const EMPTY_LINE = Array.from({ length: 30 }, () => 0)
-const EMPTY_BARS = Array.from({ length: 12 }, () => 0)
+import { deriveOps, seriesLast30 } from "@/lib/ops"
 
 export function DashboardPage() {
   const { state } = useStore()
-  const ops = state.ops
-  const empty = ops.leads === 0 && ops.conversations === 0
+  const ops = deriveOps(state.leads)
+  const empty = ops.leads === 0
   const channelTotal = ops.whatsapp + ops.telegram
+  const line = seriesLast30(state.leads, () => true)
+  const spark = line.slice(-12)
 
   return (
     <div className="h-full overflow-y-auto">
@@ -22,41 +22,32 @@ export function DashboardPage() {
         </PageChrome>
 
         <section className="grid gap-3 md:grid-cols-3">
-          <Kpi
-            href="/leads"
-            label="Leads"
-            value={ops.leads}
-            hint={empty ? "à espera de canal" : "na base"}
-          />
+          <Kpi href="/leads" label="Leads" value={ops.leads} hint={empty ? "à espera de captura" : "na base"} bars={spark} />
           <Kpi
             href="/conversas"
             label="Conversas"
             value={ops.conversations}
-            hint={empty ? "nenhuma iniciada" : "inbox aberta"}
+            hint={empty ? "nenhuma iniciada" : "Sté e grupos"}
+            bars={spark}
           />
-          <Kpi
-            href="/conversas"
-            label="Iniciadas hoje"
-            value={ops.startedToday}
-            hint="primeiro contacto"
-          />
+          <Kpi href="/leads" label="Fila Ester" value={ops.ester} hint="print sem banca" bars={spark} />
         </section>
 
         <section className="surface p-6">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <p className="text-[12.5px] text-muted-foreground">Conversas ao longo do tempo</p>
-              <p className="mt-2 text-[32px] font-medium tracking-[-0.04em]">{ops.conversations}</p>
+              <p className="text-[12.5px] text-muted-foreground">Capturas ao longo do tempo</p>
+              <p className="mt-2 text-[32px] font-medium tracking-[-0.04em]">{ops.leads}</p>
             </div>
             <div className="flex items-center gap-4 text-[12px] text-muted-foreground">
               <span className="inline-flex items-center gap-1.5">
                 <i className="size-1.5 rounded-full bg-line" />
-                Período actual
+                Popup, join e /start
               </span>
             </div>
           </div>
           <div className="mt-6 h-[200px]">
-            <TrendLine values={EMPTY_LINE} />
+            <TrendLine values={line} />
           </div>
           <div className="mt-2 flex justify-between text-[11.5px] text-muted-foreground">
             <span>Dia 1</span>
@@ -67,27 +58,27 @@ export function DashboardPage() {
           </div>
           {empty && (
             <p className="mt-4 text-[12.5px] text-muted-foreground">
-              Sem movimento nos últimos 30 dias. Os pontos aparecem quando um canal estiver ligado.
+              Sem movimento. Os números vêm da captura — não inventamos leads.
             </p>
           )}
         </section>
 
-        <section className="grid gap-3 lg:grid-cols-[1.1fr_0.9fr]">
+        <section className="grid gap-3 lg:grid-cols-2">
           <div className="surface p-6">
-            <p className="text-[12.5px] text-muted-foreground">Canais</p>
+            <p className="text-[12.5px] text-muted-foreground">Campanha · não misturar</p>
             <div className="mt-5 space-y-5">
-              <ChannelRow label="WhatsApp" value={ops.whatsapp} total={channelTotal} />
-              <ChannelRow label="Telegram" value={ops.telegram} total={channelTotal} />
+              <ChannelRow label="WhatsApp · grupo" value={ops.whatsapp} total={channelTotal} />
+              <ChannelRow label="Telegram · convite" value={ops.telegram} total={channelTotal} />
             </div>
           </div>
-
           <div className="surface p-6">
-            <p className="text-[12.5px] text-muted-foreground">Leads ao longo do tempo</p>
-            <p className="mt-2 text-[28px] font-medium tracking-[-0.04em]">{ops.leads}</p>
-            <div className="mt-4 h-[120px]">
-              <TrendLine values={EMPTY_LINE} height={120} />
+            <p className="text-[12.5px] text-muted-foreground">Temperatura</p>
+            <div className="mt-5 grid grid-cols-3 gap-3">
+              <Heat label="Novos" value={ops.novo} />
+              <Heat label="Mornos" value={ops.morno} />
+              <Heat label="Quentes" value={ops.quente} />
             </div>
-            <Link to="/leads" className="mt-4 inline-flex text-[12.5px] text-muted-foreground hover:text-foreground">
+            <Link to="/leads" className="mt-5 inline-flex text-[12.5px] text-muted-foreground hover:text-foreground">
               Abrir leads
             </Link>
           </div>
@@ -97,7 +88,19 @@ export function DashboardPage() {
   )
 }
 
-function Kpi({ href, label, value, hint }: { href: string; label: string; value: number; hint: string }) {
+function Kpi({
+  href,
+  label,
+  value,
+  hint,
+  bars,
+}: {
+  href: string
+  label: string
+  value: number
+  hint: string
+  bars: number[]
+}) {
   return (
     <Link to={href} className="surface p-5 transition-colors hover:bg-card/80">
       <p className="text-[12.5px] text-muted-foreground">{label}</p>
@@ -106,7 +109,7 @@ function Kpi({ href, label, value, hint }: { href: string; label: string; value:
           <p className="text-[28px] font-medium tracking-[-0.04em]">{value}</p>
           <p className="mt-1 text-[12px] text-muted-foreground">{hint}</p>
         </div>
-        <SparkBars values={EMPTY_BARS} />
+        <SparkBars values={bars} />
       </div>
     </Link>
   )
@@ -126,6 +129,15 @@ function ChannelRow({ label, value, total }: { label: string; value: number; tot
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-foreground/8">
         <div className="h-full rounded-full bg-line" style={{ width: `${share}%` }} />
       </div>
+    </div>
+  )
+}
+
+function Heat({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <p className="text-[12.5px] text-muted-foreground">{label}</p>
+      <p className="mt-1 text-[22px] font-medium tracking-tight">{value}</p>
     </div>
   )
 }

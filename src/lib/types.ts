@@ -68,28 +68,26 @@ export type SalesFunnel = {
   production?: SalesSnapshot | null
 }
 
-export type OpsStats = {
-  leads: number
-  newToday: number
-  conversations: number
-  startedToday: number
-  whatsapp: number
-  telegram: number
-  cold: number
-  warm: number
-  hot: number
-}
+export type LeadTemp = "novo" | "morno" | "quente"
+export type LeadChannel = "whatsapp" | "telegram"
+export type LeadOrigin = "popup" | "group_join" | "private" | "closing"
+export type LeadStage = "capture" | "group" | "welcome" | "attendance" | "print" | "banca" | "offer"
 
-export const emptyOps: OpsStats = {
-  leads: 0,
-  newToday: 0,
-  conversations: 0,
-  startedToday: 0,
-  whatsapp: 0,
-  telegram: 0,
-  cold: 0,
-  warm: 0,
-  hot: 0,
+export type Lead = {
+  id: string
+  name: string
+  contact: string
+  channel: LeadChannel
+  campaign: string
+  origin: LeadOrigin
+  temperature: LeadTemp
+  stage: LeadStage
+  printAt?: string
+  bancaAt?: string
+  memory: string
+  lastMessage?: string
+  updatedAt: string
+  createdAt: string
 }
 
 export type PluginId = "whatsapp" | "telegram" | "webhooks" | "forms" | "reports" | "calendar"
@@ -100,7 +98,15 @@ export type Settings = {
   notifyNewLead: boolean
   notifyConversation: boolean
   notifyChannelFail: boolean
+  notifyPrint: boolean
   plugins: Record<PluginId, boolean>
+  telegramBotUsername: string
+  telegramBotToken: string
+  telegramGroupUrl: string
+  steLinkedTelegram: boolean
+  steLinkedWhatsapp: boolean
+  steWelcome: string
+  esterNotify: boolean
 }
 
 export const defaultSettings: Settings = {
@@ -109,6 +115,7 @@ export const defaultSettings: Settings = {
   notifyNewLead: true,
   notifyConversation: true,
   notifyChannelFail: true,
+  notifyPrint: true,
   plugins: {
     whatsapp: false,
     telegram: false,
@@ -117,11 +124,19 @@ export const defaultSettings: Settings = {
     reports: false,
     calendar: false,
   },
+  telegramBotUsername: "@vjungerfkaaiii_bot",
+  telegramBotToken: "",
+  telegramGroupUrl: "",
+  steLinkedTelegram: false,
+  steLinkedWhatsapp: false,
+  steWelcome:
+    "Oi, eu sou a Sté. Vi que você chegou pelo mini curso — vou te acompanhar daqui. Qualquer dúvida, é só me chamar.",
+  esterNotify: true,
 }
 
 export type AppState = {
   user: User | null
   funnels: SalesFunnel[]
-  ops: OpsStats
+  leads: Lead[]
   settings: Settings
 }

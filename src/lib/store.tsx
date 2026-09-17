@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { nameFromEmail, uid } from "@/lib/format"
-import { defaultSettings, emptyOps, type AppState, type PluginId, type SalesFunnel, type Settings, type User } from "@/lib/types"
+import { defaultSettings, type AppState, type Lead, type PluginId, type SalesFunnel, type Settings, type User } from "@/lib/types"
 
 const KEY = "abilion.dev.v1"
 const SESSION = "abilion.dev.session"
@@ -8,7 +8,7 @@ const SESSION = "abilion.dev.session"
 const empty: AppState = {
   user: null,
   funnels: [],
-  ops: emptyOps,
+  leads: [],
   settings: defaultSettings,
 }
 
@@ -20,7 +20,7 @@ function readState(): AppState {
     return {
       user: parsed.user ?? null,
       funnels: Array.isArray(parsed.funnels) ? parsed.funnels : [],
-      ops: { ...emptyOps, ...(parsed.ops ?? {}) },
+      leads: Array.isArray(parsed.leads) ? parsed.leads : [],
       settings: {
         ...defaultSettings,
         ...(parsed.settings ?? {}),
@@ -49,6 +49,9 @@ type Store = {
   createFunnel: (funnel: SalesFunnel) => void
   saveFunnel: (funnel: SalesFunnel) => void
   deleteFunnel: (id: string) => void
+  createLead: (lead: Lead) => void
+  saveLead: (lead: Lead) => void
+  deleteLead: (id: string) => void
   saveSettings: (patch: Partial<Settings>) => void
   togglePlugin: (id: PluginId) => void
 }
@@ -90,6 +93,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           funnels: prev.funnels.map((item) => (item.id === funnel.id ? funnel : item)),
         })),
       deleteFunnel: (id) => setState((prev) => ({ ...prev, funnels: prev.funnels.filter((item) => item.id !== id) })),
+      createLead: (lead) => setState((prev) => ({ ...prev, leads: [lead, ...prev.leads] })),
+      saveLead: (lead) =>
+        setState((prev) => ({
+          ...prev,
+          leads: prev.leads.map((item) => (item.id === lead.id ? lead : item)),
+        })),
+      deleteLead: (id) => setState((prev) => ({ ...prev, leads: prev.leads.filter((item) => item.id !== id) })),
       saveSettings: (patch) =>
         setState((prev) => ({
           ...prev,

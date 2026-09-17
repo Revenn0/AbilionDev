@@ -8,9 +8,12 @@ A UI veio do CRM-ABILION (`web/`). O resto — inbox, bots, campanhas, Baileys, 
 
 - Login em ecrã partido, wordmark e tema claro/escuro
 - Shell interno (sidebar recolhível)
-- Dashboard de operação: leads, conversas iniciadas e canais
-- Página Funil: quadro visual com preview e rename — sem ligação a dados
-- Configurações: plugins, canais, workspace, notificações e aparência
+- Dashboard da operação: leads, conversas, fila Ester, temperatura
+- Leads a funcionar: captura (popup / join / /start), campanha WA ou TG
+- Conversas da Sté com memória por lead
+- Telegram: estado do bot `@vjungerfkaaiii_bot` (token só no browser)
+- Funil visual do mapa de negócio
+- Configurações: bot, Sté, Ester, plugins
 - Canvas com paleta, inspector, rascunho e publicação
 - Variáveis do Supabase e Cloudflare do projecto anterior
 

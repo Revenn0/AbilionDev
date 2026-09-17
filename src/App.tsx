@@ -6,8 +6,10 @@ import { ForgotPage } from "@/pages/forgot"
 import { FunnelEditorPage } from "@/pages/funnel-editor"
 import { LoginPage } from "@/pages/login"
 import { PrivacyPage } from "@/pages/privacy"
+import { ConversationsPage } from "@/pages/conversations"
+import { LeadsPage } from "@/pages/leads"
 import { SettingsPage } from "@/pages/settings"
-import { SoonPage } from "@/pages/soon"
+import { TelegramPage } from "@/pages/telegram"
 import { useStore } from "@/lib/store"
 
 function AuthGate({ children }: { children: React.ReactNode }) {
@@ -45,9 +47,9 @@ function AppRoutes() {
               <Route path="/" element={<DashboardPage />} />
               <Route path="/fluxo" element={<FluxoPage />} />
               <Route path="/fluxo/funil/:id" element={<FunnelEditorPage />} />
-              <Route path="/leads" element={<SoonPage title="Leads" hint="Base de contactos e temperatura." />} />
-              <Route path="/conversas" element={<SoonPage title="Conversas" hint="Inbox unificada de WhatsApp e Telegram." />} />
-              <Route path="/telegram" element={<SoonPage title="Telegram" hint="Ligação do bot e estado do canal." />} />
+              <Route path="/leads" element={<LeadsPage />} />
+              <Route path="/conversas" element={<ConversationsPage />} />
+              <Route path="/telegram" element={<TelegramPage />} />
               <Route path="/configuracoes" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
