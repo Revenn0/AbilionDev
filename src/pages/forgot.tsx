@@ -22,11 +22,11 @@ export function ForgotPage() {
 
   return (
     <AuthSplit>
-      <div className="mt-10 text-center">
-        <h1 className="text-[32px] font-semibold tracking-tight">Redefinir senha</h1>
-        <p className={`mt-3 ${AUTH_HINT}`}>Enviamos o link se o e-mail estiver cadastrado.</p>
+      <div className="mt-10">
+        <h1 className="text-[28px] font-semibold tracking-[-0.03em]">Redefinir senha</h1>
+        <p className={`mt-2 ${AUTH_HINT}`}>Enviamos o link se o e-mail estiver cadastrado.</p>
       </div>
-      <form onSubmit={onSubmit} className="mt-10 space-y-4">
+      <form onSubmit={onSubmit} className="mt-8 space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="email" className={AUTH_LABEL}>
             E-mail
@@ -38,7 +38,7 @@ export function ForgotPage() {
         <Button type="submit" className={AUTH_SUBMIT}>
           Continuar
         </Button>
-        <p className="text-center text-[13px]">
+        <p className="text-[13px]">
           <Link to="/login" className={AUTH_LINK}>
             Voltar ao login
           </Link>

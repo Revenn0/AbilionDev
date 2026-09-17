@@ -41,12 +41,12 @@ export function FluxoPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="page-shell space-y-10">
-        <PageHeading title="Fluxo">
+        <PageHeading title="Fluxo" hint="Funis visuais, fluxos do bot e campanhas no mesmo sítio.">
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" className="h-11 rounded-full px-4" onClick={createSales}>
+            <Button variant="outline" className="h-11 rounded-lg px-4" onClick={createSales}>
               <Plus /> Novo funil
             </Button>
-            <Button className="h-11 rounded-full px-4" onClick={createBot}>
+            <Button className="h-11 rounded-lg px-4" onClick={createBot}>
               <Plus /> Novo fluxo do bot
             </Button>
           </div>
@@ -64,13 +64,13 @@ export function FluxoPage() {
                 <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
                   O quadro de tráfego → página → receita fica aqui. O bot não segue estes nós.
                 </p>
-                <Button className="mt-4 rounded-full" onClick={createSales}>
+                <Button className="mt-4 rounded-lg" onClick={createSales}>
                   <Plus /> Novo funil
                 </Button>
               </div>
             )}
             {funnels.map((funnel) => (
-              <div key={funnel.id} className="surface group overflow-hidden transition-transform hover:-translate-y-0.5">
+              <div key={funnel.id} className="surface overflow-hidden">
                 <div className="p-5 space-y-3">
                   <div className="flex items-start justify-between gap-3">
                     <Link to={`/fluxo/funil/${funnel.id}`} className="min-w-0">
@@ -80,7 +80,7 @@ export function FluxoPage() {
                       </p>
                     </Link>
                     <div className="flex shrink-0 items-center gap-1">
-                      <Button asChild size="sm" className="rounded-full">
+                      <Button asChild size="sm" className="rounded-lg">
                         <Link to={`/fluxo/funil/${funnel.id}`}>Abrir</Link>
                       </Button>
                       <Button
@@ -115,13 +115,13 @@ export function FluxoPage() {
                 <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
                   Cria a partir do quadro: gatilho, mensagem e pergunta.
                 </p>
-                <Button className="mt-4 rounded-full" onClick={createBot}>
+                <Button className="mt-4 rounded-lg" onClick={createBot}>
                   <Plus /> Novo fluxo do bot
                 </Button>
               </div>
             )}
             {botFlows.map((j) => (
-              <div key={j.id} className="surface group overflow-hidden transition-transform hover:-translate-y-0.5">
+              <div key={j.id} className="surface overflow-hidden">
                 <Link to={`/fluxo/${j.id}`}>
                   <JourneyPreview journey={j} />
                 </Link>
@@ -134,7 +134,7 @@ export function FluxoPage() {
                       </p>
                     </Link>
                     <div className="flex shrink-0 items-center gap-1">
-                      <Button asChild size="sm" className="rounded-full">
+                      <Button asChild size="sm" className="rounded-lg">
                         <Link to={`/fluxo/${j.id}`}>Abrir</Link>
                       </Button>
                       <Button
@@ -196,7 +196,7 @@ export function FluxoPage() {
               />
             </Field>
             <Button
-              className="rounded-full"
+              className="rounded-lg"
               onClick={() => {
                 const name = campaignName.trim()
                 if (!name) {
@@ -238,7 +238,7 @@ export function FluxoPage() {
                     <Button
                       size="sm"
                       variant={campaign.status === "active" ? "outline" : "default"}
-                      className="rounded-full"
+                      className="rounded-lg"
                       onClick={() => {
                         saveCampaign({ ...campaign, status: campaign.status === "active" ? "draft" : "active" })
                         toast.success(campaign.status === "active" ? "Campanha em rascunho." : "Campanha activa.")

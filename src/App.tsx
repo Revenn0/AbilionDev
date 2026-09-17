@@ -46,13 +46,9 @@ function AppRoutes() {
               <Route path="/fluxo" element={<FluxoPage />} />
               <Route path="/fluxo/funil/:id" element={<FunnelEditorPage />} />
               <Route path="/fluxo/:id" element={<JourneyEditorPage />} />
-              <Route path="/leads" element={<SoonPage title="Leads" hint="Base de contactos fica para a próxima fatia." />} />
-              <Route path="/conversas" element={<SoonPage title="Conversas" hint="Inbox unificada fica para a próxima fatia." />} />
-              <Route path="/agendamentos" element={<SoonPage title="Agendamentos" hint="Agenda e sinais ficam para a próxima fatia." />} />
-              <Route path="/loja" element={<SoonPage title="Loja" hint="Ofertas e checkout ficam para a próxima fatia." />} />
-              <Route path="/telegram" element={<SoonPage title="Telegram" hint="Ligação do canal fica para a próxima fatia." />} />
-              <Route path="/instagram" element={<SoonPage title="Instagram" hint="Canal em breve." />} />
-              <Route path="/plugins" element={<SoonPage title="Plugins" hint="Extensões ficam para a próxima fatia." />} />
+              <Route path="/leads" element={<SoonPage title="Leads" hint="Base de contactos e temperatura." />} />
+              <Route path="/conversas" element={<SoonPage title="Conversas" hint="Inbox unificada de WhatsApp e Telegram." />} />
+              <Route path="/telegram" element={<SoonPage title="Telegram" hint="Ligação do bot e estado do canal." />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </AppShell>

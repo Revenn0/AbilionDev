@@ -156,19 +156,18 @@
 
 @layer components {
   .page-shell {
-    @apply mx-auto max-w-6xl space-y-6 p-5 md:p-7;
+    @apply mx-auto max-w-6xl space-y-7 p-5 md:p-8;
   }
   .page-title {
-    @apply text-[20px] font-semibold tracking-[-0.02em] md:text-[22px];
+    @apply text-[22px] font-semibold tracking-[-0.03em] md:text-[24px];
   }
   .page-hint {
-    @apply mt-1.5 max-w-xl text-[12.5px] leading-relaxed text-muted-foreground;
+    @apply mt-1.5 max-w-xl text-[13px] leading-relaxed text-muted-foreground;
   }
   .surface {
     background: var(--card);
     border: 1px solid var(--border);
-    box-shadow: 0 1px 2px rgb(25 25 18 / 0.04);
-    border-radius: 12px;
+    border-radius: 10px;
   }
   .dark .surface {
     background: var(--card);

@@ -42,10 +42,11 @@ export function LoginPage() {
 
   return (
     <AuthSplit>
-      <div className="mt-10 text-center">
-        <h1 className="text-[32px] font-semibold tracking-tight">Entre no Abilion</h1>
+      <div className="mt-10">
+        <h1 className="text-[28px] font-semibold tracking-[-0.03em]">Entrar</h1>
+        <p className="mt-2 text-[14px] leading-relaxed text-muted-foreground">Acesso reservado à operação.</p>
       </div>
-      <form onSubmit={onSubmit} className="mt-10 space-y-4">
+      <form onSubmit={onSubmit} className="mt-8 space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="email" className={AUTH_LABEL}>
             E-mail
@@ -79,7 +80,7 @@ export function LoginPage() {
         <Button type="submit" disabled={loading} className={AUTH_SUBMIT}>
           {loading ? "Entrando…" : "Entrar"}
         </Button>
-        <p className="text-center text-[13px]">
+        <p className="text-[13px]">
           <Link to="/forgot" className={AUTH_LINK}>
             Esqueceu a senha?
           </Link>
