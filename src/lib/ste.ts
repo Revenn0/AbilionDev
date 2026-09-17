@@ -140,10 +140,13 @@ export function replySte(lead: Lead, incoming?: string | null): { lead: Lead; re
   return { lead: next, reply }
 }
 
+export const STE_LLM_MODEL = "glm-5.3-flash"
+export const STE_LLM_BASE_URL = "https://api.z.ai/api/paas/v4"
+
 export async function replySteSmart(
   lead: Lead,
   incoming: string | null | undefined,
-  opts?: { apiKey?: string; baseUrl?: string }
+  opts?: { apiKey?: string; baseUrl?: string; model?: string }
 ): Promise<{ lead: Lead; reply: string | null }> {
   const fallback = replySte(lead, incoming)
   const key = opts?.apiKey
@@ -155,16 +158,17 @@ export async function replySteSmart(
       role: item.role === "ste" ? "assistant" : "user",
       content: item.text,
     }))
-    const res = await fetch(`${(opts?.baseUrl ?? "https://api.openai.com/v1").replace(/\/$/, "")}/chat/completions`, {
+    const res = await fetch(`${(opts?.baseUrl ?? STE_LLM_BASE_URL).replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${key}`,
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
-        temperature: 0.6,
-        max_tokens: 120,
+        model: opts?.model ?? STE_LLM_MODEL,
+        temperature: 0.7,
+        max_tokens: 1024,
+        reasoning_effort: "low",
         messages: [
           { role: "system", content: `${STE_SYSTEM_PROMPT}\n\nResponda só UMA frase curta, em português, como Telegram.` },
           ...history,

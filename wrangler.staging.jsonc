@@ -17,6 +17,9 @@
   },
   "vars": {
     "SUPABASE_URL": "https://eyjgmkmaixmpmeeahxon.supabase.co",
-    "ABILION_ENV": "staging"
+    "ABILION_ENV": "staging",
+    "OPENAI_BASE_URL": "https://api.z.ai/api/paas/v4",
+    "STE_MODEL": "glm-5.3-flash",
+    "STE_USE_LLM": "1"
   }
 }

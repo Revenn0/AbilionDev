@@ -16,6 +16,7 @@ export interface Env {
   APP_URL?: string
   OPENAI_API_KEY?: string
   OPENAI_BASE_URL?: string
+  STE_MODEL?: string
   STE_USE_LLM?: string
 }
 
@@ -41,7 +42,8 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       telegram: Boolean(env.TELEGRAM_BOT_TOKEN),
       supabase: Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE),
       ste: true,
-      llm: env.STE_USE_LLM === "1",
+      llm: Boolean(env.OPENAI_API_KEY) && env.STE_USE_LLM !== "0",
+      model: env.STE_MODEL ?? "glm-5.3-flash",
     })
   }
 
@@ -121,9 +123,13 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
   const settings = await loadSettings(env)
   const shouldTalk = settings.steLinkedTelegram !== false && !joinUser
   if (shouldTalk) {
-    const useLlm = env.STE_USE_LLM === "1" && Boolean(incoming?.trim())
+    const useLlm = Boolean(env.OPENAI_API_KEY) && env.STE_USE_LLM !== "0" && Boolean(incoming?.trim())
     const talked = useLlm
-      ? await replySteSmart(lead, incoming, { apiKey: env.OPENAI_API_KEY, baseUrl: env.OPENAI_BASE_URL })
+      ? await replySteSmart(lead, incoming, {
+          apiKey: env.OPENAI_API_KEY,
+          baseUrl: env.OPENAI_BASE_URL,
+          model: env.STE_MODEL,
+        })
       : replySte(lead, incoming)
     lead = talked.lead
     if (talked.reply) {
