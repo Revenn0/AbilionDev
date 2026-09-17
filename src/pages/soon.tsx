@@ -8,7 +8,7 @@ export function SoonPage({ title, hint }: { title: string; hint: string }) {
         <div className="surface px-6 py-16">
           <p className="text-[14px] font-medium">Em preparação</p>
           <p className="mt-2 max-w-md text-[13.5px] leading-relaxed text-muted-foreground">
-            Esta área faz parte do CRM, mas ainda não está ligada a dados. O trabalho actual concentra-se no Fluxo.
+            Esta área faz parte do CRM, mas ainda não está ligada a dados. O trabalho actual concentra-se no Funil.
           </p>
         </div>
       </div>
