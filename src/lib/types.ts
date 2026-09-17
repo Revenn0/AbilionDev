@@ -68,65 +68,7 @@ export type SalesFunnel = {
   production?: SalesSnapshot | null
 }
 
-export type JourneyKind =
-  | "trigger"
-  | "message"
-  | "ask"
-  | "wait"
-  | "condition"
-  | "action"
-  | "whatsapp"
-  | "telegram"
-
-export type JourneyNodeData = {
-  label: string
-  template?: string
-  buttons?: string
-  delayValue?: number
-  delayUnit?: "seconds" | "minutes" | "hours"
-  conditionField?: string
-  conditionOp?: "contains" | "equals"
-}
-
-export type JourneySnapshot = {
-  name: string
-  publishedAt: string
-  nodes: Array<{
-    id: string
-    type: JourneyKind
-    position: { x: number; y: number }
-    data: JourneyNodeData
-  }>
-  edges: FlowEdge[]
-}
-
-export type Journey = {
-  id: string
-  name: string
-  description?: string
-  status: "draft" | "active" | "template"
-  production?: boolean
-  updatedAt: string
-  nodes: JourneySnapshot["nodes"]
-  edges: FlowEdge[]
-}
-
-export type CampaignPlatform = "whatsapp" | "telegram"
-export type CampaignOrigin = "pagina" | "fechamento"
-
-export type Campaign = {
-  id: string
-  name: string
-  platform: CampaignPlatform
-  origin: CampaignOrigin
-  journeyId?: string
-  groupInviteUrl?: string
-  status: "draft" | "active"
-}
-
 export type AppState = {
   user: User | null
   funnels: SalesFunnel[]
-  journeys: Journey[]
-  campaigns: Campaign[]
 }

@@ -8,11 +8,11 @@ import { LogoWord } from "@/components/brand/logo"
 import { ThemeToggle } from "@/components/theme/toggle"
 
 function isCanvasEditor(pathname: string) {
-  return /^\/fluxo\/funil\/[^/]+$/.test(pathname) || /^\/fluxo\/[^/]+$/.test(pathname)
+  return /^\/fluxo\/funil\/[^/]+$/.test(pathname)
 }
 
 function pageTitle(pathname: string) {
-  if (pathname.startsWith("/fluxo")) return "Fluxo"
+  if (pathname.startsWith("/fluxo")) return "Funil"
   if (pathname.startsWith("/leads")) return "Leads"
   if (pathname.startsWith("/conversas")) return "Conversas"
   if (pathname.startsWith("/telegram")) return "Telegram"

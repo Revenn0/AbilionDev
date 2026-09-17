@@ -18,7 +18,7 @@ const NAV: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/leads", label: "Leads", icon: Users },
   { href: "/conversas", label: "Conversas", icon: MessagesSquare },
-  { href: "/fluxo", label: "Fluxo", icon: Workflow },
+  { href: "/fluxo", label: "Funil", icon: Workflow },
   { href: "/telegram", label: "Telegram", icon: Send },
 ]
 

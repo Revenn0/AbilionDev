@@ -1,14 +1,14 @@
 # AbilionDev
 
-Recorte novo do Abilion: **login**, **área interna** e **criador de funis / fluxo**.
+Recorte novo do Abilion: **login**, **área interna** e **criador de funis**.
 
-A UI veio do CRM-ABILION (`web/`). O resto — inbox, bots, Baileys, motor — ficou de fora de propósito.
+A UI veio do CRM-ABILION (`web/`). O resto — inbox, bots, campanhas, Baileys, motor — ficou de fora de propósito.
 
 ## O que entra
 
 - Login em ecrã partido, wordmark e tema claro/escuro
 - Shell interno (sidebar recolhível, dashboard)
-- Página Fluxo: funil visual, fluxo do bot, campanhas
+- Página Funil: listagem e canvas visual de tráfego, páginas e mensagens
 - Canvas com paleta, inspector, rascunho e publicação
 - Variáveis do Supabase e Cloudflare do projecto anterior
 

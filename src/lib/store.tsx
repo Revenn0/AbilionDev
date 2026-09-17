@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { nameFromEmail, uid } from "@/lib/format"
-import type { AppState, Campaign, Journey, SalesFunnel, User } from "@/lib/types"
+import type { AppState, SalesFunnel, User } from "@/lib/types"
 
 const KEY = "abilion.dev.v1"
 const SESSION = "abilion.dev.session"
@@ -8,15 +8,17 @@ const SESSION = "abilion.dev.session"
 const empty: AppState = {
   user: null,
   funnels: [],
-  journeys: [],
-  campaigns: [],
 }
 
 function readState(): AppState {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return empty
-    return { ...empty, ...JSON.parse(raw) }
+    const parsed = JSON.parse(raw) as Partial<AppState>
+    return {
+      user: parsed.user ?? null,
+      funnels: Array.isArray(parsed.funnels) ? parsed.funnels : [],
+    }
   } catch {
     return empty
   }
@@ -39,12 +41,6 @@ type Store = {
   createFunnel: (funnel: SalesFunnel) => void
   saveFunnel: (funnel: SalesFunnel) => void
   deleteFunnel: (id: string) => void
-  createJourney: (journey: Journey) => void
-  saveJourney: (journey: Journey) => void
-  deleteJourney: (id: string) => void
-  createCampaign: (campaign: Campaign) => void
-  saveCampaign: (campaign: Campaign) => void
-  deleteCampaign: (id: string) => void
 }
 
 const StoreContext = createContext<Store | null>(null)
@@ -84,21 +80,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           funnels: prev.funnels.map((item) => (item.id === funnel.id ? funnel : item)),
         })),
       deleteFunnel: (id) => setState((prev) => ({ ...prev, funnels: prev.funnels.filter((item) => item.id !== id) })),
-      createJourney: (journey) => setState((prev) => ({ ...prev, journeys: [journey, ...prev.journeys] })),
-      saveJourney: (journey) =>
-        setState((prev) => ({
-          ...prev,
-          journeys: prev.journeys.map((item) => (item.id === journey.id ? journey : item)),
-        })),
-      deleteJourney: (id) => setState((prev) => ({ ...prev, journeys: prev.journeys.filter((item) => item.id !== id) })),
-      createCampaign: (campaign) => setState((prev) => ({ ...prev, campaigns: [campaign, ...prev.campaigns] })),
-      saveCampaign: (campaign) =>
-        setState((prev) => ({
-          ...prev,
-          campaigns: prev.campaigns.map((item) => (item.id === campaign.id ? campaign : item)),
-        })),
-      deleteCampaign: (id) =>
-        setState((prev) => ({ ...prev, campaigns: prev.campaigns.filter((item) => item.id !== id) })),
     }),
     [ready, state]
   )

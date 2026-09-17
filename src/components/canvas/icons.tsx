@@ -1,6 +1,4 @@
 import { useId } from "react"
-import { Bot, Clock, GitBranch, HelpCircle, MessageSquare, Send, Zap } from "lucide-react"
-import type { JourneyKind } from "@/lib/types"
 
 export function MetaGlyph({ className = "size-5" }: { className?: string }) {
   return (
@@ -72,14 +70,3 @@ export function OrganicGlyph({ className = "size-5" }: { className?: string }) {
   )
 }
 
-export function KindGlyph({ kind, className = "size-4" }: { kind: JourneyKind; className?: string }) {
-  if (kind === "whatsapp") return <WhatsAppGlyph className={className} />
-  if (kind === "telegram") return <Send className={`${className} text-sky-400`} />
-  if (kind === "trigger") return <Zap className={`${className} text-amber-500`} />
-  if (kind === "message") return <MessageSquare className={`${className} text-primary`} />
-  if (kind === "ask") return <HelpCircle className={`${className} text-cyan-400`} />
-  if (kind === "wait") return <Clock className={`${className} text-slate-400`} />
-  if (kind === "condition") return <GitBranch className={`${className} text-violet-600`} />
-  if (kind === "action") return <Zap className={`${className} text-orange-600`} />
-  return <Bot className={`${className} text-forecast`} />
-}
