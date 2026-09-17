@@ -62,6 +62,10 @@ export function migrateLead(raw: Partial<Lead> & { id: string }): Lead {
     waitUntil: raw.waitUntil,
     paused: raw.paused ?? false,
     events: Array.isArray(raw.events) ? raw.events : [],
+    messages: Array.isArray(raw.messages) ? raw.messages : [],
+    stePhase: raw.stePhase,
+    steBlocked: raw.steBlocked ?? false,
+    telegramChatId: raw.telegramChatId,
     updatedAt: raw.updatedAt ?? now,
     createdAt: raw.createdAt ?? now,
   }

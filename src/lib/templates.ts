@@ -1,6 +1,7 @@
 import { uid } from "@/lib/format"
 import { campaignFor } from "@/lib/labels"
 import { applyEvent, eventFromOrigin, publishedSnapshot } from "@/lib/runtime"
+import { replySte } from "@/lib/ste"
 import { BANCA_FIXED, type Lead, type LeadChannel, type LeadOrigin, type SalesFunnel, type SalesSnapshot } from "@/lib/types"
 
 export function emptySalesFunnel(name = "Operação"): SalesFunnel {
@@ -174,11 +175,14 @@ export function leadFromCapture(
     stage: input.origin === "popup" ? "capture" : input.origin === "group_join" ? "group" : "welcome",
     memory: "",
     events: [],
+    messages: [],
     funnelId,
     createdAt: now,
     updatedAt: now,
   }
-  return applyEvent(snapshot, base, eventFromOrigin(input.origin)).lead
+  const walked = applyEvent(snapshot, base, eventFromOrigin(input.origin)).lead
+  if (walked.channel !== "telegram") return walked
+  return replySte(walked, null).lead
 }
 
 export function captureAgainstFunnels(

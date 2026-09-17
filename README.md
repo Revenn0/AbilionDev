@@ -7,11 +7,10 @@ Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / M
 - Login local (qualquer e-mail + senha com 6+ caracteres)
 - Dashboard: leads, conversas, fila Ester, espera, ofertas
 - Leads no passo do fluxo (print, banca, espera, oferta só se o grafo deixar)
-- Conversas = eventos do runtime
-- Funil com mapa (tráfego, landing, campanha) e fluxo executável
-- Simulador no editor
-- Telegram: webhook no Worker (`/api/telegram`)
-- Configurações: canal, Sté (handoff), Ester, plugins
+- Conversas Telegram: a Sté (Mãe do Aviator) fala uma frase e espera o lead
+- Funil com mapa e fluxo executável
+- Telegram: webhook no Worker (`/api/telegram`) — /start abre a Sté
+- Configurações: bot Telegram, Sté ligada/desligada
 - Persistência local + Supabase quando houver anon key
 
 ## Stack

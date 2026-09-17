@@ -19,6 +19,7 @@ function blankLead(): Lead {
     stage: "welcome",
     memory: "",
     events: [],
+    messages: [],
     createdAt: now,
     updatedAt: now,
   }

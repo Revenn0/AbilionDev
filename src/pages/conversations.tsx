@@ -1,20 +1,36 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { MessagesSquare } from "lucide-react"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { useStore } from "@/lib/store"
 import { hasConversation } from "@/lib/ops"
 import { TEMP_LABEL } from "@/lib/labels"
-import { nodeTitle, publishedSnapshot } from "@/lib/runtime"
+import { replySte } from "@/lib/ste"
 import { timeAgo } from "@/lib/format"
-import type { LeadEvent } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 export function ConversationsPage() {
-  const { state } = useStore()
-  const rows = state.leads.filter(hasConversation)
+  const { state, saveLead } = useStore()
+  const rows = state.leads.filter((lead) => lead.channel === "telegram" && hasConversation(lead))
   const [id, setId] = useState<string | null>(null)
   const lead = rows.find((item) => item.id === id) ?? rows[0] ?? null
-  const snapshot = publishedSnapshot(state.funnels)
+  const [draft, setDraft] = useState("")
+  const end = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: "end" })
+  }, [lead?.id, lead?.messages?.length])
+
+  const send = (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!lead || lead.steBlocked) return
+    const text = draft.trim()
+    if (!text) return
+    const result = replySte(lead, text)
+    saveLead(result.lead)
+    setDraft("")
+  }
 
   return (
     <div className="h-full overflow-hidden">
@@ -22,13 +38,13 @@ export function ConversationsPage() {
         <PageChrome icon={MessagesSquare} title="Conversas" />
         {rows.length === 0 ? (
           <section className="surface grid place-items-center px-6 py-16 text-center">
-            <p className="text-[14px] font-medium">Nenhuma conversa</p>
+            <p className="text-[14px] font-medium">Nenhuma conversa no Telegram</p>
             <p className="mt-1 max-w-md text-[13px] text-muted-foreground">
-              Join ou /start entram no fluxo publicado. As bolhas são os eventos do runtime — não um chat inventado.
+              /start ou uma captura Telegram abre a Sté. Ela manda uma frase e espera o lead.
             </p>
           </section>
         ) : (
-          <section className="surface grid min-h-[520px] overflow-hidden md:grid-cols-[280px_1fr]">
+          <section className="surface grid min-h-[520px] overflow-hidden md:grid-cols-[260px_1fr]">
             <ul className="border-b border-border md:border-b-0 md:border-r">
               {rows.map((item) => (
                 <li key={item.id}>
@@ -47,54 +63,46 @@ export function ConversationsPage() {
               ))}
             </ul>
             {lead && (
-              <div className="flex flex-col p-5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex min-h-0 flex-col">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-5 py-4">
                   <div>
                     <p className="text-[15px] font-medium">{lead.name}</p>
                     <p className="text-[12.5px] text-muted-foreground">
-                      {nodeTitle(snapshot, lead.nodeId) ?? "Fluxo"} · {lead.campaign} · {timeAgo(lead.updatedAt)}
+                      Sté · Telegram · {lead.contact} · {timeAgo(lead.updatedAt)}
                     </p>
                   </div>
-                  <StatusPill tone={lead.temperature === "quente" ? "danger" : lead.temperature === "morno" ? "warn" : "muted"}>
-                    {TEMP_LABEL[lead.temperature]}
+                  <StatusPill tone={lead.steBlocked ? "danger" : lead.temperature === "quente" ? "danger" : "muted"}>
+                    {lead.steBlocked ? "Encerrado" : TEMP_LABEL[lead.temperature]}
                   </StatusPill>
                 </div>
-                <div className="mt-6 space-y-3 overflow-y-auto">
-                  {lead.events.length === 0 && <Bubble who="mapa" text="Ainda sem eventos do fluxo." />}
-                  {lead.events.map((item) => (
-                    <EventBubble key={item.id} event={item} />
+                <div className="flex-1 space-y-2 overflow-y-auto px-5 py-4">
+                  {(lead.messages ?? []).map((item) => (
+                    <div
+                      key={item.id}
+                      className={cn("max-w-[80%] rounded-2xl px-3.5 py-2.5", item.role === "ste" ? "bg-muted" : "ml-auto bg-sky-500/15")}
+                    >
+                      <p className="text-[10px] font-medium text-muted-foreground">{item.role === "ste" ? "Sté" : "Lead"}</p>
+                      <p className="mt-0.5 text-[13.5px] leading-relaxed">{item.text}</p>
+                    </div>
                   ))}
-                  {lead.memory && <Bubble who="memoria" text={lead.memory} />}
+                  <div ref={end} />
                 </div>
+                <form onSubmit={send} className="flex gap-2 border-t border-border p-3">
+                  <Input
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                    placeholder={lead.steBlocked ? "Sté não responde mais este contacto." : "Mensagem do lead no Telegram…"}
+                    disabled={lead.steBlocked}
+                  />
+                  <Button type="submit" className="rounded-full" disabled={lead.steBlocked || !draft.trim()}>
+                    Enviar
+                  </Button>
+                </form>
               </div>
             )}
           </section>
         )}
       </div>
-    </div>
-  )
-}
-
-function EventBubble({ event }: { event: LeadEvent }) {
-  const who =
-    event.kind === "handoff"
-      ? "ste"
-      : event.kind === "notify_ester" || event.kind === "print" || event.kind === "banca"
-        ? "ester"
-        : event.kind === "blocked"
-          ? "mapa"
-          : "fluxo"
-  return <Bubble who={who} text={event.body || event.title || event.kind} />
-}
-
-function Bubble({ who, text }: { who: "ste" | "mapa" | "memoria" | "ester" | "fluxo"; text?: string }) {
-  if (!text) return null
-  const label =
-    who === "ste" ? "Sté" : who === "ester" ? "Ester" : who === "memoria" ? "Memória" : who === "fluxo" ? "Fluxo" : "Campanha"
-  return (
-    <div className="max-w-lg rounded-2xl bg-muted px-4 py-3">
-      <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
-      <p className="mt-1 text-[13.5px] leading-relaxed">{text}</p>
     </div>
   )
 }

@@ -152,6 +152,7 @@ export function applyEvent(
   const next: Lead = {
     ...lead,
     events: [...(lead.events ?? [])],
+    messages: [...(lead.messages ?? [])],
     campaign: lead.campaign || campaignFor(lead.channel),
   }
   const effects: RuntimeEffect[] = []

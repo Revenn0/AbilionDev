@@ -121,6 +121,16 @@ export type LeadEvent = {
   effect?: string
 }
 
+export type ChatRole = "lead" | "ste"
+export type StePhase = "entry" | "listen" | "diagnosis" | "solution" | "offer" | "closed"
+
+export type ChatMessage = {
+  id: string
+  at: string
+  role: ChatRole
+  text: string
+}
+
 export type Lead = {
   id: string
   name: string
@@ -139,6 +149,10 @@ export type Lead = {
   waitUntil?: string
   paused?: boolean
   events: LeadEvent[]
+  messages: ChatMessage[]
+  stePhase?: StePhase
+  steBlocked?: boolean
+  telegramChatId?: string
   updatedAt: string
   createdAt: string
 }
@@ -181,10 +195,10 @@ export const defaultSettings: Settings = {
   telegramBotUsername: "",
   telegramBotToken: "",
   telegramGroupUrl: "",
-  steLinkedTelegram: false,
+  steLinkedTelegram: true,
   steLinkedWhatsapp: false,
   steWelcome:
-    "Oi, eu sou a Sté. Vi que você chegou pelo mini curso — vou te acompanhar daqui. Qualquer dúvida, é só me chamar.",
+    "Oi, tudo bom? Aqui é a Sté. Selecionei algumas pessoas para chamar hoje e trocar uma ideia. Me diz: como estão sendo seus resultados com o Aviator?",
   esterNotify: true,
   esterTelegramChatId: "",
 }

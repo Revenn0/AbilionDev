@@ -8,7 +8,10 @@ function startOfDay(ms: number) {
 }
 
 export function hasConversation(lead: Lead) {
-  return Boolean(lead.lastMessage) || lead.events.some((item) => item.kind === "message" || item.kind === "handoff") || lead.stage !== "capture" || lead.origin === "private"
+  return (
+    lead.channel === "telegram" &&
+    ((lead.messages?.length ?? 0) > 0 || Boolean(lead.lastMessage) || lead.origin === "private" || lead.origin === "group_join")
+  )
 }
 
 export function needsEster(lead: Lead) {

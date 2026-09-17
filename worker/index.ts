@@ -1,4 +1,5 @@
 import { campaignFor } from "../src/lib/labels"
+import { replySteSmart } from "../src/lib/ste"
 import { applyEvent, dueWaits, eventFromOrigin, publishedSnapshot } from "../src/lib/runtime"
 import { BANCA_FIXED, type Lead, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types"
 
@@ -12,6 +13,8 @@ export interface Env {
   ESTER_CHAT_ID?: string
   WHATSAPP_TOKEN?: string
   APP_URL?: string
+  OPENAI_API_KEY?: string
+  OPENAI_BASE_URL?: string
 }
 
 const WORKSPACE = "local"
@@ -35,7 +38,7 @@ async function handleApi(request: Request, env: Env, url: URL) {
       ok: true,
       telegram: Boolean(env.TELEGRAM_BOT_TOKEN),
       supabase: Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE),
-      whatsapp: Boolean(env.WHATSAPP_TOKEN),
+      ste: true,
     })
   }
 
@@ -79,11 +82,11 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
   const { funnels, leads, settings } = await loadWorkspace(env)
   const existing = leads.find((lead) => lead.contact === contact || lead.contact === `tg:${from.id}`)
   const snapshot = publishedSnapshot(funnels)
+  const now = new Date().toISOString()
   let lead: Lead
   if (existing) {
-    lead = applyEvent(snapshot, existing, joinUser ? { type: "join" } : { type: "start" }).lead
+    lead = existing
   } else {
-    const now = new Date().toISOString()
     lead = applyEvent(
       snapshot,
       {
@@ -97,6 +100,7 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
         stage: origin === "group_join" ? "group" : "welcome",
         memory: "",
         events: [],
+        messages: [],
         funnelId: funnels.find((item) => item.production)?.id,
         createdAt: now,
         updatedAt: now,
@@ -105,25 +109,23 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
     ).lead
   }
 
+  const chatId = String(message?.chat.id ?? update.chat_member?.chat.id ?? from.id)
+  lead.telegramChatId = chatId
+
+  const privateText = joinUser ? null : message?.text?.startsWith("/start") ? null : message?.text
+  const shouldTalk = settings.steLinkedTelegram !== false && !joinUser
+  if (shouldTalk) {
+    const talked = await replySteSmart(lead, privateText, {
+      apiKey: env.OPENAI_API_KEY,
+      baseUrl: env.OPENAI_BASE_URL,
+    })
+    lead = talked.lead
+    if (talked.reply) {
+      await telegram(token, "sendMessage", { chat_id: chatId, text: talked.reply })
+    }
+  }
+
   await saveLead(env, lead)
-  const chatId = message?.chat.id ?? update.chat_member?.chat.id ?? from.id
-
-  for (const event of lead.events.slice(-6)) {
-    if (event.kind === "message" && event.body) {
-      await telegram(token, "sendMessage", { chat_id: chatId, text: event.body })
-    }
-    if (event.kind === "offer" && event.body) {
-      await telegram(token, "sendMessage", { chat_id: chatId, text: event.body })
-    }
-    if (event.kind === "notify_ester") {
-      await notifyEster(env, token, event.body || BANCA_FIXED, settings)
-    }
-  }
-
-  if (message?.text?.startsWith("/start") && existing) {
-    const next = applyEvent(snapshot, lead, { type: "start" }).lead
-    await saveLead(env, next)
-  }
 }
 
 async function processWaits(env: Env) {
@@ -197,6 +199,10 @@ async function loadWorkspace(env: Env) {
     waitUntil: row.wait_until ?? undefined,
     paused: row.paused ?? false,
     events: byLead.get(row.id) ?? [],
+    messages: row.messages ?? [],
+    stePhase: row.ste_phase ?? undefined,
+    steBlocked: row.ste_blocked ?? false,
+    telegramChatId: row.telegram_chat_id ?? undefined,
     updatedAt: row.updated_at,
     createdAt: row.created_at,
   }))
@@ -227,6 +233,10 @@ async function saveLead(env: Env, lead: Lead) {
       node_id: lead.nodeId ?? null,
       wait_until: lead.waitUntil ?? null,
       paused: lead.paused ?? false,
+      messages: lead.messages ?? [],
+      ste_phase: lead.stePhase ?? null,
+      ste_blocked: lead.steBlocked ?? false,
+      telegram_chat_id: lead.telegramChatId ?? null,
       updated_at: lead.updatedAt,
       created_at: lead.createdAt,
     }),
@@ -324,6 +334,10 @@ type LeadRow = {
   node_id?: string | null
   wait_until?: string | null
   paused?: boolean
+  messages?: Lead["messages"]
+  ste_phase?: Lead["stePhase"] | null
+  ste_blocked?: boolean
+  telegram_chat_id?: string | null
   updated_at: string
   created_at: string
 }

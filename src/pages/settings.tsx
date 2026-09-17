@@ -17,7 +17,6 @@ import { PageChrome, StatusPill } from "@/components/layout/chrome"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { cleanBotUsername } from "@/lib/migrate"
 import { useStore } from "@/lib/store"
@@ -176,45 +175,24 @@ function BotPane() {
 
 function StePane() {
   const { state, saveSettings } = useStore()
-  const [welcome, setWelcome] = useState(state.settings.steWelcome)
 
   return (
     <section className="surface max-w-xl space-y-5 p-6">
       <div>
-        <p className="text-[14px] font-medium">Sté · atendimento</p>
+        <p className="text-[14px] font-medium">Sté · Telegram</p>
         <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
-          A Sté é o nó de handoff: o fluxo pausa e o humano atende. O texto de boas-vindas vive no nó de mensagem. Memória é por lead.
+          Prompt interno da Sté (Mãe do Aviator) vive no motor: uma frase curta, espera o lead, não empurra o app no início.
+          Ofensa encerra o contacto para sempre. Landing: app.mundoaviator.com.br
         </p>
       </div>
       <label className="flex items-center justify-between gap-4">
-        <span className="text-[13.5px]">Vincular no Telegram</span>
+        <span className="text-[13.5px]">Sté a falar no Telegram</span>
         <Switch
           checked={state.settings.steLinkedTelegram}
           onCheckedChange={(checked) => saveSettings({ steLinkedTelegram: checked })}
-          aria-label="Vincular Sté no Telegram"
+          aria-label="Sté no Telegram"
         />
       </label>
-      <label className="flex items-center justify-between gap-4">
-        <span className="text-[13.5px]">Vincular no WhatsApp</span>
-        <Switch
-          checked={state.settings.steLinkedWhatsapp}
-          onCheckedChange={(checked) => saveSettings({ steLinkedWhatsapp: checked })}
-          aria-label="Vincular Sté no WhatsApp"
-        />
-      </label>
-      <div className="space-y-1.5">
-        <Label htmlFor="ste-welcome">Boas-vindas</Label>
-        <Textarea id="ste-welcome" value={welcome} onChange={(event) => setWelcome(event.target.value)} className="min-h-28" />
-      </div>
-      <Button
-        className="rounded-full"
-        onClick={() => {
-          saveSettings({ steWelcome: welcome })
-          toast.success("Sté actualizada.")
-        }}
-      >
-        Guardar
-      </Button>
     </section>
   )
 }

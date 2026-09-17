@@ -67,6 +67,10 @@ export async function pullRemote(): Promise<RemoteBundle | null> {
         waitUntil: row.wait_until ?? undefined,
         paused: row.paused ?? false,
         events: eventsByLead.get(row.id) ?? [],
+        messages: row.messages ?? [],
+        stePhase: row.ste_phase ?? undefined,
+        steBlocked: row.ste_blocked ?? false,
+        telegramChatId: row.telegram_chat_id ?? undefined,
         updatedAt: row.updated_at,
         createdAt: row.created_at,
       })
@@ -115,6 +119,10 @@ export async function pushRemote(state: AppState): Promise<boolean> {
       node_id: lead.nodeId ?? null,
       wait_until: lead.waitUntil ?? null,
       paused: lead.paused ?? false,
+      messages: lead.messages ?? [],
+      ste_phase: lead.stePhase ?? null,
+      ste_blocked: lead.steBlocked ?? false,
+      telegram_chat_id: lead.telegramChatId ?? null,
       updated_at: lead.updatedAt,
       created_at: lead.createdAt,
     }))
