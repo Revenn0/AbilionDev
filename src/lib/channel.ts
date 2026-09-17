@@ -1,8 +1,5 @@
 export function workerUrl() {
-  if (typeof window !== "undefined") {
-    const local = window.location.port === "43173" || window.location.hostname === "127.0.0.1"
-    if (local) return window.location.origin
-  }
+  if (typeof window !== "undefined") return window.location.origin
   const fromEnv = import.meta.env.VITE_APP_URL as string | undefined
   if (fromEnv) return fromEnv.replace(/\/$/, "")
   return "https://abilion.vsanches1060.workers.dev"

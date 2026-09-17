@@ -50,12 +50,18 @@ Projecto já usado no wrangler:
 
 ## Cloudflare
 
-- Produção: `abilion` → `https://abilion.vsanches1060.workers.dev`
+- Produção: Worker `abilion` → [https://abilion.vsanches1060.workers.dev](https://abilion.vsanches1060.workers.dev)
 - Staging: `abilion-staging` → `https://abilion-staging.vsanches1060.workers.dev`
+- `abilion.com` / `app.abilion.com` ainda não estão na zona Cloudflare desta conta (DNS noutro sítio). Quando a zona estiver na CF, acrescenta em `wrangler.jsonc`:
+
+```jsonc
+"routes": [{ "pattern": "app.abilion.com", "custom_domain": true }]
+```
 
 ```bash
-npm run build
-npx wrangler deploy
+npm install
+npx wrangler login
+npm run deploy
 ```
 
 Secrets (nunca no git):
