@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "abilion",
+  "name": "abiliondev",
   "main": "worker/index.ts",
   "compatibility_date": "2026-08-23",
   "compatibility_flags": ["nodejs_compat"],
@@ -19,7 +19,6 @@
   },
   "vars": {
     "SUPABASE_URL": "https://eyjgmkmaixmpmeeahxon.supabase.co",
-    "APP_URL": "https://abilion.vsanches1060.workers.dev",
     "ABILION_ENV": "production"
   }
 }

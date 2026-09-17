@@ -18,7 +18,7 @@ Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / M
 
 Vite + React + TypeScript + Tailwind + shadcn/ui + React Flow.
 
-Worker Cloudflare (`abilion` / `abilion-staging`) serve o estático e as rotas `/api/*`.
+Worker Cloudflare (`abiliondev`) serve o estático e as rotas `/api/*`. O Worker antigo `abilion` / `*.vsanches1060.workers.dev` ficou de fora.
 
 Dados: `localStorage` sempre; Supabase do projecto já usado se `VITE_SUPABASE_ANON_KEY` existir.
 
@@ -50,18 +50,18 @@ Projecto já usado no wrangler:
 
 ## Cloudflare
 
-- Produção: Worker `abilion` → [https://abilion.vsanches1060.workers.dev](https://abilion.vsanches1060.workers.dev)
-- Staging: `abilion-staging` → `https://abilion-staging.vsanches1060.workers.dev`
-- `abilion.com` / `app.abilion.com` ainda não estão na zona Cloudflare desta conta (DNS noutro sítio). Quando a zona estiver na CF, acrescenta em `wrangler.jsonc`:
-
-```jsonc
-"routes": [{ "pattern": "app.abilion.com", "custom_domain": true }]
-```
+Este recorte publica no Worker **`abiliondev`**, não no `abilion` antigo.
 
 ```bash
 npm install
 npx wrangler login
 npm run deploy
+```
+
+Para apontar um domínio Abilion novo (zona na Cloudflare):
+
+```jsonc
+"routes": [{ "pattern": "app.abilion.com", "custom_domain": true }]
 ```
 
 Secrets (nunca no git):
@@ -74,7 +74,7 @@ npx wrangler secret put CRON_SECRET
 npx wrangler secret put ESTER_CHAT_ID
 ```
 
-Webhook Telegram: `https://abilion.vsanches1060.workers.dev/api/telegram`  
+Webhook Telegram: `{origem}/api/telegram`  
 Cron de espera: hora a hora, ou `GET /api/cron?secret=…`  
 WhatsApp Cloud: `POST /api/whatsapp` (mesmo contrato; token opcional)
 

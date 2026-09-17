@@ -1,8 +1,6 @@
 export function workerUrl() {
   if (typeof window !== "undefined") return window.location.origin
-  const fromEnv = import.meta.env.VITE_APP_URL as string | undefined
-  if (fromEnv) return fromEnv.replace(/\/$/, "")
-  return "https://abilion.vsanches1060.workers.dev"
+  return ((import.meta.env.VITE_APP_URL as string | undefined) ?? "").replace(/\/$/, "")
 }
 
 export async function fetchHealth() {
