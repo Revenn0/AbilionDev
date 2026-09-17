@@ -103,9 +103,9 @@
 
 .dark {
   color-scheme: dark;
-  --background: #0c0c0c;
+  --background: #0a0a0a;
   --foreground: #f4f4f5;
-  --card: #141414;
+  --card: #171717;
   --card-foreground: #f4f4f5;
   --popover: #161616;
   --popover-foreground: #f4f4f5;
@@ -126,7 +126,7 @@
   --chart-3: #5b8cff;
   --chart-4: #eab308;
   --chart-5: oklch(0.68 0.2 25);
-  --sidebar: #111111;
+  --sidebar: #121212;
   --sidebar-foreground: #f4f4f5;
   --sidebar-primary: #f4f4f5;
   --sidebar-primary-foreground: #111113;

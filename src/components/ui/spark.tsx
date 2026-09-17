@@ -7,8 +7,8 @@ export function SparkBars({ values, className }: { values: number[]; className?:
       {values.map((value, index) => (
         <div
           key={index}
-          className="w-[3px] rounded-[1px] bg-foreground/22"
-          style={{ height: `${Math.max(10, (value / max) * 100)}%` }}
+          className="w-[3px] rounded-[1px] bg-foreground/35"
+          style={{ height: `${Math.max(22, (value / max) * 100)}%` }}
         />
       ))}
     </div>
