@@ -22,16 +22,24 @@ import { RenameFunnelDialog } from "./rename-dialog"
 import { autoLayout, positionFromPointer } from "@/components/canvas/layout"
 import { cn } from "@/lib/utils"
 import type { SalesFunnel, SalesKind, SalesSnapshot } from "@/lib/types"
+import { validatePublish } from "@/lib/validate"
 import { defaultSalesData, type SalesCatalogItem } from "./catalog"
 import { SalesInspector } from "./inspector"
 import { salesNodeTypes, type SalesCanvasNode } from "./nodes"
 import { SalesPalette } from "./palette"
+import { FlowSimulator } from "./simulator"
 
 const SALES_BOX = { w: 420, h: 320 }
 
-function toRf(funnel: Pick<SalesFunnel, "nodes" | "edges">): { nodes: SalesCanvasNode[]; edges: Edge[] } {
+function toRf(funnel: Pick<SalesFunnel, "nodes" | "edges">, cursor?: string): { nodes: SalesCanvasNode[]; edges: Edge[] } {
   return {
-    nodes: funnel.nodes.map((n) => ({ id: n.id, type: n.type, position: n.position, data: { ...n.data } })),
+    nodes: funnel.nodes.map((n) => ({
+      id: n.id,
+      type: n.type,
+      position: n.position,
+      selected: n.id === cursor,
+      data: { ...n.data },
+    })),
     edges: funnel.edges.map((e) => ({
       id: e.id,
       source: e.source,
@@ -52,6 +60,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
   const [selected, setSelected] = useState<SalesCanvasNode | undefined>()
   const [rf, setRf] = useState<ReactFlowInstance<SalesCanvasNode, Edge> | null>(null)
   const [renameOpen, setRenameOpen] = useState(false)
+  const [cursor, setCursor] = useState<string | undefined>()
   const keepDropSelection = useRef(false)
   const didFit = useRef(false)
 
@@ -74,7 +83,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
   }, [])
   const readOnly = version === "production"
 
-  const displayed = version === "production" && production ? toRf(production) : { nodes, edges }
+  const displayed = version === "production" && production ? toRf(production, cursor) : { nodes, edges }
 
   const persist = (
     prod = production,
@@ -87,7 +96,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
       status,
       production: prod ?? null,
       updatedAt: new Date().toISOString(),
-      nodes: nodes.map((n) => ({ id: n.id, type: (n.type as SalesKind) || "whatsapp", position: n.position, data: n.data })),
+      nodes: nodes.map((n) => ({ id: n.id, type: (n.type as SalesKind) || "message", position: n.position, data: n.data })),
       edges: edges.map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle ?? undefined })),
     }
     onSave(next)
@@ -146,7 +155,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
         >
           <Pencil className="size-3.5" />
         </Button>
-        <span className="rounded-full bg-white/6 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">Funil de vendas</span>
+        <span className="rounded-full bg-white/6 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">Fluxo da operação</span>
         <div className="flex rounded-full border p-0.5 text-[11px]">
           <button
             type="button"
@@ -195,15 +204,32 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
             className="h-8 rounded-full text-[12px]"
             disabled={readOnly}
             onClick={() => {
+              const draftNodes = nodes.map((n) => ({
+                id: n.id,
+                type: (n.type as SalesKind) || "message",
+                position: n.position,
+                data: n.data,
+              }))
+              const draftEdges = edges.map((e) => ({
+                id: e.id,
+                source: e.source,
+                target: e.target,
+                sourceHandle: e.sourceHandle ?? undefined,
+              }))
+              const issues = validatePublish(draftNodes, draftEdges)
+              if (issues.length) {
+                toast.error(issues[0].message)
+                return
+              }
               const snap: SalesSnapshot = {
                 name,
                 publishedAt: new Date().toISOString(),
-                nodes: nodes.map((n) => ({ id: n.id, type: (n.type as SalesKind) || "whatsapp", position: n.position, data: n.data })),
-                edges: edges.map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle ?? undefined })),
+                nodes: draftNodes,
+                edges: draftEdges,
               }
               setProduction(snap)
               persist(snap, "active")
-              toast.success("Funil publicado.")
+              toast.success("Fluxo publicado. Isto é o que corre.")
             }}
           >
             Publicar
@@ -222,7 +248,11 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
         <SalesPalette />
         <div className="relative min-w-0 flex-1">
           <ReactFlow
-            nodes={displayed.nodes}
+            nodes={
+              cursor
+                ? displayed.nodes.map((n) => ({ ...n, selected: n.id === cursor || n.selected }))
+                : displayed.nodes
+            }
             edges={displayed.edges}
             onNodesChange={readOnly ? undefined : onNodesChange}
             onEdgesChange={readOnly ? undefined : onEdgesChange}
@@ -248,13 +278,45 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
               zoomable
               className="!bg-card"
               nodeColor={(n) =>
-                n.type === "whatsapp" ? "#25D366" : n.type === "split" ? "#7C3AED" : n.type === "sales_page" ? "#2F6BFF" : "#64748B"
+                n.type === "message"
+                  ? "#38bdf8"
+                  : n.type === "handoff"
+                    ? "#f472b6"
+                    : n.type === "offer"
+                      ? "#34d399"
+                      : n.type === "condition"
+                        ? "#a78bfa"
+                        : n.type === "split"
+                          ? "#7C3AED"
+                          : n.type === "landing"
+                            ? "#2F6BFF"
+                            : "#64748B"
               }
             />
           </ReactFlow>
+          <FlowSimulator
+            funnel={{
+              ...funnel,
+              name,
+              production,
+              nodes: nodes.map((n) => ({
+                id: n.id,
+                type: (n.type as SalesKind) || "message",
+                position: n.position,
+                data: n.data,
+              })),
+              edges: edges.map((e) => ({
+                id: e.id,
+                source: e.source,
+                target: e.target,
+                sourceHandle: e.sourceHandle ?? undefined,
+              })),
+            }}
+            onCursor={setCursor}
+          />
           {!selected && version === "draft" && (
-            <p className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-border bg-card/90 px-3.5 py-1.5 text-[12px] text-muted-foreground shadow-sm">
-              Arraste fontes, divisor ou mensagens · clique para editar o texto e a URL
+            <p className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-border bg-card/90 px-3.5 py-1.5 text-[12px] text-muted-foreground shadow-sm max-md:hidden">
+              Arraste entradas e condições · o publicado é o runtime
             </p>
           )}
           <SalesInspector

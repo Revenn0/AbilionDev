@@ -18,10 +18,10 @@ export function positionFromPointer(flowPos: Pos): Pos {
 }
 
 export function dropBoxForKind(kind: string): LayoutBox {
-  if (kind === "sales_page" || kind === "whatsapp" || kind === "telegram" || kind === "email" || kind === "delay" || kind === "split") {
+  if (kind === "landing" || kind === "message" || kind === "wait" || kind === "split" || kind === "handoff" || kind === "offer") {
     return { w: 400, h: 180 }
   }
-  if (kind === "trigger" || kind === "message" || kind === "ask" || kind === "wait") return { w: 260, h: 160 }
+  if (kind === "entry" || kind === "condition" || kind === "notify" || kind === "tag") return { w: 260, h: 160 }
   return { w: 200, h: 120 }
 }
 

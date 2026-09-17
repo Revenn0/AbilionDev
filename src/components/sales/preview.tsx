@@ -3,13 +3,16 @@ import { cn } from "@/lib/utils"
 
 const KIND: Record<SalesKind, { label: string; tone: string }> = {
   traffic: { label: "Tráfego", tone: "bg-slate-500" },
-  trigger: { label: "Quando", tone: "bg-emerald-500" },
-  whatsapp: { label: "WhatsApp", tone: "bg-[#25D366]" },
-  telegram: { label: "Telegram", tone: "bg-sky-500" },
-  email: { label: "E-mail", tone: "bg-[#2F6BFF]" },
-  delay: { label: "Espera", tone: "bg-orange-400" },
-  split: { label: "Divisor", tone: "bg-violet-600" },
-  sales_page: { label: "Página", tone: "bg-[#2F6BFF]" },
+  landing: { label: "Landing", tone: "bg-[#2F6BFF]" },
+  split: { label: "Campanha", tone: "bg-violet-600" },
+  entry: { label: "Entrada", tone: "bg-emerald-500" },
+  message: { label: "Mensagem", tone: "bg-sky-500" },
+  wait: { label: "Espera", tone: "bg-orange-400" },
+  condition: { label: "Condição", tone: "bg-violet-400" },
+  handoff: { label: "Sté", tone: "bg-pink-500" },
+  notify: { label: "Ester", tone: "bg-amber-400" },
+  tag: { label: "Tag", tone: "bg-slate-400" },
+  offer: { label: "Oferta", tone: "bg-emerald-400" },
 }
 
 const NODE_W = 140

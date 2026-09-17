@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { useStore } from "@/lib/store"
+import { workerUrl } from "@/lib/channel"
 import { cn } from "@/lib/utils"
 import type { PluginId } from "@/lib/types"
 import { toast } from "sonner"
@@ -105,13 +106,14 @@ function BotPane() {
   const [username, setUsername] = useState(state.settings.telegramBotUsername)
   const [token, setToken] = useState(state.settings.telegramBotToken)
   const [group, setGroup] = useState(state.settings.telegramGroupUrl)
+  const hook = `${workerUrl()}/api/telegram`
 
   return (
     <section className="surface max-w-xl p-6">
-      <p className="text-[14px] font-medium">Vincular o bot</p>
+      <p className="text-[14px] font-medium">Canal Telegram</p>
       <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
-        Pedido do sócio: tráfego → land → botão Telegram → boas-vindas e a pessoa no grupo. O token fica só neste
-        browser — não vai para o git.
+        Join e /start entram no fluxo publicado. Token neste browser é só local. Em produção:{" "}
+        <code className="text-foreground">wrangler secret put TELEGRAM_BOT_TOKEN</code> — nunca no git.
       </p>
       <form
         className="mt-5 space-y-4"
@@ -150,11 +152,12 @@ function BotPane() {
             placeholder="https://t.me/..."
           />
         </div>
+        <p className="break-all text-[12px] text-muted-foreground">Webhook · {hook}</p>
         <div className="flex items-center gap-2">
           <StatusPill tone={state.settings.telegramBotToken ? "success" : "muted"}>
-            {state.settings.telegramBotToken ? "Token presente" : "Sem token"}
+            {state.settings.telegramBotToken ? "Token local" : "Sem token local"}
           </StatusPill>
-          <StatusPill>Webhook por ligar</StatusPill>
+          <StatusPill>Worker /api/telegram</StatusPill>
         </div>
         <Button type="submit" className="rounded-full">
           Vincular
@@ -173,7 +176,7 @@ function StePane() {
       <div>
         <p className="text-[14px] font-medium">Sté · atendimento</p>
         <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
-          A Sté fala como pessoa. O mesmo agente no Telegram e no WhatsApp: boas-vindas + material. Memória é por lead.
+          A Sté é o nó de handoff: o fluxo pausa e o humano atende. O texto de boas-vindas vive no nó de mensagem. Memória é por lead.
         </p>
       </div>
       <label className="flex items-center justify-between gap-4">
@@ -211,12 +214,14 @@ function StePane() {
 
 function EsterPane() {
   const { state, saveSettings } = useStore()
+  const [chat, setChat] = useState(state.settings.esterTelegramChatId)
 
   return (
     <section className="surface max-w-xl space-y-4 p-6">
       <p className="text-[14px] font-medium">Ester</p>
       <p className="text-[12.5px] leading-relaxed text-muted-foreground">
-        Humana da casa. Quando o lead manda print do cadastro, ela envia a banca. O bot e a Sté não inventam isso.
+        Humana da casa. O nó notify avisa. A banca só existe depois do print — payload fixo, nunca gerado. Em produção o
+        Worker usa o secret ESTER_CHAT_ID.
       </p>
       <label className="flex items-center justify-between gap-4">
         <span>
@@ -229,6 +234,24 @@ function EsterPane() {
           aria-label="Avisar a Ester"
         />
       </label>
+      <div className="space-y-1.5">
+        <Label htmlFor="ester-chat">Chat da ops (Telegram)</Label>
+        <Input
+          id="ester-chat"
+          value={chat}
+          onChange={(event) => setChat(event.target.value)}
+          placeholder="ID do chat da Ester"
+        />
+      </div>
+      <Button
+        className="rounded-full"
+        onClick={() => {
+          saveSettings({ esterTelegramChatId: chat.trim() })
+          toast.success("Ester actualizada.")
+        }}
+      >
+        Guardar
+      </Button>
     </section>
   )
 }
@@ -242,7 +265,7 @@ function PluginsPane() {
       <div className="mb-3 flex items-end justify-between gap-3">
         <div>
           <p className="text-[14px] font-medium">Plugins</p>
-          <p className="mt-0.5 text-[12.5px] text-muted-foreground">Liga o que a operação precisa. Nada dispara sozinho ainda.</p>
+          <p className="mt-0.5 text-[12.5px] text-muted-foreground">Canais entram no mesmo grafo. WhatsApp usa o contrato do Telegram.</p>
         </div>
         <p className="text-[12.5px] text-muted-foreground">{on} ligados</p>
       </div>

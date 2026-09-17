@@ -14,11 +14,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useStore } from "@/lib/store"
-import { leadFromCapture } from "@/lib/templates"
+import { captureAgainstFunnels } from "@/lib/templates"
 import { ORIGIN_LABEL, STAGE_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { needsEster } from "@/lib/ops"
+import { applyEvent, nodeTitle, publishedSnapshot, type RuntimeEvent } from "@/lib/runtime"
 import { timeAgo } from "@/lib/format"
-import type { Lead, LeadChannel, LeadOrigin, LeadTemp } from "@/lib/types"
+import type { Lead, LeadChannel, LeadOrigin, LeadTemp, SalesFunnel } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -38,6 +39,7 @@ export function LeadsPage() {
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
   const lead = state.leads.find((item) => item.id === selected) ?? null
+  const snapshot = publishedSnapshot(state.funnels)
 
   const rows = useMemo(() => {
     return state.leads.filter((item) => {
@@ -76,18 +78,18 @@ export function LeadsPage() {
                     : item.id === "ester"
                       ? state.leads.filter(needsEster).length
                       : item.id === "whatsapp" || item.id === "telegram"
-                        ? state.leads.filter((lead) => lead.channel === item.id).length
-                        : state.leads.filter((lead) => lead.temperature === item.id).length}
+                        ? state.leads.filter((row) => row.channel === item.id).length
+                        : state.leads.filter((row) => row.temperature === item.id).length}
                 </span>
               </button>
             ))}
           </div>
 
-          <div className="hidden grid-cols-[1.2fr_90px_90px_120px_90px] gap-3 border-b border-border px-5 py-2.5 text-[12px] text-muted-foreground md:grid">
+          <div className="hidden grid-cols-[1.2fr_90px_90px_140px_90px] gap-3 border-b border-border px-5 py-2.5 text-[12px] text-muted-foreground md:grid">
             <p>Nome</p>
             <p>Canal</p>
             <p>Temperatura</p>
-            <p>Etapa</p>
+            <p>Passo</p>
             <p>Quando</p>
           </div>
 
@@ -95,7 +97,7 @@ export function LeadsPage() {
             <div className="grid place-items-center px-6 py-16 text-center">
               <p className="text-[14px] font-medium">Nenhum lead</p>
               <p className="mt-1 max-w-md text-[13px] text-muted-foreground">
-                Replica a planilha: popup do mini curso, join no grupo ou /start. WhatsApp e Telegram não se misturam.
+                Popup, join ou /start entram no fluxo publicado. WhatsApp e Telegram não se misturam.
               </p>
             </div>
           ) : (
@@ -105,7 +107,7 @@ export function LeadsPage() {
                   <button
                     type="button"
                     onClick={() => setSelected(item.id)}
-                    className="grid w-full grid-cols-1 gap-1 border-b border-border px-5 py-3.5 text-left last:border-0 hover:bg-muted/30 md:grid-cols-[1.2fr_90px_90px_120px_90px] md:items-center md:gap-3"
+                    className="grid w-full grid-cols-1 gap-1 border-b border-border px-5 py-3.5 text-left last:border-0 hover:bg-muted/30 md:grid-cols-[1.2fr_90px_90px_140px_90px] md:items-center md:gap-3"
                   >
                     <div className="min-w-0">
                       <p className="truncate text-[13.5px] font-medium">{item.name}</p>
@@ -115,7 +117,7 @@ export function LeadsPage() {
                     <StatusPill tone={item.temperature === "quente" ? "danger" : item.temperature === "morno" ? "warn" : "muted"}>
                       {TEMP_LABEL[item.temperature]}
                     </StatusPill>
-                    <p className="text-[12.5px]">{STAGE_LABEL[item.stage]}</p>
+                    <p className="truncate text-[12.5px]">{nodeTitle(snapshot, item.nodeId) ?? STAGE_LABEL[item.stage]}</p>
                     <p className="text-[12px] text-muted-foreground">{timeAgo(item.updatedAt)}</p>
                   </button>
                 </li>
@@ -125,10 +127,11 @@ export function LeadsPage() {
         </section>
       </div>
 
-      <CaptureDialog open={open} onOpenChange={setOpen} onCreate={createLead} />
+      <CaptureDialog open={open} onOpenChange={setOpen} onCreate={createLead} funnels={state.funnels} />
       <LeadDrawer
         lead={lead}
         esterNotify={state.settings.esterNotify}
+        funnels={state.funnels}
         onClose={() => setSelected(null)}
         onSave={saveLead}
       />
@@ -140,10 +143,12 @@ function CaptureDialog({
   open,
   onOpenChange,
   onCreate,
+  funnels,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCreate: (lead: Lead) => void
+  funnels: SalesFunnel[]
 }) {
   const [name, setName] = useState("")
   const [contact, setContact] = useState("")
@@ -153,8 +158,8 @@ function CaptureDialog({
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
     if (!name.trim() || !contact.trim()) return
-    onCreate(leadFromCapture({ name, contact, channel, origin }))
-    toast.success("Lead no CRM.")
+    onCreate(captureAgainstFunnels({ name, contact, channel, origin }, funnels))
+    toast.success("Lead no fluxo.")
     setName("")
     setContact("")
     onOpenChange(false)
@@ -165,7 +170,7 @@ function CaptureDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Nova captura</DialogTitle>
-          <DialogDescription>Os dados do popup ou do join entram aqui — não numa planilha.</DialogDescription>
+          <DialogDescription>O lead entra no funil publicado — não numa planilha.</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-3">
           <Field id="lead-name" label="Nome" value={name} onChange={setName} />
@@ -234,32 +239,51 @@ function Field({
 function LeadDrawer({
   lead,
   esterNotify,
+  funnels,
   onClose,
   onSave,
 }: {
   lead: Lead | null
   esterNotify: boolean
+  funnels: SalesFunnel[]
   onClose: () => void
   onSave: (lead: Lead) => void
 }) {
   if (!lead) return null
+  const snapshot = publishedSnapshot(funnels)
 
-  const patch = (next: Partial<Lead>) => onSave({ ...lead, ...next, updatedAt: new Date().toISOString() })
+  const run = (event: RuntimeEvent, ok: string, blocked?: string) => {
+    const result = applyEvent(snapshot, lead, event)
+    onSave(result.lead)
+    const stop = result.effects.find((item) => item.kind === "blocked")
+    if (stop) {
+      toast.error(blocked ?? stop.reason)
+      return
+    }
+    toast.success(ok)
+  }
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <aside className="relative z-10 flex h-full w-full max-w-md flex-col overflow-y-auto bg-card p-6 shadow-xl">
-        <p className="text-[12px] text-muted-foreground">{ORIGIN_LABEL[lead.origin]} · {lead.campaign}</p>
+        <p className="text-[12px] text-muted-foreground">
+          {ORIGIN_LABEL[lead.origin]} · {lead.campaign}
+        </p>
         <h2 className="mt-1 text-[20px] font-medium tracking-tight">{lead.name}</h2>
         <p className="mt-1 text-[13px] text-muted-foreground">{lead.contact}</p>
+        <p className="mt-2 text-[12.5px] text-muted-foreground">
+          Passo · {nodeTitle(snapshot, lead.nodeId) ?? STAGE_LABEL[lead.stage]}
+          {lead.waitUntil ? " · à espera" : ""}
+          {lead.paused ? " · pausado" : ""}
+        </p>
 
         <div className="mt-5 flex flex-wrap gap-1.5">
           {(["novo", "morno", "quente"] as LeadTemp[]).map((temp) => (
             <button
               key={temp}
               type="button"
-              onClick={() => patch({ temperature: temp })}
+              onClick={() => onSave({ ...lead, temperature: temp, updatedAt: new Date().toISOString() })}
               className={cn(
                 "h-7 rounded-full px-2.5 text-[12px]",
                 lead.temperature === temp ? "bg-foreground text-background" : "bg-muted text-muted-foreground"
@@ -270,16 +294,12 @@ function LeadDrawer({
           ))}
         </div>
 
-        <p className="mt-5 text-[12.5px] text-muted-foreground">Etapa · {STAGE_LABEL[lead.stage]}</p>
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-4 flex flex-wrap gap-2">
           <Button
             size="sm"
             variant="outline"
             className="rounded-full"
-            onClick={() => {
-              patch({ stage: "print", printAt: new Date().toISOString() })
-              toast.success(esterNotify ? "Aviso para a Ester: enviar a banca." : "Print registado. A Sté não inventa banca.")
-            }}
+            onClick={() => run({ type: "print" }, esterNotify ? "Aviso para a Ester: enviar a banca." : "Print no fluxo. A Sté não inventa banca.")}
           >
             Print do cadastro
           </Button>
@@ -288,15 +308,26 @@ function LeadDrawer({
             variant="outline"
             className="rounded-full"
             disabled={!lead.printAt}
-            onClick={() => patch({ stage: "banca", bancaAt: new Date().toISOString() })}
+            onClick={() => run({ type: "banca" }, "Ester enviou a banca.", "Sem print não há banca.")}
           >
             Ester enviou a banca
           </Button>
-          <Button size="sm" variant="outline" className="rounded-full" onClick={() => patch({ stage: "attendance", lastMessage: lead.lastMessage ?? "Sté no 1:1" })}>
-            Sté no 1:1
+          <Button size="sm" variant="outline" className="rounded-full" onClick={() => run({ type: "resume" }, "Fluxo segue a partir da Sté.")}>
+            Sté no 1:1 / seguir
           </Button>
-          <Button size="sm" variant="outline" className="rounded-full" onClick={() => patch({ stage: "offer" })}>
-            Bot ofereceu produto
+          <Button
+            size="sm"
+            variant="outline"
+            className="rounded-full"
+            onClick={() => {
+              const when = lead.waitUntil ? new Date(lead.waitUntil).getTime() + 1000 : Date.now()
+              const result = applyEvent(snapshot, lead, { type: "timer" }, when)
+              onSave(result.lead)
+              const offered = result.effects.some((item) => item.kind === "offer")
+              toast.success(offered ? "Oferta disparada pelo fluxo." : "Espera avançada.")
+            }}
+          >
+            Avançar espera / oferta
           </Button>
         </div>
 
@@ -307,9 +338,20 @@ function LeadDrawer({
           id="lead-memory"
           className="mt-1.5 min-h-28"
           value={lead.memory}
-          onChange={(event) => patch({ memory: event.target.value })}
+          onChange={(event) => onSave({ ...lead, memory: event.target.value, updatedAt: new Date().toISOString() })}
           placeholder="O que esta pessoa já disse. Não misturar com outro chat."
         />
+
+        {lead.events.length > 0 && (
+          <ul className="mt-5 space-y-2 text-[12.5px] text-muted-foreground">
+            {lead.events.slice(-8).reverse().map((item) => (
+              <li key={item.id}>
+                <span className="font-medium text-foreground">{item.title ?? item.kind}</span>
+                {item.body ? ` · ${item.body}` : ""}
+              </li>
+            ))}
+          </ul>
+        )}
 
         <div className="mt-auto pt-6">
           <Button variant="ghost" className="rounded-full" onClick={onClose}>

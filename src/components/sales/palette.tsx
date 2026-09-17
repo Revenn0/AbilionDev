@@ -1,19 +1,21 @@
-import { Clock3, GitFork, Mail, Send, Zap } from "lucide-react"
-import { GoogleGlyph, InstagramGlyph, MetaGlyph, WhatsAppGlyph, YouTubeGlyph } from "@/components/canvas/icons"
+import { Bell, Clock3, GitBranch, GitFork, Handshake, MessageSquare, Play, Tag, Zap } from "lucide-react"
+import { MetaGlyph, YouTubeGlyph } from "@/components/canvas/icons"
 import { SALES_CATALOG, SALES_GROUPS } from "./catalog"
 import type { SalesKind } from "@/lib/types"
 
 function ItemIcon({ id, kind }: { id: string; kind: SalesKind }) {
-  if (id === "traffic-ig") return <InstagramGlyph className="size-5" />
   if (id === "traffic-yt") return <YouTubeGlyph className="size-5" />
-  if (id === "traffic-gg") return <GoogleGlyph className="size-5" />
   if (id === "traffic-meta") return <MetaGlyph className="size-5" />
-  if (kind === "whatsapp") return <WhatsAppGlyph className="size-5" />
-  if (kind === "telegram") return <Send className="size-4 text-sky-600" />
-  if (kind === "email") return <Mail className="size-4 text-primary" />
-  if (kind === "delay") return <Clock3 className="size-4 text-orange-600" />
+  if (kind === "landing") return <Zap className="size-4 text-sky-500" />
   if (kind === "split") return <GitFork className="size-4 text-violet-600" />
-  if (kind === "trigger") return <Zap className="size-4 text-emerald-600" />
+  if (kind === "entry") return <Play className="size-4 text-emerald-600" />
+  if (kind === "message") return <MessageSquare className="size-4 text-sky-600" />
+  if (kind === "wait") return <Clock3 className="size-4 text-orange-600" />
+  if (kind === "condition") return <GitBranch className="size-4 text-violet-500" />
+  if (kind === "handoff") return <Handshake className="size-4 text-pink-500" />
+  if (kind === "notify") return <Bell className="size-4 text-amber-500" />
+  if (kind === "tag") return <Tag className="size-4 text-slate-400" />
+  if (kind === "offer") return <Zap className="size-4 text-emerald-500" />
   return <GitFork className="size-4 text-primary" />
 }
 
@@ -22,13 +24,13 @@ export function SalesPalette() {
     <div className="w-[220px] shrink-0 overflow-y-auto border-r border-border bg-card">
       <div className="px-3.5 pt-4 pb-2">
         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Construtor</p>
-        <p className="text-[12px] text-muted-foreground mt-1 leading-relaxed">Arraste o bloco para o quadro. Clique não adiciona.</p>
+        <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">Mapa explica. Fluxo executa. Arraste o bloco.</p>
       </div>
-      <div className="px-2.5 pb-4 space-y-4">
+      <div className="space-y-4 px-2.5 pb-4">
         {SALES_GROUPS.map((group) => (
           <div key={group.id}>
             <p className="mb-0.5 px-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{group.label}</p>
-            <p className="px-1.5 mb-1.5 text-[11px] text-muted-foreground">{group.hint}</p>
+            <p className="mb-1.5 px-1.5 text-[11px] text-muted-foreground">{group.hint}</p>
             <div className="space-y-1">
               {SALES_CATALOG.filter((item) => item.group === group.id).map((item) => (
                 <div
@@ -45,7 +47,7 @@ export function SalesPalette() {
                   </div>
                   <div className="min-w-0">
                     <p className="truncate text-[13px] font-medium text-foreground">{item.label}</p>
-                    <p className="text-[11px] text-muted-foreground truncate">{item.hint}</p>
+                    <p className="truncate text-[11px] text-muted-foreground">{item.hint}</p>
                   </div>
                 </div>
               ))}

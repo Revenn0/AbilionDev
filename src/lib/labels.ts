@@ -1,4 +1,4 @@
-import type { LeadOrigin, LeadStage, LeadTemp } from "@/lib/types"
+import type { LeadOrigin, LeadStage, LeadTemp } from "./types"
 
 export const TEMP_LABEL: Record<LeadTemp, string> = {
   novo: "Novo",

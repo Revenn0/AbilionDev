@@ -1,4 +1,5 @@
-import type { Lead } from "@/lib/types"
+import { nodeTitle } from "@/lib/runtime"
+import type { Lead, SalesSnapshot } from "@/lib/types"
 
 function startOfDay(ms: number) {
   const date = new Date(ms)
@@ -7,14 +8,22 @@ function startOfDay(ms: number) {
 }
 
 export function hasConversation(lead: Lead) {
-  return Boolean(lead.lastMessage) || lead.stage !== "capture" || lead.origin === "private"
+  return Boolean(lead.lastMessage) || lead.events.some((item) => item.kind === "message" || item.kind === "handoff") || lead.stage !== "capture" || lead.origin === "private"
 }
 
 export function needsEster(lead: Lead) {
   return Boolean(lead.printAt) && !lead.bancaAt
 }
 
-export function deriveOps(leads: Lead[]) {
+export function isWaiting(lead: Lead, now = Date.now()) {
+  return Boolean(lead.waitUntil && new Date(lead.waitUntil).getTime() > now)
+}
+
+export function hasOffer(lead: Lead) {
+  return lead.stage === "offer" || lead.events.some((item) => item.kind === "offer")
+}
+
+export function deriveOps(leads: Lead[], snapshot: SalesSnapshot | null = null) {
   const today = startOfDay(Date.now())
   return {
     leads: leads.length,
@@ -27,6 +36,10 @@ export function deriveOps(leads: Lead[]) {
     morno: leads.filter((lead) => lead.temperature === "morno").length,
     quente: leads.filter((lead) => lead.temperature === "quente").length,
     ester: leads.filter(needsEster).length,
+    waiting: leads.filter((lead) => isWaiting(lead)).length,
+    offered: leads.filter(hasOffer).length,
+    inStep: leads.filter((lead) => Boolean(lead.nodeId)).length,
+    stepLabel: (lead: Lead) => nodeTitle(snapshot, lead.nodeId) ?? lead.stage,
   }
 }
 

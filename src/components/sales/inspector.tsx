@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import type { SalesNodeData } from "@/lib/types"
+import { isMapKind, type SalesNodeData } from "@/lib/types"
 import type { SalesCanvasNode } from "./nodes"
 
 const CHANNELS: { id: NonNullable<SalesNodeData["channel"]>; label: string }[] = [
@@ -29,12 +29,13 @@ export function SalesInspector({
   if (!node) return null
   const d = node.data
   const set = (patch: Partial<typeof d>) => onChange(node.id, { ...d, ...patch })
+  const layer = isMapKind(node.type) ? "Mapa" : "Fluxo"
 
   return (
     <aside className="absolute top-2 right-2 bottom-2 z-20 w-[300px] space-y-3.5 overflow-y-auto rounded-2xl border border-border bg-card/95 p-4 shadow-[0_16px_40px_-24px_rgb(0_0_0/0.7)] backdrop-blur-md">
       <div className="flex items-center justify-between">
         <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-          {node.type === "traffic" || node.type === "split" || node.type === "sales_page" ? "Funil" : "Mensagem"}
+          {layer}
           {readOnly ? " · produção" : ""}
         </p>
         <Button variant="ghost" size="icon-xs" aria-label="Fechar" onClick={onClose}>
@@ -71,29 +72,54 @@ export function SalesInspector({
           </Field>
         </>
       )}
-      {(node.type === "whatsapp" || node.type === "email" || node.type === "trigger") && (
+      {node.type === "entry" && (
+        <Field label="Quando">
+          <div className="flex flex-wrap gap-1.5">
+            {(
+              [
+                ["popup", "Popup"],
+                ["group_join", "Join"],
+                ["start", "/start"],
+                ["any", "Qualquer"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                disabled={readOnly}
+                onClick={() => set({ entryTrigger: id })}
+                className={`rounded-full border px-2.5 py-1 text-[11px] ${
+                  (d.entryTrigger || "any") === id ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-muted-foreground"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </Field>
+      )}
+      {(node.type === "message" || node.type === "handoff" || node.type === "offer") && (
         <Field label="Texto">
           <Textarea disabled={readOnly} rows={5} value={d.body || ""} onChange={(e) => set({ body: e.target.value })} />
         </Field>
       )}
-      {node.type === "trigger" && (
+      {node.type === "notify" && (
         <>
-          <Field label="Quando">
+          <Field label="Aviso">
             <div className="flex flex-wrap gap-1.5">
               {(
                 [
-                  ["incoming_whatsapp", "WhatsApp"],
-                  ["capture", "Captura"],
-                  ["any", "Qualquer mensagem"],
+                  ["ester", "Ester"],
+                  ["banca", "Banca (texto fixo)"],
                 ] as const
               ).map(([id, label]) => (
                 <button
                   key={id}
                   type="button"
                   disabled={readOnly}
-                  onClick={() => set({ triggerType: id })}
+                  onClick={() => set({ notifyKind: id })}
                   className={`rounded-full border px-2.5 py-1 text-[11px] ${
-                    (d.triggerType || "incoming_whatsapp") === id ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-muted-foreground"
+                    (d.notifyKind || "ester") === id ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-muted-foreground"
                   }`}
                 >
                   {label}
@@ -101,29 +127,116 @@ export function SalesInspector({
               ))}
             </div>
           </Field>
-          <Field label="Gatilho">
-            <Input disabled={readOnly} value={d.triggerLabel || ""} onChange={(e) => set({ triggerLabel: e.target.value })} />
+          <Field label="Payload (nunca gerado)">
+            <Textarea disabled={readOnly} rows={5} value={d.notifyBody || ""} onChange={(e) => set({ notifyBody: e.target.value })} />
           </Field>
         </>
       )}
-      {node.type === "email" && (
-        <>
-          <Field label="Enviar de">
-            <Input disabled={readOnly} value={d.fromEmail || ""} onChange={(e) => set({ fromEmail: e.target.value })} />
-          </Field>
-          <Field label="Assunto">
-            <Input disabled={readOnly} value={d.subject || ""} onChange={(e) => set({ subject: e.target.value })} />
-          </Field>
-        </>
-      )}
-      {node.type === "delay" && (
+      {node.type === "wait" && (
         <>
           <Field label="Horas de espera">
-            <Input disabled={readOnly} type="number" min={0} value={d.delayHours ?? 1} onChange={(e) => set({ delayHours: Number(e.target.value) })} />
+            <Input disabled={readOnly} type="number" min={0} value={d.delayHours ?? 84} onChange={(e) => set({ delayHours: Number(e.target.value) })} />
           </Field>
           <Field label="Janela">
             <Input disabled={readOnly} value={d.delayWindow || ""} onChange={(e) => set({ delayWindow: e.target.value })} />
           </Field>
+        </>
+      )}
+      {node.type === "condition" && (
+        <>
+          <Field label="Pergunta">
+            <div className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  ["print", "Print?"],
+                  ["banca", "Banca?"],
+                  ["temperature", "Temperatura"],
+                  ["campaign", "Campanha"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  disabled={readOnly}
+                  onClick={() => set({ conditionKind: id })}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] ${
+                    (d.conditionKind || "print") === id ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-muted-foreground"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </Field>
+          {(d.conditionKind === "temperature" || d.conditionKind === "campaign") && (
+            <Field label="Valor">
+              <Input disabled={readOnly} value={d.conditionValue || ""} onChange={(e) => set({ conditionValue: e.target.value })} placeholder="quente ou telegram" />
+            </Field>
+          )}
+        </>
+      )}
+      {node.type === "tag" && (
+        <>
+          <Field label="Marcar">
+            <div className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  ["temperature", "Temperatura"],
+                  ["campaign", "Campanha"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  disabled={readOnly}
+                  onClick={() => set({ tagKind: id })}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] ${
+                    (d.tagKind || "temperature") === id ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-muted-foreground"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </Field>
+          {d.tagKind !== "campaign" && (
+            <Field label="Temperatura">
+              <div className="flex flex-wrap gap-1.5">
+                {(["novo", "morno", "quente"] as const).map((temp) => (
+                  <button
+                    key={temp}
+                    type="button"
+                    disabled={readOnly}
+                    onClick={() => set({ temperature: temp })}
+                    className={`rounded-full border px-2.5 py-1 text-[11px] ${
+                      d.temperature === temp ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-muted-foreground"
+                    }`}
+                  >
+                    {temp}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          )}
+          {d.tagKind === "campaign" && (
+            <Field label="Travar canal">
+              <div className="flex flex-wrap gap-1.5">
+                {(["whatsapp", "telegram"] as const).map((ch) => (
+                  <button
+                    key={ch}
+                    type="button"
+                    disabled={readOnly}
+                    onClick={() => set({ campaignLock: ch })}
+                    className={`rounded-full border px-2.5 py-1 text-[11px] ${
+                      d.campaignLock === ch ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-muted-foreground"
+                    }`}
+                  >
+                    {ch}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          )}
         </>
       )}
       {node.type === "split" && (
@@ -172,12 +285,12 @@ export function SalesInspector({
           )}
         </div>
       )}
-      {(node.type === "whatsapp" || node.type === "telegram" || node.type === "sales_page") && (
+      {(node.type === "message" || node.type === "landing" || node.type === "offer") && (
         <Field label="Texto do botão">
           <Input disabled={readOnly} value={d.cta || ""} onChange={(e) => set({ cta: e.target.value })} />
         </Field>
       )}
-      {(node.type === "whatsapp" || node.type === "telegram" || node.type === "email" || node.type === "sales_page") && (
+      {(node.type === "message" || node.type === "landing" || node.type === "offer") && (
         <Field label="URL / link real">
           <Input disabled={readOnly} placeholder="https://…" value={d.url || ""} onChange={(e) => set({ url: e.target.value })} />
         </Field>

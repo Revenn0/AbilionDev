@@ -1,8 +1,12 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { nameFromEmail, uid } from "@/lib/format"
+import { migrateFunnel, migrateLead, migrateSettings } from "@/lib/migrate"
+import { pullRemote, pushRemote, supabaseEnabled } from "@/lib/persist"
+import { seededOperation } from "@/lib/templates"
 import { defaultSettings, type AppState, type Lead, type PluginId, type SalesFunnel, type Settings, type User } from "@/lib/types"
 
-const KEY = "abilion.dev.v1"
+const KEY = "abilion.dev.v2"
+const LEGACY = "abilion.dev.v1"
 const SESSION = "abilion.dev.session"
 
 const empty: AppState = {
@@ -14,18 +18,14 @@ const empty: AppState = {
 
 function readState(): AppState {
   try {
-    const raw = localStorage.getItem(KEY)
+    const raw = localStorage.getItem(KEY) ?? localStorage.getItem(LEGACY)
     if (!raw) return empty
     const parsed = JSON.parse(raw) as Partial<AppState>
     return {
       user: parsed.user ?? null,
-      funnels: Array.isArray(parsed.funnels) ? parsed.funnels : [],
-      leads: Array.isArray(parsed.leads) ? parsed.leads : [],
-      settings: {
-        ...defaultSettings,
-        ...(parsed.settings ?? {}),
-        plugins: { ...defaultSettings.plugins, ...(parsed.settings?.plugins ?? {}) },
-      },
+      funnels: Array.isArray(parsed.funnels) ? parsed.funnels.map(migrateFunnel) : [],
+      leads: Array.isArray(parsed.leads) ? parsed.leads.map((lead) => migrateLead(lead as Lead)) : [],
+      settings: migrateSettings(parsed.settings),
     }
   } catch {
     return empty
@@ -41,8 +41,14 @@ function readUser(): User | null {
   }
 }
 
+function withSeed(state: AppState, firstVisit: boolean): AppState {
+  if (state.funnels.length > 0 || !firstVisit) return state
+  return { ...state, funnels: [seededOperation()] }
+}
+
 type Store = {
   ready: boolean
+  remote: "off" | "local" | "cloud"
   state: AppState
   login: (email: string, password: string) => void
   logout: () => void
@@ -60,13 +66,47 @@ const StoreContext = createContext<Store | null>(null)
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false)
+  const [remote, setRemote] = useState<Store["remote"]>("off")
   const [state, setState] = useState<AppState>(empty)
+  const skipPush = useRef(true)
 
   useEffect(() => {
-    const saved = readState()
+    let cancelled = false
+    const firstVisit = !localStorage.getItem(KEY) && !localStorage.getItem(LEGACY)
+    const saved = withSeed(readState(), firstVisit)
     saved.user = readUser()
     setState(saved)
     setReady(true)
+
+    if (!supabaseEnabled()) {
+      setRemote("local")
+      return
+    }
+
+    pullRemote().then((bundle) => {
+      if (cancelled || !bundle) {
+        setRemote("local")
+        return
+      }
+      setRemote("cloud")
+      setState((prev) => {
+        const funnels = bundle.funnels.length ? bundle.funnels : prev.funnels
+        const leads = bundle.leads.length ? bundle.leads : prev.leads
+        return {
+          ...prev,
+          funnels: funnels.length ? funnels.map(migrateFunnel) : [seededOperation()],
+          leads: leads.map((lead) => migrateLead(lead)),
+          settings: {
+            ...migrateSettings(bundle.settings),
+            telegramBotToken: prev.settings.telegramBotToken,
+          },
+        }
+      })
+    })
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
@@ -74,11 +114,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(KEY, JSON.stringify({ ...state, user: null }))
     if (state.user) localStorage.setItem(SESSION, JSON.stringify(state.user))
     else localStorage.removeItem(SESSION)
+    if (skipPush.current) {
+      skipPush.current = false
+      return
+    }
+    if (!supabaseEnabled()) return
+    const timer = window.setTimeout(() => {
+      void pushRemote({
+        ...state,
+        settings: { ...state.settings, telegramBotToken: "" },
+      })
+    }, 600)
+    return () => window.clearTimeout(timer)
   }, [ready, state])
 
   const api = useMemo<Store>(
     () => ({
       ready,
+      remote,
       state,
       login: (email, password) => {
         if (password.length < 6) throw new Error("Informe um e-mail e uma senha com 6+ caracteres.")
@@ -114,7 +167,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           },
         })),
     }),
-    [ready, state]
+    [ready, remote, state]
   )
 
   return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>

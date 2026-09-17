@@ -1,27 +1,26 @@
 # AbilionDev
 
-Recorte novo do Abilion: **login**, **área interna** e **criador de funis**.
-
-A UI veio do CRM-ABILION (`web/`). O resto — inbox, bots, campanhas, Baileys, motor — ficou de fora de propósito.
+Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / ManyChat). Telegram e WhatsApp são canais. Sté e Ester são nós. Banca ninguém inventa.
 
 ## O que entra
 
-- Login em ecrã partido, wordmark e tema claro/escuro
-- Shell interno (sidebar recolhível)
-- Dashboard da operação: leads, conversas, fila Ester, temperatura
-- Leads a funcionar: captura (popup / join / /start), campanha WA ou TG
-- Conversas da Sté com memória por lead
-- Telegram: estado do bot `@vjungerfkaaiii_bot` (token só no browser)
-- Funil visual do mapa de negócio
-- Configurações: bot, Sté, Ester, plugins
-- Canvas com paleta, inspector, rascunho e publicação
-- Variáveis do Supabase e Cloudflare do projecto anterior
+- Login local (qualquer e-mail + senha com 6+ caracteres)
+- Dashboard: leads, conversas, fila Ester, espera, ofertas
+- Leads no passo do fluxo (print, banca, espera, oferta só se o grafo deixar)
+- Conversas = eventos do runtime
+- Funil com mapa (tráfego, landing, campanha) e fluxo executável
+- Simulador no editor
+- Telegram: webhook no Worker (`/api/telegram`)
+- Configurações: canal, Sté (handoff), Ester, plugins
+- Persistência local + Supabase quando houver anon key
 
 ## Stack
 
 Vite + React + TypeScript + Tailwind + shadcn/ui + React Flow.
 
-Dados deste recorte ficam no `localStorage`. Auth remoto e webhooks vêm depois.
+Worker Cloudflare (`abilion` / `abilion-staging`) serve o estático e as rotas `/api/*`.
+
+Dados: `localStorage` sempre; Supabase do projecto já usado se `VITE_SUPABASE_ANON_KEY` existir.
 
 ## Correr
 
@@ -31,26 +30,46 @@ cp .env.example .env
 npm run dev
 ```
 
-Abre [http://127.0.0.1:43173](http://127.0.0.1:43173). Entra com qualquer e-mail e uma senha com 6+ caracteres.
+Abre [http://127.0.0.1:43173](http://127.0.0.1:43173).
+
+## Fluxo
+
+Nós de **mapa** (não executam): tráfego, landing, divisor de campanha.
+
+Nós de **fluxo** (executam): entrada, mensagem, espera, condição, handoff Sté, avisar Ester, tag, oferta.
+
+Sem print → sem banca. Sem o nó de oferta → o canal não vende. Campanhas WA e TG não se misturam.
 
 ## Supabase
 
-Projecto já usado no wrangler do Abilion:
+Projecto já usado no wrangler:
 
 - URL: `https://eyjgmkmaixmpmeeahxon.supabase.co`
-- Anon / service role: secrets no dashboard, nunca no git
+- Correr [`supabase/migrations/001_flow.sql`](supabase/migrations/001_flow.sql) no SQL editor
+- Anon em `.env`. Service role só no Worker
 
 ## Cloudflare
 
-- Worker de produção: `abilion` → `https://abilion.vsanches1060.workers.dev`
+- Produção: `abilion` → `https://abilion.vsanches1060.workers.dev`
 - Staging: `abilion-staging` → `https://abilion-staging.vsanches1060.workers.dev`
-- Conta: `vsanches1060`
-
-Publicar o estático:
 
 ```bash
 npm run build
 npx wrangler deploy
 ```
 
-Segredos (`SUPABASE_ANON_KEY`, `CRON_SECRET`, tokens de canal) vão com `wrangler secret put`, não no `wrangler.jsonc`.
+Secrets (nunca no git):
+
+```bash
+npx wrangler secret put TELEGRAM_BOT_TOKEN
+npx wrangler secret put TELEGRAM_WEBHOOK_SECRET
+npx wrangler secret put SUPABASE_SERVICE_ROLE
+npx wrangler secret put CRON_SECRET
+npx wrangler secret put ESTER_CHAT_ID
+```
+
+Webhook Telegram: `https://abilion.vsanches1060.workers.dev/api/telegram`  
+Cron de espera: hora a hora, ou `GET /api/cron?secret=…`  
+WhatsApp Cloud: `POST /api/whatsapp` (mesmo contrato; token opcional)
+
+O token do `@vjungerfkaaiii_bot` **não** entra no repositório.

@@ -12,6 +12,8 @@ export function DashboardPage() {
   const channelTotal = ops.whatsapp + ops.telegram
   const line = seriesLast30(state.leads, () => true)
   const spark = line.slice(-12)
+  const waitSpark = seriesLast30(state.leads, (lead) => Boolean(lead.waitUntil)).slice(-12)
+  const offerSpark = seriesLast30(state.leads, (lead) => lead.stage === "offer" || lead.events.some((item) => item.kind === "offer")).slice(-12)
 
   return (
     <div className="h-full overflow-y-auto">
@@ -21,16 +23,18 @@ export function DashboardPage() {
           <FilterChip>Todos os canais</FilterChip>
         </PageChrome>
 
-        <section className="grid gap-3 md:grid-cols-3">
+        <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
           <Kpi href="/leads" label="Leads" value={ops.leads} hint={empty ? "à espera de captura" : "na base"} bars={spark} />
           <Kpi
             href="/conversas"
             label="Conversas"
             value={ops.conversations}
-            hint={empty ? "nenhuma iniciada" : "Sté e grupos"}
+            hint={empty ? "nenhuma iniciada" : "eventos do fluxo"}
             bars={spark}
           />
           <Kpi href="/leads" label="Fila Ester" value={ops.ester} hint="print sem banca" bars={spark} />
+          <Kpi href="/leads" label="Aguardando" value={ops.waiting} hint="espera do fluxo" bars={waitSpark} />
+          <Kpi href="/leads" label="Ofertas" value={ops.offered} hint="disparadas pelo quadro" bars={offerSpark} />
         </section>
 
         <section className="surface p-6">
