@@ -3,10 +3,10 @@ import { LogoMark, LogoSwoosh } from "@/components/brand/logo"
 import { ThemeToggle } from "@/components/theme/toggle"
 
 export const AUTH_FIELD =
-  "h-11 rounded-lg border-border bg-background px-3.5 text-[14px] text-foreground placeholder:text-muted-foreground"
+  "h-11 rounded-full border-border bg-card px-3.5 text-[14px] text-foreground placeholder:text-muted-foreground"
 export const AUTH_LABEL = "text-[12.5px] font-medium text-foreground"
 export const AUTH_HINT = "text-[13.5px] leading-relaxed text-muted-foreground"
-export const AUTH_SUBMIT = "h-11 w-full rounded-lg text-[14px] font-medium"
+export const AUTH_SUBMIT = "h-11 w-full rounded-full text-[14px] font-medium"
 export const AUTH_LINK = "text-muted-foreground hover:text-foreground"
 
 export function AuthSplit({ children }: { children: React.ReactNode }) {
@@ -22,7 +22,7 @@ export function AuthSplit({ children }: { children: React.ReactNode }) {
             {children}
           </div>
         </section>
-        <aside className="relative hidden overflow-hidden border-l border-border bg-[color-mix(in_oklch,var(--muted)_55%,var(--background))] lg:flex lg:flex-col lg:justify-between lg:px-16 lg:py-16">
+        <aside className="relative hidden overflow-hidden bg-card lg:flex lg:flex-col lg:justify-between lg:px-16 lg:py-16">
           <LogoMark className="size-9" />
           <div className="max-w-[420px]">
             <p className="text-[12px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Operações</p>

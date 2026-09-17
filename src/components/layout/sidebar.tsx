@@ -43,7 +43,7 @@ function NavLink({
       title={label}
       aria-label={label}
       className={cn(
-        "flex h-9 w-full items-center rounded-lg px-2.5 text-[13px] font-medium",
+        "flex h-9 w-full items-center rounded-full px-2.5 text-[13px] font-medium",
         active
           ? "bg-sidebar-accent text-sidebar-foreground"
           : "text-muted-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
@@ -78,20 +78,31 @@ export function Sidebar({
       className={cn(
         "relative z-20 h-full shrink-0",
         "transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-        expanded ? "w-[232px]" : "w-[68px]"
+        expanded ? "w-[236px]" : "w-[76px]"
       )}
     >
-      <aside className="flex h-full w-full flex-col overflow-hidden border-r border-sidebar-border bg-sidebar">
+      <aside className="flex h-full w-full flex-col overflow-hidden rounded-[28px] bg-sidebar">
         <div className="flex h-14 shrink-0 items-center gap-2.5 px-3">
-          <LogoMark className="size-6 shrink-0" />
+          <LogoMark className="size-5 shrink-0" />
           <p
             className={cn(
-              "truncate text-[14px] font-semibold tracking-[-0.02em] text-foreground transition-[opacity,max-width] duration-200 ease-out motion-reduce:transition-none",
-              expanded ? "max-w-[140px] opacity-100" : "max-w-0 overflow-hidden opacity-0"
+              "truncate text-[13.5px] font-medium tracking-[-0.02em] text-foreground transition-[opacity,max-width] duration-200 ease-out motion-reduce:transition-none",
+              expanded ? "max-w-[120px] opacity-100" : "max-w-0 overflow-hidden opacity-0"
             )}
           >
             Abilion
           </p>
+          {onToggle && (
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-label={expanded ? "Recolher menu" : "Expandir menu"}
+              title={expanded ? "Recolher menu" : "Expandir menu"}
+              className="ml-auto grid size-7 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+            >
+              {expanded ? <PanelLeftClose className="size-3.5" strokeWidth={1.7} /> : <PanelLeft className="size-3.5" strokeWidth={1.7} />}
+            </button>
+          )}
         </div>
 
         <nav className="flex flex-1 flex-col gap-0.5 px-2.5 pt-1">
@@ -100,16 +111,16 @@ export function Sidebar({
           ))}
         </nav>
 
-        <div className="border-t border-sidebar-border p-2.5">
+        <div className="p-2.5">
           {state.user && (
-            <div className="mb-2 flex min-w-0 items-center gap-2.5 overflow-hidden px-1.5 py-1" title={state.user.email}>
-              <div className="grid size-8 shrink-0 place-items-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">
+            <div className="mb-1 flex min-w-0 items-center gap-2.5 overflow-hidden rounded-full px-1.5 py-1.5" title={state.user.email}>
+              <div className="grid size-7 shrink-0 place-items-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">
                 {initials(state.user.name)}
               </div>
               <div
                 className={cn(
                   "min-w-0 transition-[opacity,max-width] duration-200 ease-out motion-reduce:transition-none",
-                  expanded ? "max-w-[150px] opacity-100" : "max-w-0 overflow-hidden opacity-0"
+                  expanded ? "max-w-[140px] opacity-100" : "max-w-0 overflow-hidden opacity-0"
                 )}
               >
                 <p className="truncate text-[12.5px] font-medium">{state.user.name}</p>
@@ -117,7 +128,7 @@ export function Sidebar({
               </div>
             </div>
           )}
-          <div className={cn("flex items-center", expanded ? "justify-between" : "flex-col gap-1")}>
+          <div className={cn("flex items-center", expanded ? "justify-between px-1" : "flex-col gap-1")}>
             <ThemeToggle expanded={expanded} />
             <Button
               variant="ghost"
@@ -125,7 +136,7 @@ export function Sidebar({
               aria-label="Sair"
               title="Sair"
               onClick={logout}
-              className={cn("text-muted-foreground", expanded && "gap-1.5 px-2")}
+              className={cn("rounded-full text-muted-foreground", expanded && "gap-1.5 px-2")}
             >
               <LogOut className="size-3.5" />
               {expanded && <span className="text-[12px]">Sair</span>}
@@ -133,18 +144,6 @@ export function Sidebar({
           </div>
         </div>
       </aside>
-
-      {onToggle && (
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-label={expanded ? "Recolher menu" : "Expandir menu"}
-          title={expanded ? "Recolher menu" : "Expandir menu"}
-          className="absolute top-[18px] right-0 z-30 grid size-7 translate-x-1/2 place-items-center rounded-full border border-sidebar-border bg-background text-muted-foreground shadow-sm transition-colors hover:bg-card hover:text-foreground"
-        >
-          {expanded ? <PanelLeftClose className="size-3.5" strokeWidth={1.7} /> : <PanelLeft className="size-3.5" strokeWidth={1.7} />}
-        </button>
-      )}
     </div>
   )
 }

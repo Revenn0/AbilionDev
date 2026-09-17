@@ -25,7 +25,7 @@ export function FunnelPreview({
   const nodes = funnel.nodes
   if (nodes.length === 0) {
     return (
-      <div className={cn("relative grid h-[156px] place-items-center canvas-grid", className)}>
+      <div className={cn("relative grid h-[168px] place-items-center bg-foreground/3", className)}>
         <p className="text-[12px] text-muted-foreground">Em branco</p>
       </div>
     )
@@ -40,7 +40,7 @@ export function FunnelPreview({
   const byId = new Map(nodes.map((node) => [node.id, node]))
 
   return (
-    <div className={cn("relative h-[156px] overflow-hidden canvas-grid", className)}>
+    <div className={cn("relative h-[168px] overflow-hidden bg-foreground/3", className)}>
       <svg className="absolute inset-0 size-full" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" aria-hidden>
         {funnel.edges.map((edge) => {
           const from = byId.get(edge.source)

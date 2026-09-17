@@ -14,15 +14,8 @@ export function LogoSwoosh({ className }: { className?: string }) {
 export function LogoMark({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 32 32" className={cn("size-8", className)} aria-hidden>
-      <defs>
-        <linearGradient id="abilion-tile" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#2c2c2c" />
-          <stop offset="100%" stopColor="#141414" />
-        </linearGradient>
-      </defs>
-      <rect width="32" height="32" rx="8" fill="url(#abilion-tile)" />
-      <rect width="32" height="32" rx="8" fill="none" stroke="rgb(255 255 255 / 0.1)" />
-      <g transform="translate(5.2 5.6) scale(0.34)" className="text-[#f4f4f4]">
+      <circle cx="16" cy="16" r="16" fill="#d6f36a" />
+      <g transform="translate(5.2 5.6) scale(0.34)" className="text-[#141414]">
         <path fill="currentColor" d={SWOOSH} />
       </g>
     </svg>

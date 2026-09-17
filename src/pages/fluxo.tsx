@@ -1,8 +1,8 @@
 import { useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
-import { Pencil, Plus, Trash2 } from "lucide-react"
+import { Pencil, Plus, Trash2, Workflow } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { PageHeading } from "@/components/page-heading"
+import { PageChrome, StatusPill } from "@/components/layout/chrome"
 import { FunnelPreview } from "@/components/sales/preview"
 import { RenameFunnelDialog } from "@/components/sales/rename-dialog"
 import { useStore } from "@/lib/store"
@@ -27,52 +27,51 @@ export function FluxoPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="page-shell">
-        <PageHeading title="Funil" hint="Quadro visual de tráfego, páginas e mensagens.">
-          <Button className="h-10 rounded-lg px-4" onClick={createSales}>
+        <PageChrome icon={Workflow} title="Funil">
+          <Button className="h-8 rounded-full px-3.5" onClick={createSales}>
             <Plus /> Novo funil
           </Button>
-        </PageHeading>
+        </PageChrome>
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-2">
           {funnels.length === 0 && (
-            <div className="surface px-6 py-14 text-center md:col-span-2">
+            <div className="surface px-6 py-16 text-center md:col-span-2">
               <p className="text-[14px] font-medium">Nenhum funil</p>
               <p className="mx-auto mt-1 max-w-md text-[13.5px] text-muted-foreground">
                 Cria o primeiro quadro: fonte de tráfego, divisor e página de vendas.
               </p>
-              <Button className="mt-5 rounded-lg" onClick={createSales}>
+              <Button className="mt-5 rounded-full" onClick={createSales}>
                 <Plus /> Novo funil
               </Button>
             </div>
           )}
           {funnels.map((funnel) => (
             <article key={funnel.id} className="surface overflow-hidden">
-              <Link to={`/fluxo/funil/${funnel.id}`} className="block border-b border-border" aria-label={`Abrir ${funnel.name}`}>
+              <Link to={`/fluxo/funil/${funnel.id}`} className="block" aria-label={`Abrir ${funnel.name}`}>
                 <FunnelPreview funnel={funnel} />
               </Link>
-              <div className="flex items-start justify-between gap-3 p-4">
+              <div className="flex items-start justify-between gap-3 px-5 py-4">
                 <div className="min-w-0">
-                  <p className="truncate font-medium">{funnel.name}</p>
-                  <p className="mt-1 text-[12.5px] text-muted-foreground">
-                    {funnel.status === "active" ? "Publicado" : "Rascunho"} · {timeAgo(funnel.updatedAt)}
+                  <p className="truncate text-[14px] font-medium">{funnel.name}</p>
+                  <p className="mt-1.5 flex items-center gap-2 text-[12px] text-muted-foreground">
+                    <StatusPill tone={funnel.status === "active" ? "success" : "muted"}>
+                      {funnel.status === "active" ? "Publicado" : "Rascunho"}
+                    </StatusPill>
+                    {timeAgo(funnel.updatedAt)}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-lg"
-                    onClick={() => setRenaming(funnel)}
-                  >
+                  <Button variant="ghost" size="sm" className="rounded-full" onClick={() => setRenaming(funnel)}>
                     <Pencil />
                     Renomear
                   </Button>
-                  <Button asChild size="sm" className="rounded-lg">
+                  <Button asChild size="sm" className="rounded-full">
                     <Link to={`/fluxo/funil/${funnel.id}`}>Abrir</Link>
                   </Button>
                   <Button
                     variant="ghost"
                     size="icon-sm"
+                    className="rounded-full"
                     aria-label="Excluir funil"
                     onClick={() => {
                       if (!confirm("Remover este funil? Isto não se desfaz.")) return

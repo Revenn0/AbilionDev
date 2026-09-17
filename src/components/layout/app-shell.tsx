@@ -59,35 +59,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div className={cn("flex h-screen overflow-hidden bg-background", !canvasEditor && "p-2 md:p-2.5")}>
       {!canvasEditor && (
         <div className="relative z-20 hidden h-full md:block">
           <Sidebar expanded={expanded} onToggle={toggleSidebar} />
         </div>
       )}
       {!canvasEditor && (
-        <div className={cn("fixed inset-0 z-50 md:hidden", open ? "pointer-events-auto" : "pointer-events-none")}>
+        <div className={cn("fixed inset-0 z-50 p-2 md:hidden", open ? "pointer-events-auto" : "pointer-events-none")}>
           <div
             className={cn(
-              "absolute inset-0 bg-foreground/25 backdrop-blur-sm transition-opacity duration-300 motion-reduce:transition-none",
+              "absolute inset-0 bg-black/40 transition-opacity duration-300 motion-reduce:transition-none",
               open ? "opacity-100" : "opacity-0"
             )}
             onClick={() => setOpen(false)}
           />
           <div
             className={cn(
-              "relative h-full w-[240px] shadow-xl transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-              open ? "translate-x-0" : "-translate-x-full"
+              "relative h-full w-[244px] transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+              open ? "translate-x-0" : "-translate-x-[110%]"
             )}
           >
             <Sidebar expanded onNavigate={() => setOpen(false)} />
           </div>
         </div>
       )}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className={cn("flex min-w-0 flex-1 flex-col", !canvasEditor && "md:pl-2")}>
         {!canvasEditor && (
-          <header className="flex items-center gap-2 border-b border-border bg-background px-3 py-2 md:hidden">
-            <Button variant="ghost" size="icon-sm" aria-label="Menu" onClick={() => setOpen((v) => !v)}>
+          <header className="flex items-center gap-2 px-2 pb-2 pt-1 md:hidden">
+            <Button variant="ghost" size="icon-sm" className="rounded-full" aria-label="Menu" onClick={() => setOpen((v) => !v)}>
               {open ? <X /> : <Menu />}
             </Button>
             <LogoWord compact />
