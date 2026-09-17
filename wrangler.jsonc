@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "abilion",
+  "compatibility_date": "2026-08-23",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "SUPABASE_URL": "https://eyjgmkmaixmpmeeahxon.supabase.co",
+    "APP_URL": "https://abilion.vsanches1060.workers.dev",
+    "ABILION_ENV": "production"
+  }
+}
