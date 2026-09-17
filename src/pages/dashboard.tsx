@@ -23,7 +23,7 @@ export function DashboardPage() {
           <FilterChip>Todos os canais</FilterChip>
         </PageChrome>
 
-        <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+        <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
           <Kpi href="/leads" label="Leads" value={ops.leads} hint={empty ? "à espera de captura" : "na base"} bars={spark} />
           <Kpi
             href="/conversas"
@@ -32,6 +32,7 @@ export function DashboardPage() {
             hint={empty ? "nenhuma iniciada" : "eventos do fluxo"}
             bars={spark}
           />
+          <Kpi href="/leads" label="Facebook hoje" value={ops.facebookToday} hint="ads → Telegram" bars={spark} />
           <Kpi href="/leads" label="Fila Ester" value={ops.ester} hint="print sem banca" bars={spark} />
           <Kpi href="/leads" label="Aguardando" value={ops.waiting} hint="espera do fluxo" bars={waitSpark} />
           <Kpi href="/leads" label="Ofertas" value={ops.offered} hint="disparadas pelo quadro" bars={offerSpark} />
@@ -46,7 +47,7 @@ export function DashboardPage() {
             <div className="flex items-center gap-4 text-[12px] text-muted-foreground">
               <span className="inline-flex items-center gap-1.5">
                 <i className="size-1.5 rounded-full bg-line" />
-                Popup, join e /start
+                Facebook, popup, join e /start
               </span>
             </div>
           </div>
@@ -73,6 +74,7 @@ export function DashboardPage() {
             <div className="mt-5 space-y-5">
               <ChannelRow label="WhatsApp · grupo" value={ops.whatsapp} total={channelTotal} />
               <ChannelRow label="Telegram · convite" value={ops.telegram} total={channelTotal} />
+              <ChannelRow label="Facebook → Telegram" value={ops.facebook} total={ops.leads} />
             </div>
           </div>
           <div className="surface p-6">

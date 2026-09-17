@@ -12,13 +12,20 @@ export async function pullRemote(): Promise<RemoteBundle | null> {
   const db = getSupabase()
   if (!db) return null
   try {
-    const [funnelsRes, leadsRes, eventsRes, settingsRes] = await Promise.all([
+    const [funnelsRes, leadsRes, waitingRes, settingsRes] = await Promise.all([
       db.from("funnels").select("*").eq("workspace_id", WORKSPACE),
-      db.from("leads").select("*").eq("workspace_id", WORKSPACE),
-      db.from("lead_events").select("*"),
+      db.from("leads").select("*").eq("workspace_id", WORKSPACE).order("updated_at", { ascending: false }).limit(400),
+      db.from("leads").select("*").eq("workspace_id", WORKSPACE).not("wait_until", "is", null).limit(80),
       db.from("settings").select("data").eq("workspace_id", WORKSPACE).maybeSingle(),
     ])
     if (funnelsRes.error || leadsRes.error) return null
+
+    const leadRows = new Map<string, (typeof leadsRes.data)[number]>()
+    for (const row of [...(leadsRes.data ?? []), ...(waitingRes.data ?? [])]) {
+      leadRows.set(row.id, row)
+    }
+    const ids = [...leadRows.keys()]
+    const eventsRes = ids.length ? await db.from("lead_events").select("*").in("lead_id", ids) : { data: [] }
 
     const eventsByLead = new Map<string, LeadEvent[]>()
     for (const row of eventsRes.data ?? []) {
@@ -48,7 +55,7 @@ export async function pullRemote(): Promise<RemoteBundle | null> {
       })
     )
 
-    const leads = (leadsRes.data ?? []).map((row) =>
+    const leads = [...leadRows.values()].map((row) =>
       migrateLead({
         id: row.id,
         name: row.name,
@@ -56,6 +63,7 @@ export async function pullRemote(): Promise<RemoteBundle | null> {
         channel: row.channel,
         campaign: row.campaign,
         origin: row.origin,
+        startPayload: row.start_payload ?? undefined,
         temperature: row.temperature,
         stage: row.stage,
         printAt: row.print_at ?? undefined,
@@ -109,6 +117,7 @@ export async function pushRemote(state: AppState): Promise<boolean> {
       channel: lead.channel,
       campaign: lead.campaign,
       origin: lead.origin,
+      start_payload: lead.startPayload ?? null,
       temperature: lead.temperature,
       stage: lead.stage,
       print_at: lead.printAt ?? null,

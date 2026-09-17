@@ -21,8 +21,10 @@ export const ORIGIN_LABEL: Record<LeadOrigin, string> = {
   group_join: "Join no grupo",
   private: "Privado /start",
   closing: "Fechamento",
+  facebook: "Facebook → Telegram",
 }
 
-export function campaignFor(channel: "whatsapp" | "telegram") {
+export function campaignFor(channel: "whatsapp" | "telegram", origin?: LeadOrigin) {
+  if (origin === "facebook") return "Facebook · ads"
   return channel === "telegram" ? "Telegram · grupo" : "WhatsApp · grupo"
 }

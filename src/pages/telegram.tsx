@@ -5,13 +5,21 @@ import { PageChrome, StatusPill } from "@/components/layout/chrome"
 import { Button } from "@/components/ui/button"
 import { useStore } from "@/lib/store"
 import { workerUrl } from "@/lib/channel"
+import { adsDeepLink } from "@/lib/telegram-start"
 
 export function TelegramPage() {
   const { state } = useStore()
   const { settings, leads } = state
   const tokenOn = Boolean(settings.telegramBotToken.trim())
   const inGroup = leads.filter((lead) => lead.channel === "telegram" && (lead.origin === "group_join" || lead.stage === "group")).length
+  const facebookToday = leads.filter((lead) => {
+    if (lead.origin !== "facebook") return false
+    const day = new Date()
+    day.setHours(0, 0, 0, 0)
+    return new Date(lead.createdAt).getTime() >= day.getTime()
+  }).length
   const hook = `${workerUrl()}/api/telegram`
+  const ads = adsDeepLink(settings.telegramBotUsername)
   const [health, setHealth] = useState<"off" | "ok" | "down">("off")
 
   useEffect(() => {
@@ -35,7 +43,7 @@ export function TelegramPage() {
           </Button>
         </PageChrome>
 
-        <section className="grid gap-3 md:grid-cols-3">
+        <section className="grid gap-3 md:grid-cols-4">
           <article className="surface p-5">
             <p className="text-[12.5px] text-muted-foreground">Bot</p>
             <p className="mt-2 text-[18px] font-medium">{settings.telegramBotUsername || "Por configurar"}</p>
@@ -56,6 +64,11 @@ export function TelegramPage() {
             <p className="mt-2 text-[18px] font-medium">{inGroup}</p>
             <p className="mt-2 text-[12.5px] text-muted-foreground">Join cria lead da campanha Telegram.</p>
           </article>
+          <article className="surface p-5">
+            <p className="text-[12.5px] text-muted-foreground">Facebook hoje</p>
+            <p className="mt-2 text-[18px] font-medium">{facebookToday}</p>
+            <p className="mt-2 text-[12.5px] text-muted-foreground">/start=fb no anúncio. Pico de 500–1000/dia.</p>
+          </article>
         </section>
 
         <section className="surface p-6">
@@ -65,6 +78,10 @@ export function TelegramPage() {
             produção vai em <code className="text-foreground">wrangler secret</code>, nunca no git.
           </p>
           <p className="mt-4 text-[13px]">
+            Link do anúncio Facebook:{" "}
+            <span className="break-all text-muted-foreground">{ads || "configura o username do bot"}</span>
+          </p>
+          <p className="mt-2 text-[13px]">
             Webhook: <span className="break-all text-muted-foreground">{hook}</span>
           </p>
           {settings.telegramGroupUrl && (

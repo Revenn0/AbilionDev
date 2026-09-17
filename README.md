@@ -10,6 +10,7 @@ Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / M
 - Conversas Telegram: a Sté (Mãe do Aviator) fala uma frase e espera o lead
 - Funil com mapa e fluxo executável
 - Telegram: webhook no Worker (`/api/telegram`) — /start abre a Sté
+- Facebook → Telegram: `https://t.me/BOT?start=fb` (500–1000 /start por dia)
 - Configurações: bot Telegram, Sté ligada/desligada
 - Persistência local + Supabase quando houver anon key
 
@@ -44,7 +45,7 @@ Sem print → sem banca. Sem o nó de oferta → o canal não vende. Campanhas W
 Projecto já usado no wrangler:
 
 - URL: `https://eyjgmkmaixmpmeeahxon.supabase.co`
-- Correr [`supabase/migrations/001_flow.sql`](supabase/migrations/001_flow.sql) no SQL editor
+- Correr [`supabase/migrations/001_flow.sql`](supabase/migrations/001_flow.sql), [`002_ste_chat.sql`](supabase/migrations/002_ste_chat.sql) e [`003_facebook_scale.sql`](supabase/migrations/003_facebook_scale.sql) no SQL editor
 - Anon em `.env`. Service role só no Worker
 
 ## Cloudflare
@@ -72,3 +73,14 @@ Cron de espera: hora a hora, ou `GET /api/cron?secret=…`
 WhatsApp Cloud: `POST /api/whatsapp` (mesmo contrato; token opcional)
 
 O bot configura-se em Configurações e fica gravado no workspace. O token **não** entra no repositório.
+
+## Facebook → Telegram (volume)
+
+O anúncio aponta para `https://t.me/BOT?start=fb` (ou `fb_campanha`). O Worker:
+
+- responde 200 na hora (`waitUntil`) para o Telegram não reenviar
+- procura **um** lead por contacto / chat, sem carregar a base
+- abre a Sté com o motor determinístico (LLM só com `STE_USE_LLM=1`)
+- reenvia se a API do Telegram devolver 429
+
+Correr [`supabase/migrations/003_facebook_scale.sql`](supabase/migrations/003_facebook_scale.sql) no SQL editor. A inbox mostra no máximo 80 conversas (aguardando / hoje / Facebook).

@@ -21,6 +21,7 @@ import { Switch } from "@/components/ui/switch"
 import { cleanBotUsername } from "@/lib/migrate"
 import { useStore } from "@/lib/store"
 import { workerUrl } from "@/lib/channel"
+import { adsDeepLink } from "@/lib/telegram-start"
 import { cn } from "@/lib/utils"
 import type { PluginId } from "@/lib/types"
 import { toast } from "sonner"
@@ -107,6 +108,7 @@ function BotPane() {
   const [token, setToken] = useState(state.settings.telegramBotToken)
   const [group, setGroup] = useState(state.settings.telegramGroupUrl)
   const hook = `${workerUrl()}/api/telegram`
+  const ads = adsDeepLink(cleanBotUsername(username) || state.settings.telegramBotUsername)
 
   return (
     <section className="surface max-w-xl p-6">
@@ -158,6 +160,11 @@ function BotPane() {
             placeholder="https://t.me/..."
           />
         </div>
+        {ads && (
+          <p className="break-all text-[12px] text-muted-foreground">
+            Anúncio Facebook · {ads}
+          </p>
+        )}
         <p className="break-all text-[12px] text-muted-foreground">Webhook · {hook}</p>
         <div className="flex items-center gap-2">
           <StatusPill tone={state.settings.telegramBotToken ? "success" : "muted"}>
@@ -182,7 +189,8 @@ function StePane() {
         <p className="text-[14px] font-medium">Sté · Telegram</p>
         <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
           Prompt interno da Sté (Mãe do Aviator) vive no motor: uma frase curta, espera o lead, não empurra o app no início.
-          Ofensa encerra o contacto para sempre. Landing: app.mundoaviator.com.br
+          No pico de 500–1000 /start do Facebook o opener é determinístico — LLM só se STE_USE_LLM=1. Ofensa encerra o
+          contacto. Landing: app.mundoaviator.com.br
         </p>
       </div>
       <label className="flex items-center justify-between gap-4">
@@ -299,7 +307,7 @@ function PluginsPane() {
 function NotifyPane() {
   const { state, saveSettings } = useStore()
   const rows = [
-    { key: "notifyNewLead" as const, title: "Novo lead", hint: "Popup, join ou /start a entrar no CRM." },
+    { key: "notifyNewLead" as const, title: "Novo lead", hint: "Facebook, popup, join ou /start a entrar no CRM." },
     { key: "notifyConversation" as const, title: "Conversa iniciada", hint: "Sté no 1:1." },
     { key: "notifyPrint" as const, title: "Print do cadastro", hint: "Aviso para a Ester enviar a banca." },
     { key: "notifyChannelFail" as const, title: "Falha de canal", hint: "WhatsApp ou Telegram sem responder." },

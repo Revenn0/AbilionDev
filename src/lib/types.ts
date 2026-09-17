@@ -95,7 +95,7 @@ export type SalesFunnel = {
 
 export type LeadTemp = "novo" | "morno" | "quente"
 export type LeadChannel = "whatsapp" | "telegram"
-export type LeadOrigin = "popup" | "group_join" | "private" | "closing"
+export type LeadOrigin = "popup" | "group_join" | "private" | "closing" | "facebook"
 export type LeadStage = "capture" | "group" | "welcome" | "attendance" | "print" | "banca" | "offer"
 
 export type LeadEventKind =
@@ -138,6 +138,7 @@ export type Lead = {
   channel: LeadChannel
   campaign: string
   origin: LeadOrigin
+  startPayload?: string
   temperature: LeadTemp
   stage: LeadStage
   printAt?: string

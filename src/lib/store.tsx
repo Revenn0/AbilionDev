@@ -112,7 +112,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     window.clearTimeout(persistTimer.current)
     persistTimer.current = window.setTimeout(() => {
-      localStorage.setItem(KEY, JSON.stringify({ ...state, user: null }))
+      const recent = [...state.leads].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 400)
+      localStorage.setItem(KEY, JSON.stringify({ ...state, user: null, leads: recent }))
       if (state.user) localStorage.setItem(SESSION, JSON.stringify(state.user))
       else localStorage.removeItem(SESSION)
       if (skipPush.current) {

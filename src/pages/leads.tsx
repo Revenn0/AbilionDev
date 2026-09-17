@@ -31,6 +31,7 @@ const FILTERS = [
   { id: "morno", label: "Mornos" },
   { id: "quente", label: "Quentes" },
   { id: "ester", label: "Fila Ester" },
+  { id: "facebook", label: "Facebook" },
 ] as const
 
 export function LeadsPage() {
@@ -46,6 +47,7 @@ export function LeadsPage() {
       if (filter === "whatsapp" || filter === "telegram") return item.channel === filter
       if (filter === "novo" || filter === "morno" || filter === "quente") return item.temperature === filter
       if (filter === "ester") return needsEster(item)
+      if (filter === "facebook") return item.origin === "facebook"
       return true
     })
   }, [filter, state.leads])
@@ -77,9 +79,11 @@ export function LeadsPage() {
                     ? state.leads.length
                     : item.id === "ester"
                       ? state.leads.filter(needsEster).length
-                      : item.id === "whatsapp" || item.id === "telegram"
-                        ? state.leads.filter((row) => row.channel === item.id).length
-                        : state.leads.filter((row) => row.temperature === item.id).length}
+                      : item.id === "facebook"
+                        ? state.leads.filter((row) => row.origin === "facebook").length
+                        : item.id === "whatsapp" || item.id === "telegram"
+                          ? state.leads.filter((row) => row.channel === item.id).length
+                          : state.leads.filter((row) => row.temperature === item.id).length}
                 </span>
               </button>
             ))}
@@ -198,6 +202,7 @@ function CaptureDialog({
               <option value="popup">Popup mini curso (Stefany)</option>
               <option value="group_join">Join no grupo</option>
               <option value="private">Privado /start</option>
+              <option value="facebook">Facebook → Telegram</option>
               <option value="closing">Fechamento</option>
             </select>
           </div>

@@ -10,7 +10,11 @@ function startOfDay(ms: number) {
 export function hasConversation(lead: Lead) {
   return (
     lead.channel === "telegram" &&
-    ((lead.messages?.length ?? 0) > 0 || Boolean(lead.lastMessage) || lead.origin === "private" || lead.origin === "group_join")
+    ((lead.messages?.length ?? 0) > 0 ||
+      Boolean(lead.lastMessage) ||
+      lead.origin === "private" ||
+      lead.origin === "facebook" ||
+      lead.origin === "group_join")
   )
 }
 
@@ -41,6 +45,8 @@ export function deriveOps(leads: Lead[], snapshot: SalesSnapshot | null = null) 
     ester: leads.filter(needsEster).length,
     waiting: leads.filter((lead) => isWaiting(lead)).length,
     offered: leads.filter(hasOffer).length,
+    facebook: leads.filter((lead) => lead.origin === "facebook").length,
+    facebookToday: leads.filter((lead) => lead.origin === "facebook" && new Date(lead.createdAt).getTime() >= today).length,
     inStep: leads.filter((lead) => Boolean(lead.nodeId)).length,
     stepLabel: (lead: Lead) => nodeTitle(snapshot, lead.nodeId) ?? lead.stage,
   }

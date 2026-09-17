@@ -169,7 +169,7 @@ export function leadFromCapture(
     name: input.name.trim(),
     contact: input.contact.trim(),
     channel: input.channel,
-    campaign: campaignFor(input.channel),
+    campaign: campaignFor(input.channel, input.origin),
     origin: input.origin,
     temperature: "novo",
     stage: input.origin === "popup" ? "capture" : input.origin === "group_join" ? "group" : "welcome",

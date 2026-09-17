@@ -25,17 +25,26 @@ export function PageChrome({
 export function FilterChip({
   children,
   active,
+  onClick,
 }: {
   children: ReactNode
   active?: boolean
+  onClick?: () => void
 }) {
+  const className = cn(
+    "inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[12.5px]",
+    active ? "bg-card text-foreground" : "bg-card/70 text-muted-foreground",
+    onClick && "cursor-pointer hover:text-foreground"
+  )
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={className}>
+        {children}
+      </button>
+    )
+  }
   return (
-    <span
-      className={cn(
-        "inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[12.5px]",
-        active ? "bg-card text-foreground" : "bg-card/70 text-muted-foreground"
-      )}
-    >
+    <span className={className}>
       {children}
       <ChevronDown className="size-3 opacity-50" />
     </span>
