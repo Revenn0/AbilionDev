@@ -17,6 +17,10 @@
   "triggers": {
     "crons": ["0 * * * *"]
   },
+  "routes": [
+    { "pattern": "abilion.lol", "custom_domain": true },
+    { "pattern": "www.abilion.lol", "custom_domain": true }
+  ],
   "vars": {
     "SUPABASE_URL": "https://eyjgmkmaixmpmeeahxon.supabase.co",
     "ABILION_ENV": "production"

@@ -62,11 +62,13 @@ npx wrangler login
 npm run deploy
 ```
 
-Para apontar um domínio Abilion novo (zona na Cloudflare):
+Domínio **abilion.lol** (Namecheap → Cloudflare):
 
-```jsonc
-"routes": [{ "pattern": "app.abilion.com", "custom_domain": true }]
-```
+1. [Adicionar o site](https://dash.cloudflare.com/?to=/:account/add-site) na Cloudflare: `abilion.lol`, plano Free. Copia os 2 nameservers.
+2. Na Namecheap [Domain List](https://ap.www.namecheap.com/domains/list/) → **Manage** em `abilion.lol` → **Nameservers** → **Custom DNS**. Se DNSSEC estiver ligado, desliga primeiro. Cola os 2 nameservers da Cloudflare e guarda.
+3. Workers → `abilion` → Settings → Domains & Routes → **Add** → Custom Domain → `abilion.lol` e `www.abilion.lol`.
+
+Enquanto o DNS não propaga, o painel continua em [https://abilion.vsanches1060.workers.dev](https://abilion.vsanches1060.workers.dev).
 
 Secrets (nunca no git):
 
