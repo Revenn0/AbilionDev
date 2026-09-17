@@ -50,9 +50,9 @@ Projecto já usado no wrangler:
 
 ## Produção
 
-URL no ar: [https://abiliondev.indispensable-fact.workers.dev](https://abiliondev.indispensable-fact.workers.dev)
+URL no ar: [https://abilion.vsanches1060.workers.dev](https://abilion.vsanches1060.workers.dev)
 
-O Worker `abiliondev` serve o painel e `/api/*`. O Worker antigo `abilion` / `*.vsanches1060.workers.dev` ficou de fora.
+O Worker `abilion` serve este recorte (painel + `/api/*`). O CRM Next antigo saiu do ar.
 
 Login: qualquer e-mail + senha com 6+ caracteres. Token do Telegram e chave de IA **não** entram no git — grava em Configurações e `wrangler secret put`.
 
