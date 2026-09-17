@@ -49,12 +49,17 @@ const PLUGINS: Array<{
   { id: "calendar", title: "Agenda", hint: "Lembretes e follow-up. Em breve.", icon: Calendar, soon: true },
 ]
 
+function readTab(params: URLSearchParams): TabId {
+  const raw = params.get("tab")
+  return TABS.some((item) => item.id === raw) ? (raw as TabId) : "plugins"
+}
+
 export function SettingsPage() {
   const [params, setParams] = useSearchParams()
-  const raw = params.get("tab")
-  const tab: TabId = TABS.some((item) => item.id === raw) ? (raw as TabId) : "plugins"
+  const [tab, setTab] = useState<TabId>(() => readTab(params))
 
-  const setTab = (next: TabId) => {
+  const go = (next: TabId) => {
+    setTab(next)
     const copy = new URLSearchParams(params)
     if (next === "plugins") copy.delete("tab")
     else copy.set("tab", next)
@@ -71,7 +76,7 @@ export function SettingsPage() {
             <button
               key={item.id}
               type="button"
-              onClick={() => setTab(item.id)}
+              onClick={() => go(item.id)}
               className={cn(
                 "h-8 rounded-full px-3.5 text-[12.5px] font-medium",
                 tab === item.id ? "bg-background text-foreground" : "text-muted-foreground hover:text-foreground"
