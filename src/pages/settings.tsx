@@ -22,12 +22,12 @@ import { Switch } from "@/components/ui/switch"
 import { cleanBotUsername } from "@/lib/migrate"
 import { useStore } from "@/lib/store"
 import { fetchHealth, workerUrl } from "@/lib/channel"
+import { fetchRuntime, saveRuntime, type RuntimeStatus } from "@/lib/runtime-api"
 import { adsDeepLink } from "@/lib/telegram-start"
 import { STE_REMARKETING_BLOCK, STE_WELCOME } from "@/lib/ste"
 import { cn } from "@/lib/utils"
 import type { PluginId } from "@/lib/types"
 import { toast } from "sonner"
-import { WhatsAppGlyph } from "@/components/canvas/icons"
 
 const TABS = [
   { id: "bot", label: "Bot Telegram" },
@@ -46,8 +46,7 @@ const PLUGINS: Array<{
   soon?: boolean
   icon: typeof Plug
 }> = [
-  { id: "telegram", title: "Telegram Bot", hint: "Token, grupo e join → lead da campanha.", icon: Send },
-  { id: "whatsapp", title: "WhatsApp Cloud", hint: "Inbox e o mesmo agente Sté.", icon: Plug },
+  { id: "telegram", title: "Telegram Bot", hint: "Token no Worker, webhook e Sté no 1:1.", icon: Send },
   { id: "forms", title: "Captura", hint: "Popup do mini curso da Stefany para o CRM.", icon: FormInput },
   { id: "webhooks", title: "Webhooks", hint: "Eventos para o Worker já existente.", icon: Webhook },
   { id: "reports", title: "Relatórios", hint: "Exportações da operação.", icon: FileSpreadsheet },
@@ -102,155 +101,183 @@ export function SettingsPage() {
   )
 }
 
-function maskToken(token: string) {
-  const value = token.trim()
-  if (!value) return ""
-  return `•••• ${value.slice(-4)}`
-}
-
 function BotPane() {
-  const { state, saveSettings, togglePlugin } = useStore()
+  const { state, saveSettings } = useStore()
   const [username, setUsername] = useState(state.settings.telegramBotUsername)
-  const [token, setToken] = useState(state.settings.telegramBotToken)
+  const [token, setToken] = useState("")
   const [group, setGroup] = useState(state.settings.telegramGroupUrl)
+  const [glm, setGlm] = useState("")
+  const [busy, setBusy] = useState(false)
   const [health, setHealth] = useState<Awaited<ReturnType<typeof fetchHealth>>>({ ok: false })
+  const [runtime, setRuntime] = useState<RuntimeStatus>({ ok: false })
   const origin = workerUrl()
-  const hook = `${origin}/api/telegram`
+  const hook = runtime.webhook || `${origin}/api/telegram`
   const pixel = `<script src="${origin}/t.js" data-cta="[data-abilion-cta]"></script>`
-  const ads = adsDeepLink(cleanBotUsername(username) || state.settings.telegramBotUsername)
-  const savedUser = state.settings.telegramBotUsername
-  const savedToken = state.settings.telegramBotToken
+  const ads = adsDeepLink(cleanBotUsername(username) || runtime.telegramBotUsername || state.settings.telegramBotUsername)
+
+  const refresh = async () => {
+    const [nextHealth, nextRuntime] = await Promise.all([fetchHealth(), fetchRuntime()])
+    setHealth(nextHealth)
+    setRuntime(nextRuntime)
+    if (nextRuntime.telegramBotUsername) setUsername(nextRuntime.telegramBotUsername)
+    if (nextRuntime.telegramGroupUrl) setGroup(nextRuntime.telegramGroupUrl)
+  }
 
   useEffect(() => {
-    void fetchHealth().then(setHealth)
+    void refresh()
   }, [])
 
   return (
     <div className="grid max-w-3xl gap-3">
-    <section className="surface p-6">
-      <p className="text-[14px] font-medium">O que já está configurado</p>
-      <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
-        O canal só fala no Telegram quando o Worker tem o secret. Token colado aqui fica no browser e não liga produção.
-      </p>
-      <div className="mt-4 flex flex-wrap gap-1.5">
-        <StatusPill tone={health.ok && health.telegram ? "success" : "muted"}>
-          Worker Telegram · {health.ok && health.telegram ? "ligado" : "sem token no Worker"}
-        </StatusPill>
-        <StatusPill tone={savedUser ? "success" : "muted"}>{savedUser || "Username vazio"}</StatusPill>
-        <StatusPill tone={savedToken ? "success" : "muted"}>
-          {savedToken ? `Token local ${maskToken(savedToken)}` : "Sem token local"}
-        </StatusPill>
-        <StatusPill tone={health.ok && health.supabase ? "success" : "muted"}>
-          Supabase · {health.ok && health.supabase ? "ligado" : "desligado"}
-        </StatusPill>
-        <StatusPill tone={health.ok && health.llm ? "success" : "muted"}>
-          IA · {health.ok && health.llm ? health.model || "ligada" : "script"}
-        </StatusPill>
-      </div>
-      <dl className="mt-5 space-y-2 text-[12.5px]">
-        <div className="flex flex-wrap justify-between gap-2">
-          <dt className="text-muted-foreground">Webhook</dt>
-          <dd className="break-all font-medium">{hook}</dd>
-        </div>
-        {ads && (
-          <div className="flex flex-wrap justify-between gap-2">
-            <dt className="text-muted-foreground">Anúncio Facebook</dt>
-            <dd className="break-all font-medium">{ads}</dd>
-          </div>
-        )}
-        {state.settings.telegramGroupUrl && (
-          <div className="flex flex-wrap justify-between gap-2">
-            <dt className="text-muted-foreground">Grupo</dt>
-            <dd className="break-all font-medium">{state.settings.telegramGroupUrl}</dd>
-          </div>
-        )}
-      </dl>
-      <form
-        className="mt-5 space-y-4"
-        onSubmit={(event) => {
-          event.preventDefault()
-          saveSettings({
-            telegramBotUsername: cleanBotUsername(username),
-            telegramBotToken: token.trim(),
-            telegramGroupUrl: group.trim(),
-          })
-          if (token.trim() && !state.settings.plugins.telegram) togglePlugin("telegram")
-          toast.success("Bot guardado. Fica gravado até altera.")
-        }}
-      >
-        <div className="space-y-1.5">
-          <Label htmlFor="bot-user">Username</Label>
-          <Input
-            id="bot-user"
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-            placeholder="@teu_bot"
-            autoComplete="off"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="bot-token">Token</Label>
-          <Input
-            id="bot-token"
-            type="password"
-            autoComplete="off"
-            value={token}
-            onChange={(event) => setToken(event.target.value)}
-            placeholder="Cola o token. Não partilhes no chat."
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="bot-group">Convite do grupo / canal</Label>
-          <Input
-            id="bot-group"
-            value={group}
-            onChange={(event) => setGroup(event.target.value)}
-            placeholder="https://t.me/..."
-          />
-        </div>
-        {ads && (
-          <p className="break-all text-[12px] text-muted-foreground">
-            Anúncio Facebook · {ads}
-          </p>
-        )}
-        <p className="break-all text-[12px] text-muted-foreground">Webhook · {hook}</p>
-        <div className="flex items-center gap-2">
-          <StatusPill tone={state.settings.telegramBotToken ? "success" : "muted"}>
-            {state.settings.telegramBotToken ? "Token local" : "Sem token local"}
+      <section className="surface p-6">
+        <p className="text-[14px] font-medium">Telegram em produção</p>
+        <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+          Vincular grava o token no Worker e aponta o webhook. A Sté passa a responder no Telegram. O token não fica no
+          browser nem no git.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-1.5">
+          <StatusPill tone={runtime.telegram || (health.ok && health.telegram) ? "success" : "muted"}>
+            Telegram · {runtime.telegram || health.telegram ? "ligado" : "à espera do token"}
           </StatusPill>
-          <StatusPill>Worker /api/telegram</StatusPill>
+          <StatusPill tone={runtime.webhookOk ? "success" : "muted"}>
+            Webhook · {runtime.webhookOk ? "activo" : "ainda não apontado"}
+          </StatusPill>
+          <StatusPill tone={runtime.telegramBotUsername || username ? "success" : "muted"}>
+            {runtime.telegramBotUsername || username || "Username vazio"}
+          </StatusPill>
+          <StatusPill tone={runtime.tokenHint ? "success" : "muted"}>
+            {runtime.tokenHint ? `Token ${runtime.tokenHint}` : "Sem token no Worker"}
+          </StatusPill>
+          <StatusPill tone={runtime.llm || health.llm ? "success" : "muted"}>
+            IA · {runtime.llm || health.llm ? runtime.model || health.model || "ligada" : "script da Sté"}
+          </StatusPill>
+          <StatusPill tone={health.persist === "kv" || health.persist === "supabase" ? "success" : "muted"}>
+            Leads · {health.persist === "supabase" ? "Supabase" : "Worker"}
+          </StatusPill>
         </div>
-        <Button type="submit" className="rounded-full">
-          Vincular
+        <dl className="mt-5 space-y-2 text-[12.5px]">
+          <div className="flex flex-wrap justify-between gap-2">
+            <dt className="text-muted-foreground">Webhook</dt>
+            <dd className="break-all font-medium">{hook}</dd>
+          </div>
+          {ads && (
+            <div className="flex flex-wrap justify-between gap-2">
+              <dt className="text-muted-foreground">Anúncio Facebook</dt>
+              <dd className="break-all font-medium">{ads}</dd>
+            </div>
+          )}
+          {(runtime.telegramGroupUrl || state.settings.telegramGroupUrl) && (
+            <div className="flex flex-wrap justify-between gap-2">
+              <dt className="text-muted-foreground">Grupo</dt>
+              <dd className="break-all font-medium">{runtime.telegramGroupUrl || state.settings.telegramGroupUrl}</dd>
+            </div>
+          )}
+        </dl>
+        <form
+          className="mt-5 space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault()
+            setBusy(true)
+            const cleanUser = cleanBotUsername(username)
+            void saveRuntime({
+              telegramBotUsername: cleanUser,
+              telegramGroupUrl: group.trim(),
+              ...(token.trim() ? { telegramBotToken: token.trim() } : {}),
+              ...(glm.trim() ? { openaiApiKey: glm.trim() } : {}),
+            })
+              .then((next) => {
+                setRuntime(next)
+                setToken("")
+                setGlm("")
+                saveSettings({
+                  telegramBotUsername: next.telegramBotUsername || cleanUser,
+                  telegramGroupUrl: next.telegramGroupUrl || group.trim(),
+                  telegramBotToken: "",
+                  plugins: { ...state.settings.plugins, telegram: Boolean(next.telegram) },
+                })
+                void fetchHealth().then(setHealth)
+                toast.success(next.telegram ? "Telegram ligado no Worker." : "Username gravado. Falta o token.")
+              })
+              .catch((error: Error) => {
+                toast.error(error.message)
+              })
+              .finally(() => setBusy(false))
+          }}
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="bot-user">Username</Label>
+            <Input
+              id="bot-user"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              placeholder="@teu_bot"
+              autoComplete="off"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="bot-token">Token do bot</Label>
+            <Input
+              id="bot-token"
+              type="password"
+              autoComplete="off"
+              value={token}
+              onChange={(event) => setToken(event.target.value)}
+              placeholder={runtime.tokenHint ? `Já gravado ${runtime.tokenHint}. Cola outro para trocar.` : "Cola o token do BotFather"}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="bot-group">Convite do grupo / canal</Label>
+            <Input
+              id="bot-group"
+              value={group}
+              onChange={(event) => setGroup(event.target.value)}
+              placeholder="https://t.me/..."
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="bot-glm">Chave GLM (opcional)</Label>
+            <Input
+              id="bot-glm"
+              type="password"
+              autoComplete="off"
+              value={glm}
+              onChange={(event) => setGlm(event.target.value)}
+              placeholder={runtime.llm ? "IA já ligada. Cola outra chave para trocar." : "Cola a chave do GLM Coding Plan"}
+            />
+          </div>
+          {ads && <p className="break-all text-[12px] text-muted-foreground">Anúncio Facebook · {ads}</p>}
+          <p className="break-all text-[12px] text-muted-foreground">Webhook · {hook}</p>
+          <Button type="submit" className="rounded-full" disabled={busy}>
+            {busy ? "A ligar…" : "Vincular Telegram"}
+          </Button>
+        </form>
+      </section>
+      <section className="surface p-6">
+        <p className="text-[14px] font-medium">Pixel da landing</p>
+        <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+          Cola isto na página para onde o Facebook manda o lead. No botão de Telegram usa{" "}
+          <code className="text-foreground">data-abilion-cta</code>. O script grava visita, clique, bandeira e UF. O{" "}
+          <code className="text-foreground">fb_vid</code> fecha o /start no mesmo visitante.
+        </p>
+        <p className="mt-3 text-[12.5px] text-muted-foreground">
+          Landing de teste desta origem:{" "}
+          <a className="font-medium text-foreground underline-offset-2 hover:underline" href={`${origin}/l`}>
+            {origin}/l
+          </a>
+        </p>
+        <pre className="mt-4 overflow-x-auto rounded-xl bg-muted px-4 py-3 text-[12px] leading-relaxed">{pixel}</pre>
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-3 rounded-full"
+          onClick={() => {
+            void navigator.clipboard.writeText(pixel)
+            toast.success("Snippet copiado.")
+          }}
+        >
+          Copiar snippet
         </Button>
-      </form>
-    </section>
-    <section className="surface p-6">
-      <p className="text-[14px] font-medium">Pixel da landing</p>
-      <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
-        Cola isto na página para onde o Facebook manda o lead. No botão de Telegram usa{" "}
-        <code className="text-foreground">data-abilion-cta</code>. O script grava visita, clique, bandeira e UF. O{" "}
-        <code className="text-foreground">fb_vid</code> fecha o /start no mesmo visitante.
-      </p>
-      <p className="mt-3 text-[12.5px] text-muted-foreground">
-        Landing de teste desta origem:{" "}
-        <a className="font-medium text-foreground underline-offset-2 hover:underline" href={`${origin}/l`}>
-          {origin}/l
-        </a>
-      </p>
-      <pre className="mt-4 overflow-x-auto rounded-xl bg-muted px-4 py-3 text-[12px] leading-relaxed">{pixel}</pre>
-      <Button
-        type="button"
-        variant="outline"
-        className="mt-3 rounded-full"
-        onClick={() => {
-          void navigator.clipboard.writeText(pixel)
-          toast.success("Snippet copiado.")
-        }}
-      >
-        Copiar snippet
-      </Button>
-    </section>
+      </section>
     </div>
   )
 }
@@ -325,14 +352,14 @@ function StePane() {
 
 function PluginsPane() {
   const { state, togglePlugin } = useStore()
-  const on = Object.values(state.settings.plugins).filter(Boolean).length
+  const on = Object.entries(state.settings.plugins).filter(([id, value]) => id !== "whatsapp" && value).length
 
   return (
     <section>
       <div className="mb-3 flex items-end justify-between gap-3">
         <div>
           <p className="text-[14px] font-medium">Plugins</p>
-          <p className="mt-0.5 text-[12.5px] text-muted-foreground">Canais entram no mesmo grafo. WhatsApp usa o contrato do Telegram.</p>
+          <p className="mt-0.5 text-[12.5px] text-muted-foreground">O canal activo é o Telegram. O resto entra no mesmo grafo.</p>
         </div>
         <p className="text-[12.5px] text-muted-foreground">{on} ligados</p>
       </div>
@@ -343,7 +370,7 @@ function PluginsPane() {
           return (
             <article key={plugin.id} className="surface flex items-start gap-3.5 p-5">
               <div className="grid size-10 shrink-0 place-items-center rounded-2xl bg-muted">
-                {plugin.id === "whatsapp" ? <WhatsAppGlyph className="size-5" /> : <Icon className="size-4" strokeWidth={1.75} />}
+                <Icon className="size-4" strokeWidth={1.75} />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-3">
@@ -382,9 +409,9 @@ function NotifyPane() {
   const { state, saveSettings } = useStore()
   const rows = [
     { key: "notifyNewLead" as const, title: "Novo lead", hint: "Facebook, popup, join ou /start a entrar no CRM." },
-    { key: "notifyConversation" as const, title: "Conversa iniciada", hint: "Sté no 1:1." },
+    { key: "notifyConversation" as const, title: "Conversa iniciada", hint: "Sté no Telegram 1:1." },
     { key: "notifyPrint" as const, title: "Print do cadastro", hint: "Aviso interno quando o print entra no fluxo." },
-    { key: "notifyChannelFail" as const, title: "Falha de canal", hint: "WhatsApp ou Telegram sem responder." },
+    { key: "notifyChannelFail" as const, title: "Falha de canal", hint: "Telegram sem responder." },
   ]
 
   return (

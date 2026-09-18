@@ -13,6 +13,7 @@ export async function fetchHealth() {
       supabase?: boolean
       llm?: boolean
       local?: boolean
+      persist?: "supabase" | "kv" | "memory"
       model?: string
     }
   } catch {

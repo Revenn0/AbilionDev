@@ -4,7 +4,7 @@ import { Send } from "lucide-react"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
 import { Button } from "@/components/ui/button"
 import { useStore } from "@/lib/store"
-import { workerUrl } from "@/lib/channel"
+import { fetchHealth, workerUrl } from "@/lib/channel"
 import { adsDeepLink } from "@/lib/telegram-start"
 import { burstFacebookLeads, burstStats } from "@/lib/burst"
 import { toast } from "sonner"
@@ -12,7 +12,6 @@ import { toast } from "sonner"
 export function TelegramPage() {
   const { state, createLeads } = useStore()
   const { settings, leads } = state
-  const tokenOn = Boolean(settings.telegramBotToken.trim())
   const inGroup = leads.filter((lead) => lead.channel === "telegram" && (lead.origin === "group_join" || lead.stage === "group")).length
   const facebookToday = leads.filter((lead) => {
     if (lead.origin !== "facebook") return false
@@ -22,18 +21,10 @@ export function TelegramPage() {
   }).length
   const hook = `${workerUrl()}/api/telegram`
   const ads = adsDeepLink(settings.telegramBotUsername)
-  const [health, setHealth] = useState<"off" | "ok" | "down">("off")
+  const [health, setHealth] = useState<Awaited<ReturnType<typeof fetchHealth>>>({ ok: false })
 
   useEffect(() => {
-    const ctrl = new AbortController()
-    const timer = window.setTimeout(() => ctrl.abort(), 1500)
-    fetch(`${workerUrl()}/api/health`, { signal: ctrl.signal })
-      .then((res) => (res.ok ? setHealth("ok") : setHealth("down")))
-      .catch(() => setHealth("down"))
-    return () => {
-      window.clearTimeout(timer)
-      ctrl.abort()
-    }
+    void fetchHealth().then(setHealth)
   }, [])
 
   return (
@@ -65,16 +56,18 @@ export function TelegramPage() {
             <p className="text-[12.5px] text-muted-foreground">Bot</p>
             <p className="mt-2 text-[18px] font-medium">{settings.telegramBotUsername || "Por configurar"}</p>
             <div className="mt-3 flex flex-wrap gap-1.5">
-              <StatusPill tone={settings.telegramBotUsername || tokenOn ? "success" : "muted"}>
-                {settings.telegramBotUsername || tokenOn ? "Configurado" : "Ainda sem bot"}
+              <StatusPill tone={settings.telegramBotUsername || health.telegram ? "success" : "muted"}>
+                {settings.telegramBotUsername || health.telegram ? "Configurado" : "Ainda sem bot"}
               </StatusPill>
-              <StatusPill tone={health === "ok" ? "success" : "muted"}>{health === "ok" ? "Worker ok" : "Worker por ligar"}</StatusPill>
+              <StatusPill tone={health.ok && health.telegram ? "success" : "muted"}>
+                {health.ok && health.telegram ? "Telegram ligado" : "À espera do token"}
+              </StatusPill>
             </div>
           </article>
           <article className="surface p-5">
             <p className="text-[12.5px] text-muted-foreground">Sté no fluxo</p>
             <p className="mt-2 text-[18px] font-medium">Nó de handoff</p>
-            <p className="mt-2 text-[12.5px] text-muted-foreground">O mesmo passo no Telegram e no WhatsApp.</p>
+            <p className="mt-2 text-[12.5px] text-muted-foreground">O mesmo passo no Telegram 1:1.</p>
           </article>
           <article className="surface p-5">
             <p className="text-[12.5px] text-muted-foreground">Joins no grupo</p>
@@ -91,8 +84,8 @@ export function TelegramPage() {
         <section className="surface p-6">
           <p className="text-[14px] font-medium">Canal no mesmo grafo</p>
           <p className="mt-2 max-w-2xl text-[13.5px] leading-relaxed text-muted-foreground">
-            /start no privado: a Sté manda 3 boas-vindas e espera. Join no grupo só cria o lead da campanha Telegram. Token de
-            produção vai em <code className="text-foreground">wrangler secret</code>, nunca no git.
+            /start no privado: a Sté manda 3 boas-vindas e espera. Join no grupo só cria o lead da campanha Telegram. O token
+            grava-se em Configurações e fica no Worker, nunca no git.
           </p>
           <p className="mt-4 text-[13px]">
             Link do anúncio Facebook:{" "}

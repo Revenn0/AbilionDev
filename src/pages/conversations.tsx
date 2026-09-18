@@ -3,7 +3,6 @@ import { MessagesSquare } from "lucide-react"
 import { FilterChip, PageChrome, StatusPill } from "@/components/layout/chrome"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { migrateLead } from "@/lib/migrate"
 import { useStore } from "@/lib/store"
 import { hasConversation } from "@/lib/ops"
 import { ORIGIN_LABEL, TEMP_LABEL } from "@/lib/labels"
@@ -46,7 +45,7 @@ function matchesFilter(lead: Lead, filter: FilterId) {
 }
 
 export function ConversationsPage() {
-  const { state, saveLead, createLeads } = useStore()
+  const { state, saveLead } = useStore()
   const { summary } = useTrackSummary(4000)
   const runtime = steRuntimeFromSettings(state.settings)
   const [filter, setFilter] = useState<FilterId>("waiting")
@@ -93,29 +92,6 @@ export function ConversationsPage() {
     const result = advanceSteIfDue(lead, Date.now(), runtime)
     if (result.replies.length) saveLead(result.lead)
   }, [lead?.id, lead?.waitUntil])
-
-  useEffect(() => {
-    const pull = async () => {
-      const res = await fetch("/api/inbox", { credentials: "include", cache: "no-store" })
-      if (!res.ok) return
-      const data = (await res.json()) as { leads?: Lead[] }
-      const incoming = (data.leads ?? []).map((item) => migrateLead(item))
-      if (!incoming.length) return
-      const known = new Map(state.leads.map((item) => [item.id, item]))
-      const fresh = incoming.filter((item) => {
-        const current = known.get(item.id)
-        return !current || current.updatedAt < item.updatedAt
-      })
-      if (!fresh.length) return
-      const existingIds = new Set(state.leads.map((item) => item.id))
-      const created = fresh.filter((item) => !existingIds.has(item.id))
-      if (created.length) createLeads(created)
-      for (const item of fresh.filter((row) => existingIds.has(row.id))) saveLead(item)
-    }
-    void pull()
-    const timer = window.setInterval(() => void pull(), 4000)
-    return () => window.clearInterval(timer)
-  }, [createLeads, saveLead, state.leads])
 
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" })

@@ -19,7 +19,7 @@ import { ORIGIN_LABEL, STAGE_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { needsEster } from "@/lib/ops"
 import { applyEvent, nodeTitle, publishedSnapshot, type RuntimeEvent } from "@/lib/runtime"
 import { timeAgo } from "@/lib/format"
-import type { Lead, LeadChannel, LeadOrigin, LeadTemp, SalesFunnel } from "@/lib/types"
+import type { Lead, LeadOrigin, LeadTemp, SalesFunnel } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { GeoBadge } from "@/components/crm/geo-badge"
@@ -28,7 +28,6 @@ import { useTrackSummary } from "@/lib/use-track-summary"
 
 const FILTERS = [
   { id: "all", label: "Todos" },
-  { id: "whatsapp", label: "WhatsApp" },
   { id: "telegram", label: "Telegram" },
   { id: "novo", label: "Novos" },
   { id: "morno", label: "Mornos" },
@@ -48,7 +47,7 @@ export function LeadsPage() {
 
   const rows = useMemo(() => {
     return state.leads.filter((item) => {
-      if (filter === "whatsapp" || filter === "telegram") return item.channel === filter
+      if (filter === "telegram") return item.channel === "telegram"
       if (filter === "novo" || filter === "morno" || filter === "quente") return item.temperature === filter
       if (filter === "ester") return needsEster(item)
       if (filter === "facebook") return item.origin === "facebook"
@@ -85,8 +84,8 @@ export function LeadsPage() {
                       ? state.leads.filter(needsEster).length
                       : item.id === "facebook"
                         ? state.leads.filter((row) => row.origin === "facebook").length
-                        : item.id === "whatsapp" || item.id === "telegram"
-                          ? state.leads.filter((row) => row.channel === item.id).length
+                        : item.id === "telegram"
+                          ? state.leads.filter((row) => row.channel === "telegram").length
                           : state.leads.filter((row) => row.temperature === item.id).length}
                 </span>
               </button>
@@ -106,7 +105,7 @@ export function LeadsPage() {
             <div className="grid place-items-center px-6 py-16 text-center">
               <p className="text-[14px] font-medium">Nenhum lead</p>
               <p className="mt-1 max-w-md text-[13px] text-muted-foreground">
-                Popup, join ou /start entram no fluxo publicado. WhatsApp e Telegram não se misturam.
+                Popup, join ou /start entram no fluxo publicado. Só Telegram.
               </p>
             </div>
           ) : (
@@ -123,7 +122,7 @@ export function LeadsPage() {
                       <p className="truncate text-[12px] text-muted-foreground">{item.contact}</p>
                     </div>
                     <GeoBadge facts={factsWithTrack(item, summary.geos)} className="text-[12.5px]" />
-                    <p className="text-[12.5px] text-muted-foreground">{item.channel === "telegram" ? "Telegram" : "WhatsApp"}</p>
+                    <p className="text-[12.5px] text-muted-foreground">Telegram</p>
                     <StatusPill tone={item.temperature === "quente" ? "danger" : item.temperature === "morno" ? "warn" : "muted"}>
                       {TEMP_LABEL[item.temperature]}
                     </StatusPill>
@@ -163,13 +162,12 @@ function CaptureDialog({
 }) {
   const [name, setName] = useState("")
   const [contact, setContact] = useState("")
-  const [channel, setChannel] = useState<LeadChannel>("telegram")
   const [origin, setOrigin] = useState<LeadOrigin>("popup")
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
     if (!name.trim() || !contact.trim()) return
-    onCreate(captureAgainstFunnels({ name, contact, channel, origin }, funnels))
+    onCreate(captureAgainstFunnels({ name, contact, channel: "telegram", origin }, funnels))
     toast.success("Lead no fluxo.")
     setName("")
     setContact("")
@@ -185,19 +183,7 @@ function CaptureDialog({
         </DialogHeader>
         <form onSubmit={submit} className="space-y-3">
           <Field id="lead-name" label="Nome" value={name} onChange={setName} />
-          <Field id="lead-contact" label="Contacto" value={contact} onChange={setContact} placeholder="@user ou telemóvel" />
-          <div className="space-y-1.5">
-            <Label htmlFor="lead-channel">Campanha</Label>
-            <select
-              id="lead-channel"
-              value={channel}
-              onChange={(event) => setChannel(event.target.value as LeadChannel)}
-              className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
-            >
-              <option value="telegram">Telegram · convite do grupo</option>
-              <option value="whatsapp">WhatsApp · grupo</option>
-            </select>
-          </div>
+          <Field id="lead-contact" label="Contacto" value={contact} onChange={setContact} placeholder="@user do Telegram" />
           <div className="space-y-1.5">
             <Label htmlFor="lead-origin">Origem</Label>
             <select

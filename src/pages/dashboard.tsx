@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom"
 import { LayoutDashboard, Radio } from "lucide-react"
-import { FilterChip, PageChrome } from "@/components/layout/chrome"
+import { PageChrome, StatusPill } from "@/components/layout/chrome"
 import { SparkBars, TrendLine } from "@/components/ui/spark"
 import { useStore } from "@/lib/store"
 import { deriveOps, seriesLast30 } from "@/lib/ops"
@@ -11,7 +11,7 @@ export function DashboardPage() {
   const { summary } = useTrackSummary(8000)
   const ops = deriveOps(state.leads)
   const empty = ops.leads === 0
-  const channelTotal = ops.whatsapp + ops.telegram
+  const channelTotal = ops.telegram
   const line = seriesLast30(state.leads, () => true)
   const spark = line.slice(-12)
   const waitSpark = seriesLast30(state.leads, (lead) => Boolean(lead.waitUntil)).slice(-12)
@@ -21,8 +21,8 @@ export function DashboardPage() {
     <div className="h-full overflow-y-auto">
       <div className="page-shell">
         <PageChrome icon={LayoutDashboard} title="Dashboard">
-          <FilterChip active>Últimos 30 dias</FilterChip>
-          <FilterChip>Todos os canais</FilterChip>
+          <StatusPill>Últimos 30 dias</StatusPill>
+          <StatusPill tone="success">Telegram</StatusPill>
         </PageChrome>
 
         <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
@@ -73,9 +73,8 @@ export function DashboardPage() {
 
         <section className="grid gap-3 lg:grid-cols-2">
           <div className="surface p-6">
-            <p className="text-[12.5px] text-muted-foreground">Campanha · não misturar</p>
+            <p className="text-[12.5px] text-muted-foreground">Campanha · Telegram</p>
             <div className="mt-5 space-y-5">
-              <ChannelRow label="WhatsApp · grupo" value={ops.whatsapp} total={channelTotal} />
               <ChannelRow label="Telegram · convite" value={ops.telegram} total={channelTotal} />
               <ChannelRow label="Facebook → Telegram" value={ops.facebook} total={ops.leads} />
             </div>

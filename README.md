@@ -1,6 +1,6 @@
 # AbilionDev
 
-Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / ManyChat). Telegram e WhatsApp são canais. Sté e Ester são nós. Banca ninguém inventa.
+Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / ManyChat). O canal é **só Telegram**. Sté é o agente no 1:1. Banca ninguém inventa.
 
 ## O que entra
 
@@ -13,7 +13,7 @@ Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / M
 - Telegram: webhook no Worker (`/api/telegram`) — /start abre a Sté
 - Facebook → Telegram: `https://t.me/BOT?start=fb` (500–1000 /start por dia)
 - Configurações: estado real do bot, cópia da Sté, pixel `/t.js`
-- Persistência local + Supabase quando houver anon key
+- Persistência no Worker (KV) + Supabase quando houver service role
 
 ## Stack
 
@@ -21,7 +21,7 @@ Vite + React + TypeScript + Tailwind + shadcn/ui + React Flow. Globo de visitant
 
 Worker Cloudflare (`abiliondev`) serve o estático e as rotas `/api/*`. O Worker antigo `abilion` / `*.vsanches1060.workers.dev` ficou de fora.
 
-Dados: `localStorage` sempre; Supabase do projecto já usado se `VITE_SUPABASE_ANON_KEY` existir.
+Dados: o Worker grava leads, funis e o token do Telegram no KV `abilion-auth`. Sem service role do Supabase a operação continua. O browser não guarda o token.
 
 ## Correr
 
@@ -41,7 +41,7 @@ Nós de **fluxo** (executam): entrada, mensagem, espera, condição, handoff St�
 
 No 1:1 a Sté segue o prompt interno (GLM). O resto do quadro corre: espera, print, banca, oferta.
 
-Sem print → sem banca. Sem o nó de oferta → o canal não vende. Campanhas WA e TG não se misturam.
+Sem print → sem banca. Sem o nó de oferta → o canal não vende. O canal é Telegram.
 
 ## Supabase
 
@@ -57,7 +57,7 @@ URL no ar: [https://www.abilion.lol](https://www.abilion.lol) (apex [https://abi
 
 O Worker `abilion` serve o painel e `/api/*`. O CRM Next antigo saiu do ar.
 
-Login: só `victor@abilion.com` ou `gabriel@abilion.com`. O primeiro acesso de cada conta grava a senha no KV `abilion-auth`. Depois, só essa senha entra. Token do Telegram e chave de IA **não** entram no git — grava em Configurações e `wrangler secret put`.
+Login: só `victor@abilion.com` ou `gabriel@abilion.com`. O primeiro acesso de cada conta grava a senha no KV `abilion-auth`. Depois, só essa senha entra. Token do Telegram e chave GLM **não** entram no git — Configurações → Vincular Telegram grava no mesmo KV e aponta o webhook.
 
 Para forçar a mesma senha nas duas contas:
 
@@ -102,9 +102,7 @@ Sté responde com **GLM 5.3 Flash** no **GLM Coding Plan** (`https://api.z.ai/ap
 
 Webhook Telegram: `{origem}/api/telegram`  
 Cron de espera: hora a hora, ou `GET /api/cron?secret=…`  
-WhatsApp Cloud: `POST /api/whatsapp` (mesmo contrato; token opcional)
-
-O bot configura-se em Configurações e fica gravado no workspace. O token **não** entra no repositório.
+O bot configura-se em Configurações. Vincular grava o token no Worker, aponta `https://www.abilion.lol/api/telegram` e a Sté passa a responder. O token **não** entra no repositório.
 
 ## Facebook → Telegram (volume)
 

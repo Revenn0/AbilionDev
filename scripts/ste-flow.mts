@@ -16,7 +16,11 @@ import {
   STE_CLOSE,
   toTelegramHtml,
 } from "../src/lib/ste.ts"
+import { mergeLeads } from "../src/lib/crm.ts"
 import type { Lead } from "../src/lib/types.ts"
+import { findLeadInKv, upsertLeadKv } from "../worker/crm-store.ts"
+import { memoryKv } from "../worker/kv.ts"
+import { mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
 
 function lead(id = "lead-1", contact = "@fb1"): Lead {
   const now = new Date().toISOString()
@@ -123,5 +127,26 @@ assert(funnel[3]?.value === 1, "chat iniciado")
 assert(chatStarted(talking), "lead falou")
 assert(stepDrop(7, 20) === 7 / 20, "queda do funil")
 assert(stepDrop(20, 12) === null, "nao inventa conversao acima de 100%")
+
+const kept = mergeSecrets({ telegramBotToken: "123:abc" }, { telegramBotToken: "•••• abc" })
+assert(kept.telegramBotToken === "123:abc", "mascara nao apaga o token")
+const swapped = mergeSecrets({ telegramBotToken: "123:abc" }, { telegramBotToken: "999:xyz" })
+assert(swapped.telegramBotToken === "999:xyz", "token novo substitui")
+assert(tokenHint("123:abcd") === "•••• abcd", "hint do token")
+const resolved = resolveRuntime({ TELEGRAM_BOT_TOKEN: "env-token", STE_USE_LLM: "1", AUTH: {} }, { telegramBotToken: "kv-token", openaiApiKey: "glm" })
+assert(resolved.telegramBotToken === "kv-token", "KV manda no token")
+assert(resolved.telegram, "telegram ligado")
+assert(resolved.llm, "llm ligada")
+assert(resolved.persist === "kv", "persistencia KV")
+
+const first = lead("crm-1", "@ana")
+first.telegramChatId = "41"
+const kv = memoryKv()
+await upsertLeadKv(kv, first)
+const found = await findLeadInKv(kv, "@ana", 41, "41")
+assert(found?.id === "crm-1", "lead no KV por contacto")
+const newer = { ...first, lastMessage: "oi", updatedAt: new Date(Date.now() + 1000).toISOString() }
+assert(mergeLeads([first], [newer])[0]?.lastMessage === "oi", "merge fica com o mais novo")
+assert(mergeLeads([newer], [first])[0]?.lastMessage === "oi", "merge nao volta atras")
 
 console.log("ste-flow ok")

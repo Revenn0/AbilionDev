@@ -1,14 +1,44 @@
-import { handleAuth, kvAuthStore, sessionUser } from "./auth"
-import { campaignFor } from "../src/lib/labels"
-import { advanceSteIfDue, isSteWait, replySte, replySteSmart, toTelegramHtml } from "../src/lib/ste"
-import { TRACKER_JS } from "../src/lib/tracker-script"
-import { campaignFromStart, originFromStart, parseTelegramStart, visitorIdFromStart } from "../src/lib/telegram-start"
-import { applyEvent, dueWaits, publishedSnapshot } from "../src/lib/runtime"
-import { BANCA_FIXED, type Lead, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types"
-import { compactGeo, factsFromGeo } from "../src/lib/geo"
-import { parseDevice } from "../src/lib/track"
-import { resolveClientGeo } from "./geo-lookup"
-import { ingestTrack, kvTrackStore, memoryTrackStore, readTrackBody, summaryFromStore, type TrackStore } from "./track-store"
+import { handleAuth, kvAuthStore, sessionUser } from "./auth.ts"
+import { campaignFor } from "../src/lib/labels.ts"
+import { advanceSteIfDue, isSteWait, replySte, replySteSmart, toTelegramHtml } from "../src/lib/ste.ts"
+import { TRACKER_JS } from "../src/lib/tracker-script.ts"
+import { campaignFromStart, originFromStart, parseTelegramStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
+import { applyEvent, dueWaits, publishedSnapshot } from "../src/lib/runtime.ts"
+import { BANCA_FIXED, type Lead, type LeadEvent, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types.ts"
+import { compactGeo, factsFromGeo } from "../src/lib/geo.ts"
+import { parseDevice } from "../src/lib/track.ts"
+import { emptySettings, publicSettings } from "../src/lib/crm.ts"
+import { migrateSettings } from "../src/lib/migrate.ts"
+import { resolveClientGeo } from "./geo-lookup.ts"
+import { ingestTrack, kvTrackStore, memoryTrackStore, readTrackBody, summaryFromStore, type TrackStore } from "./track-store.ts"
+import {
+  dueLeadsKv,
+  findLeadInKv,
+  listLeads,
+  loadFunnelsKv,
+  loadSettingsKv,
+  saveFunnelsKv,
+  saveSettingsKv,
+  upsertLeadKv,
+} from "./crm-store.ts"
+import {
+  loadSecrets,
+  mergeSecrets,
+  publicRuntime,
+  resolveRuntime,
+  saveSecrets,
+  setTelegramWebhook,
+  type RuntimeSecrets,
+} from "./runtime-secrets.ts"
+import type { KvLike } from "./kv.ts"
+
+type Fetcher = { fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> }
+type KVNamespace = KvLike
+type ExecutionContext = {
+  waitUntil(promise: Promise<unknown>): void
+  passThroughOnException(): void
+}
+type ScheduledEvent = { cron?: string }
 
 export interface Env {
   ASSETS: Fetcher
@@ -18,7 +48,6 @@ export interface Env {
   TELEGRAM_WEBHOOK_SECRET?: string
   CRON_SECRET?: string
   ESTER_CHAT_ID?: string
-  WHATSAPP_TOKEN?: string
   APP_URL?: string
   OPENAI_API_KEY?: string
   OPENAI_BASE_URL?: string
@@ -36,38 +65,62 @@ function trackStore(env: Env): TrackStore {
   return env.AUTH ? kvTrackStore(env.AUTH) : memoryTracks
 }
 
+function kvOf(env: Env): KvLike | null {
+  return env.AUTH ?? null
+}
+
+export function backgroundCtx(): ExecutionContext {
+  return {
+    waitUntil(promise: Promise<unknown>) {
+      void promise
+    },
+    passThroughOnException() {},
+  } as ExecutionContext
+}
+
+async function runtimeOf(env: Env, webhookFallback = "") {
+  const secrets = kvOf(env) ? await loadSecrets(kvOf(env)!) : {}
+  return { secrets, resolved: resolveRuntime(env, secrets, webhookFallback) }
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
-    const url = new URL(request.url)
-    if (url.pathname === "/t.js") {
-      return new Response(TRACKER_JS, {
-        headers: {
-          "content-type": "text/javascript; charset=utf-8",
-          "access-control-allow-origin": "*",
-          "cache-control": "public, max-age=300",
-        },
-      })
-    }
-    if (url.pathname.startsWith("/api/")) {
-      return handleApi(request, env, url, ctx)
-    }
-    return env.ASSETS.fetch(request)
+    return handleRequest(request, env, ctx)
   },
   async scheduled(_event: ScheduledEvent, env: Env) {
     await processWaits(env)
   },
 }
 
+export async function handleRequest(request: Request, env: Env, ctx: ExecutionContext) {
+  const url = new URL(request.url)
+  if (url.pathname === "/t.js") {
+    return new Response(TRACKER_JS, {
+      headers: {
+        "content-type": "text/javascript; charset=utf-8",
+        "access-control-allow-origin": "*",
+        "cache-control": "public, max-age=300",
+      },
+    })
+  }
+  if (url.pathname.startsWith("/api/")) {
+    return handleApi(request, env, url, ctx)
+  }
+  return env.ASSETS.fetch(request)
+}
+
 async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionContext) {
   if (url.pathname === "/api/health") {
+    const { resolved } = await runtimeOf(env, webhookUrl(request, env))
     return json({
       ok: true,
-      telegram: Boolean(env.TELEGRAM_BOT_TOKEN),
-      supabase: Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE),
+      telegram: resolved.telegram,
+      supabase: resolved.supabase,
       ste: true,
-      llm: Boolean(env.OPENAI_API_KEY) && env.STE_USE_LLM !== "0",
-      model: env.STE_MODEL ?? "glm-5.3-flash",
+      llm: resolved.llm,
+      model: resolved.model,
       auth: Boolean(env.AUTH),
+      persist: resolved.persist,
     })
   }
 
@@ -132,6 +185,73 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     return json({ ok: true, summary: await summaryFromStore(trackStore(env)) })
   }
 
+  if (url.pathname === "/api/runtime" && request.method === "GET") {
+    if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
+    const user = await sessionUser(request, kvAuthStore(env.AUTH))
+    if (!user) return json({ error: "Sessão expirada." }, 401)
+    const hook = webhookUrl(request, env)
+    const { resolved } = await runtimeOf(env, hook)
+    return json(publicRuntime({ ...resolved, webhookUrl: resolved.webhookUrl || hook }))
+  }
+
+  if (url.pathname === "/api/runtime" && request.method === "POST") {
+    if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
+    const user = await sessionUser(request, kvAuthStore(env.AUTH))
+    if (!user) return json({ error: "Sessão expirada." }, 401)
+    const body = (await request.json().catch(() => ({}))) as RuntimeSecrets
+    const current = await loadSecrets(env.AUTH)
+    const next = mergeSecrets(current, body)
+    const hook = webhookUrl(request, env)
+    if (next.telegramBotToken && next.telegramBotToken !== current.telegramBotToken) {
+      const hooked = await setTelegramWebhook(next.telegramBotToken, hook, env.TELEGRAM_WEBHOOK_SECRET)
+      if (!hooked.ok && /unauthorized/i.test(hooked.description)) {
+        return json({ error: "Token do Telegram recusado." }, 400)
+      }
+      next.webhookUrl = hook
+      next.webhookOk = hooked.ok
+      if (!hooked.ok) {
+        await saveSecrets(env.AUTH, next)
+        return json({ error: hooked.description || "Webhook do Telegram falhou.", ...publicRuntime(resolveRuntime(env, next, hook)) }, 400)
+      }
+    } else if (next.telegramBotToken && !next.webhookOk) {
+      const hooked = await setTelegramWebhook(next.telegramBotToken, hook, env.TELEGRAM_WEBHOOK_SECRET)
+      next.webhookUrl = hook
+      next.webhookOk = hooked.ok
+    }
+    await saveSecrets(env.AUTH, next)
+    const settings = await loadSettings(env)
+    await persistSettings(env, {
+      ...settings,
+      telegramBotUsername: next.telegramBotUsername || settings.telegramBotUsername,
+      telegramGroupUrl: next.telegramGroupUrl || settings.telegramGroupUrl,
+      telegramBotToken: "",
+      steLinkedTelegram: settings.steLinkedTelegram !== false,
+      plugins: { ...settings.plugins, telegram: Boolean(next.telegramBotToken) },
+    })
+    return json(publicRuntime(resolveRuntime(env, next, hook)))
+  }
+
+  if (url.pathname === "/api/crm" && request.method === "GET") {
+    if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
+    const user = await sessionUser(request, kvAuthStore(env.AUTH))
+    if (!user) return json({ error: "Sessão expirada." }, 401)
+    return json({
+      ok: true,
+      funnels: await loadFunnels(env),
+      settings: publicSettings(await loadSettings(env)),
+    })
+  }
+
+  if (url.pathname === "/api/crm" && request.method === "POST") {
+    if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
+    const user = await sessionUser(request, kvAuthStore(env.AUTH))
+    if (!user) return json({ error: "Sessão expirada." }, 401)
+    const body = (await request.json().catch(() => ({}))) as { funnels?: SalesFunnel[]; settings?: Settings }
+    if (Array.isArray(body.funnels)) await persistFunnels(env, body.funnels)
+    if (body.settings) await persistSettings(env, migrateSettings(body.settings))
+    return json({ ok: true })
+  }
+
   if (url.pathname === "/api/inbox" && request.method === "GET") {
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
@@ -141,7 +261,8 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
         env,
         `leads?workspace_id=eq.${WORKSPACE}&channel=eq.telegram&select=*&order=updated_at.desc&limit=80`
       )) ?? []
-    return json({ ok: true, leads: rows.map(rowToLead) })
+    const leads = rows.length ? rows.map(rowToLead) : env.AUTH ? await listLeads(env.AUTH) : []
+    return json({ ok: true, leads })
   }
 
   if (url.pathname === "/api/telegram" && request.method === "POST") {
@@ -154,11 +275,6 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     return json({ ok: true })
   }
 
-  if (url.pathname === "/api/whatsapp" && request.method === "POST") {
-    if (!env.WHATSAPP_TOKEN) return json({ ok: true, accepted: false, reason: "plugin" })
-    return json({ ok: true, accepted: true, note: "mesmo contrato de evento do Telegram" })
-  }
-
   if (url.pathname === "/api/cron") {
     const secret = url.searchParams.get("secret") ?? request.headers.get("x-cron-secret")
     if (env.CRON_SECRET && secret !== env.CRON_SECRET) return json({ ok: false }, 401)
@@ -169,8 +285,14 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   return json({ ok: false, error: "not_found" }, 404)
 }
 
+function webhookUrl(request: Request, env: Env) {
+  const origin = (env.APP_URL || new URL(request.url).origin).replace(/\/$/, "")
+  return `${origin}/api/telegram`
+}
+
 async function handleTelegram(env: Env, update: TelegramUpdate) {
-  const token = env.TELEGRAM_BOT_TOKEN
+  const { resolved } = await runtimeOf(env)
+  const token = resolved.telegramBotToken
   if (!token) return
 
   const joinUser = update.message?.new_chat_members?.[0] ?? (update.chat_member?.new_chat_member?.status === "member" ? update.chat_member.new_chat_member.user : undefined)
@@ -221,7 +343,7 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
   lead.telegramChatId = chatId
   if (visitorId && start.isStart) {
     const store = trackStore(env)
-    const events = ingestTrack(await store.load(), { kind: "telegram", visitorId, path: "/telegram", campaign }, Date.now())
+    const events = ingestTrack(await store.load(), { kind: "telegram", visitorId, path: "/telegram", utmCampaign: campaign }, Date.now())
     await store.save(events)
     const last = events.at(-1)
     if (last?.country || last?.region || last?.regionCode) {
@@ -243,10 +365,10 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
   const settings = await loadSettings(env)
   const shouldTalk = settings.steLinkedTelegram !== false && !joinUser
   if (shouldTalk) {
-    const useLlm = Boolean(env.OPENAI_API_KEY) && env.STE_USE_LLM !== "0" && Boolean(incoming?.trim())
+    const useLlm = resolved.llm && Boolean(incoming?.trim())
     const talked = useLlm
       ? await replySteSmart(lead, incoming, {
-          apiKey: env.OPENAI_API_KEY,
+          apiKey: resolved.openaiApiKey,
           baseUrl: env.OPENAI_BASE_URL,
           model: env.STE_MODEL,
         })
@@ -260,14 +382,18 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
 
 async function processWaits(env: Env) {
   const now = new Date().toISOString()
-  const dueRows = (await rest<LeadRow[]>(env, `leads?workspace_id=eq.${WORKSPACE}&wait_until=lte.${now}&select=*`)) ?? []
-  if (!dueRows.length) return 0
+  const restRows = (await rest<LeadRow[]>(env, `leads?workspace_id=eq.${WORKSPACE}&wait_until=lte.${now}&select=*`)) ?? []
+  const kvDue = env.AUTH ? await dueLeadsKv(env.AUTH, now) : []
+  const byId = new Map<string, Lead>()
+  for (const row of restRows) byId.set(row.id, rowToLead(row))
+  for (const lead of kvDue) byId.set(lead.id, lead)
+  if (!byId.size) return 0
   const funnels = await loadFunnels(env)
   const settings = await loadSettings(env)
   const snapshot = publishedSnapshot(funnels)
-  const leads = dueRows.map(rowToLead)
-  const due = dueWaits(leads)
-  const token = env.TELEGRAM_BOT_TOKEN
+  const { resolved } = await runtimeOf(env)
+  const token = resolved.telegramBotToken
+  const due = dueWaits([...byId.values()])
   for (const lead of due) {
     if (isSteWait(lead)) {
       const talked = advanceSteIfDue(lead, Date.now())
@@ -295,22 +421,36 @@ async function notifyEster(env: Env, token: string, body: string, settings: Sett
   await telegram(token, "sendMessage", { chat_id: chat, text: body || BANCA_FIXED })
 }
 
+async function persistFunnels(env: Env, funnels: SalesFunnel[]) {
+  if (env.AUTH) await saveFunnelsKv(env.AUTH, funnels)
+}
+
+async function persistSettings(env: Env, settings: Settings) {
+  if (env.AUTH) await saveSettingsKv(env.AUTH, settings)
+}
+
 async function loadFunnels(env: Env): Promise<SalesFunnel[]> {
-  return ((await rest<SalesFunnelRow[]>(env, `funnels?workspace_id=eq.${WORKSPACE}`)) ?? []).map((row) => ({
-    id: row.id,
-    name: row.name,
-    mode: row.mode,
-    status: row.status,
-    updatedAt: row.updated_at,
-    nodes: row.nodes ?? [],
-    edges: row.edges ?? [],
-    production: row.production,
-  })) as SalesFunnel[]
+  const rows = (await rest<SalesFunnelRow[]>(env, `funnels?workspace_id=eq.${WORKSPACE}`)) ?? []
+  if (rows.length) {
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      mode: row.mode,
+      status: row.status,
+      updatedAt: row.updated_at,
+      nodes: row.nodes ?? [],
+      edges: row.edges ?? [],
+      production: row.production,
+    })) as SalesFunnel[]
+  }
+  return env.AUTH ? loadFunnelsKv(env.AUTH) : []
 }
 
 async function loadSettings(env: Env): Promise<Settings> {
   const settingsRow = await rest<{ data: Settings }[]>(env, `settings?workspace_id=eq.${WORKSPACE}`)
-  return settingsRow?.[0]?.data ?? ({} as Settings)
+  if (settingsRow?.[0]?.data) return migrateSettings(settingsRow[0].data)
+  if (env.AUTH) return loadSettingsKv(env.AUTH)
+  return emptySettings()
 }
 
 async function findLead(env: Env, contact: string, telegramId: number, chatId: string): Promise<Lead | null> {
@@ -320,7 +460,8 @@ async function findLead(env: Env, contact: string, telegramId: number, chatId: s
     `telegram_chat_id.eq.${quote(chatId)}`,
   ].join(",")
   const rows = (await rest<LeadRow[]>(env, `leads?workspace_id=eq.${WORKSPACE}&or=(${filter})&select=*&limit=1`)) ?? []
-  return rows[0] ? rowToLead(rows[0]) : null
+  if (rows[0]) return rowToLead(rows[0])
+  return env.AUTH ? findLeadInKv(env.AUTH, contact, telegramId, chatId) : null
 }
 
 function quote(value: string) {
@@ -360,6 +501,8 @@ function rowToLead(row: LeadRow): Lead {
 }
 
 async function saveLead(env: Env, lead: Lead) {
+  if (env.AUTH) await upsertLeadKv(env.AUTH, lead)
+  if (!env.SUPABASE_SERVICE_ROLE) return
   await rest(env, "leads", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates" },
@@ -398,7 +541,7 @@ async function saveLead(env: Env, lead: Lead) {
       method: "POST",
       headers: { Prefer: "resolution=merge-duplicates" },
       body: JSON.stringify(
-        lead.events.map((event) => ({
+        lead.events.map((event: LeadEvent) => ({
           id: event.id,
           lead_id: lead.id,
           at: event.at,

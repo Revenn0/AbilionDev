@@ -1,7 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { loginRequest, logoutRequest, meRequest } from "@/lib/auth-api"
+import { mergeLeads } from "@/lib/crm"
 import { migrateFunnel, migrateLead, migrateSettings } from "@/lib/migrate"
 import { pullRemote, pushRemote, supabaseEnabled } from "@/lib/persist"
+import { fetchInbox, fetchRuntime, saveCrm } from "@/lib/runtime-api"
 import { seededOperation } from "@/lib/templates"
 import { defaultSettings, type AppState, type Lead, type PluginId, type SalesFunnel, type Settings, type User } from "@/lib/types"
 
@@ -25,7 +27,7 @@ function readState(): AppState {
       user: parsed.user ?? null,
       funnels: Array.isArray(parsed.funnels) ? parsed.funnels.map(migrateFunnel) : [],
       leads: Array.isArray(parsed.leads) ? parsed.leads.map((lead) => migrateLead(lead as Lead)) : [],
-      settings: migrateSettings(parsed.settings),
+      settings: migrateSettings({ ...parsed.settings, telegramBotToken: "" }),
     }
   } catch {
     return empty
@@ -78,6 +80,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppState>(bootState)
   const skipPush = useRef(true)
   const persistTimer = useRef(0)
+  const crmTimer = useRef(0)
+  const stateRef = useRef(state)
+
+  useEffect(() => {
+    stateRef.current = state
+  }, [state])
+
+  const pushWorker = () => {
+    window.clearTimeout(crmTimer.current)
+    crmTimer.current = window.setTimeout(() => {
+      const current = stateRef.current
+      if (!current.user) return
+      void saveCrm({
+        funnels: current.funnels,
+        settings: { ...current.settings, telegramBotToken: "" },
+      })
+    }, 400)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -98,6 +118,50 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
+    if (!state.user) return
+    let cancelled = false
+    void fetchRuntime().then((runtime) => {
+      if (cancelled || !runtime.ok) return
+      setState((prev) => ({
+        ...prev,
+        settings: {
+          ...prev.settings,
+          telegramBotToken: "",
+          telegramBotUsername: runtime.telegramBotUsername || prev.settings.telegramBotUsername,
+          telegramGroupUrl: runtime.telegramGroupUrl || prev.settings.telegramGroupUrl,
+          plugins: { ...prev.settings.plugins, telegram: Boolean(runtime.telegram) },
+        },
+      }))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [state.user])
+
+  useEffect(() => {
+    if (!state.user) return
+    let cancelled = false
+    const pull = async () => {
+      try {
+        const incoming = (await fetchInbox()).map((lead) => migrateLead(lead))
+        if (cancelled || !incoming.length) return
+        setState((prev) => {
+          const leads = mergeLeads(prev.leads, incoming)
+          return leads === prev.leads ? prev : { ...prev, leads }
+        })
+      } catch {
+        return
+      }
+    }
+    void pull()
+    const timer = window.setInterval(() => void pull(), 5000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [state.user])
+
+  useEffect(() => {
     if (!supabaseEnabled()) return
     let cancelled = false
     pullRemote().then((bundle) => {
@@ -108,15 +172,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setRemote("cloud")
       setState((prev) => {
         const funnels = bundle.funnels.length ? bundle.funnels : prev.funnels
-        const leads = bundle.leads.length ? bundle.leads : prev.leads
-        const remoteSettings = migrateSettings(bundle.settings)
+        const leads = mergeLeads(prev.leads, bundle.leads.map((lead) => migrateLead(lead)))
+        const remoteSettings = migrateSettings({ ...bundle.settings, telegramBotToken: "" })
         return {
           ...prev,
           funnels: funnels.length ? funnels.map(migrateFunnel) : prev.funnels,
-          leads: leads.map((lead) => migrateLead(lead)),
+          leads,
           settings: {
             ...remoteSettings,
-            telegramBotToken: prev.settings.telegramBotToken || remoteSettings.telegramBotToken,
+            telegramBotToken: "",
             telegramBotUsername: prev.settings.telegramBotUsername || remoteSettings.telegramBotUsername,
             telegramGroupUrl: prev.settings.telegramGroupUrl || remoteSettings.telegramGroupUrl,
           },
@@ -132,7 +196,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     window.clearTimeout(persistTimer.current)
     persistTimer.current = window.setTimeout(() => {
       const recent = [...state.leads].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 400)
-      localStorage.setItem(KEY, JSON.stringify({ ...state, user: null, leads: recent }))
+      localStorage.setItem(KEY, JSON.stringify({ ...state, user: null, leads: recent, settings: { ...state.settings, telegramBotToken: "" } }))
       if (state.user) localStorage.setItem(SESSION, JSON.stringify(state.user))
       else localStorage.removeItem(SESSION)
       if (skipPush.current) {
@@ -161,13 +225,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         await logoutRequest().catch(() => undefined)
         setState((prev) => ({ ...prev, user: null }))
       },
-      createFunnel: (funnel) => setState((prev) => ({ ...prev, funnels: [funnel, ...prev.funnels] })),
-      saveFunnel: (funnel) =>
+      createFunnel: (funnel) => {
+        setState((prev) => ({ ...prev, funnels: [funnel, ...prev.funnels] }))
+        pushWorker()
+      },
+      saveFunnel: (funnel) => {
         setState((prev) => ({
           ...prev,
           funnels: prev.funnels.map((item) => (item.id === funnel.id ? funnel : item)),
-        })),
-      deleteFunnel: (id) => setState((prev) => ({ ...prev, funnels: prev.funnels.filter((item) => item.id !== id) })),
+        }))
+        pushWorker()
+      },
+      deleteFunnel: (id) => {
+        setState((prev) => ({ ...prev, funnels: prev.funnels.filter((item) => item.id !== id) }))
+        pushWorker()
+      },
       createLead: (lead) => setState((prev) => ({ ...prev, leads: [lead, ...prev.leads] })),
       createLeads: (leads) => setState((prev) => ({ ...prev, leads: [...leads, ...prev.leads] })),
       saveLead: (lead) =>
@@ -176,19 +248,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           leads: prev.leads.map((item) => (item.id === lead.id ? lead : item)),
         })),
       deleteLead: (id) => setState((prev) => ({ ...prev, leads: prev.leads.filter((item) => item.id !== id) })),
-      saveSettings: (patch) =>
+      saveSettings: (patch) => {
         setState((prev) => ({
           ...prev,
-          settings: { ...prev.settings, ...patch, plugins: patch.plugins ?? prev.settings.plugins },
-        })),
-      togglePlugin: (id) =>
+          settings: { ...prev.settings, ...patch, telegramBotToken: "", plugins: patch.plugins ?? prev.settings.plugins },
+        }))
+        pushWorker()
+      },
+      togglePlugin: (id) => {
+        if (id === "whatsapp") return
         setState((prev) => ({
           ...prev,
           settings: {
             ...prev.settings,
             plugins: { ...prev.settings.plugins, [id]: !prev.settings.plugins[id] },
           },
-        })),
+        }))
+        pushWorker()
+      },
     }),
     [ready, remote, state]
   )
