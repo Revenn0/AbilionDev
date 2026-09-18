@@ -1,14 +1,14 @@
 # AbilionDev
 
-Painel da operação Abilion. O funil é **só visual**. A Sté no Telegram segue o **prompt interno** (Mãe do Aviator), não o quadro. Banca ninguém inventa.
+Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / ManyChat). Telegram e WhatsApp são canais. Sté e Ester são nós. Banca ninguém inventa.
 
 ## O que entra
 
 - Login local (qualquer e-mail + senha com 6+ caracteres)
 - Dashboard: leads, conversas, fila Ester, espera, ofertas
-- Leads no CRM (print e banca são marcações manuais)
+- Leads no passo do fluxo (print, banca, espera, oferta só se o grafo deixar)
 - Conversas Telegram: a Sté (Mãe do Aviator) fala uma frase e espera o lead
-- Funil visual — mapa da operação, sem runtime
+- Funil com mapa e fluxo executável
 - Telegram: webhook no Worker (`/api/telegram`) — /start abre a Sté
 - Facebook → Telegram: `https://t.me/BOT?start=fb` (500–1000 /start por dia)
 - Configurações: bot Telegram, Sté ligada/desligada
@@ -32,17 +32,15 @@ npm run dev
 
 Abre [http://127.0.0.1:43173](http://127.0.0.1:43173).
 
-## Funil e Sté
+## Fluxo
 
-O canvas é um **mapa visual**. Publicar não liga o bot ao grafo. A Sté não lê nós, mensagens nem ofertas do quadro.
+Nós de **mapa** (não executam): tráfego, landing, divisor de campanha.
 
-No Telegram:
+Nós de **fluxo** (executam): entrada, mensagem, espera, condição, handoff Sté, avisar Ester, tag, oferta.
 
-- `/start` manda uma das frases de abordagem e espera
-- ofensa: uma desculpa e nunca mais responde
-- o resto segue o prompt interno via **GLM 5.3 Flash** (GLM Coding Plan)
+No 1:1 a Sté segue o prompt interno (GLM). O resto do quadro corre: espera, print, banca, oferta.
 
-Sem print → sem banca. Campanhas WA e TG não se misturam.
+Sem print → sem banca. Sem o nó de oferta → o canal não vende. Campanhas WA e TG não se misturam.
 
 ## Supabase
 
@@ -88,6 +86,7 @@ npx wrangler secret put OPENAI_API_KEY
 Sté responde com **GLM 5.3 Flash** no **GLM Coding Plan** (`https://api.z.ai/api/coding/paas/v4`). A chave vai só no secret do Worker. Não uses o endpoint geral `/api/paas/v4`.
 
 Webhook Telegram: `{origem}/api/telegram`  
+Cron de espera: hora a hora, ou `GET /api/cron?secret=…`  
 WhatsApp Cloud: `POST /api/whatsapp` (mesmo contrato; token opcional)
 
 O bot configura-se em Configurações e fica gravado no workspace. O token **não** entra no repositório.
@@ -98,7 +97,7 @@ O anúncio aponta para `https://t.me/BOT?start=fb` (ou `fb_campanha`). O Worker:
 
 - responde 200 na hora (`waitUntil`) para o Telegram não reenviar
 - procura **um** lead por contacto / chat, sem carregar a base
-- abre a Sté com a frase de abordagem; as respostas seguem o prompt interno no **GLM 5.3 Flash** (GLM Coding Plan)
+- abre a Sté com o motor determinístico; as respostas usam **GLM 5.3 Flash** no GLM Coding Plan
 - reenvia se a API do Telegram devolver 429
 
 Correr [`supabase/migrations/003_facebook_scale.sql`](supabase/migrations/003_facebook_scale.sql) no SQL editor. A inbox mostra no máximo 80 conversas (aguardando / hoje / Facebook).

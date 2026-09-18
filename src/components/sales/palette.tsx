@@ -24,7 +24,7 @@ export function SalesPalette() {
     <div className="w-[220px] shrink-0 overflow-y-auto border-r border-border bg-card">
       <div className="px-3.5 pt-4 pb-2">
         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Construtor</p>
-        <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">Mapa visual. A Sté não lê o quadro.</p>
+        <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">Mapa explica. Fluxo executa. Arraste o bloco.</p>
       </div>
       <div className="space-y-4 px-2.5 pb-4">
         {SALES_GROUPS.map((group) => (

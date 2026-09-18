@@ -188,7 +188,7 @@ function StePane() {
       <div>
         <p className="text-[14px] font-medium">Sté · Telegram</p>
         <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
-          Prompt interno da Sté (Mãe do Aviator) vive no motor: uma frase curta, espera o lead, não empurra o app no início. O funil visual não manda mensagem.
+          Prompt interno da Sté (Mãe do Aviator) vive no motor: uma frase curta, espera o lead, não empurra o app no início.
           No pico de 500–1000 /start do Facebook o opener é determinístico. As respostas usam GLM 5.3 Flash no Worker.
           Ofensa encerra o contacto. Landing: app.mundoaviator.com.br
         </p>
@@ -258,7 +258,7 @@ function PluginsPane() {
       <div className="mb-3 flex items-end justify-between gap-3">
         <div>
           <p className="text-[14px] font-medium">Plugins</p>
-          <p className="mt-0.5 text-[12.5px] text-muted-foreground">Canais entram no CRM. WhatsApp usa o contrato do Telegram.</p>
+          <p className="mt-0.5 text-[12.5px] text-muted-foreground">Canais entram no mesmo grafo. WhatsApp usa o contrato do Telegram.</p>
         </div>
         <p className="text-[12.5px] text-muted-foreground">{on} ligados</p>
       </div>

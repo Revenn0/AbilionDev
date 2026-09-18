@@ -17,7 +17,7 @@ import { useStore } from "@/lib/store"
 import { captureAgainstFunnels } from "@/lib/templates"
 import { ORIGIN_LABEL, STAGE_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { needsEster } from "@/lib/ops"
-import { nodeTitle, publishedSnapshot } from "@/lib/runtime"
+import { applyEvent, nodeTitle, publishedSnapshot, type RuntimeEvent } from "@/lib/runtime"
 import { timeAgo } from "@/lib/format"
 import type { Lead, LeadChannel, LeadOrigin, LeadTemp, SalesFunnel } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -101,7 +101,7 @@ export function LeadsPage() {
             <div className="grid place-items-center px-6 py-16 text-center">
               <p className="text-[14px] font-medium">Nenhum lead</p>
               <p className="mt-1 max-w-md text-[13px] text-muted-foreground">
-                Popup, join ou /start viram lead no CRM. A Sté atende pelo prompt, não pelo quadro.
+                Popup, join ou /start entram no fluxo publicado. WhatsApp e Telegram não se misturam.
               </p>
             </div>
           ) : (
@@ -163,7 +163,7 @@ function CaptureDialog({
     event.preventDefault()
     if (!name.trim() || !contact.trim()) return
     onCreate(captureAgainstFunnels({ name, contact, channel, origin }, funnels))
-    toast.success("Lead no CRM.")
+    toast.success("Lead no fluxo.")
     setName("")
     setContact("")
     onOpenChange(false)
@@ -174,7 +174,7 @@ function CaptureDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Nova captura</DialogTitle>
-          <DialogDescription>O lead entra no CRM. O funil é só o mapa visual.</DialogDescription>
+          <DialogDescription>O lead entra no funil publicado — não numa planilha.</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-3">
           <Field id="lead-name" label="Nome" value={name} onChange={setName} />
@@ -256,7 +256,17 @@ function LeadDrawer({
 }) {
   if (!lead) return null
   const snapshot = publishedSnapshot(funnels)
-  const stamp = () => new Date().toISOString()
+
+  const run = (event: RuntimeEvent, ok: string, blocked?: string) => {
+    const result = applyEvent(snapshot, lead, event)
+    onSave(result.lead)
+    const stop = result.effects.find((item) => item.kind === "blocked")
+    if (stop) {
+      toast.error(blocked ?? stop.reason)
+      return
+    }
+    toast.success(ok)
+  }
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
@@ -294,11 +304,7 @@ function LeadDrawer({
             size="sm"
             variant="outline"
             className="rounded-full"
-            onClick={() => {
-              const at = stamp()
-              onSave({ ...lead, printAt: at, updatedAt: at })
-              toast.success(esterNotify ? "Aviso para a Ester: enviar a banca." : "Print registado. A Sté não inventa banca.")
-            }}
+            onClick={() => run({ type: "print" }, esterNotify ? "Aviso para a Ester: enviar a banca." : "Print no fluxo. A Sté não inventa banca.")}
           >
             Print do cadastro
           </Button>
@@ -307,29 +313,26 @@ function LeadDrawer({
             variant="outline"
             className="rounded-full"
             disabled={!lead.printAt}
-            onClick={() => {
-              if (!lead.printAt) {
-                toast.error("Sem print não há banca.")
-                return
-              }
-              const at = stamp()
-              onSave({ ...lead, bancaAt: at, updatedAt: at })
-              toast.success("Ester enviou a banca.")
-            }}
+            onClick={() => run({ type: "banca" }, "Ester enviou a banca.", "Sem print não há banca.")}
           >
             Ester enviou a banca
+          </Button>
+          <Button size="sm" variant="outline" className="rounded-full" onClick={() => run({ type: "resume" }, "Fluxo segue a partir da Sté.")}>
+            Sté no 1:1 / seguir
           </Button>
           <Button
             size="sm"
             variant="outline"
             className="rounded-full"
             onClick={() => {
-              const at = stamp()
-              onSave({ ...lead, paused: false, updatedAt: at })
-              toast.success("Lead volta ao 1:1 da Sté.")
+              const when = lead.waitUntil ? new Date(lead.waitUntil).getTime() + 1000 : Date.now()
+              const result = applyEvent(snapshot, lead, { type: "timer" }, when)
+              onSave(result.lead)
+              const offered = result.effects.some((item) => item.kind === "offer")
+              toast.success(offered ? "Oferta disparada pelo fluxo." : "Espera avançada.")
             }}
           >
-            Sté no 1:1 / seguir
+            Avançar espera / oferta
           </Button>
         </div>
 

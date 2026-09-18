@@ -98,7 +98,7 @@ export function EntryNode({ data, selected }: NodeProps<SalesCanvasNode>) {
       <Head icon={<Play className="size-5 text-emerald-300" />} title={data.title} tone="bg-emerald-400/10" />
       <div className="mx-5 mb-1 rounded-xl border border-white/8 bg-white/4 p-4">
         <p className="text-[15px] font-semibold text-foreground">{trigger}</p>
-        <p className="mt-1.5 text-[14px] leading-relaxed text-muted-foreground">Entrada no mapa. A Sté não lê este bloco.</p>
+        <p className="mt-1.5 text-[14px] leading-relaxed text-muted-foreground">O runtime começa aqui. Canal só transporta.</p>
       </div>
       <Next />
       <LeftHandle />
@@ -171,7 +171,7 @@ export function HandoffNode({ data, selected }: NodeProps<SalesCanvasNode>) {
     <Card selected={selected} accent="#f472b6">
       <Head icon={<Handshake className="size-5 text-pink-300" />} title={data.title} tone="bg-pink-400/10" />
       <div className="mx-5 mb-1 rounded-xl border border-pink-400/20 bg-pink-400/8 p-4">
-        <p className="text-[15px] leading-relaxed text-foreground">{data.body || "A Sté segue o prompt interno."}</p>
+        <p className="text-[15px] leading-relaxed text-foreground">{data.body || "Sté no 1:1. O fluxo pausa."}</p>
       </div>
       <Next />
       <LeftHandle />
@@ -259,7 +259,7 @@ export function OfferNode({ data, selected }: NodeProps<SalesCanvasNode>) {
     <Card selected={selected} accent="#34d399">
       <Head icon={<Zap className="size-5 text-emerald-300" />} title={data.title} tone="bg-emerald-400/10" />
       <div className="mx-5 mb-1 rounded-xl border border-emerald-400/20 bg-emerald-400/8 p-4">
-        <p className="text-[15px] leading-relaxed text-foreground">{data.body || "Oferta no mapa. A Sté decide pelo prompt."}</p>
+        <p className="text-[15px] leading-relaxed text-foreground">{data.body || "O fluxo oferece o produto."}</p>
         {data.cta && (
           <div className="mt-4 rounded-full bg-emerald-500 text-[#052e16] text-center text-[14px] font-semibold py-2.5">
             {data.cta}

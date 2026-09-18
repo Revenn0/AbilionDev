@@ -26,15 +26,17 @@ import { defaultSalesData, type SalesCatalogItem } from "./catalog"
 import { SalesInspector } from "./inspector"
 import { salesNodeTypes, type SalesCanvasNode } from "./nodes"
 import { SalesPalette } from "./palette"
+import { FlowSimulator } from "./simulator"
 
 const SALES_BOX = { w: 420, h: 320 }
 
-function toRf(funnel: Pick<SalesFunnel, "nodes" | "edges">): { nodes: SalesCanvasNode[]; edges: Edge[] } {
+function toRf(funnel: Pick<SalesFunnel, "nodes" | "edges">, cursor?: string): { nodes: SalesCanvasNode[]; edges: Edge[] } {
   return {
     nodes: funnel.nodes.map((n) => ({
       id: n.id,
       type: n.type,
       position: n.position,
+      selected: n.id === cursor,
       data: { ...n.data },
     })),
     edges: funnel.edges.map((e) => ({
@@ -57,6 +59,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
   const [selected, setSelected] = useState<SalesCanvasNode | undefined>()
   const [rf, setRf] = useState<ReactFlowInstance<SalesCanvasNode, Edge> | null>(null)
   const [renameOpen, setRenameOpen] = useState(false)
+  const [cursor, setCursor] = useState<string | undefined>()
   const keepDropSelection = useRef(false)
   const didFit = useRef(false)
 
@@ -79,7 +82,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
   }, [])
   const readOnly = version === "production"
 
-  const displayed = version === "production" && production ? toRf(production) : { nodes, edges }
+  const displayed = version === "production" && production ? toRf(production, cursor) : { nodes, edges }
 
   const persist = (
     prod = production,
@@ -225,7 +228,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
               }
               setProduction(snap)
               persist(snap, "active")
-              toast.success("Mapa publicado. A Sté não lê este quadro.")
+              toast.success("Fluxo publicado. Isto é o que corre.")
             }}
           >
             Publicar
@@ -244,7 +247,11 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
         <SalesPalette />
         <div className="relative min-w-0 flex-1">
           <ReactFlow
-            nodes={displayed.nodes}
+            nodes={
+              cursor
+                ? displayed.nodes.map((n) => ({ ...n, selected: n.id === cursor || n.selected }))
+                : displayed.nodes
+            }
             edges={displayed.edges}
             onNodesChange={readOnly ? undefined : onNodesChange}
             onEdgesChange={readOnly ? undefined : onEdgesChange}
@@ -267,9 +274,29 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
             <Background id="sales-dots" variant={BackgroundVariant.Dots} gap={28} size={1.2} color="#3a404c" />
             <Controls showInteractive={false} />
           </ReactFlow>
+          <FlowSimulator
+            funnel={{
+              ...funnel,
+              name,
+              production,
+              nodes: nodes.map((n) => ({
+                id: n.id,
+                type: (n.type as SalesKind) || "message",
+                position: n.position,
+                data: n.data,
+              })),
+              edges: edges.map((e) => ({
+                id: e.id,
+                source: e.source,
+                target: e.target,
+                sourceHandle: e.sourceHandle ?? undefined,
+              })),
+            }}
+            onCursor={setCursor}
+          />
           {!selected && version === "draft" && (
             <p className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-border bg-card/90 px-3.5 py-1.5 text-[12px] text-muted-foreground shadow-sm max-md:hidden">
-              Arraste blocos · o quadro é só visual
+              Arraste entradas e condições · o publicado é o runtime
             </p>
           )}
           <SalesInspector
