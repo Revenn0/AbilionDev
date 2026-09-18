@@ -1,3 +1,4 @@
+import { flagEmoji, formatGeo, mergeGeo, normalizeRegionCode, stateLabel } from "../src/lib/geo.ts"
 import {
   isolateLead,
   replySte,
@@ -95,5 +96,12 @@ assert(bob.lead.facts.hasSuperbet === false, "fato do Bob")
 const html = toTelegramHtml(STE_COURSE_BLOCK[2]!)
 assert(html.includes("<a href=\"https://mundoaviator.com.br/mini-curso/\">"), "html do telegram")
 assert(!html.includes("]("), "markdown nao vaza")
+
+assert(flagEmoji("BR") === "🇧🇷", "bandeira BR")
+assert(stateLabel("São Paulo", "SP", "BR") === "São Paulo (SP)", "estado SP")
+assert(formatGeo({ countryCode: "BR", regionCode: "RJ" }) === "🇧🇷 Rio de Janeiro (RJ)", "geo do cliente")
+assert(normalizeRegionCode("Sao Paulo", "BR") === "SP", "UF sem acento")
+assert(mergeGeo({ countryCode: "BR", regionCode: "SP" }, { countryCode: "", regionCode: "" }).regionCode === "SP", "hint sobrevive ao CF vazio")
+assert(mergeGeo({ countryCode: "BR", regionCode: "RJ" }, { countryCode: "BR", city: "Niterói" }).regionCode === "RJ", "CF sem UF nao apaga estado")
 
 console.log("ste-flow ok")

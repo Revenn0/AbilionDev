@@ -1,4 +1,6 @@
+import { BR_STATES, countryName, normalizeCountryCode, normalizeRegionCode } from "../src/lib/geo.ts"
 import { campaignFromTrack, parseDevice, sanitizeVisitorId, summarizeTrack, type TrackEvent, type TrackKind } from "../src/lib/track.ts"
+import { geoFromCloudflare } from "./geo-lookup.ts"
 
 export type TrackStore = {
   load(): Promise<TrackEvent[]>
@@ -43,8 +45,10 @@ export function ingestTrack(
     utmCampaign?: string
     language?: string
     country?: string
+    countryCode?: string
     city?: string
     region?: string
+    regionCode?: string
     device?: string
     href?: string
     id?: string
@@ -58,6 +62,9 @@ export function ingestTrack(
   if (last && now - new Date(last.at).getTime() < (kind === "beat" ? 20_000 : kind === "view" ? 4000 : 800)) {
     return events
   }
+  const prior = [...events].reverse().find((item) => item.visitorId === visitorId && (item.countryCode || item.regionCode || item.region))
+  const countryCode = normalizeCountryCode(input.countryCode || input.country || prior?.countryCode || prior?.country)
+  const regionCode = normalizeRegionCode(input.regionCode || input.region || prior?.regionCode, countryCode)
   const next: TrackEvent = {
     id: input.id || crypto.randomUUID(),
     visitorId,
@@ -70,9 +77,11 @@ export function ingestTrack(
       utmCampaign: input.utmCampaign,
       utmSource: input.utmSource,
     }),
-    country: String(input.country || "").slice(0, 48),
-    city: String(input.city || "").slice(0, 64),
-    region: String(input.region || "").slice(0, 64),
+    country: countryName(countryCode, input.country || prior?.country),
+    countryCode,
+    city: String(input.city || prior?.city || "").slice(0, 64),
+    region: String(input.region || prior?.region || (regionCode && BR_STATES[regionCode]) || "").slice(0, 64),
+    regionCode,
     device: String(input.device || "Outro").slice(0, 40),
     language: String(input.language || "").slice(0, 16),
     at: new Date(now).toISOString(),
@@ -91,11 +100,13 @@ export async function summaryFromStore(store: TrackStore, now = Date.now()) {
 }
 
 export function geoFromRequest(request: Request) {
-  const cf = (request as Request & { cf?: { country?: string; city?: string; region?: string } }).cf
+  const geo = geoFromCloudflare(request)
   return {
-    country: cf?.country || request.headers.get("cf-ipcountry") || "",
-    city: cf?.city || "",
-    region: cf?.region || "",
+    country: geo.countryCode || geo.country || request.headers.get("cf-ipcountry") || "",
+    countryCode: geo.countryCode,
+    city: geo.city,
+    region: geo.region,
+    regionCode: geo.regionCode,
     device: parseDevice(request.headers.get("user-agent") || ""),
   }
 }

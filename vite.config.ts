@@ -6,7 +6,10 @@ import react from "@vitejs/plugin-react"
 import { defineConfig, type ViteDevServer } from "vite"
 import { handleAuth, sessionUser, type AuthSnapshot, type AuthStore } from "./worker/auth.ts"
 import { fileTrackStore } from "./worker/file-track.ts"
-import { geoFromRequest, ingestTrack, readTrackBody, summaryFromStore, type TrackStore } from "./worker/track-store.ts"
+import { compactGeo } from "./src/lib/geo.ts"
+import { parseDevice } from "./src/lib/track.ts"
+import { resolveClientGeo } from "./worker/geo-lookup.ts"
+import { ingestTrack, readTrackBody, summaryFromStore, type TrackStore } from "./worker/track-store.ts"
 import { TRACKER_JS } from "./src/lib/tracker-script.ts"
 
 function fileAuthStore(file: string): AuthStore {
@@ -81,8 +84,19 @@ function localApi(store: AuthStore, tracks: TrackStore) {
       }
       const request = new Request(new URL(url, origin), { method: "POST", headers, body: new Uint8Array(await readBody(req)) })
       const body = await readTrackBody(request)
-      const geo = geoFromRequest(request)
-      const events = ingestTrack(await tracks.load(), { ...body, ...geo, visitorId: String(body.visitorId ?? "") })
+      const geo = await resolveClientGeo(request, typeof body.timezone === "string" ? body.timezone : undefined, {
+        country: typeof body.country === "string" ? body.country : undefined,
+        countryCode: typeof body.countryCode === "string" ? body.countryCode : undefined,
+        city: typeof body.city === "string" ? body.city : undefined,
+        region: typeof body.region === "string" ? body.region : undefined,
+        regionCode: typeof body.regionCode === "string" ? body.regionCode : undefined,
+      })
+      const events = ingestTrack(await tracks.load(), {
+        ...body,
+        ...compactGeo(geo),
+        visitorId: String(body.visitorId ?? ""),
+        device: parseDevice(request.headers.get("user-agent") || ""),
+      })
       await tracks.save(events)
       res.statusCode = 204
       res.setHeader("access-control-allow-origin", "*")

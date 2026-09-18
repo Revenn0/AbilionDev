@@ -4,6 +4,7 @@ import { AppShell } from "@/components/layout/app-shell"
 import { DashboardPage } from "@/pages/dashboard"
 import { ForgotPage } from "@/pages/forgot"
 import { LoginPage } from "@/pages/login"
+import { LandingPage } from "@/pages/landing"
 import { PrivacyPage } from "@/pages/privacy"
 import { ResetPage } from "@/pages/reset"
 import { useStore } from "@/lib/store"
@@ -55,6 +56,7 @@ function AppRoutes() {
         }
       />
       <Route path="/privacidade" element={<PrivacyPage />} />
+      <Route path="/l" element={<LandingPage />} />
       <Route
         path="/*"
         element={

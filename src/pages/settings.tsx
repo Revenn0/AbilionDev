@@ -229,8 +229,14 @@ function BotPane() {
       <p className="text-[14px] font-medium">Pixel da landing</p>
       <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
         Cola isto na página para onde o Facebook manda o lead. No botão de Telegram usa{" "}
-        <code className="text-foreground">data-abilion-cta</code>. O script grava visita, clique e o{" "}
-        <code className="text-foreground">fb_vid</code> do /start.
+        <code className="text-foreground">data-abilion-cta</code>. O script grava visita, clique, bandeira e UF. O{" "}
+        <code className="text-foreground">fb_vid</code> fecha o /start no mesmo visitante.
+      </p>
+      <p className="mt-3 text-[12.5px] text-muted-foreground">
+        Landing de teste desta origem:{" "}
+        <a className="font-medium text-foreground underline-offset-2 hover:underline" href={`${origin}/l`}>
+          {origin}/l
+        </a>
       </p>
       <pre className="mt-4 overflow-x-auto rounded-xl bg-muted px-4 py-3 text-[12px] leading-relaxed">{pixel}</pre>
       <Button

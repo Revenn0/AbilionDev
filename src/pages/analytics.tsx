@@ -47,10 +47,13 @@ export function AnalyticsPage() {
 
         <section className="grid gap-3 lg:grid-cols-2">
           <RankList title="Campanha / origem" rows={summary.referrers} empty="Sem origem ainda." />
-          <RankList title="País" rows={summary.countries} empty="Sem geo ainda." tone="sky" />
+          <RankList title="Estado" rows={summary.regions} empty="Sem estado ainda. O pixel grava UF no Cloudflare ou via ipwho.is." tone="sky" />
         </section>
         <section className="grid gap-3 lg:grid-cols-2">
+          <RankList title="País" rows={summary.countries} empty="Sem país ainda." />
           <RankList title="Páginas" rows={summary.pages} empty="Nenhuma página rastreada." tone="sky" />
+        </section>
+        <section className="grid gap-3 lg:grid-cols-2">
           <RankList title="Browser / app" rows={summary.devices} empty="Sem device ainda." />
         </section>
       </div>

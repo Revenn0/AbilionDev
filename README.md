@@ -124,3 +124,17 @@ Pixel da landing (Configurações → Bot Telegram):
 ```
 
 O clique reescreve o `t.me/BOT?start=fb_{vid}`. O webhook fecha o evento `telegram` com o mesmo visitor.
+
+Landing de teste (pixel + CTA): `/l` — local [http://127.0.0.1:43173/l](http://127.0.0.1:43173/l), produção [https://www.abilion.lol/l](https://www.abilion.lol/l).
+
+## País e estado
+
+Não dá para inventar uma base GeoIP. O rastreio junta três fontes abertas, sem chave:
+
+1. **Cloudflare `request.cf`** em produção (`country`, `region`, `regionCode`, `city`) — a melhor UF no Brasil
+2. **[ipwho.is](https://ipwho.is)** e **[geojs.io](https://www.geojs.io)** como fallback HTTPS quando o Worker não traz região
+3. Fuso horário do browser só para estados com TZ próprio (`America/Bahia` → BA). `America/Sao_Paulo` não separa SP/RJ/MG
+
+Bandeira vem do ISO 3166-1 (emoji). UF brasileira usa a tabela IBGE. Conversas, Leads e Analytics mostram `🇧🇷 São Paulo (SP)`.
+
+Simulador de 100 leads Facebook roda UFs reais para o CRM não ficar “Sem estado” sem pixel.

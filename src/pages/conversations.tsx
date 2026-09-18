@@ -7,6 +7,8 @@ import { migrateLead } from "@/lib/migrate"
 import { useStore } from "@/lib/store"
 import { hasConversation } from "@/lib/ops"
 import { ORIGIN_LABEL, TEMP_LABEL } from "@/lib/labels"
+import { GeoBadge } from "@/components/crm/geo-badge"
+import { factsWithTrack } from "@/lib/geo"
 import { advanceSteIfDue, replySte, splitSteMarkup, steRuntimeFromSettings, steStepLabel } from "@/lib/ste"
 import { useTrackSummary } from "@/lib/use-track-summary"
 import { timeAgo } from "@/lib/format"
@@ -184,9 +186,11 @@ export function ConversationsPage() {
                           <span className="shrink-0 text-[11px] text-muted-foreground">{timeAgo(item.updatedAt)}</span>
                         </div>
                         <p className="mt-0.5 truncate text-[12px] text-muted-foreground">{item.lastMessage}</p>
-                        <p className="mt-1 text-[11px] text-muted-foreground">
-                          {steStepLabel(item)} · {ORIGIN_LABEL[item.origin]}
-                          {item.facts?.country ? ` · ${item.facts.country}` : ""}
+                        <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                          <span>
+                            {steStepLabel(item)} · {ORIGIN_LABEL[item.origin]}
+                          </span>
+                          <GeoBadge facts={factsWithTrack(item, summary.geos)} />
                         </p>
                       </button>
                     </li>
@@ -199,9 +203,11 @@ export function ConversationsPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-5 py-4">
                   <div>
                     <p className="text-[15px] font-medium">{lead.name}</p>
-                    <p className="text-[12.5px] text-muted-foreground">
-                      Sté · {steStepLabel(lead)} · {lead.contact} · {ORIGIN_LABEL[lead.origin]}
-                      {lead.facts?.country ? ` · ${lead.facts.country}` : ""}
+                    <p className="flex flex-wrap items-center gap-1.5 text-[12.5px] text-muted-foreground">
+                      <span>
+                        Sté · {steStepLabel(lead)} · {lead.contact} · {ORIGIN_LABEL[lead.origin]}
+                      </span>
+                      <GeoBadge facts={factsWithTrack(lead, summary.geos)} />
                     </p>
                   </div>
                   <StatusPill tone={lead.steQuiet || lead.steBlocked ? "danger" : lead.temperature === "quente" ? "danger" : "muted"}>

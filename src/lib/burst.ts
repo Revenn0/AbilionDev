@@ -1,3 +1,4 @@
+import { factsFromGeo } from "./geo"
 import { replySte } from "./ste"
 import { campaignFromStart } from "./telegram-start"
 import { captureAgainstFunnels } from "./templates"
@@ -26,6 +27,8 @@ export function burstFacebookLeads(funnels: SalesFunnel[], count = 100): Lead[] 
     captured.startPayload = payload
     captured.campaign = campaignFromStart(payload)
     captured.telegramChatId = String(800_000 + index)
+    const ufs = ["SP", "RJ", "MG", "BA", "PR", "RS", "PE", "CE", "GO", "SC"] as const
+    captured.facts = { ...captured.facts, ...factsFromGeo({ countryCode: "BR", regionCode: ufs[index % ufs.length] }) }
     const extra = followUp(index)
     return extra ? replySte(captured, extra).lead : captured
   })

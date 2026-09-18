@@ -5,7 +5,10 @@ import { TRACKER_JS } from "../src/lib/tracker-script"
 import { campaignFromStart, originFromStart, parseTelegramStart, visitorIdFromStart } from "../src/lib/telegram-start"
 import { applyEvent, dueWaits, publishedSnapshot } from "../src/lib/runtime"
 import { BANCA_FIXED, type Lead, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types"
-import { geoFromRequest, ingestTrack, kvTrackStore, memoryTrackStore, readTrackBody, summaryFromStore, type TrackStore } from "./track-store"
+import { compactGeo, factsFromGeo } from "../src/lib/geo"
+import { parseDevice } from "../src/lib/track"
+import { resolveClientGeo } from "./geo-lookup"
+import { ingestTrack, kvTrackStore, memoryTrackStore, readTrackBody, summaryFromStore, type TrackStore } from "./track-store"
 
 export interface Env {
   ASSETS: Fetcher
@@ -79,9 +82,24 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
 
   if (url.pathname === "/api/track" && request.method === "POST") {
     const body = await readTrackBody(request)
-    const geo = geoFromRequest(request)
+    const geo = await resolveClientGeo(request, typeof body.timezone === "string" ? body.timezone : undefined, {
+      country: typeof body.country === "string" ? body.country : undefined,
+      countryCode: typeof body.countryCode === "string" ? body.countryCode : undefined,
+      city: typeof body.city === "string" ? body.city : undefined,
+      region: typeof body.region === "string" ? body.region : undefined,
+      regionCode: typeof body.regionCode === "string" ? body.regionCode : undefined,
+    })
     const store = trackStore(env)
-    const events = ingestTrack(await store.load(), { ...body, ...geo, visitorId: String(body.visitorId ?? "") }, Date.now())
+    const events = ingestTrack(
+      await store.load(),
+      {
+        ...body,
+        ...compactGeo(geo),
+        visitorId: String(body.visitorId ?? ""),
+        device: parseDevice(request.headers.get("user-agent") || ""),
+      },
+      Date.now()
+    )
     await store.save(events)
     const last = events.at(-1)
     if (last && env.SUPABASE_SERVICE_ROLE) {
@@ -206,8 +224,18 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
     const events = ingestTrack(await store.load(), { kind: "telegram", visitorId, path: "/telegram", campaign }, Date.now())
     await store.save(events)
     const last = events.at(-1)
-    if (last?.country) {
-      lead.facts = { ...lead.facts, country: last.country, city: last.city, region: last.region, device: last.device }
+    if (last?.country || last?.region || last?.regionCode) {
+      lead.facts = {
+        ...lead.facts,
+        ...factsFromGeo({
+          country: last.country,
+          countryCode: last.countryCode,
+          city: last.city,
+          region: last.region,
+          regionCode: last.regionCode,
+        }),
+        device: last.device,
+      }
     }
   }
 

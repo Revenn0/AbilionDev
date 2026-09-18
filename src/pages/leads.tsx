@@ -22,6 +22,9 @@ import { timeAgo } from "@/lib/format"
 import type { Lead, LeadChannel, LeadOrigin, LeadTemp, SalesFunnel } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
+import { GeoBadge } from "@/components/crm/geo-badge"
+import { factsWithTrack } from "@/lib/geo"
+import { useTrackSummary } from "@/lib/use-track-summary"
 
 const FILTERS = [
   { id: "all", label: "Todos" },
@@ -36,6 +39,7 @@ const FILTERS = [
 
 export function LeadsPage() {
   const { state, createLead, saveLead } = useStore()
+  const { summary } = useTrackSummary(8000)
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("all")
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
@@ -89,8 +93,9 @@ export function LeadsPage() {
             ))}
           </div>
 
-          <div className="hidden grid-cols-[1.2fr_90px_90px_140px_90px] gap-3 border-b border-border px-5 py-2.5 text-[12px] text-muted-foreground md:grid">
+          <div className="hidden grid-cols-[1.1fr_150px_80px_80px_130px_80px] gap-3 border-b border-border px-5 py-2.5 text-[12px] text-muted-foreground md:grid">
             <p>Nome</p>
+            <p>Estado</p>
             <p>Canal</p>
             <p>Temperatura</p>
             <p>Passo</p>
@@ -111,12 +116,13 @@ export function LeadsPage() {
                   <button
                     type="button"
                     onClick={() => setSelected(item.id)}
-                    className="grid w-full grid-cols-1 gap-1 border-b border-border px-5 py-3.5 text-left last:border-0 hover:bg-muted/30 md:grid-cols-[1.2fr_90px_90px_140px_90px] md:items-center md:gap-3"
+                    className="grid w-full grid-cols-1 gap-1 border-b border-border px-5 py-3.5 text-left last:border-0 hover:bg-muted/30 md:grid-cols-[1.1fr_150px_80px_80px_130px_80px] md:items-center md:gap-3"
                   >
                     <div className="min-w-0">
                       <p className="truncate text-[13.5px] font-medium">{item.name}</p>
                       <p className="truncate text-[12px] text-muted-foreground">{item.contact}</p>
                     </div>
+                    <GeoBadge facts={factsWithTrack(item, summary.geos)} className="text-[12.5px]" />
                     <p className="text-[12.5px] text-muted-foreground">{item.channel === "telegram" ? "Telegram" : "WhatsApp"}</p>
                     <StatusPill tone={item.temperature === "quente" ? "danger" : item.temperature === "morno" ? "warn" : "muted"}>
                       {TEMP_LABEL[item.temperature]}
@@ -136,6 +142,7 @@ export function LeadsPage() {
         lead={lead}
         esterNotify={state.settings.esterNotify}
         funnels={state.funnels}
+        geos={summary.geos}
         onClose={() => setSelected(null)}
         onSave={saveLead}
       />
@@ -245,12 +252,14 @@ function LeadDrawer({
   lead,
   esterNotify,
   funnels,
+  geos,
   onClose,
   onSave,
 }: {
   lead: Lead | null
   esterNotify: boolean
   funnels: SalesFunnel[]
+  geos?: Record<string, { country?: string; countryCode?: string; city?: string; region?: string; regionCode?: string }>
   onClose: () => void
   onSave: (lead: Lead) => void
 }) {
@@ -277,6 +286,9 @@ function LeadDrawer({
         </p>
         <h2 className="mt-1 text-[20px] font-medium tracking-tight">{lead.name}</h2>
         <p className="mt-1 text-[13px] text-muted-foreground">{lead.contact}</p>
+        <p className="mt-2 text-[13.5px] font-medium">
+          <GeoBadge facts={factsWithTrack(lead, geos)} empty="Estado ainda sem rastreio" />
+        </p>
         <p className="mt-2 text-[12.5px] text-muted-foreground">
           Passo · {nodeTitle(snapshot, lead.nodeId) ?? STAGE_LABEL[lead.stage]}
           {lead.waitUntil ? " · à espera" : ""}

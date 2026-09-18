@@ -1,3 +1,5 @@
+import { countryName, formatGeo, normalizeCountryCode, stateLabel } from "./geo.ts"
+
 export type TrackKind = "view" | "click" | "telegram" | "beat"
 
 export type TrackEvent = {
@@ -8,8 +10,10 @@ export type TrackEvent = {
   referrer: string
   campaign: string
   country: string
+  countryCode: string
   city: string
   region: string
+  regionCode: string
   device: string
   language: string
   at: string
@@ -28,7 +32,16 @@ export type TrackRecent = {
   visitorId: string
   name?: string
   country: string
+  region: string
   at: string
+}
+
+export type TrackGeo = {
+  country: string
+  countryCode: string
+  city: string
+  region: string
+  regionCode: string
 }
 
 export type TrackSummary = {
@@ -44,8 +57,10 @@ export type TrackSummary = {
   recent: TrackRecent[]
   referrers: TrackBucket[]
   countries: TrackBucket[]
+  regions: TrackBucket[]
   pages: TrackBucket[]
   devices: TrackBucket[]
+  geos: Record<string, TrackGeo>
 }
 
 export const emptySummary = (): TrackSummary => ({
@@ -61,8 +76,10 @@ export const emptySummary = (): TrackSummary => ({
   recent: [],
   referrers: [],
   countries: [],
+  regions: [],
   pages: [],
   devices: [],
+  geos: {},
 })
 
 export function sanitizeVisitorId(value: unknown) {
@@ -121,8 +138,10 @@ export function summarizeTrack(events: TrackEvent[], now = Date.now()): TrackSum
   const last = new Map<string, number>()
   const referrers = new Map<string, number>()
   const countries = new Map<string, number>()
+  const regions = new Map<string, number>()
   const pages = new Map<string, number>()
   const devices = new Map<string, number>()
+  const geos: Record<string, TrackGeo> = {}
   const start = startOfDay(now - 29 * 86_400_000)
   const series = Array.from({ length: 30 }, (_, index) => {
     const day = new Date(start + index * 86_400_000)
@@ -145,6 +164,16 @@ export function summarizeTrack(events: TrackEvent[], now = Date.now()): TrackSum
     first.set(event.visitorId, Math.min(first.get(event.visitorId) ?? at, at))
     last.set(event.visitorId, Math.max(last.get(event.visitorId) ?? at, at))
     if (now - at <= 120_000 && (event.kind === "beat" || event.kind === "view" || event.kind === "click")) online += 1
+    const code = event.countryCode || normalizeCountryCode(event.country)
+    if (code || event.region || event.regionCode) {
+      geos[event.visitorId] = {
+        country: countryName(code, event.country),
+        countryCode: code,
+        city: event.city,
+        region: event.region,
+        regionCode: event.regionCode,
+      }
+    }
 
     const slot = Math.floor((at - start) / 86_400_000)
     const point = slot >= 0 && slot < 30 ? series[slot] : undefined
@@ -152,7 +181,19 @@ export function summarizeTrack(events: TrackEvent[], now = Date.now()): TrackSum
       viewed.add(event.visitorId)
       if (point) point.views += 1
       referrers.set(event.campaign || event.referrer || "Direto", (referrers.get(event.campaign || event.referrer || "Direto") ?? 0) + 1)
-      countries.set(event.country || "Local", (countries.get(event.country || "Local") ?? 0) + 1)
+      const countryLabel = formatGeo({ country: event.country, countryCode: code }) || countryName(code, event.country) || "Local"
+      countries.set(countryLabel, (countries.get(countryLabel) ?? 0) + 1)
+      const estado = stateLabel(event.region, event.regionCode, code)
+      if (estado) regions.set(estado, (regions.get(estado) ?? 0) + 1)
+      if (code || event.region || event.regionCode) {
+        geos[event.visitorId] = {
+          country: countryName(code, event.country),
+          countryCode: code,
+          city: event.city,
+          region: event.region,
+          regionCode: event.regionCode,
+        }
+      }
       pages.set(event.path || "/", (pages.get(event.path || "/") ?? 0) + 1)
       devices.set(event.device || "Outro", (devices.get(event.device || "Outro") ?? 0) + 1)
     }
@@ -165,7 +206,7 @@ export function summarizeTrack(events: TrackEvent[], now = Date.now()): TrackSum
       telegrams += 1
       telegram.add(event.visitorId)
       if (point) point.telegrams += 1
-      recent.push({ visitorId: event.visitorId, country: event.country, at: event.at })
+      recent.push({ visitorId: event.visitorId, country: event.country, region: event.region || event.regionCode, at: event.at })
     }
   }
 
@@ -196,8 +237,10 @@ export function summarizeTrack(events: TrackEvent[], now = Date.now()): TrackSum
     recent: recent.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 16),
     referrers: rank(referrers),
     countries: rank(countries),
+    regions: rank(regions),
     pages: rank(pages),
     devices: rank(devices),
+    geos,
   }
 }
 
