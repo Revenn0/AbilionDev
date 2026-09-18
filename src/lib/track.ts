@@ -152,7 +152,7 @@ export function summarizeTrack(events: TrackEvent[], now = Date.now()): TrackSum
       viewed.add(event.visitorId)
       if (point) point.views += 1
       referrers.set(event.campaign || event.referrer || "Direto", (referrers.get(event.campaign || event.referrer || "Direto") ?? 0) + 1)
-      countries.set(event.country || "—", (countries.get(event.country || "—") ?? 0) + 1)
+      countries.set(event.country || "Local", (countries.get(event.country || "Local") ?? 0) + 1)
       pages.set(event.path || "/", (pages.get(event.path || "/") ?? 0) + 1)
       devices.set(event.device || "Outro", (devices.get(event.device || "Outro") ?? 0) + 1)
     }
