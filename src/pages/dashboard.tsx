@@ -29,13 +29,13 @@ export function DashboardPage() {
             href="/conversas"
             label="Conversas"
             value={ops.conversations}
-            hint={empty ? "nenhuma iniciada" : "eventos do fluxo"}
+            hint={empty ? "nenhuma iniciada" : "Telegram com a Sté"}
             bars={spark}
           />
           <Kpi href="/leads" label="Facebook hoje" value={ops.facebookToday} hint="ads → Telegram" bars={spark} />
           <Kpi href="/leads" label="Fila Ester" value={ops.ester} hint="print sem banca" bars={spark} />
-          <Kpi href="/leads" label="Aguardando" value={ops.waiting} hint="espera do fluxo" bars={waitSpark} />
-          <Kpi href="/leads" label="Ofertas" value={ops.offered} hint="disparadas pelo quadro" bars={offerSpark} />
+          <Kpi href="/leads" label="Aguardando" value={ops.waiting} hint="à espera de resposta" bars={waitSpark} />
+          <Kpi href="/leads" label="Ofertas" value={ops.offered} hint="link enviado pela Sté" bars={offerSpark} />
         </section>
 
         <section className="surface p-6">

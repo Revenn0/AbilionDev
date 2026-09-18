@@ -49,7 +49,7 @@ export function TelegramPage() {
               createLeads(batch)
               const stats = burstStats(batch)
               toast.success(
-                `${stats.facebook} /start Facebook. ${stats.talking} responderam. ${stats.blocked} encerrados. ${stats.offered} na oferta.`
+                `${stats.facebook} /start Facebook. ${stats.talking} responderam. ${stats.blocked} encerrados. A Sté segue o prompt.`
               )
             }}
           >
@@ -72,9 +72,9 @@ export function TelegramPage() {
             </div>
           </article>
           <article className="surface p-5">
-            <p className="text-[12.5px] text-muted-foreground">Sté no fluxo</p>
-            <p className="mt-2 text-[18px] font-medium">Nó de handoff</p>
-            <p className="mt-2 text-[12.5px] text-muted-foreground">O mesmo passo no Telegram e no WhatsApp.</p>
+            <p className="text-[12.5px] text-muted-foreground">Sté no Telegram</p>
+            <p className="mt-2 text-[18px] font-medium">Prompt interno</p>
+            <p className="mt-2 text-[12.5px] text-muted-foreground">A Sté fala pelo prompt, não pelo nó do funil.</p>
           </article>
           <article className="surface p-5">
             <p className="text-[12.5px] text-muted-foreground">Joins no grupo</p>
@@ -89,10 +89,11 @@ export function TelegramPage() {
         </section>
 
         <section className="surface p-6">
-          <p className="text-[14px] font-medium">Canal no mesmo grafo</p>
+          <p className="text-[14px] font-medium">Canal no Telegram</p>
           <p className="mt-2 max-w-2xl text-[13.5px] leading-relaxed text-muted-foreground">
-            /start no privado: a Sté manda uma frase e espera. Join no grupo só cria o lead da campanha Telegram. Token de
-            produção vai em <code className="text-foreground">wrangler secret</code>, nunca no git.
+            /start no privado: a Sté manda uma frase e espera. O funil não manda mensagem. Join no grupo só cria o lead da
+            campanha Telegram. Token de produção vai em <code className="text-foreground">wrangler secret</code>, nunca no
+            git.
           </p>
           <p className="mt-4 text-[13px]">
             Link do anúncio Facebook:{" "}

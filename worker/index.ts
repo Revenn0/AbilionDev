@@ -1,8 +1,7 @@
 import { campaignFor } from "../src/lib/labels"
 import { replySte, replySteSmart } from "../src/lib/ste"
 import { campaignFromStart, originFromStart, parseTelegramStart } from "../src/lib/telegram-start"
-import { applyEvent, dueWaits, publishedSnapshot } from "../src/lib/runtime"
-import { BANCA_FIXED, type Lead, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types"
+import type { Lead, LeadOrigin, Settings } from "../src/lib/types"
 
 export interface Env {
   ASSETS: Fetcher
@@ -30,8 +29,8 @@ export default {
     }
     return env.ASSETS.fetch(request)
   },
-  async scheduled(_event: ScheduledEvent, env: Env) {
-    await processWaits(env)
+  async scheduled(_event: ScheduledEvent, _env: Env) {
+    await processWaits()
   },
 }
 
@@ -65,7 +64,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   if (url.pathname === "/api/cron") {
     const secret = url.searchParams.get("secret") ?? request.headers.get("x-cron-secret")
     if (env.CRON_SECRET && secret !== env.CRON_SECRET) return json({ ok: false }, 401)
-    const count = await processWaits(env)
+    const count = await processWaits()
     return json({ ok: true, advanced: count })
   }
 
@@ -140,48 +139,8 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
   await saveLead(env, lead)
 }
 
-async function processWaits(env: Env) {
-  const now = new Date().toISOString()
-  const dueRows = (await rest<LeadRow[]>(env, `leads?workspace_id=eq.${WORKSPACE}&wait_until=lte.${now}&paused=eq.false&select=*`)) ?? []
-  if (!dueRows.length) return 0
-  const funnels = await loadFunnels(env)
-  const settings = await loadSettings(env)
-  const snapshot = publishedSnapshot(funnels)
-  const leads = dueRows.map(rowToLead)
-  const due = dueWaits(leads)
-  const token = env.TELEGRAM_BOT_TOKEN
-  for (const lead of due) {
-    const result = applyEvent(snapshot, lead, { type: "timer" }, Date.now())
-    await saveLead(env, result.lead)
-    for (const effect of result.effects) {
-      if (effect.kind === "offer" && token && lead.telegramChatId) {
-        await telegram(token, "sendMessage", { chat_id: lead.telegramChatId, text: effect.body || "Oferta do produto" })
-      }
-      if (effect.kind === "notify_ester" && token) {
-        await notifyEster(env, token, effect.body, settings)
-      }
-    }
-  }
-  return due.length
-}
-
-async function notifyEster(env: Env, token: string, body: string, settings: Settings) {
-  const chat = env.ESTER_CHAT_ID || settings.esterTelegramChatId
-  if (!chat) return
-  await telegram(token, "sendMessage", { chat_id: chat, text: body || BANCA_FIXED })
-}
-
-async function loadFunnels(env: Env): Promise<SalesFunnel[]> {
-  return ((await rest<SalesFunnelRow[]>(env, `funnels?workspace_id=eq.${WORKSPACE}`)) ?? []).map((row) => ({
-    id: row.id,
-    name: row.name,
-    mode: row.mode,
-    status: row.status,
-    updatedAt: row.updated_at,
-    nodes: row.nodes ?? [],
-    edges: row.edges ?? [],
-    production: row.production,
-  })) as SalesFunnel[]
+async function processWaits() {
+  return 0
 }
 
 async function loadSettings(env: Env): Promise<Settings> {
@@ -335,17 +294,6 @@ type TelegramUpdate = {
     chat: { id: number }
     new_chat_member: { status: string; user: TelegramUser }
   }
-}
-
-type SalesFunnelRow = {
-  id: string
-  name: string
-  mode: SalesFunnel["mode"]
-  status: SalesFunnel["status"]
-  updated_at: string
-  nodes: SalesFunnel["nodes"]
-  edges: SalesFunnel["edges"]
-  production: SalesFunnel["production"]
 }
 
 type LeadRow = {

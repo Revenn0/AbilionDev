@@ -1,5 +1,5 @@
 import { uid } from "./format"
-import type { ChatMessage, Lead, StePhase } from "./types"
+import type { ChatMessage, Lead } from "./types"
 
 export const STE_LANDING = "https://app.mundoaviator.com.br/"
 
@@ -49,19 +49,25 @@ const OPENERS = [
 const HOSTILE =
   /(vai se f|vai tomar|\bvsf\b|\bfdp\b|filho da|sua m[aã]e|\bidiota\b|\bimbecil\b|lixo humano|te foder|cuz[aã]o|arrombado|otári[oa] de merda|cala a boca)/i
 
-const PAIN =
-  /\b(perco|perdendo|perdi|loss|tilt|devolver|furado|quebrado|viciad|frustrad|raiva|medo|sozinho|não ganho|nao ganho|no vermelho)\b/i
-
-const READY =
-  /\b(quanto|preço|preco|valor|plano|link|quero|vamos|fech|assinar|cartão|cartao|pagar)\b/i
-
-const HELP = /\b(ajuda|método|metodo|app|ferramenta|profissional|preciso|como funciona|sinais)\b/i
-
 const OFFTOPIC =
   /\b(eleição|eleicao|bolsonaro|lula|receita de|bolo|clima|previsão do tempo|futebol|flamengo|política|politica)\b/i
 
+const LISTEN =
+  "Me fala sem filtro: no mês você fecha no lucro ou entra naquele vai-e-volta de ganhar e devolver?"
+
+const REDIRECT =
+  "Bora ficar no Aviator — me conta como estão seus resultados, se tá lucrando ou devolvendo pra casa."
+
 function nowIso() {
   return new Date().toISOString()
+}
+
+function cloneLead(lead: Lead): Lead {
+  return {
+    ...lead,
+    messages: [...(lead.messages ?? [])],
+    stePhase: lead.stePhase ?? "entry",
+  }
 }
 
 function push(lead: Lead, role: ChatMessage["role"], text: string) {
@@ -77,15 +83,30 @@ function oneLine(text: string) {
   return text.replace(/\s+/g, " ").trim().slice(0, 280)
 }
 
-export function replySte(lead: Lead, incoming?: string | null): { lead: Lead; reply: string | null } {
-  const next: Lead = {
-    ...lead,
-    messages: [...(lead.messages ?? [])],
-    stePhase: lead.stePhase ?? "entry",
-  }
+function hasSteMessage(lead: Lead) {
+  return (lead.messages ?? []).some((item) => item.role === "ste")
+}
+
+function openConversation(lead: Lead): { lead: Lead; reply: string } {
+  const opener = OPENERS[Math.floor(Math.random() * OPENERS.length)] ?? OPENERS[0]!
+  lead.stePhase = "listen"
+  push(lead, "ste", opener)
+  return { lead, reply: opener }
+}
+
+function listenLine(lead: Lead, incoming: string): { lead: Lead; reply: string } {
+  const reply = oneLine(OFFTOPIC.test(incoming) ? REDIRECT : LISTEN)
+  lead.stePhase = "listen"
+  push(lead, "ste", reply)
+  return { lead, reply }
+}
+
+/** Hostility, opener e um fallback curto. Sem walk de preço — isso fica no prompt da LLM. */
+function gateSte(lead: Lead, incoming?: string | null): { lead: Lead; reply: string | null; done: boolean } {
+  const next = cloneLead(lead)
 
   if (next.steBlocked || next.stePhase === "closed") {
-    return { lead: next, reply: null }
+    return { lead: next, reply: null, done: true }
   }
 
   const text = (incoming ?? "").trim()
@@ -95,49 +116,22 @@ export function replySte(lead: Lead, incoming?: string | null): { lead: Lead; re
       next.steBlocked = true
       next.stePhase = "closed"
       push(next, "ste", STE_CLOSE)
-      return { lead: next, reply: STE_CLOSE }
+      return { lead: next, reply: STE_CLOSE, done: true }
     }
   }
 
-  if (!text && !(next.messages ?? []).some((item) => item.role === "ste")) {
-    const opener = OPENERS[Math.floor(Math.random() * OPENERS.length)] ?? OPENERS[0]!
-    next.stePhase = "listen"
-    push(next, "ste", opener)
-    return { lead: next, reply: opener }
+  if (!text) {
+    if (!hasSteMessage(next)) return { ...openConversation(next), done: true }
+    return { lead: next, reply: null, done: true }
   }
 
-  if (!text) return { lead: next, reply: null }
+  return { lead: next, reply: null, done: false }
+}
 
-  let reply: string
-  let phase: StePhase = next.stePhase ?? "listen"
-
-  if (OFFTOPIC.test(text)) {
-    reply = "Bora ficar no Aviator — me conta como estão seus resultados, se tá lucrando ou devolvendo pra casa."
-  } else if (READY.test(text) && (phase === "solution" || phase === "offer" || phase === "diagnosis")) {
-    phase = "offer"
-    reply = next.messages.some((item) => item.text.includes(STE_LANDING))
-      ? `Semestral é o que eu recomendo: 12x de R$ 24,80 ou R$ 247 à vista. Mensal fica R$ 47. Olha com calma: ${STE_LANDING}`
-      : `Vou te mandar o link oficial com os dois planos pra você escolher. Dá uma olhada com calma: ${STE_LANDING}`
-  } else if (PAIN.test(text) && (phase === "listen" || phase === "entry" || phase === "diagnosis")) {
-    phase = "diagnosis"
-    reply = next.messages.filter((item) => item.role === "ste" && item.text.includes("ciclo")).length
-      ? "Operar no achismo e tentar recuperar no tilt é o ciclo que come o lucro do dia."
-      : "Entendo. Ganhar cedo e devolver tudo no mesmo dia é o ciclo que mais quebra apostador."
-  } else if (HELP.test(text) || phase === "diagnosis") {
-    phase = "solution"
-    reply = "Quando você cansar de palpite, o app te dá catalogador em tempo real e gestão de banca — método, não robô milagroso."
-  } else if (phase === "solution" || phase === "offer") {
-    phase = "offer"
-    reply = `Mensal R$ 47. Semestral, o que eu indico, 12x de R$ 24,80 ou R$ 247 à vista: ${STE_LANDING}`
-  } else {
-    phase = "listen"
-    reply = "Me fala sem filtro: no mês você fecha no lucro ou entra naquele vai-e-volta de ganhar e devolver?"
-  }
-
-  reply = oneLine(reply)
-  next.stePhase = phase
-  push(next, "ste", reply)
-  return { lead: next, reply }
+export function replySte(lead: Lead, incoming?: string | null): { lead: Lead; reply: string | null } {
+  const gated = gateSte(lead, incoming)
+  if (gated.done) return { lead: gated.lead, reply: gated.reply }
+  return listenLine(gated.lead, (incoming ?? "").trim())
 }
 
 export const STE_LLM_MODEL = "glm-5.3-flash"
@@ -148,13 +142,16 @@ export async function replySteSmart(
   incoming: string | null | undefined,
   opts?: { apiKey?: string; baseUrl?: string; model?: string }
 ): Promise<{ lead: Lead; reply: string | null }> {
-  const fallback = replySte(lead, incoming)
+  const gated = gateSte(lead, incoming)
+  if (gated.done) return { lead: gated.lead, reply: gated.reply }
+
+  const next = gated.lead
+  const text = (incoming ?? "").trim()
   const key = opts?.apiKey
-  if (!key || fallback.lead.steBlocked || fallback.reply === STE_CLOSE) return fallback
-  if (!incoming?.trim() && fallback.reply) return fallback
+  if (!key) return listenLine(next, text)
 
   try {
-    const history = fallback.lead.messages.slice(-12).map((item) => ({
+    const history = next.messages.slice(-12).map((item) => ({
       role: item.role === "ste" ? "assistant" : "user",
       content: item.text,
     }))
@@ -177,18 +174,14 @@ export async function replySteSmart(
         ],
       }),
     })
-    if (!res.ok) return fallback
+    if (!res.ok) return listenLine(next, text)
     const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
     const raw = oneLine(data.choices?.[0]?.message?.content ?? "")
-    if (!raw) return fallback
-    const lead = fallback.lead
-    const last = lead.messages[lead.messages.length - 1]
-    if (last?.role === "ste") {
-      last.text = raw
-      lead.lastMessage = raw
-    }
-    return { lead, reply: raw }
+    if (!raw) return listenLine(next, text)
+    next.stePhase = raw.includes(STE_LANDING) ? "offer" : "listen"
+    push(next, "ste", raw)
+    return { lead: next, reply: raw }
   } catch {
-    return fallback
+    return listenLine(next, text)
   }
 }

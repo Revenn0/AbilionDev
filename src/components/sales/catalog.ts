@@ -12,8 +12,8 @@ export type SalesCatalogItem = {
 }
 
 export const SALES_GROUPS: { id: SalesGroup; label: string; hint: string }[] = [
-  { id: "map", label: "Mapa", hint: "Tráfego e campanha — não executa" },
-  { id: "flow", label: "Fluxo", hint: "O que o canal corre de verdade" },
+  { id: "map", label: "Mapa", hint: "Tráfego e campanha — só visual" },
+  { id: "flow", label: "Fluxo", hint: "Passos do mapa — não executa" },
 ]
 
 export const SALES_CATALOG: SalesCatalogItem[] = [
@@ -94,7 +94,7 @@ export const SALES_CATALOG: SalesCatalogItem[] = [
     kind: "handoff",
     group: "flow",
     label: "Sté 1:1",
-    hint: "Humano. O fluxo pausa.",
+    hint: "Sté no Telegram segue o prompt",
     defaults: { title: "Sté · atendimento 1:1", handoffAgent: "ste" },
   },
   {
@@ -118,7 +118,7 @@ export const SALES_CATALOG: SalesCatalogItem[] = [
     kind: "offer",
     group: "flow",
     label: "Oferta",
-    hint: "Só se o quadro tiver este nó",
+    hint: "Só no mapa — a Sté decide",
   },
 ]
 
@@ -141,7 +141,7 @@ export function defaultSalesData(kind: SalesKind): SalesNodeData {
     case "message":
       return {
         title: "Mensagem",
-        body: "Oi, {{primeiro_nome}}. O próximo passo do fluxo está aqui.",
+        body: "Texto no mapa. A Sté não lê este bloco.",
         cta: "Continuar",
       }
     case "wait":
@@ -149,12 +149,12 @@ export function defaultSalesData(kind: SalesKind): SalesNodeData {
     case "condition":
       return { title: "Chegou print?", conditionKind: "print" }
     case "handoff":
-      return { title: "Sté · 1:1", handoffAgent: "ste", body: "Atendimento humano. O fluxo pausa." }
+      return { title: "Sté · 1:1", handoffAgent: "ste", body: "A Sté segue o prompt interno. Este nó é só visual." }
     case "notify":
       return { title: "Avisar Ester", notifyKind: "ester", notifyBody: BANCA_FIXED }
     case "tag":
       return { title: "Marcar quente", tagKind: "temperature", temperature: "quente" }
     case "offer":
-      return { title: "Oferta do produto", body: "O fluxo oferece o produto.", cta: "Ver oferta", url: "" }
+      return { title: "Oferta do produto", body: "Oferta no mapa. A Sté decide pelo prompt.", cta: "Ver oferta", url: "" }
   }
 }

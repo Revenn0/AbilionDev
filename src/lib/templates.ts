@@ -1,6 +1,6 @@
 import { uid } from "@/lib/format"
 import { campaignFor } from "@/lib/labels"
-import { applyEvent, eventFromOrigin, publishedSnapshot } from "@/lib/runtime"
+import { publishedSnapshot } from "@/lib/runtime"
 import { replySte } from "@/lib/ste"
 import { BANCA_FIXED, type Lead, type LeadChannel, type LeadOrigin, type SalesFunnel, type SalesSnapshot } from "@/lib/types"
 
@@ -77,7 +77,7 @@ export function emptySalesFunnel(name = "Operação"): SalesFunnel {
       id: ste,
       type: "handoff",
       position: { x: 1960, y: 180 },
-      data: { title: "Sté · atendimento 1:1", handoffAgent: "ste", body: "O fluxo pausa. A Sté atende. Sem inventar banca." },
+        data: { title: "Sté · atendimento 1:1", handoffAgent: "ste", body: "A Sté atende pelo prompt interno. O quadro não fala." },
     },
     {
       id: cond,
@@ -107,7 +107,7 @@ export function emptySalesFunnel(name = "Operação"): SalesFunnel {
       id: offer,
       type: "offer",
       position: { x: 3960, y: 80 },
-      data: { title: "Oferta do produto", body: "Passados 3–4 dias, o fluxo oferece o produto.", cta: "Ver oferta", url: "" },
+      data: { title: "Oferta do produto", body: "Oferta no mapa. A Sté decide pelo prompt, não por este nó.", cta: "Ver oferta", url: "" },
     },
   ]
 
@@ -160,7 +160,7 @@ export function leadFromCapture(
     channel: LeadChannel
     origin: LeadOrigin
   },
-  snapshot: SalesSnapshot | null = null,
+  _snapshot: SalesSnapshot | null = null,
   funnelId?: string
 ): Lead {
   const now = new Date().toISOString()
@@ -180,9 +180,8 @@ export function leadFromCapture(
     createdAt: now,
     updatedAt: now,
   }
-  const walked = applyEvent(snapshot, base, eventFromOrigin(input.origin)).lead
-  if (walked.channel !== "telegram") return walked
-  return replySte(walked, null).lead
+  if (base.channel !== "telegram") return base
+  return replySte(base, null).lead
 }
 
 export function captureAgainstFunnels(
