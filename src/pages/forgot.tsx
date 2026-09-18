@@ -23,7 +23,7 @@ export function ForgotPage() {
 
   return (
     <AuthSplit>
-      <Card>
+      <Card className="rounded-[12px] shadow-sm">
         <CardHeader className="pb-0">
           <AuthBrand title="Redefinir senha" />
           <p className={`mt-2 text-center ${AUTH_HINT}`}>Informe o e-mail da conta.</p>

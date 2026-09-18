@@ -2,10 +2,10 @@ import { LogoMark } from "@/components/brand/logo"
 import { ThemeToggle } from "@/components/theme/toggle"
 
 export const AUTH_FIELD =
-  "h-10 rounded-lg border border-input bg-background px-3 text-[14px] text-foreground placeholder:text-muted-foreground"
+  "h-10 rounded-[8px] border border-input bg-muted px-3 text-[14px] text-foreground shadow-none placeholder:text-muted-foreground"
 export const AUTH_LABEL = "text-xs font-medium text-foreground"
 export const AUTH_HINT = "text-[13px] leading-relaxed text-muted-foreground"
-export const AUTH_SUBMIT = "h-10 w-full rounded-lg text-[14px] font-medium"
+export const AUTH_SUBMIT = "h-10 w-full rounded-[8px] text-[14px] font-medium"
 export const AUTH_LINK = "text-muted-foreground hover:text-foreground"
 
 export function AuthSplit({ children }: { children: React.ReactNode }) {

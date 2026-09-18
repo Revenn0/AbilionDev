@@ -43,7 +43,7 @@ export function LoginPage() {
 
   return (
     <AuthSplit>
-      <Card>
+      <Card className="rounded-[12px] shadow-sm">
         <CardHeader className="pb-0">
           <AuthBrand title="Entrar" />
         </CardHeader>
