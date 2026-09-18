@@ -77,7 +77,7 @@ export function emptySalesFunnel(name = "Operação"): SalesFunnel {
       id: ste,
       type: "handoff",
       position: { x: 1960, y: 180 },
-        data: { title: "Sté · atendimento 1:1", handoffAgent: "ste", body: "A Sté atende pelo prompt interno. O quadro não fala." },
+      data: { title: "Sté · atendimento 1:1", handoffAgent: "ste", body: "A Sté atende pelo prompt interno. O quadro não fala." },
     },
     {
       id: cond,
