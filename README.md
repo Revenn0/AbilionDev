@@ -64,11 +64,19 @@ npx wrangler login
 npm run deploy
 ```
 
-Domínio **abilion.lol** (Namecheap → Cloudflare):
+Domínio **abilion.lol** (Namecheap → DNS na Cloudflare):
 
-1. [Adicionar o site](https://dash.cloudflare.com/?to=/:account/add-site) na Cloudflare: `abilion.lol`, plano Free. Copia os 2 nameservers.
-2. Na Namecheap [Domain List](https://ap.www.namecheap.com/domains/list/) → **Manage** em `abilion.lol` → **Nameservers** → **Custom DNS**. Se DNSSEC estiver ligado, desliga primeiro. Cola os 2 nameservers da Cloudflare e guarda.
-3. Workers → `abilion` → Settings → Domains & Routes → **Add** → Custom Domain → `abilion.lol` e `www.abilion.lol`.
+O domínio é novo: a ICANN trava **transferência de registrador** por 60 dias. O que activa o site é apontar os **nameservers** para a Cloudflare. A compra continua na Namecheap.
+
+Estado actual do DNS: `dns1.registrar-servers.com` / `dns2.registrar-servers.com` (parking Namecheap). Ainda não há zona Cloudflare.
+
+1. Na Cloudflare, conta do Worker `abilion`: [Onboard a domain](https://dash.cloudflare.com/?to=/:account/add-site). Apex `abilion.lol`. Plano **Free**.
+2. Na revisão de DNS, **apaga** o A de parking (`162.255.119.137`) e o CNAME/A de `www` da Namecheap. O custom domain do Worker cria os records certos depois. Continua e **copia os 2 nameservers** (`*.ns.cloudflare.com`).
+3. Na Namecheap [Domain List](https://ap.www.namecheap.com/domains/list/) → **Manage** em `abilion.lol`. Se **DNSSEC** estiver ligado, desliga. **Nameservers** → **Custom DNS**. Cola os 2 NS da Cloudflare e guarda o visto verde.
+4. Espera a zona ficar **Active** (minutos a algumas horas). Confere com `dig NS abilion.lol @1.1.1.1`.
+5. Workers → `abilion` → Settings → Domains & Routes → **Add** → Custom Domain → `abilion.lol` e `www.abilion.lol`.
+
+Não meter `custom_domain` no `wrangler.jsonc` de produção antes da zona existir — o deploy falha.
 
 Enquanto o DNS não propaga, o painel continua em [https://abilion.vsanches1060.workers.dev](https://abilion.vsanches1060.workers.dev).
 
