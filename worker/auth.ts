@@ -167,6 +167,7 @@ async function readBody(request: Request) {
   return (await request.json().catch(() => ({}))) as {
     email?: string
     password?: string
+    currentPassword?: string
     token?: string
   }
 }
@@ -239,6 +240,25 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
         return json({ ok: true, resetPath: `/reset?token=${token}` })
       }
     }
+    return json({ ok: true })
+  }
+
+  if (path === "/api/auth/password" && request.method === "POST") {
+    const token = readCookie(request)
+    const snapshot = prune(await store.load())
+    const session = snapshot.sessions.find((item) => item.token === token)
+    const user = session ? snapshot.users.find((item) => item.id === session.userId) : null
+    if (!user) return json({ error: "Sessão expirada." }, 401)
+    const body = await readBody(request)
+    const currentPassword = body.currentPassword || ""
+    const password = body.password || ""
+    if (!(await verifyPassword(currentPassword, user.passwordHash))) {
+      return json({ error: "Senha atual inválida." }, 401)
+    }
+    if (password.length < 6) return json({ error: "A nova senha precisa de 6+ caracteres." }, 400)
+    user.passwordHash = await hashPassword(password)
+    snapshot.sessions = snapshot.sessions.filter((item) => item.userId !== user.id || item.token === token)
+    await store.save(snapshot)
     return json({ ok: true })
   }
 

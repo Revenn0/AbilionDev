@@ -37,6 +37,17 @@ export function forgotPasswordRequest(email: string) {
   )
 }
 
+export function changePasswordRequest(currentPassword: string, password: string) {
+  return parse<{ ok: boolean }>(
+    fetch("/api/auth/password", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currentPassword, password }),
+    })
+  )
+}
+
 export function resetPasswordRequest(token: string, password: string) {
   return parse<{ ok: boolean }>(
     fetch("/api/auth/reset", {

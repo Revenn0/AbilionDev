@@ -48,7 +48,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (!state.user) navigate("/login", { replace: true })
   }, [ready, state.user, navigate])
 
-  if (!ready || !state.user) return <Navigate to="/login" replace />
+  if (!ready) return <div className="min-h-screen bg-background" />
+  if (!state.user) return <Navigate to="/login" replace />
 
   return (
     <div className={cn("flex h-screen overflow-hidden bg-background", !canvasEditor && "p-2 md:p-2.5")}>

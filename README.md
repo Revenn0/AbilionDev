@@ -52,11 +52,11 @@ Projecto já usado no wrangler:
 
 ## Produção
 
-URL no ar: [https://abilion.vsanches1060.workers.dev](https://abilion.vsanches1060.workers.dev)
+URL no ar: [https://www.abilion.lol](https://www.abilion.lol) (apex [https://abilion.lol](https://abilion.lol) e [https://abilion.vsanches1060.workers.dev](https://abilion.vsanches1060.workers.dev)).
 
-O Worker `abilion` serve este recorte (painel + `/api/*`). O CRM Next antigo saiu do ar.
+O Worker `abilion` serve o painel e `/api/*`. O CRM Next antigo saiu do ar.
 
-Login: `victor@abilion.com` ou `gabriel@abilion.com`. No primeiro acesso a senha fica gravada no KV `abilion-auth`. Depois, só essa senha entra. Token do Telegram e chave de IA **não** entram no git — grava em Configurações e `wrangler secret put`.
+Login: só `victor@abilion.com` ou `gabriel@abilion.com`. O primeiro acesso de cada conta grava a senha no KV `abilion-auth`. Depois, só essa senha entra. Token do Telegram e chave de IA **não** entram no git — grava em Configurações e `wrangler secret put`.
 
 Para forçar a mesma senha nas duas contas:
 
@@ -74,7 +74,7 @@ Domínio **abilion.lol** (Namecheap → DNS na Cloudflare):
 
 O domínio é novo: a ICANN trava **transferência de registrador** por 60 dias. O que activa o site é apontar os **nameservers** para a Cloudflare. A compra continua na Namecheap.
 
-Estado actual do DNS: `dns1.registrar-servers.com` / `dns2.registrar-servers.com` (parking Namecheap). Ainda não há zona Cloudflare.
+Estado actual do DNS: nameservers `coco.ns.cloudflare.com` / `etienne.ns.cloudflare.com`. O Worker já serve `abilion.lol` e `www.abilion.lol`.
 
 1. Na Cloudflare, conta do Worker `abilion`: [Onboard a domain](https://dash.cloudflare.com/?to=/:account/add-site). Apex `abilion.lol`. Plano **Free**.
 2. Na revisão de DNS, **apaga** o A de parking (`162.255.119.137`) e o CNAME/A de `www` da Namecheap. O custom domain do Worker cria os records certos depois. Continua e **copia os 2 nameservers** (`*.ns.cloudflare.com`).
