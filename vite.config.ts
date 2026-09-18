@@ -198,6 +198,6 @@ export default defineConfig({
     strictPort: true,
   },
   optimizeDeps: {
-    include: ["react", "react-dom", "react-router-dom", "@xyflow/react"],
+    include: ["react", "react-dom", "react-router-dom", "@xyflow/react", "cobe"],
   },
 })

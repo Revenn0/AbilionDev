@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
 import { AUTH_FIELD, AUTH_LABEL, AUTH_LINK, AUTH_SUBMIT, AuthBrand, AuthSplit } from "@/components/brand/auth-split"
+import { HelixChronoMatrix } from "@/components/ui/helix-chrono-matrix"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -42,7 +43,7 @@ export function LoginPage() {
   }
 
   return (
-    <AuthSplit>
+    <AuthSplit visual={<HelixChronoMatrix headline="ABILION" chrome={false} />}>
       <Card className="rounded-[12px] shadow-sm">
         <CardHeader className="pb-0">
           <AuthBrand title="Entrar" />

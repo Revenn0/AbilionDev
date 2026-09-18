@@ -46,6 +46,8 @@ export type TrackGeo = {
 
 export type TrackSummary = {
   visitors: number
+  views: number
+  ads: number
   clicks: number
   telegrams: number
   conversion: number
@@ -65,6 +67,8 @@ export type TrackSummary = {
 
 export const emptySummary = (): TrackSummary => ({
   visitors: 0,
+  views: 0,
+  ads: 0,
   clicks: 0,
   telegrams: 0,
   conversion: 0,
@@ -134,6 +138,7 @@ export function summarizeTrack(events: TrackEvent[], now = Date.now()): TrackSum
   const clicked = new Set<string>()
   const telegram = new Set<string>()
   const viewed = new Set<string>()
+  const ads = new Set<string>()
   const first = new Map<string, number>()
   const last = new Map<string, number>()
   const referrers = new Map<string, number>()
@@ -155,6 +160,7 @@ export function summarizeTrack(events: TrackEvent[], now = Date.now()): TrackSum
   const recent: TrackRecent[] = []
   let clicks = 0
   let telegrams = 0
+  let views = 0
   let online = 0
 
   for (const event of events) {
@@ -178,7 +184,9 @@ export function summarizeTrack(events: TrackEvent[], now = Date.now()): TrackSum
     const slot = Math.floor((at - start) / 86_400_000)
     const point = slot >= 0 && slot < 30 ? series[slot] : undefined
     if (event.kind === "view") {
+      views += 1
       viewed.add(event.visitorId)
+      if (/facebook|fb\.com|\bfb\b|ads/i.test(`${event.campaign} ${event.referrer}`)) ads.add(event.visitorId)
       if (point) point.views += 1
       referrers.set(event.campaign || event.referrer || "Direto", (referrers.get(event.campaign || event.referrer || "Direto") ?? 0) + 1)
       const countryLabel = formatGeo({ country: event.country, countryCode: code }) || countryName(code, event.country) || "Local"
@@ -226,6 +234,8 @@ export function summarizeTrack(events: TrackEvent[], now = Date.now()): TrackSum
 
   return {
     visitors: viewed.size || visitors.size,
+    views,
+    ads: ads.size,
     clicks,
     telegrams,
     conversion: viewed.size ? telegrams / viewed.size : 0,

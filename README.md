@@ -6,7 +6,7 @@ Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / M
 
 - Login real: `victor@abilion.com` ou `gabriel@abilion.com`. O primeiro acesso de cada conta define a senha (6+ caracteres).
 - Dashboard: leads, conversas, página / cliques, Facebook, espera, ofertas
-- Analytics: visitantes da landing, cliques no CTA, /start no Telegram, geo e device
+- Analytics: funil Ads → landing → Telegram → chat, globo Cobe, gráficos de 30 dias, geo e device
 - Leads no passo do fluxo (print, banca, espera, oferta só se o grafo deixar)
 - Conversas Telegram: a Sté (Mãe do Aviator) segue o prompt interno — 3 boas-vindas, minicurso, Superbet, App/Premium e remarketing
 - Funil com mapa e fluxo executável
@@ -17,7 +17,7 @@ Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / M
 
 ## Stack
 
-Vite + React + TypeScript + Tailwind + shadcn/ui + React Flow.
+Vite + React + TypeScript + Tailwind + shadcn/ui + React Flow. Globo [Cobe](https://github.com/shuding/cobe) no Analytics. Helix Chrono Matrix só no login.
 
 Worker Cloudflare (`abiliondev`) serve o estático e as rotas `/api/*`. O Worker antigo `abilion` / `*.vsanches1060.workers.dev` ficou de fora.
 
