@@ -1,5 +1,8 @@
 import { uid } from "./format"
+import { openRouterHeaders, STE_LLM_BASE_URL, STE_LLM_MODEL } from "./llm"
 import type { ChatMessage, Lead, Settings, StePhase } from "./types"
+
+export { STE_LLM_BASE_URL, STE_LLM_MODEL }
 
 export const STE_LANDING = "https://app.mundoaviator.com.br/"
 export const STE_COURSE = "https://mundoaviator.com.br/mini-curso/"
@@ -486,8 +489,6 @@ export function replySteTick(lead: Lead, now = Date.now(), runtime?: SteRuntime)
   return pack(next, [])
 }
 
-export const STE_LLM_MODEL = "glm-5.3-flash"
-export const STE_LLM_BASE_URL = "https://api.z.ai/api/coding/paas/v4"
 
 function splitBlocks(raw: string) {
   return raw
@@ -524,17 +525,12 @@ export async function replySteSmart(
     }))
     const res = await fetch(`${(opts?.baseUrl ?? STE_LLM_BASE_URL).replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
-      headers: {
-        authorization: `Bearer ${key}`,
-        "content-type": "application/json",
-      },
+      headers: openRouterHeaders(key),
       body: JSON.stringify({
         model: opts?.model ?? STE_LLM_MODEL,
-        temperature: 1,
-        top_p: 0.95,
-        max_tokens: 1024,
-        thinking: { type: "enabled" },
-        reasoning_effort: "low",
+        temperature: 0.7,
+        top_p: 0.9,
+        max_tokens: 512,
         messages: [
           {
             role: "system",

@@ -36,6 +36,7 @@ export async function saveRuntime(body: {
   telegramBotUsername?: string
   telegramGroupUrl?: string
   openaiApiKey?: string
+  steModel?: string
 }) {
   return parse<RuntimeStatus>(
     await fetch("/api/runtime", {

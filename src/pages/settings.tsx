@@ -23,6 +23,7 @@ import { cleanBotUsername } from "@/lib/migrate"
 import { useStore } from "@/lib/store"
 import { fetchHealth, workerUrl } from "@/lib/channel"
 import { fetchRuntime, saveRuntime, type RuntimeStatus } from "@/lib/runtime-api"
+import { STE_LLM_MODEL, STE_LLM_MODELS, normalizeSteModel } from "@/lib/llm"
 import { adsDeepLink } from "@/lib/telegram-start"
 import { STE_REMARKETING_BLOCK, STE_WELCOME } from "@/lib/ste"
 import { cn } from "@/lib/utils"
@@ -107,6 +108,7 @@ function BotPane() {
   const [token, setToken] = useState("")
   const [group, setGroup] = useState(state.settings.telegramGroupUrl)
   const [glm, setGlm] = useState("")
+  const [model, setModel] = useState(STE_LLM_MODEL)
   const [busy, setBusy] = useState(false)
   const [health, setHealth] = useState<Awaited<ReturnType<typeof fetchHealth>>>({ ok: false })
   const [runtime, setRuntime] = useState<RuntimeStatus>({ ok: false })
@@ -121,6 +123,7 @@ function BotPane() {
     setRuntime(nextRuntime)
     if (nextRuntime.telegramBotUsername) setUsername(nextRuntime.telegramBotUsername)
     if (nextRuntime.telegramGroupUrl) setGroup(nextRuntime.telegramGroupUrl)
+    if (nextRuntime.model) setModel(normalizeSteModel(nextRuntime.model))
   }
 
   useEffect(() => {
@@ -184,6 +187,7 @@ function BotPane() {
               telegramGroupUrl: group.trim(),
               ...(token.trim() ? { telegramBotToken: token.trim() } : {}),
               ...(glm.trim() ? { openaiApiKey: glm.trim() } : {}),
+              steModel: model,
             })
               .then((next) => {
                 setRuntime(next)
@@ -235,14 +239,32 @@ function BotPane() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="bot-glm">Chave GLM (opcional)</Label>
+            <Label htmlFor="bot-model">Modelo OpenRouter</Label>
+            <select
+              id="bot-model"
+              value={model}
+              onChange={(event) => setModel(normalizeSteModel(event.target.value))}
+              className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+            >
+              {STE_LLM_MODELS.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-[12px] text-muted-foreground">
+              {STE_LLM_MODELS.find((item) => item.id === model)?.hint}
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="bot-glm">Chave OpenRouter</Label>
             <Input
               id="bot-glm"
               type="password"
               autoComplete="off"
               value={glm}
               onChange={(event) => setGlm(event.target.value)}
-              placeholder={runtime.llm ? "IA já ligada. Cola outra chave para trocar." : "Cola a chave do GLM Coding Plan"}
+              placeholder={runtime.llm ? "IA já ligada. Cola outra chave para trocar." : "Cola a chave sk-or-v1…"}
             />
           </div>
           {ads && <p className="break-all text-[12px] text-muted-foreground">Anúncio Facebook · {ads}</p>}

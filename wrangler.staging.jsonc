@@ -18,8 +18,8 @@
   "vars": {
     "SUPABASE_URL": "https://eyjgmkmaixmpmeeahxon.supabase.co",
     "ABILION_ENV": "staging",
-    "OPENAI_BASE_URL": "https://api.z.ai/api/coding/paas/v4",
-    "STE_MODEL": "glm-5.3-flash",
+    "OPENAI_BASE_URL": "https://openrouter.ai/api/v1",
+    "STE_MODEL": "google/gemma-4-31b-it:free",
     "STE_USE_LLM": "1"
   }
 }

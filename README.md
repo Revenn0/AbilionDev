@@ -95,10 +95,10 @@ npx wrangler secret put TELEGRAM_WEBHOOK_SECRET
 npx wrangler secret put SUPABASE_SERVICE_ROLE
 npx wrangler secret put CRON_SECRET
 npx wrangler secret put ESTER_CHAT_ID
-npx wrangler secret put OPENAI_API_KEY
+npx wrangler secret put OPENAI_API_KEY   # chave OpenRouter sk-or-v1…
 ```
 
-Sté responde com **GLM 5.3 Flash** no **GLM Coding Plan** (`https://api.z.ai/api/coding/paas/v4`). A chave vai só no secret do Worker. Não uses o endpoint geral `/api/paas/v4`.
+Sté fala com **OpenRouter**. O modelo desta lista é **Gemma 4 31B** (`google/gemma-4-31b-it:free`): o melhor português grátis para o 1:1. A chave `sk-or-v1…` grava-se em Configurações, nunca no git. Free tem limite de pedidos — no pico de 500–1000 /start o script da Sté continua; a IA só entra no papo livre da oferta. Para volume pago no mesmo OpenRouter: `z-ai/glm-5.3-flash`.
 
 Webhook Telegram: `{origem}/api/telegram`  
 Cron de espera: hora a hora, ou `GET /api/cron?secret=…`  

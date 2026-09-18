@@ -369,8 +369,8 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
     const talked = useLlm
       ? await replySteSmart(lead, incoming, {
           apiKey: resolved.openaiApiKey,
-          baseUrl: env.OPENAI_BASE_URL,
-          model: env.STE_MODEL,
+          baseUrl: resolved.baseUrl,
+          model: resolved.model,
         })
       : replySte(lead, incoming, Date.now())
     lead = talked.lead

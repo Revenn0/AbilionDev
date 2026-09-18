@@ -1,3 +1,4 @@
+import { normalizeSteModel, OPENROUTER_BASE_URL, STE_LLM_MODEL } from "../src/lib/llm.ts"
 import type { KvLike } from "./kv.ts"
 
 export const RUNTIME_KEY = "runtime:secrets"
@@ -7,6 +8,8 @@ export type RuntimeSecrets = {
   telegramBotUsername?: string
   telegramGroupUrl?: string
   openaiApiKey?: string
+  steModel?: string
+  openaiBaseUrl?: string
   webhookUrl?: string
   webhookOk?: boolean
   updatedAt?: string
@@ -17,6 +20,7 @@ export type RuntimeEnv = {
   OPENAI_API_KEY?: string
   STE_USE_LLM?: string
   STE_MODEL?: string
+  OPENAI_BASE_URL?: string
   SUPABASE_URL?: string
   SUPABASE_SERVICE_ROLE?: string
   APP_URL?: string
@@ -35,6 +39,7 @@ export type ResolvedRuntime = {
   supabase: boolean
   persist: "supabase" | "kv" | "memory"
   model: string
+  baseUrl: string
 }
 
 export type PublicRuntime = {
@@ -80,6 +85,11 @@ export function mergeSecrets(current: RuntimeSecrets, patch: RuntimeSecrets): Ru
   }
   if (patch.telegramBotUsername !== undefined) next.telegramBotUsername = patch.telegramBotUsername.trim()
   if (patch.telegramGroupUrl !== undefined) next.telegramGroupUrl = patch.telegramGroupUrl.trim()
+  if (patch.steModel !== undefined) next.steModel = normalizeSteModel(patch.steModel)
+  if (patch.openaiBaseUrl !== undefined) {
+    const url = patch.openaiBaseUrl.trim().replace(/\/$/, "")
+    if (url) next.openaiBaseUrl = url
+  }
   if (patch.webhookUrl !== undefined) next.webhookUrl = patch.webhookUrl
   if (patch.webhookOk !== undefined) next.webhookOk = patch.webhookOk
   next.updatedAt = new Date().toISOString()
@@ -100,7 +110,8 @@ export function resolveRuntime(env: RuntimeEnv, secrets: RuntimeSecrets, webhook
     telegram: Boolean(telegramBotToken),
     supabase: Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE),
     persist: env.SUPABASE_SERVICE_ROLE ? "supabase" : env.AUTH ? "kv" : "memory",
-    model: env.STE_MODEL || "glm-5.3-flash",
+    model: normalizeSteModel(secrets.steModel || env.STE_MODEL || STE_LLM_MODEL),
+    baseUrl: (secrets.openaiBaseUrl || env.OPENAI_BASE_URL || OPENROUTER_BASE_URL).replace(/\/$/, ""),
   }
 }
 
