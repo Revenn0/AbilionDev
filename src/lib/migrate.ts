@@ -52,11 +52,13 @@ export function migrateLead(raw: Partial<Lead> & { id: string }): Lead {
     campaign: raw.campaign ?? "",
     origin: raw.origin === "facebook" ? "facebook" : (raw.origin ?? "popup"),
     startPayload: raw.startPayload,
+    visitorId: raw.visitorId,
     temperature: raw.temperature ?? "novo",
     stage: raw.stage ?? "capture",
     printAt: raw.printAt,
     bancaAt: raw.bancaAt,
     memory: raw.memory ?? "",
+    facts: raw.facts && typeof raw.facts === "object" ? raw.facts : {},
     lastMessage: raw.lastMessage,
     funnelId: raw.funnelId,
     nodeId: raw.nodeId,
@@ -66,6 +68,7 @@ export function migrateLead(raw: Partial<Lead> & { id: string }): Lead {
     messages: Array.isArray(raw.messages) ? raw.messages : [],
     stePhase: raw.stePhase,
     steBlocked: raw.steBlocked ?? false,
+    steQuiet: raw.steQuiet ?? false,
     telegramChatId: raw.telegramChatId,
     updatedAt: raw.updatedAt ?? now,
     createdAt: raw.createdAt ?? now,
@@ -86,8 +89,18 @@ export function migrateSettings(raw: Partial<Settings> | undefined): Settings {
     ...(raw ?? {}),
     plugins: { ...defaultSettings.plugins, ...(raw?.plugins ?? {}) },
   }
+  const welcomeLines = Array.isArray(merged.steWelcomeLines)
+    ? ([merged.steWelcomeLines[0], merged.steWelcomeLines[1], merged.steWelcomeLines[2]] as [string, string, string])
+    : defaultSettings.steWelcomeLines
   return {
     ...merged,
     telegramBotUsername: cleanBotUsername(merged.telegramBotUsername),
+    steWelcomeLines: [
+      welcomeLines[0] || defaultSettings.steWelcomeLines[0],
+      welcomeLines[1] || defaultSettings.steWelcomeLines[1],
+      welcomeLines[2] || defaultSettings.steWelcomeLines[2],
+    ],
+    steRemarketingLines: Array.isArray(merged.steRemarketingLines) ? merged.steRemarketingLines.filter(Boolean) : [],
+    steDieAfterRemarketing: merged.steDieAfterRemarketing !== false,
   }
 }

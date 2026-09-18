@@ -1,6 +1,6 @@
 import type { ComponentType } from "react"
 import { Link, useLocation } from "react-router-dom"
-import { LayoutDashboard, LogOut, MessagesSquare, PanelLeft, PanelLeftClose, Send, Settings, Users, Workflow } from "lucide-react"
+import { ChartNoAxesCombined, LayoutDashboard, LogOut, MessagesSquare, PanelLeft, PanelLeftClose, Send, Settings, Users, Workflow } from "lucide-react"
 import { ThemeToggle } from "@/components/theme/toggle"
 import { LogoMark } from "@/components/brand/logo"
 import { Button } from "@/components/ui/button"
@@ -16,6 +16,7 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/analytics", label: "Analytics", icon: ChartNoAxesCombined },
   { href: "/leads", label: "Leads", icon: Users },
   { href: "/conversas", label: "Conversas", icon: MessagesSquare },
   { href: "/fluxo", label: "Funil", icon: Workflow },

@@ -18,6 +18,7 @@ function blankLead(): Lead {
     temperature: "novo",
     stage: "welcome",
     memory: "",
+    facts: {},
     events: [],
     messages: [],
     createdAt: now,

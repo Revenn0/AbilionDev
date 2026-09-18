@@ -7,7 +7,14 @@ export async function fetchHealth() {
   try {
     const res = await fetch(`${workerUrl()}/api/health`)
     if (!res.ok) return { ok: false as const }
-    return (await res.json()) as { ok: boolean; telegram?: boolean; supabase?: boolean }
+    return (await res.json()) as {
+      ok: boolean
+      telegram?: boolean
+      supabase?: boolean
+      llm?: boolean
+      local?: boolean
+      model?: string
+    }
   } catch {
     return { ok: false as const }
   }

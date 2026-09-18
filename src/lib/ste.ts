@@ -1,5 +1,5 @@
 import { uid } from "./format"
-import type { ChatMessage, Lead, StePhase } from "./types"
+import type { ChatMessage, Lead, Settings, StePhase } from "./types"
 
 export const STE_LANDING = "https://app.mundoaviator.com.br/"
 export const STE_COURSE = "https://mundoaviator.com.br/mini-curso/"
@@ -126,11 +126,11 @@ export const STE_LIVE_BLOCK = [
 ]
 
 export const STE_REMARKETING_BLOCK = [
-  "E aí, como estão os resultados desde que a gente se falou?",
-  `Você chegou a ver o minicurso? Se ainda não viu: ${steLink("course")}`,
-  "Operar sozinho é o que mais queima banca. Se quiser o caminho certo, eu deixo os links aqui.",
-  steLink("superbet"),
-  steLink("app"),
+  "E aí, como têm sido os resultados desde que a gente se falou? Você conseguiu acompanhar o material?",
+  `Se ainda não viu o minicurso: ${steLink("course")}`,
+  "Operar sozinho é o que mais queima banca. O nosso produto é o Grupo Premium de Sinais — 5 oportunidades por dia, das 08:00 até 01:30, incluindo os de 4x.",
+  steLink("premium"),
+  "Se quiser garantir a vaga agora:",
   steLink("checkout"),
 ]
 
@@ -166,23 +166,99 @@ export type SteMarkup =
   | { type: "text"; text: string }
   | { type: "link"; text: string; url: string }
 
+export type SteRuntime = {
+  welcome?: string[]
+  remarketing?: string[]
+  dieAfterRemarketing?: boolean
+}
+
 export type SteResult = {
   lead: Lead
   replies: string[]
   reply: string | null
 }
 
+export function steRuntimeFromSettings(settings?: Partial<Settings> | null): SteRuntime {
+  const welcome = settings?.steWelcomeLines?.filter(Boolean) ?? []
+  const remarketing = settings?.steRemarketingLines?.filter(Boolean) ?? []
+  return {
+    welcome: welcome.length === 3 ? welcome : undefined,
+    remarketing: remarketing.length ? remarketing : undefined,
+    dieAfterRemarketing: settings?.steDieAfterRemarketing !== false,
+  }
+}
+
+export function isolateLead(lead: Lead): Lead {
+  return {
+    id: lead.id,
+    name: lead.name,
+    contact: lead.contact,
+    channel: lead.channel,
+    campaign: lead.campaign,
+    origin: lead.origin,
+    startPayload: lead.startPayload,
+    visitorId: lead.visitorId,
+    temperature: lead.temperature,
+    stage: lead.stage,
+    printAt: lead.printAt,
+    bancaAt: lead.bancaAt,
+    memory: lead.memory ?? "",
+    facts: { ...(lead.facts ?? {}) },
+    lastMessage: lead.lastMessage,
+    funnelId: lead.funnelId,
+    nodeId: lead.nodeId,
+    waitUntil: lead.waitUntil,
+    paused: lead.paused,
+    events: (lead.events ?? []).map((item) => ({ ...item })),
+    messages: (lead.messages ?? []).map((item) => ({ ...item })),
+    stePhase: lead.stePhase ?? "entry",
+    steBlocked: lead.steBlocked,
+    steQuiet: lead.steQuiet,
+    telegramChatId: lead.telegramChatId,
+    updatedAt: lead.updatedAt,
+    createdAt: lead.createdAt,
+  }
+}
+
+export function applyLeadFacts(lead: Lead, incoming: string) {
+  const text = incoming.trim()
+  if (!text) return
+  const facts = { ...(lead.facts ?? {}) }
+  if (/come[cç]ando|iniciante|primeira vez|nunca jog/i.test(text)) facts.experience = "beginner"
+  if (/j[aá] jogo|experien|veterano|h[aá] tempo/i.test(text)) facts.experience = "experienced"
+  if (/perdend|queim|no preju/i.test(text)) facts.results = "losing"
+  if (/ganhand|lucr|positivo/i.test(text)) facts.results = "winning"
+  if (SIGNED_UP.test(text)) facts.hasSuperbet = true
+  if (/n[aã]o tenho conta|ainda n[aã]o tenho|sem conta/i.test(text)) facts.hasSuperbet = false
+  lead.facts = facts
+}
+
+export function steStepLabel(lead: Lead) {
+  if (lead.steQuiet) return "Quieto"
+  if (lead.steBlocked || lead.stePhase === "closed") return "Encerrado"
+  if (lead.stePhase === "listen") return "Boas-vindas"
+  if (lead.stePhase === "diagnosis") return "Minicurso"
+  if (lead.stePhase === "solution") return "Superbet"
+  if (lead.stePhase === "offer") return "Oferta"
+  return "Entrada"
+}
+
 function nowIso(now = Date.now()) {
   return new Date(now).toISOString()
 }
 
-function cloneLead(lead: Lead): Lead {
+function resolveCopy(runtime?: SteRuntime) {
+  const welcome = runtime?.welcome?.map((item) => item.trim()).filter(Boolean)
+  const remarketing = runtime?.remarketing?.map((item) => item.trim()).filter(Boolean)
   return {
-    ...lead,
-    messages: [...(lead.messages ?? [])],
-    stePhase: lead.stePhase ?? "entry",
-    memory: lead.memory ?? "",
+    welcome: welcome && welcome.length === 3 ? welcome : [...STE_WELCOME],
+    remarketing: remarketing && remarketing.length ? remarketing : [...STE_REMARKETING_BLOCK],
+    dieAfterRemarketing: runtime?.dieAfterRemarketing !== false,
   }
+}
+
+function cloneLead(lead: Lead): Lead {
+  return isolateLead(lead)
 }
 
 function memHas(lead: Lead, token: string) {
@@ -283,11 +359,11 @@ function setPhase(lead: Lead, phase: StePhase) {
   lead.stePhase = phase
 }
 
-function welcome(lead: Lead, now: number) {
+function welcome(lead: Lead, now: number, lines: string[]) {
   setPhase(lead, "listen")
-  pushAll(lead, STE_WELCOME, now)
+  pushAll(lead, lines, now)
   scheduleRemarketing(lead, now)
-  return pack(lead, [...STE_WELCOME])
+  return pack(lead, [...lines])
 }
 
 function course(lead: Lead, now: number) {
@@ -326,6 +402,7 @@ function close(lead: Lead, now: number) {
 }
 
 function replyToIncoming(lead: Lead, incoming: string, now: number): SteResult {
+  applyLeadFacts(lead, incoming)
   if (HOSTILE.test(incoming)) return close(lead, now)
   if (CONVERTED.test(incoming)) memAdd(lead, MEM.converted)
   if (LIVE_HOURS.test(incoming)) return lives(lead, now)
@@ -359,24 +436,24 @@ function replyToIncoming(lead: Lead, incoming: string, now: number): SteResult {
   return pack(lead, [text])
 }
 
-export function replySte(lead: Lead, incoming?: string | null, now = Date.now()): SteResult {
+export function replySte(lead: Lead, incoming?: string | null, now = Date.now(), runtime?: SteRuntime): SteResult {
   const next = cloneLead(lead)
-  if (next.steBlocked || next.stePhase === "closed") return pack(next, [])
+  if (next.steBlocked || next.steQuiet || next.stePhase === "closed") return pack(next, [])
 
   const text = (incoming ?? "").trim()
   if (text) push(next, "lead", text, now)
 
   if (!text) {
-    if (!hasSteMessage(next)) return welcome(next, now)
+    if (!hasSteMessage(next)) return welcome(next, now, resolveCopy(runtime).welcome)
     return pack(next, [])
   }
 
   return replyToIncoming(next, text, now)
 }
 
-export function replySteTick(lead: Lead, now = Date.now()): SteResult {
+export function replySteTick(lead: Lead, now = Date.now(), runtime?: SteRuntime): SteResult {
   const next = cloneLead(lead)
-  if (next.steBlocked || next.stePhase === "closed") {
+  if (next.steBlocked || next.steQuiet || next.stePhase === "closed") {
     next.waitUntil = undefined
     return pack(next, [])
   }
@@ -394,10 +471,15 @@ export function replySteTick(lead: Lead, now = Date.now()): SteResult {
   }
 
   if (memHas(next, MEM.remarketing) && !memHas(next, MEM.converted)) {
+    const copy = resolveCopy(runtime)
     memDel(next, MEM.remarketing)
     next.waitUntil = undefined
-    pushAll(next, STE_REMARKETING_BLOCK, now)
-    return pack(next, [...STE_REMARKETING_BLOCK])
+    pushAll(next, copy.remarketing, now)
+    if (copy.dieAfterRemarketing) {
+      next.steQuiet = true
+      setPhase(next, "closed")
+    }
+    return pack(next, [...copy.remarketing])
   }
 
   next.waitUntil = undefined
@@ -415,26 +497,28 @@ function splitBlocks(raw: string) {
     .slice(0, 4)
 }
 
-export function advanceSteIfDue(lead: Lead, now = Date.now()): SteResult {
+export function advanceSteIfDue(lead: Lead, now = Date.now(), runtime?: SteRuntime): SteResult {
   const due = lead.waitUntil ? new Date(lead.waitUntil).getTime() : 0
   if (!due || due > now || !isSteWait(lead)) return { lead, replies: [], reply: null }
-  return replySteTick(lead, now)
+  return replySteTick(lead, now, runtime)
 }
 
 export async function replySteSmart(
   lead: Lead,
   incoming: string | null | undefined,
-  opts?: { apiKey?: string; baseUrl?: string; model?: string }
+  opts?: { apiKey?: string; baseUrl?: string; model?: string; runtime?: SteRuntime }
 ): Promise<SteResult> {
-  const scripted = replySte(lead, incoming)
+  const isolated = isolateLead(lead)
+  const scripted = replySte(isolated, incoming, Date.now(), opts?.runtime)
   const key = opts?.apiKey
   const generic = scripted.replies[0]?.startsWith("Se quiser subir de nível")
-  if (!key || !generic || scripted.lead.steBlocked) return scripted
+  if (!key || !generic || scripted.lead.steBlocked || scripted.lead.steQuiet) return scripted
 
   const next = scripted.lead
   next.messages = next.messages.slice(0, -1)
   try {
-    const history = next.messages.slice(-14).map((item) => ({
+    const own = next.messages.filter((item) => item.id && next.id)
+    const history = own.slice(-14).map((item) => ({
       role: item.role === "ste" ? "assistant" : "user",
       content: item.text,
     }))
@@ -454,7 +538,7 @@ export async function replySteSmart(
         messages: [
           {
             role: "system",
-            content: `${STE_SYSTEM_PROMPT}\n\nFase atual: offer. Responda em português, no máximo 3 blocos curtos separados por linha em branco. Links só como [texto](url). Sem URL crua.`,
+            content: `${STE_SYSTEM_PROMPT}\n\nFase atual: offer. Fatos só deste lead: ${JSON.stringify(next.facts ?? {})}. Responda em português, no máximo 3 blocos curtos separados por linha em branco. Links só como [texto](url). Sem URL crua. Nunca use dados de outra conversa.`,
           },
           ...history,
         ],

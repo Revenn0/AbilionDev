@@ -3,10 +3,12 @@ import { MessagesSquare } from "lucide-react"
 import { FilterChip, PageChrome, StatusPill } from "@/components/layout/chrome"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { migrateLead } from "@/lib/migrate"
 import { useStore } from "@/lib/store"
 import { hasConversation } from "@/lib/ops"
 import { ORIGIN_LABEL, TEMP_LABEL } from "@/lib/labels"
-import { advanceSteIfDue, replySte, splitSteMarkup } from "@/lib/ste"
+import { advanceSteIfDue, replySte, splitSteMarkup, steRuntimeFromSettings, steStepLabel } from "@/lib/ste"
+import { useTrackSummary } from "@/lib/use-track-summary"
 import { timeAgo } from "@/lib/format"
 import type { Lead } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -42,7 +44,9 @@ function matchesFilter(lead: Lead, filter: FilterId) {
 }
 
 export function ConversationsPage() {
-  const { state, saveLead } = useStore()
+  const { state, saveLead, createLeads } = useStore()
+  const { summary } = useTrackSummary(4000)
+  const runtime = steRuntimeFromSettings(state.settings)
   const [filter, setFilter] = useState<FilterId>("waiting")
   const [query, setQuery] = useState("")
   const [id, setId] = useState<string | null>(null)
@@ -84,9 +88,32 @@ export function ConversationsPage() {
 
   useEffect(() => {
     if (!lead) return
-    const result = advanceSteIfDue(lead)
+    const result = advanceSteIfDue(lead, Date.now(), runtime)
     if (result.replies.length) saveLead(result.lead)
   }, [lead?.id, lead?.waitUntil])
+
+  useEffect(() => {
+    const pull = async () => {
+      const res = await fetch("/api/inbox", { credentials: "include", cache: "no-store" })
+      if (!res.ok) return
+      const data = (await res.json()) as { leads?: Lead[] }
+      const incoming = (data.leads ?? []).map((item) => migrateLead(item))
+      if (!incoming.length) return
+      const known = new Map(state.leads.map((item) => [item.id, item]))
+      const fresh = incoming.filter((item) => {
+        const current = known.get(item.id)
+        return !current || current.updatedAt < item.updatedAt
+      })
+      if (!fresh.length) return
+      const existingIds = new Set(state.leads.map((item) => item.id))
+      const created = fresh.filter((item) => !existingIds.has(item.id))
+      if (created.length) createLeads(created)
+      for (const item of fresh.filter((row) => existingIds.has(row.id))) saveLead(item)
+    }
+    void pull()
+    const timer = window.setInterval(() => void pull(), 4000)
+    return () => window.clearInterval(timer)
+  }, [createLeads, saveLead, state.leads])
 
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" })
@@ -94,10 +121,10 @@ export function ConversationsPage() {
 
   const send = (event: React.FormEvent) => {
     event.preventDefault()
-    if (!lead || lead.steBlocked) return
+    if (!lead || lead.steBlocked || lead.steQuiet) return
     const text = draft.trim()
     if (!text) return
-    const result = replySte(lead, text)
+    const result = replySte(lead, text, Date.now(), runtime)
     saveLead(result.lead)
     setDraft("")
   }
@@ -112,6 +139,13 @@ export function ConversationsPage() {
             </FilterChip>
           ))}
         </PageChrome>
+        <FlowStrip
+          page={summary.visitors}
+          click={summary.clicks}
+          telegram={all.length}
+          talking={all.filter((item) => (item.messages ?? []).some((msg) => msg.role === "lead") && !item.steBlocked && !item.steQuiet).length}
+          premium={all.filter((item) => item.stePhase === "offer" || item.steQuiet).length}
+        />
         {all.length === 0 ? (
           <section className="surface grid place-items-center px-6 py-16 text-center">
             <p className="text-[14px] font-medium">Nenhuma conversa no Telegram</p>
@@ -150,7 +184,10 @@ export function ConversationsPage() {
                           <span className="shrink-0 text-[11px] text-muted-foreground">{timeAgo(item.updatedAt)}</span>
                         </div>
                         <p className="mt-0.5 truncate text-[12px] text-muted-foreground">{item.lastMessage}</p>
-                        <p className="mt-1 text-[11px] text-muted-foreground">{ORIGIN_LABEL[item.origin]}</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          {steStepLabel(item)} · {ORIGIN_LABEL[item.origin]}
+                          {item.facts?.country ? ` · ${item.facts.country}` : ""}
+                        </p>
                       </button>
                     </li>
                   ))}
@@ -163,11 +200,12 @@ export function ConversationsPage() {
                   <div>
                     <p className="text-[15px] font-medium">{lead.name}</p>
                     <p className="text-[12.5px] text-muted-foreground">
-                      Sté · Telegram · {lead.contact} · {ORIGIN_LABEL[lead.origin]}
+                      Sté · {steStepLabel(lead)} · {lead.contact} · {ORIGIN_LABEL[lead.origin]}
+                      {lead.facts?.country ? ` · ${lead.facts.country}` : ""}
                     </p>
                   </div>
-                  <StatusPill tone={lead.steBlocked ? "danger" : lead.temperature === "quente" ? "danger" : "muted"}>
-                    {lead.steBlocked ? "Encerrado" : TEMP_LABEL[lead.temperature]}
+                  <StatusPill tone={lead.steQuiet || lead.steBlocked ? "danger" : lead.temperature === "quente" ? "danger" : "muted"}>
+                    {lead.steQuiet ? "Quieto" : lead.steBlocked ? "Encerrado" : TEMP_LABEL[lead.temperature]}
                   </StatusPill>
                 </div>
                 <div className="flex-1 space-y-2 overflow-y-auto px-5 py-4">
@@ -202,10 +240,12 @@ export function ConversationsPage() {
                   <Input
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
-                    placeholder={lead.steBlocked ? "Sté não responde mais este contacto." : "Mensagem do lead no Telegram…"}
-                    disabled={lead.steBlocked}
+                    placeholder={
+                      lead.steQuiet || lead.steBlocked ? "Esta instância já silenciou." : "Mensagem do lead no Telegram…"
+                    }
+                    disabled={lead.steBlocked || lead.steQuiet}
                   />
-                  <Button type="submit" className="rounded-full" disabled={lead.steBlocked || !draft.trim()}>
+                  <Button type="submit" className="rounded-full" disabled={lead.steBlocked || lead.steQuiet || !draft.trim()}>
                     Enviar
                   </Button>
                 </form>
@@ -215,5 +255,40 @@ export function ConversationsPage() {
         )}
       </div>
     </div>
+  )
+}
+
+function FlowStrip({
+  page,
+  click,
+  telegram,
+  talking,
+  premium,
+}: {
+  page: number
+  click: number
+  telegram: number
+  talking: number
+  premium: number
+}) {
+  const steps = [
+    { label: "Página", value: page },
+    { label: "Clique", value: click },
+    { label: "Telegram", value: telegram },
+    { label: "Sté", value: talking },
+    { label: "Premium", value: premium },
+  ]
+  return (
+    <section className="surface flex flex-wrap items-center gap-2 px-4 py-3">
+      {steps.map((step, index) => (
+        <div key={step.label} className="flex items-center gap-2">
+          {index > 0 && <span className="text-muted-foreground">→</span>}
+          <div>
+            <p className="text-[11px] text-muted-foreground">{step.label}</p>
+            <p className="text-[18px] font-medium tabular-nums">{step.value}</p>
+          </div>
+        </div>
+      ))}
+    </section>
   )
 }

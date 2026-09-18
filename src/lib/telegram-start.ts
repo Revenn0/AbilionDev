@@ -15,11 +15,18 @@ export function originFromStart(payload: string): LeadOrigin {
   return isFacebookStart(payload) ? "facebook" : "private"
 }
 
+export function visitorIdFromStart(payload: string) {
+  const rest = payload.replace(/^(fb|facebook|meta)[_\-:]?/i, "").trim()
+  if (/^[a-f0-9]{6,16}$/i.test(rest)) return rest.toLowerCase()
+  return undefined
+}
+
 export function campaignFromStart(payload: string) {
   if (!payload) return "Telegram · privado"
   if (isFacebookStart(payload)) {
     const rest = payload.replace(/^(fb|facebook|meta)[_\-:]?/i, "").trim()
-    return rest ? `Facebook · ${rest}` : "Facebook · ads"
+    if (!rest || visitorIdFromStart(payload)) return "Facebook · ads"
+    return `Facebook · ${rest}`
   }
   return `Telegram · ${payload}`
 }

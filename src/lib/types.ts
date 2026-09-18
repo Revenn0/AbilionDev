@@ -131,6 +131,17 @@ export type ChatMessage = {
   text: string
 }
 
+export type LeadFacts = {
+  experience?: "beginner" | "experienced"
+  results?: "losing" | "winning" | "unknown"
+  hasSuperbet?: boolean
+  country?: string
+  city?: string
+  region?: string
+  device?: string
+  language?: string
+}
+
 export type Lead = {
   id: string
   name: string
@@ -139,11 +150,13 @@ export type Lead = {
   campaign: string
   origin: LeadOrigin
   startPayload?: string
+  visitorId?: string
   temperature: LeadTemp
   stage: LeadStage
   printAt?: string
   bancaAt?: string
   memory: string
+  facts: LeadFacts
   lastMessage?: string
   funnelId?: string
   nodeId?: string
@@ -153,6 +166,7 @@ export type Lead = {
   messages: ChatMessage[]
   stePhase?: StePhase
   steBlocked?: boolean
+  steQuiet?: boolean
   telegramChatId?: string
   updatedAt: string
   createdAt: string
@@ -174,6 +188,9 @@ export type Settings = {
   steLinkedTelegram: boolean
   steLinkedWhatsapp: boolean
   steWelcome: string
+  steWelcomeLines: [string, string, string]
+  steRemarketingLines: string[]
+  steDieAfterRemarketing: boolean
   esterNotify: boolean
   esterTelegramChatId: string
 }
@@ -199,6 +216,13 @@ export const defaultSettings: Settings = {
   steLinkedTelegram: true,
   steLinkedWhatsapp: false,
   steWelcome: "Opa, seja muito bem-vindo! Aqui é a Sté, conhecida como a Mãe do Aviator.",
+  steWelcomeLines: [
+    "Opa, seja muito bem-vindo! Aqui é a Sté, conhecida como a Mãe do Aviator.",
+    "Criei esse espaço para guiar quem quer operar de forma profissional, sem cair em furada ou achismo.",
+    "Para eu te conhecer melhor e saber como posso te ajudar: você já joga Aviator? Tem experiência com o jogo ou está começando agora? Como têm sido seus resultados?",
+  ],
+  steRemarketingLines: [],
+  steDieAfterRemarketing: true,
   esterNotify: true,
   esterTelegramChatId: "",
 }

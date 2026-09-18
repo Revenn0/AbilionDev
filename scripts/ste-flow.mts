@@ -1,4 +1,5 @@
 import {
+  isolateLead,
   replySte,
   replySteTick,
   STE_WELCOME,
@@ -13,18 +14,19 @@ import {
 } from "../src/lib/ste.ts"
 import type { Lead } from "../src/lib/types.ts"
 
-function lead(): Lead {
+function lead(id = "lead-1", contact = "@fb1"): Lead {
   const now = new Date().toISOString()
   return {
-    id: "lead-1",
+    id,
     name: "Lead",
-    contact: "@fb1",
+    contact,
     channel: "telegram",
     campaign: "facebook",
     origin: "facebook",
     temperature: "novo",
     stage: "welcome",
     memory: "",
+    facts: {},
     events: [],
     messages: [],
     createdAt: now,
@@ -77,6 +79,18 @@ const remark = replySteTick(
   Date.now()
 )
 assert(remark.replies.join("|") === STE_REMARKETING_BLOCK.join("|"), "remarketing 7h")
+assert(remark.lead.steQuiet, "silencia depois do premium")
+assert(replySte(remark.lead, "e aí?").replies.length === 0, "morto depois do follow-up")
+
+const alice = replySte(lead("alice", "@alice"), "eu sou a Alice e estou perdendo tudo")
+const bob = replySte(lead("bob", "@bob"), "ainda nao tenho conta")
+assert(alice.lead.facts.results === "losing", "fato da Alice")
+assert(alice.lead.facts.experience === undefined || alice.lead.facts.results === "losing", "fato isolado")
+assert(!JSON.stringify(bob.lead).includes("Alice"), "Bob nao ve Alice")
+assert(!JSON.stringify(bob.lead.messages).includes("perdendo tudo"), "transcript isolado")
+assert(isolateLead(alice.lead).id === "alice", "isolate guarda o id")
+assert(isolateLead(alice.lead).messages.every((item) => alice.lead.messages.some((own) => own.id === item.id)), "so mensagens dela")
+assert(bob.lead.facts.hasSuperbet === false, "fato do Bob")
 
 const html = toTelegramHtml(STE_COURSE_BLOCK[2]!)
 assert(html.includes("<a href=\"https://mundoaviator.com.br/mini-curso/\">"), "html do telegram")

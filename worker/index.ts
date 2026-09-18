@@ -1,9 +1,11 @@
-import { handleAuth, kvAuthStore } from "./auth"
+import { handleAuth, kvAuthStore, sessionUser } from "./auth"
 import { campaignFor } from "../src/lib/labels"
-import { advanceSteIfDue, isSteWait, replySte, replySteSmart, toTelegramHtml } from "../src/lib/ste"
-import { campaignFromStart, originFromStart, parseTelegramStart } from "../src/lib/telegram-start"
+import { advanceSteIfDue, isSteWait, replySte, replySteSmart, steRuntimeFromSettings, toTelegramHtml } from "../src/lib/ste"
+import { TRACKER_JS } from "../src/lib/tracker-script"
+import { campaignFromStart, originFromStart, parseTelegramStart, visitorIdFromStart } from "../src/lib/telegram-start"
 import { applyEvent, dueWaits, publishedSnapshot } from "../src/lib/runtime"
 import { BANCA_FIXED, type Lead, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types"
+import { geoFromRequest, ingestTrack, kvTrackStore, memoryTrackStore, readTrackBody, summaryFromStore, type TrackStore } from "./track-store"
 
 export interface Env {
   ASSETS: Fetcher
@@ -25,10 +27,24 @@ export interface Env {
 }
 
 const WORKSPACE = "local"
+const memoryTracks = memoryTrackStore()
+
+function trackStore(env: Env): TrackStore {
+  return env.AUTH ? kvTrackStore(env.AUTH) : memoryTracks
+}
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(request.url)
+    if (url.pathname === "/t.js") {
+      return new Response(TRACKER_JS, {
+        headers: {
+          "content-type": "text/javascript; charset=utf-8",
+          "access-control-allow-origin": "*",
+          "cache-control": "public, max-age=300",
+        },
+      })
+    }
     if (url.pathname.startsWith("/api/")) {
       return handleApi(request, env, url, ctx)
     }
@@ -55,6 +71,59 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   if (url.pathname.startsWith("/api/auth")) {
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     return handleAuth(request, kvAuthStore(env.AUTH), env)
+  }
+
+  if (url.pathname === "/api/track" && request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: corsHeaders() })
+  }
+
+  if (url.pathname === "/api/track" && request.method === "POST") {
+    const body = await readTrackBody(request)
+    const geo = geoFromRequest(request)
+    const store = trackStore(env)
+    const events = ingestTrack(await store.load(), { ...body, ...geo, visitorId: String(body.visitorId ?? "") }, Date.now())
+    await store.save(events)
+    const last = events.at(-1)
+    if (last && env.SUPABASE_SERVICE_ROLE) {
+      await rest(env, "page_events", {
+        method: "POST",
+        body: JSON.stringify({
+          id: last.id,
+          workspace_id: WORKSPACE,
+          visitor_id: last.visitorId,
+          kind: last.kind,
+          path: last.path,
+          referrer: last.referrer,
+          campaign: last.campaign,
+          country: last.country,
+          city: last.city,
+          region: last.region,
+          device: last.device,
+          language: last.language,
+          at: last.at,
+        }),
+      })
+    }
+    return new Response(null, { status: 204, headers: corsHeaders() })
+  }
+
+  if (url.pathname === "/api/track/summary" && request.method === "GET") {
+    if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
+    const user = await sessionUser(request, kvAuthStore(env.AUTH))
+    if (!user) return json({ error: "Sessão expirada." }, 401)
+    return json({ ok: true, summary: await summaryFromStore(trackStore(env)) })
+  }
+
+  if (url.pathname === "/api/inbox" && request.method === "GET") {
+    if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
+    const user = await sessionUser(request, kvAuthStore(env.AUTH))
+    if (!user) return json({ error: "Sessão expirada." }, 401)
+    const rows =
+      (await rest<LeadRow[]>(
+        env,
+        `leads?workspace_id=eq.${WORKSPACE}&channel=eq.telegram&select=*&order=updated_at.desc&limit=80`
+      )) ?? []
+    return json({ ok: true, leads: rows.map(rowToLead) })
   }
 
   if (url.pathname === "/api/telegram" && request.method === "POST") {
@@ -100,6 +169,7 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
   const now = new Date().toISOString()
 
   const existing = await findLead(env, contact, from.id, chatId)
+  const visitorId = start.isStart ? visitorIdFromStart(start.payload) : undefined
   let lead: Lead
   if (existing) {
     lead = existing
@@ -107,6 +177,7 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
       lead.origin = origin
       lead.campaign = campaign
       lead.startPayload = start.payload
+      if (visitorId) lead.visitorId = visitorId
     }
   } else {
     lead = {
@@ -117,9 +188,11 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
       campaign,
       origin,
       startPayload: start.payload || undefined,
+      visitorId,
       temperature: "novo",
       stage: origin === "group_join" ? "group" : "welcome",
       memory: "",
+      facts: {},
       events: [],
       messages: [],
       createdAt: now,
@@ -128,9 +201,19 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
   }
 
   lead.telegramChatId = chatId
+  if (visitorId && start.isStart) {
+    const store = trackStore(env)
+    const events = ingestTrack(await store.load(), { kind: "telegram", visitorId, path: "/telegram", campaign }, Date.now())
+    await store.save(events)
+    const last = events.at(-1)
+    if (last?.country) {
+      lead.facts = { ...lead.facts, country: last.country, city: last.city, region: last.region, device: last.device }
+    }
+  }
 
   const incoming = joinUser || start.isStart ? null : (message?.text ?? null)
   const settings = await loadSettings(env)
+  const runtime = steRuntimeFromSettings(settings)
   const shouldTalk = settings.steLinkedTelegram !== false && !joinUser
   if (shouldTalk) {
     const useLlm = Boolean(env.OPENAI_API_KEY) && env.STE_USE_LLM !== "0" && Boolean(incoming?.trim())
@@ -139,8 +222,9 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
           apiKey: env.OPENAI_API_KEY,
           baseUrl: env.OPENAI_BASE_URL,
           model: env.STE_MODEL,
+          runtime,
         })
-      : replySte(lead, incoming)
+      : replySte(lead, incoming, Date.now(), runtime)
     lead = talked.lead
     await sendSteReplies(token, chatId, talked.replies)
   }
@@ -160,7 +244,7 @@ async function processWaits(env: Env) {
   const token = env.TELEGRAM_BOT_TOKEN
   for (const lead of due) {
     if (isSteWait(lead)) {
-      const talked = advanceSteIfDue(lead)
+      const talked = advanceSteIfDue(lead, Date.now(), steRuntimeFromSettings(settings))
       if (token && lead.telegramChatId) await sendSteReplies(token, lead.telegramChatId, talked.replies)
       await saveLead(env, talked.lead)
       continue
@@ -226,11 +310,13 @@ function rowToLead(row: LeadRow): Lead {
     campaign: row.campaign,
     origin: row.origin,
     startPayload: row.start_payload ?? undefined,
+    visitorId: row.visitor_id ?? undefined,
     temperature: row.temperature,
     stage: row.stage,
     printAt: row.print_at ?? undefined,
     bancaAt: row.banca_at ?? undefined,
     memory: row.memory ?? "",
+    facts: row.facts ?? {},
     lastMessage: row.last_message ?? undefined,
     funnelId: row.funnel_id ?? undefined,
     nodeId: row.node_id ?? undefined,
@@ -240,6 +326,7 @@ function rowToLead(row: LeadRow): Lead {
     messages: row.messages ?? [],
     stePhase: row.ste_phase ?? undefined,
     steBlocked: row.ste_blocked ?? false,
+    steQuiet: row.ste_quiet ?? false,
     telegramChatId: row.telegram_chat_id ?? undefined,
     updatedAt: row.updated_at,
     createdAt: row.created_at,
@@ -259,11 +346,13 @@ async function saveLead(env: Env, lead: Lead) {
       campaign: lead.campaign,
       origin: lead.origin,
       start_payload: lead.startPayload ?? null,
+      visitor_id: lead.visitorId ?? null,
       temperature: lead.temperature,
       stage: lead.stage,
       print_at: lead.printAt ?? null,
       banca_at: lead.bancaAt ?? null,
       memory: lead.memory,
+      facts: lead.facts ?? {},
       last_message: lead.lastMessage ?? null,
       funnel_id: lead.funnelId ?? null,
       node_id: lead.nodeId ?? null,
@@ -272,6 +361,7 @@ async function saveLead(env: Env, lead: Lead) {
       messages: lead.messages ?? [],
       ste_phase: lead.stePhase ?? null,
       ste_blocked: lead.steBlocked ?? false,
+      ste_quiet: lead.steQuiet ?? false,
       telegram_chat_id: lead.telegramChatId ?? null,
       updated_at: lead.updatedAt,
       created_at: lead.createdAt,
@@ -342,10 +432,18 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function corsHeaders() {
+  return {
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-headers": "content-type",
+  }
+}
+
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "content-type": "application/json", "access-control-allow-origin": "*" },
+    headers: { "content-type": "application/json", ...corsHeaders() },
   })
 }
 
@@ -382,11 +480,13 @@ type LeadRow = {
   campaign: string
   origin: Lead["origin"]
   start_payload?: string | null
+  visitor_id?: string | null
   temperature: Lead["temperature"]
   stage: Lead["stage"]
   print_at?: string | null
   banca_at?: string | null
   memory?: string
+  facts?: Lead["facts"]
   last_message?: string | null
   funnel_id?: string | null
   node_id?: string | null
@@ -395,6 +495,7 @@ type LeadRow = {
   messages?: Lead["messages"]
   ste_phase?: Lead["stePhase"] | null
   ste_blocked?: boolean
+  ste_quiet?: boolean
   telegram_chat_id?: string | null
   updated_at: string
   created_at: string

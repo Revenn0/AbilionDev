@@ -174,6 +174,7 @@ export function leadFromCapture(
     temperature: "novo",
     stage: input.origin === "popup" ? "capture" : input.origin === "group_join" ? "group" : "welcome",
     memory: "",
+    facts: {},
     events: [],
     messages: [],
     funnelId,

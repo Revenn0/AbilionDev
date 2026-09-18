@@ -13,6 +13,7 @@ const FunnelEditorPage = lazy(() => import("@/pages/funnel-editor").then((m) => 
 const LeadsPage = lazy(() => import("@/pages/leads").then((m) => ({ default: m.LeadsPage })))
 const ConversationsPage = lazy(() => import("@/pages/conversations").then((m) => ({ default: m.ConversationsPage })))
 const SettingsPage = lazy(() => import("@/pages/settings").then((m) => ({ default: m.SettingsPage })))
+const AnalyticsPage = lazy(() => import("@/pages/analytics").then((m) => ({ default: m.AnalyticsPage })))
 const TelegramPage = lazy(() => import("@/pages/telegram").then((m) => ({ default: m.TelegramPage })))
 
 function AuthGate({ children }: { children: React.ReactNode }) {
@@ -61,6 +62,7 @@ function AppRoutes() {
             <Suspense fallback={<PageFallback />}>
               <Routes>
                 <Route path="/" element={<DashboardPage />} />
+                <Route path="/analytics" element={<AnalyticsPage />} />
                 <Route path="/fluxo" element={<FluxoPage />} />
                 <Route path="/fluxo/funil/:id" element={<FunnelEditorPage />} />
                 <Route path="/leads" element={<LeadsPage />} />

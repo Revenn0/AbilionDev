@@ -172,6 +172,15 @@ async function readBody(request: Request) {
   }
 }
 
+export async function sessionUser(request: Request, store: AuthStore) {
+  const token = readCookie(request)
+  if (!token) return null
+  const snapshot = prune(await store.load())
+  const session = snapshot.sessions.find((item) => item.token === token)
+  const user = session ? snapshot.users.find((item) => item.id === session.userId) : null
+  return user ? publicUser(user) : null
+}
+
 export async function handleAuth(request: Request, store: AuthStore, env?: { ABILION_OPERATOR_PASSWORD?: string; ABILION_ENV?: string }) {
   const url = new URL(request.url)
   const path = url.pathname

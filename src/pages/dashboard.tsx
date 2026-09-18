@@ -4,9 +4,11 @@ import { FilterChip, PageChrome } from "@/components/layout/chrome"
 import { SparkBars, TrendLine } from "@/components/ui/spark"
 import { useStore } from "@/lib/store"
 import { deriveOps, seriesLast30 } from "@/lib/ops"
+import { useTrackSummary } from "@/lib/use-track-summary"
 
 export function DashboardPage() {
   const { state } = useStore()
+  const { summary } = useTrackSummary(8000)
   const ops = deriveOps(state.leads)
   const empty = ops.leads === 0
   const channelTotal = ops.whatsapp + ops.telegram
@@ -23,7 +25,7 @@ export function DashboardPage() {
           <FilterChip>Todos os canais</FilterChip>
         </PageChrome>
 
-        <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
           <Kpi href="/leads" label="Leads" value={ops.leads} hint={empty ? "à espera de captura" : "na base"} bars={spark} />
           <Kpi
             href="/conversas"
@@ -32,8 +34,9 @@ export function DashboardPage() {
             hint={empty ? "nenhuma iniciada" : "eventos do fluxo"}
             bars={spark}
           />
+          <Kpi href="/analytics" label="Página" value={summary.visitors} hint="viram a landing" bars={spark} />
+          <Kpi href="/analytics" label="Cliques" value={summary.clicks} hint="botão Telegram" bars={spark} />
           <Kpi href="/leads" label="Facebook hoje" value={ops.facebookToday} hint="ads → Telegram" bars={spark} />
-          <Kpi href="/leads" label="Fila Ester" value={ops.ester} hint="print sem banca" bars={spark} />
           <Kpi href="/leads" label="Aguardando" value={ops.waiting} hint="espera do fluxo" bars={waitSpark} />
           <Kpi href="/leads" label="Ofertas" value={ops.offered} hint="disparadas pelo quadro" bars={offerSpark} />
         </section>

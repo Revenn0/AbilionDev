@@ -4,7 +4,10 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig, type ViteDevServer } from "vite"
-import { handleAuth, type AuthSnapshot, type AuthStore } from "./worker/auth.ts"
+import { handleAuth, sessionUser, type AuthSnapshot, type AuthStore } from "./worker/auth.ts"
+import { fileTrackStore } from "./worker/file-track.ts"
+import { geoFromRequest, ingestTrack, readTrackBody, summaryFromStore, type TrackStore } from "./worker/track-store.ts"
+import { TRACKER_JS } from "./src/lib/tracker-script.ts"
 
 function fileAuthStore(file: string): AuthStore {
   const read = (): AuthSnapshot => {
@@ -39,12 +42,73 @@ function readBody(req: IncomingMessage) {
   })
 }
 
-function localApi(store: AuthStore) {
+function localApi(store: AuthStore, tracks: TrackStore) {
   return async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
-    const url = req.url || "/"
+    const url = (req.url || "/").split("?")[0] || "/"
+    if (url === "/t.js") {
+      res.setHeader("content-type", "text/javascript; charset=utf-8")
+      res.setHeader("access-control-allow-origin", "*")
+      res.end(TRACKER_JS)
+      return
+    }
     if (url === "/api/health") {
       res.setHeader("content-type", "application/json")
-      res.end(JSON.stringify({ ok: true, telegram: false, supabase: Boolean(process.env.VITE_SUPABASE_ANON_KEY), local: true, auth: true }))
+      res.end(
+        JSON.stringify({
+          ok: true,
+          telegram: false,
+          supabase: Boolean(process.env.VITE_SUPABASE_ANON_KEY),
+          local: true,
+          auth: true,
+          ste: true,
+          llm: false,
+        })
+      )
+      return
+    }
+    if (url === "/api/track" && req.method === "OPTIONS") {
+      res.statusCode = 204
+      res.setHeader("access-control-allow-origin", "*")
+      res.setHeader("access-control-allow-methods", "GET,POST,OPTIONS")
+      res.end()
+      return
+    }
+    if (url === "/api/track" && req.method === "POST") {
+      const origin = `http://${req.headers.host || "127.0.0.1:43173"}`
+      const headers = new Headers()
+      for (const [key, value] of Object.entries(req.headers)) {
+        if (value) headers.set(key, Array.isArray(value) ? value.join(", ") : value)
+      }
+      const request = new Request(new URL(url, origin), { method: "POST", headers, body: new Uint8Array(await readBody(req)) })
+      const body = await readTrackBody(request)
+      const geo = geoFromRequest(request)
+      const events = ingestTrack(await tracks.load(), { ...body, ...geo, visitorId: String(body.visitorId ?? "") })
+      await tracks.save(events)
+      res.statusCode = 204
+      res.setHeader("access-control-allow-origin", "*")
+      res.end()
+      return
+    }
+    if (url === "/api/track/summary" && req.method === "GET") {
+      const origin = `http://${req.headers.host || "127.0.0.1:43173"}`
+      const headers = new Headers()
+      for (const [key, value] of Object.entries(req.headers)) {
+        if (value) headers.set(key, Array.isArray(value) ? value.join(", ") : value)
+      }
+      const request = new Request(new URL(url, origin), { method: "GET", headers })
+      const user = await sessionUser(request, store)
+      res.setHeader("content-type", "application/json")
+      if (!user) {
+        res.statusCode = 401
+        res.end(JSON.stringify({ error: "Sessão expirada." }))
+        return
+      }
+      res.end(JSON.stringify({ ok: true, summary: await summaryFromStore(tracks) }))
+      return
+    }
+    if (url === "/api/inbox" && req.method === "GET") {
+      res.setHeader("content-type", "application/json")
+      res.end(JSON.stringify({ ok: true, leads: [] }))
       return
     }
     if (!url.startsWith("/api/auth")) {
@@ -75,8 +139,8 @@ function localApi(store: AuthStore) {
   }
 }
 
-function attachApi(server: ViteDevServer, store: AuthStore) {
-  const api = localApi(store)
+function attachApi(server: ViteDevServer, store: AuthStore, tracks: TrackStore) {
+  const api = localApi(store, tracks)
   server.middlewares.use((req, res, next) => {
     void api(req, res, next).catch(next)
   })
@@ -89,10 +153,18 @@ export default defineConfig({
     {
       name: "abilion-api",
       configureServer(server) {
-        attachApi(server, fileAuthStore(path.resolve(import.meta.dirname, ".data/auth.json")))
+        attachApi(
+          server,
+          fileAuthStore(path.resolve(import.meta.dirname, ".data/auth.json")),
+          fileTrackStore(path.resolve(import.meta.dirname, ".data/track.json"))
+        )
       },
       configurePreviewServer(server) {
-        attachApi(server as unknown as ViteDevServer, fileAuthStore(path.resolve(import.meta.dirname, ".data/auth.json")))
+        attachApi(
+          server as unknown as ViteDevServer,
+          fileAuthStore(path.resolve(import.meta.dirname, ".data/auth.json")),
+          fileTrackStore(path.resolve(import.meta.dirname, ".data/track.json"))
+        )
       },
     },
   ],

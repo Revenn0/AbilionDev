@@ -153,6 +153,7 @@ export function applyEvent(
     ...lead,
     events: [...(lead.events ?? [])],
     messages: [...(lead.messages ?? [])],
+    facts: { ...(lead.facts ?? {}) },
     campaign: lead.campaign || campaignFor(lead.channel),
   }
   const effects: RuntimeEffect[] = []

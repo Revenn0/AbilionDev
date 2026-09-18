@@ -5,13 +5,14 @@ Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / M
 ## O que entra
 
 - Login real: `victor@abilion.com` ou `gabriel@abilion.com`. O primeiro acesso de cada conta define a senha (6+ caracteres).
-- Dashboard: leads, conversas, fila Ester, espera, ofertas
+- Dashboard: leads, conversas, página / cliques, Facebook, espera, ofertas
+- Analytics: visitantes da landing, cliques no CTA, /start no Telegram, geo e device
 - Leads no passo do fluxo (print, banca, espera, oferta só se o grafo deixar)
 - Conversas Telegram: a Sté (Mãe do Aviator) segue o prompt interno — 3 boas-vindas, minicurso, Superbet, App/Premium e remarketing
 - Funil com mapa e fluxo executável
 - Telegram: webhook no Worker (`/api/telegram`) — /start abre a Sté
 - Facebook → Telegram: `https://t.me/BOT?start=fb` (500–1000 /start por dia)
-- Configurações: bot Telegram, Sté ligada/desligada
+- Configurações: estado real do bot, cópia da Sté, pixel `/t.js`
 - Persistência local + Supabase quando houver anon key
 
 ## Stack
@@ -114,4 +115,12 @@ O anúncio aponta para `https://t.me/BOT?start=fb` (ou `fb_campanha`). O Worker:
 - abre a Sté com o motor determinístico; as respostas usam **GLM 5.3 Flash** no GLM Coding Plan
 - reenvia se a API do Telegram devolver 429
 
-Correr [`supabase/migrations/003_facebook_scale.sql`](supabase/migrations/003_facebook_scale.sql) no SQL editor. A inbox mostra no máximo 80 conversas (aguardando / hoje / Facebook).
+Correr [`supabase/migrations/003_facebook_scale.sql`](supabase/migrations/003_facebook_scale.sql) e [`supabase/migrations/004_track_and_facts.sql`](supabase/migrations/004_track_and_facts.sql) no SQL editor. A inbox mostra no máximo 80 conversas (aguardando / hoje / Facebook).
+
+Pixel da landing (Configurações → Bot Telegram):
+
+```html
+<script src="https://www.abilion.lol/t.js" data-cta="[data-abilion-cta]"></script>
+```
+
+O clique reescreve o `t.me/BOT?start=fb_{vid}`. O webhook fecha o evento `telegram` com o mesmo visitor.
