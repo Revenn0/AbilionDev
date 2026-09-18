@@ -38,6 +38,11 @@ export function stepRate(current: number, previous: number) {
   return current / previous
 }
 
+export function stepDrop(current: number, previous: number) {
+  if (previous <= 0 || current > previous) return null
+  return current / previous
+}
+
 export function periodDelta(current: number, previous: number) {
   if (previous <= 0) return current > 0 ? 1 : 0
   return (current - previous) / previous
@@ -80,7 +85,17 @@ export function markersFromGeos(geos: Record<string, TrackGeo>, limit = 18): Glo
     if (current) current.count += 1
     else buckets.set(key, { location, label: label || "Visitante", count: 1 })
   }
-  return [...buckets.values()]
+  const regionalCountries = new Set(
+    [...buckets.keys()]
+      .filter((key) => key.split(":")[1])
+      .map((key) => key.split(":")[0] || "")
+  )
+  return [...buckets.entries()]
+    .filter(([key]) => {
+      const [country, region] = key.split(":")
+      return region || !regionalCountries.has(country || "")
+    })
+    .map(([, item]) => item)
     .sort((a, b) => b.count - a.count)
     .slice(0, limit)
     .map((item, index) => ({

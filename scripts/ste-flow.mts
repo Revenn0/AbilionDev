@@ -1,4 +1,4 @@
-import { chatStarted, funnelFrom, markersFromGeos, periodDelta } from "../src/lib/analytics-view.ts"
+import { chatStarted, funnelFrom, markersFromGeos, periodDelta, stepDrop } from "../src/lib/analytics-view.ts"
 import { coordsFromGeo } from "../src/lib/geo-coords.ts"
 import { flagEmoji, formatGeo, mergeGeo, normalizeRegionCode, stateLabel } from "../src/lib/geo.ts"
 import { emptySummary } from "../src/lib/track.ts"
@@ -108,11 +108,20 @@ assert(mergeGeo({ countryCode: "BR", regionCode: "SP" }, { countryCode: "", regi
 assert(mergeGeo({ countryCode: "BR", regionCode: "RJ" }, { countryCode: "BR", city: "Niterói" }).regionCode === "RJ", "CF sem UF nao apaga estado")
 assert(coordsFromGeo({ countryCode: "BR", regionCode: "SP" })?.[0] === -23.55, "SP no globo")
 assert(markersFromGeos({ a: { country: "Brasil", countryCode: "BR", city: "", region: "São Paulo", regionCode: "SP" } })[0]?.id === "pulse-1", "marker do pixel")
+assert(
+  markersFromGeos({
+    a: { country: "Brasil", countryCode: "BR", city: "", region: "São Paulo", regionCode: "SP" },
+    b: { country: "Brasil", countryCode: "BR", city: "", region: "", regionCode: "" },
+  }).every((item) => item.label !== "Brasil"),
+  "UF vale mais que o pais sozinho"
+)
 assert(periodDelta(120, 100) > 0, "delta positivo")
 const talking = { ...lead("chat"), messages: [{ id: "m1", at: new Date().toISOString(), role: "lead" as const, text: "oi" }] }
 const funnel = funnelFrom({ ...emptySummary(), visitors: 40, ads: 50, clicks: 12, telegrams: 10 }, [talking])
 assert(funnel.map((item) => item.id).join(">") === "ads>landing>telegram>chat", "ordem do funil")
 assert(funnel[3]?.value === 1, "chat iniciado")
 assert(chatStarted(talking), "lead falou")
+assert(stepDrop(7, 20) === 7 / 20, "queda do funil")
+assert(stepDrop(20, 12) === null, "nao inventa conversao acima de 100%")
 
 console.log("ste-flow ok")
