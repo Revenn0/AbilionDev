@@ -136,7 +136,7 @@ export function Sidebar({
               size={expanded ? "sm" : "icon-xs"}
               aria-label="Sair"
               title="Sair"
-              onClick={logout}
+              onClick={() => void logout()}
               className={cn("rounded-full text-muted-foreground", expanded && "gap-1.5 px-2")}
             >
               <LogOut className="size-3.5" />

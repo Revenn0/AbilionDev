@@ -1,3 +1,4 @@
+import { handleAuth, kvAuthStore } from "./auth"
 import { campaignFor } from "../src/lib/labels"
 import { replySte, replySteSmart } from "../src/lib/ste"
 import { campaignFromStart, originFromStart, parseTelegramStart } from "../src/lib/telegram-start"
@@ -18,6 +19,9 @@ export interface Env {
   OPENAI_BASE_URL?: string
   STE_MODEL?: string
   STE_USE_LLM?: string
+  AUTH?: KVNamespace
+  ABILION_OPERATOR_PASSWORD?: string
+  ABILION_ENV?: string
 }
 
 const WORKSPACE = "local"
@@ -44,7 +48,13 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       ste: true,
       llm: Boolean(env.OPENAI_API_KEY) && env.STE_USE_LLM !== "0",
       model: env.STE_MODEL ?? "glm-5.3-flash",
+      auth: Boolean(env.AUTH),
     })
+  }
+
+  if (url.pathname.startsWith("/api/auth")) {
+    if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
+    return handleAuth(request, kvAuthStore(env.AUTH), env)
   }
 
   if (url.pathname === "/api/telegram" && request.method === "POST") {

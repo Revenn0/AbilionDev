@@ -27,5 +27,8 @@
     "OPENAI_BASE_URL": "https://api.z.ai/api/coding/paas/v4",
     "STE_MODEL": "glm-5.3-flash",
     "STE_USE_LLM": "1"
-  }
+  },
+  "kv_namespaces": [
+    { "binding": "AUTH", "id": "65f62e24942345e8b46904f6743575d0" }
+  ]
 }

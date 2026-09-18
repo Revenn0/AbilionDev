@@ -5,6 +5,7 @@ import { DashboardPage } from "@/pages/dashboard"
 import { ForgotPage } from "@/pages/forgot"
 import { LoginPage } from "@/pages/login"
 import { PrivacyPage } from "@/pages/privacy"
+import { ResetPage } from "@/pages/reset"
 import { useStore } from "@/lib/store"
 
 const FluxoPage = lazy(() => import("@/pages/fluxo").then((m) => ({ default: m.FluxoPage })))
@@ -15,7 +16,8 @@ const SettingsPage = lazy(() => import("@/pages/settings").then((m) => ({ defaul
 const TelegramPage = lazy(() => import("@/pages/telegram").then((m) => ({ default: m.TelegramPage })))
 
 function AuthGate({ children }: { children: React.ReactNode }) {
-  const { state } = useStore()
+  const { ready, state } = useStore()
+  if (!ready) return <div className="min-h-screen bg-background" />
   if (state.user) return <Navigate to="/" replace />
   return children
 }
@@ -40,6 +42,14 @@ function AppRoutes() {
         element={
           <AuthGate>
             <ForgotPage />
+          </AuthGate>
+        }
+      />
+      <Route
+        path="/reset"
+        element={
+          <AuthGate>
+            <ResetPage />
           </AuthGate>
         }
       />

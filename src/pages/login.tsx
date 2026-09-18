@@ -20,7 +20,7 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
     const cleanEmail = email.trim().toLowerCase()
@@ -30,7 +30,7 @@ export function LoginPage() {
     }
     setLoading(true)
     try {
-      login(cleanEmail, password)
+      await login(cleanEmail, password)
       toast.success("Sessão iniciada.")
       const next = params.get("next") || "/"
       navigate(next.startsWith("/") ? next : "/", { replace: true })

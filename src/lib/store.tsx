@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { nameFromEmail, uid } from "@/lib/format"
+import { loginRequest, logoutRequest, meRequest } from "@/lib/auth-api"
 import { migrateFunnel, migrateLead, migrateSettings } from "@/lib/migrate"
 import { pullRemote, pushRemote, supabaseEnabled } from "@/lib/persist"
 import { seededOperation } from "@/lib/templates"
@@ -57,8 +57,8 @@ type Store = {
   ready: boolean
   remote: "off" | "local" | "cloud"
   state: AppState
-  login: (email: string, password: string) => void
-  logout: () => void
+  login: (email: string, password: string) => Promise<void>
+  logout: () => Promise<void>
   createFunnel: (funnel: SalesFunnel) => void
   saveFunnel: (funnel: SalesFunnel) => void
   deleteFunnel: (id: string) => void
@@ -73,11 +73,29 @@ type Store = {
 const StoreContext = createContext<Store | null>(null)
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [ready] = useState(true)
+  const [ready, setReady] = useState(false)
   const [remote, setRemote] = useState<Store["remote"]>(supabaseEnabled() ? "off" : "local")
   const [state, setState] = useState<AppState>(bootState)
   const skipPush = useRef(true)
   const persistTimer = useRef(0)
+
+  useEffect(() => {
+    let cancelled = false
+    meRequest()
+      .then((data) => {
+        if (cancelled) return
+        setState((prev) => ({ ...prev, user: data.user }))
+      })
+      .catch(() => {
+        if (!cancelled) setState((prev) => ({ ...prev, user: null }))
+      })
+      .finally(() => {
+        if (!cancelled) setReady(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     if (!supabaseEnabled()) return
@@ -135,12 +153,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ready,
       remote,
       state,
-      login: (email, password) => {
-        if (password.length < 6) throw new Error("Informe um e-mail e uma senha com 6+ caracteres.")
-        const user: User = { id: uid(), name: nameFromEmail(email), email }
-        setState((prev) => ({ ...prev, user }))
+      login: async (email, password) => {
+        const data = await loginRequest(email, password)
+        setState((prev) => ({ ...prev, user: data.user }))
       },
-      logout: () => setState((prev) => ({ ...prev, user: null })),
+      logout: async () => {
+        await logoutRequest().catch(() => undefined)
+        setState((prev) => ({ ...prev, user: null }))
+      },
       createFunnel: (funnel) => setState((prev) => ({ ...prev, funnels: [funnel, ...prev.funnels] })),
       saveFunnel: (funnel) =>
         setState((prev) => ({

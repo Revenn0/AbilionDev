@@ -4,7 +4,7 @@ Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / M
 
 ## O que entra
 
-- Login local (qualquer e-mail + senha com 6+ caracteres)
+- Login real: `victor@abilion.com` ou `gabriel@abilion.com`. O primeiro acesso de cada conta define a senha (6+ caracteres).
 - Dashboard: leads, conversas, fila Ester, espera, ofertas
 - Leads no passo do fluxo (print, banca, espera, oferta só se o grafo deixar)
 - Conversas Telegram: a Sté (Mãe do Aviator) fala uma frase e espera o lead
@@ -56,7 +56,13 @@ URL no ar: [https://abilion.vsanches1060.workers.dev](https://abilion.vsanches10
 
 O Worker `abilion` serve este recorte (painel + `/api/*`). O CRM Next antigo saiu do ar.
 
-Login: qualquer e-mail + senha com 6+ caracteres. Token do Telegram e chave de IA **não** entram no git — grava em Configurações e `wrangler secret put`.
+Login: `victor@abilion.com` ou `gabriel@abilion.com`. No primeiro acesso a senha fica gravada no KV `abilion-auth`. Depois, só essa senha entra. Token do Telegram e chave de IA **não** entram no git — grava em Configurações e `wrangler secret put`.
+
+Para forçar a mesma senha nas duas contas:
+
+```bash
+npx wrangler secret put ABILION_OPERATOR_PASSWORD
+```
 
 ```bash
 npm install
