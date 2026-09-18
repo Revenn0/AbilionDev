@@ -29,7 +29,7 @@ O Worker manda:
 ```
 
 - Thinking no 5.3 **não desliga**. `thinking.type` só aceita `enabled`.
-- `reasoning_effort: low` no Telegram (uma frase). `max` é para coding, não para Sté.
+- `reasoning_effort: low` no Telegram. `max` é para coding, não para Sté.
 - `max_tokens` ≥ 1024: o thinking come tokens; 120 calava a resposta.
 - Só o `message.content` vai para o lead. `reasoning_content` não se envia.
 
@@ -37,16 +37,18 @@ O Worker manda:
 
 | Evento | Motor |
 |---|---|
-| `/start` e `/start=fb` | Determinístico (opener). Sem GLM. |
+| `/start` e `/start=fb` | Determinístico: 3 boas-vindas e espera. Sem GLM. |
+| Minicurso / Superbet / lives / oferta | Motor do prompt. Sem GLM. |
+| Follow-up 5–10 min e remarketing 7h | Cron `*/5 * * * *` + `replySteTick`. Sem GLM. |
 | Ofensa | Motor. Uma desculpa e silêncio. Sem GLM. |
-| Resposta do lead | `glm-5.3-flash` se existir `OPENAI_API_KEY` e `STE_USE_LLM ≠ 0` |
+| Papo livre depois da oferta | `glm-5.3-flash` se existir `OPENAI_API_KEY` e `STE_USE_LLM ≠ 0` |
 | API falha / vazio | Fallback do motor determinístico |
 
 ## Fases
 
 1. **Endpoint certo** — `STE_LLM_BASE_URL` e `OPENAI_BASE_URL` = `/api/coding/paas/v4`.
 2. **Secret no Worker** — Cloudflare → `abilion` → Secret `OPENAI_API_KEY`. Health: `llm: true`, `model: glm-5.3-flash`.
-3. **Sté** — uma frase, PT, sem vender no primeiro toque; ofensa fora do modelo.
+3. **Sté** — blocos curtos do prompt interno; ofensa fora do modelo.
 4. **Produção** — print Conversas depois de um lead real. Sem isto não está pronto.
 
 ## Fora

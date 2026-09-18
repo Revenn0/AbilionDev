@@ -188,9 +188,9 @@ function StePane() {
       <div>
         <p className="text-[14px] font-medium">Sté · Telegram</p>
         <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
-          Prompt interno da Sté (Mãe do Aviator) vive no motor: uma frase curta, espera o lead, não empurra o app no início.
-          No pico de 500–1000 /start do Facebook o opener é determinístico. As respostas usam GLM 5.3 Flash no Worker.
-          Ofensa encerra o contacto. Landing: app.mundoaviator.com.br
+          Prompt interno da Sté (Mãe do Aviator) vive no motor: /start manda 3 boas-vindas e espera. Depois vem minicurso,
+          Superbet com follow-up de 5–10 min, App / Premium / checkout e remarketing às 7h. Links vão mascarados, nunca crus.
+          Ofensa encerra o contacto.
         </p>
       </div>
       <label className="flex items-center justify-between gap-4">

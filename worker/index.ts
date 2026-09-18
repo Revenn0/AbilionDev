@@ -1,6 +1,6 @@
 import { handleAuth, kvAuthStore } from "./auth"
 import { campaignFor } from "../src/lib/labels"
-import { replySte, replySteSmart } from "../src/lib/ste"
+import { advanceSteIfDue, isSteWait, replySte, replySteSmart, toTelegramHtml } from "../src/lib/ste"
 import { campaignFromStart, originFromStart, parseTelegramStart } from "../src/lib/telegram-start"
 import { applyEvent, dueWaits, publishedSnapshot } from "../src/lib/runtime"
 import { BANCA_FIXED, type Lead, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types"
@@ -142,9 +142,7 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
         })
       : replySte(lead, incoming)
     lead = talked.lead
-    if (talked.reply) {
-      await telegram(token, "sendMessage", { chat_id: chatId, text: talked.reply })
-    }
+    await sendSteReplies(token, chatId, talked.replies)
   }
 
   await saveLead(env, lead)
@@ -152,7 +150,7 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
 
 async function processWaits(env: Env) {
   const now = new Date().toISOString()
-  const dueRows = (await rest<LeadRow[]>(env, `leads?workspace_id=eq.${WORKSPACE}&wait_until=lte.${now}&paused=eq.false&select=*`)) ?? []
+  const dueRows = (await rest<LeadRow[]>(env, `leads?workspace_id=eq.${WORKSPACE}&wait_until=lte.${now}&select=*`)) ?? []
   if (!dueRows.length) return 0
   const funnels = await loadFunnels(env)
   const settings = await loadSettings(env)
@@ -161,6 +159,12 @@ async function processWaits(env: Env) {
   const due = dueWaits(leads)
   const token = env.TELEGRAM_BOT_TOKEN
   for (const lead of due) {
+    if (isSteWait(lead)) {
+      const talked = advanceSteIfDue(lead)
+      if (token && lead.telegramChatId) await sendSteReplies(token, lead.telegramChatId, talked.replies)
+      await saveLead(env, talked.lead)
+      continue
+    }
     const result = applyEvent(snapshot, lead, { type: "timer" }, Date.now())
     await saveLead(env, result.lead)
     for (const effect of result.effects) {
@@ -307,6 +311,18 @@ async function rest<T>(env: Env, path: string, init?: RequestInit): Promise<T | 
   if (!res.ok) return null
   const text = await res.text()
   return text ? (JSON.parse(text) as T) : (true as T)
+}
+
+async function sendSteReplies(token: string, chatId: string, replies: string[]) {
+  for (const [index, text] of replies.entries()) {
+    await telegram(token, "sendMessage", {
+      chat_id: chatId,
+      text: toTelegramHtml(text),
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    })
+    if (index < replies.length - 1) await sleep(280)
+  }
 }
 
 async function telegram(token: string, method: string, body: Record<string, unknown>) {

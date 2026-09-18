@@ -37,6 +37,6 @@ export function burstStats(leads: Lead[]) {
     facebook: leads.filter((lead) => lead.origin === "facebook").length,
     blocked: leads.filter((lead) => lead.steBlocked).length,
     offered: leads.filter((lead) => lead.stePhase === "offer" || lead.stage === "offer").length,
-    talking: leads.filter((lead) => (lead.messages?.length ?? 0) > 1 && !lead.steBlocked).length,
+    talking: leads.filter((lead) => (lead.messages ?? []).some((item) => item.role === "lead") && !lead.steBlocked).length,
   }
 }

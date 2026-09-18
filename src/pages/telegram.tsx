@@ -91,7 +91,7 @@ export function TelegramPage() {
         <section className="surface p-6">
           <p className="text-[14px] font-medium">Canal no mesmo grafo</p>
           <p className="mt-2 max-w-2xl text-[13.5px] leading-relaxed text-muted-foreground">
-            /start no privado: a Sté manda uma frase e espera. Join no grupo só cria o lead da campanha Telegram. Token de
+            /start no privado: a Sté manda 3 boas-vindas e espera. Join no grupo só cria o lead da campanha Telegram. Token de
             produção vai em <code className="text-foreground">wrangler secret</code>, nunca no git.
           </p>
           <p className="mt-4 text-[13px]">

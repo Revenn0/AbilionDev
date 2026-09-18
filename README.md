@@ -7,7 +7,7 @@ Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / M
 - Login real: `victor@abilion.com` ou `gabriel@abilion.com`. O primeiro acesso de cada conta define a senha (6+ caracteres).
 - Dashboard: leads, conversas, fila Ester, espera, ofertas
 - Leads no passo do fluxo (print, banca, espera, oferta só se o grafo deixar)
-- Conversas Telegram: a Sté (Mãe do Aviator) fala uma frase e espera o lead
+- Conversas Telegram: a Sté (Mãe do Aviator) segue o prompt interno — 3 boas-vindas, minicurso, Superbet, App/Premium e remarketing
 - Funil com mapa e fluxo executável
 - Telegram: webhook no Worker (`/api/telegram`) — /start abre a Sté
 - Facebook → Telegram: `https://t.me/BOT?start=fb` (500–1000 /start por dia)

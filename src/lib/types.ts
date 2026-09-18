@@ -198,8 +198,7 @@ export const defaultSettings: Settings = {
   telegramGroupUrl: "",
   steLinkedTelegram: true,
   steLinkedWhatsapp: false,
-  steWelcome:
-    "Oi, tudo bom? Aqui é a Sté. Selecionei algumas pessoas para chamar hoje e trocar uma ideia. Me diz: como estão sendo seus resultados com o Aviator?",
+  steWelcome: "Opa, seja muito bem-vindo! Aqui é a Sté, conhecida como a Mãe do Aviator.",
   esterNotify: true,
   esterTelegramChatId: "",
 }

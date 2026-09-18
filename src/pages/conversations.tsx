@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { useStore } from "@/lib/store"
 import { hasConversation } from "@/lib/ops"
 import { ORIGIN_LABEL, TEMP_LABEL } from "@/lib/labels"
-import { replySte } from "@/lib/ste"
+import { advanceSteIfDue, replySte, splitSteMarkup } from "@/lib/ste"
 import { timeAgo } from "@/lib/format"
 import type { Lead } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -83,6 +83,12 @@ export function ConversationsPage() {
   const lead = rows.find((item) => item.id === id) ?? rows[0] ?? null
 
   useEffect(() => {
+    if (!lead) return
+    const result = advanceSteIfDue(lead)
+    if (result.replies.length) saveLead(result.lead)
+  }, [lead?.id, lead?.waitUntil])
+
+  useEffect(() => {
     end.current?.scrollIntoView({ block: "end" })
   }, [lead?.id, lead?.messages?.length])
 
@@ -110,7 +116,7 @@ export function ConversationsPage() {
           <section className="surface grid place-items-center px-6 py-16 text-center">
             <p className="text-[14px] font-medium">Nenhuma conversa no Telegram</p>
             <p className="mt-1 max-w-md text-[13px] text-muted-foreground">
-              O anúncio do Facebook usa t.me/BOT?start=fb. /start abre a Sté — uma frase e espera.
+              O anúncio do Facebook usa t.me/BOT?start=fb. /start abre a Sté com 3 boas-vindas e espera a resposta.
             </p>
           </section>
         ) : (
@@ -171,7 +177,23 @@ export function ConversationsPage() {
                       className={cn("max-w-[80%] rounded-2xl px-3.5 py-2.5", item.role === "ste" ? "bg-muted" : "ml-auto bg-sky-500/15")}
                     >
                       <p className="text-[10px] font-medium text-muted-foreground">{item.role === "ste" ? "Sté" : "Lead"}</p>
-                      <p className="mt-0.5 text-[13.5px] leading-relaxed">{item.text}</p>
+                      <p className="mt-0.5 text-[13.5px] leading-relaxed">
+                        {splitSteMarkup(item.text).map((part, index) =>
+                          part.type === "link" ? (
+                            <a
+                              key={`${item.id}-${index}`}
+                              href={part.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-primary underline underline-offset-2"
+                            >
+                              {part.text}
+                            </a>
+                          ) : (
+                            <span key={`${item.id}-${index}`}>{part.text}</span>
+                          )
+                        )}
+                      </p>
                     </div>
                   ))}
                   <div ref={end} />

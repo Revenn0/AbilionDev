@@ -1,49 +1,137 @@
 import { uid } from "./format"
-import type { ChatMessage, Lead } from "./types"
+import type { ChatMessage, Lead, StePhase } from "./types"
 
 export const STE_LANDING = "https://app.mundoaviator.com.br/"
+export const STE_COURSE = "https://mundoaviator.com.br/mini-curso/"
+export const STE_PREMIUM = "https://mundoaviator.com.br/premium-vsl/"
+export const STE_CHECKOUT = "https://go.perfectpay.com.br/PPU38CQDT9B"
+export const STE_SUPERBET =
+  "https://wlsuperbet.adsrv.eacdn.com/C.ashx?btag=a_46644b_432c_&affid=873&siteid=46644&adid=432&c=&asclurl=https://superbet.bet.br/registro?bonus=STEAVIATOR"
+
+export const STE_LINKS = {
+  course: { label: "clique aqui para acessar o minicurso gratuito", url: STE_COURSE },
+  superbet: { label: "clique aqui para criar sua conta na Superbet com bônus", url: STE_SUPERBET },
+  app: { label: "clique aqui para conhecer os planos do App", url: STE_LANDING },
+  premium: { label: "clique aqui para conhecer o Grupo Premium", url: STE_PREMIUM },
+  checkout: { label: "clique aqui para garantir sua vaga direto no checkout", url: STE_CHECKOUT },
+} as const
+
+export function maskLink(label: string, url: string) {
+  return `[${label}](${url})`
+}
+
+export function steLink(key: keyof typeof STE_LINKS) {
+  const item = STE_LINKS[key]
+  return maskLink(item.label, item.url)
+}
 
 export const STE_SYSTEM_PROMPT = `# IDENTIDADE E PAPEL
-Você é a Sté, conhecida como a "Mãe do Aviator". Você é especialista em iGaming, analista de mercado de apostas e criadora de uma ferramenta de alta performance para apostadores. Seu tom de voz é direto, firme, realista, mas humano, empático e acolhedor quando o lead demonstra frustração. Você fala de igual para igual com o apostador, com uma postura profissional de quem entende o jogo de verdade. Você odeia "promessas de robô milagroso" e foca em método, lógica e gestão.
+Você é a Sté, conhecida como a "Mãe do Aviator". Você é especialista em iGaming, analista de mercado de apostas e criadora de estratégias profissionais. O lead que está chegando no Telegram veio de anúncios e da Landing Page, ou seja, muitos ainda não te conhecem bem. Seu tom de voz é receptivo, profissional, firme, acolhedor e focado em ensinar o caminho certo. Você odeia "promessas de robô milagroso" e foca em método, lógica e gestão.
 
-Canal: Telegram. Fala como mensagem curta de Telegram, não como e-mail.
+# REGRA DE FORMATAÇÃO DE LINKS (OBRIGATÓRIO NO TELEGRAM)
+- NUNCA envie URLs longas ou cruas no meio da conversa.
+- Todos os links devem ser inseridos em formato de hiperlink (texto âncora), com o texto clicável, mantendo a conversa limpa e profissional. Exemplo: \`[clique aqui para se cadastrar](url)\`.
 
-# OBJETIVO
-1. Iniciar a conversa pessoalmente de forma natural e humanizada.
-2. Ouvir o lead, entender sua dor, acalmar seu medo, frustração ou raiva por estar perdendo dinheiro.
-3. Somente após compreender o cenário dele, apresentar o app como a solução profissional definitiva (baseada em dados, não em achismo).
-4. Explicar as funcionalidades e conduzir para a Landing Page utilizando a ancoragem de preços (destacando o plano semestral).
+# FLUXO DA CONVERSA (PASSO A PASSO)
 
-# REGRAS DE OURO (RITMO HUMANO - RIGOROSO)
-- NUNCA envie blocos de texto gigantescos ou várias mensagens de uma só vez.
-- Mande APENAS UMA frase curta por vez e ESPERE o cliente responder.
-- NUNCA empurre o produto logo de cara. Deixe o lead falar, valide a dor e só fale do app ou dos planos após entender o drama dele.
+## PASSO 1: BOAS-VINDAS E APRESENTAÇÃO
+Assim que o usuário iniciar o bot (/start), envie mensagens curtas e naturais apresentando quem você é:
+- Mensagem 1: "Opa, seja muito bem-vindo! Aqui é a Sté, conhecida como a Mãe do Aviator."
+- Mensagem 2: "Criei esse espaço para guiar quem quer operar de forma profissional, sem cair em furada ou achismo."
+- Mensagem 3: "Para eu te conhecer melhor e saber como posso te ajudar: você já joga Aviator? Tem experiência com o jogo ou está começando agora? Como têm sido seus resultados?"
+*(O bot deve parar aqui e ESPERAR o lead responder).*
 
-# ETAPA 1: ABORDAGEM
-- "Fala, tudo joia? Me diz uma coisa: você costuma fechar o mês no lucro no Aviator ou tá naquele ciclo de ganhar hoje e devolver tudo amanhã?"
-- "Oi, tudo bom? Aqui é a Sté. Selecionei algumas pessoas para chamar hoje e trocar uma ideia. Me diz: como estão sendo seus resultados com o Aviator?"
+## PASSO 2: ACOLHIMENTO E MINICURSO (VALOR ANTES DA VENDA)
+Assim que o lead responder, acolha a resposta com empatia e ofereça o minicurso usando link mascarado:
+- Resposta base: "Te entendo perfeitamente! Para quem está começando ou quer alinhar a estratégia, eu preparei um minicurso completo do zero."
+- O que o minicurso ensina: Como se cadastrar na plataforma, como jogar com segurança, como acompanhar minhas lives e como fazer a gestão da própria banca.
+- Link: ${steLink("course")}
+- Pergunta de transição: "Dá uma olhada nesse material para pegar a base. Mas me diz uma coisa: você já tem conta na plataforma oficial onde eu opero e faço minhas transmissões?"
 
-# ETAPA 2: ACOLHIMENTO
-Cegueira operacional, ciclo do otário, vício em palpite, caos financeiro, zero mágica.
+## PASSO 3: A OFERTA DA PLATAFORMA (SUPERBET) E O GATILHO DE 5 A 10 MINUTOS
+Quando o lead responder sobre a plataforma, apresente a Superbet com os benefícios e o link mascarado:
+- Argumento inicial: "Para rodar as nossas estratégias de verdade, operar junto comigo nas lives e ter resultado, você precisa estar na casa certa. Eu opero e recomendo a Superbet."
+- Benefícios: Gráfico exclusivo do Aviator, cashback diário, torneios semanais, alavancagem de banca e onde rolam as lives.
+- Link: ${steLink("superbet")}
 
-# ETAPA 3: SOLUÇÃO
-Cockpit dark/premium, velas roxas e rosas, disciplina de meta, sinais, catalogador, validador de padrões, gestão de banca blindada.
+### A REGRA DE OURO DO CADASTRO (FOLLOW-UP 5 A 10 MINUTOS)
+- Após enviar o link da Superbet, encerre o bloco e espere de 5 a 10 minutos.
+- Se o lead não responder confirmando o cadastro nesse intervalo, envie:
+  "E aí, conseguiu fazer o cadastro na plataforma? Porque essa semana a gente conseguiu uma promoção para novos jogadores que, se você conseguir fazer o seu cadastro e fazer qualquer tipo de depósito, a gente te dá mais uma banca para você jogar. Me confirma aí se você conseguiu, se você é um cliente novo, que eu te dou esse bônus de entrada para jogar com a gente na próxima live."
 
-# ETAPA 4: PREÇOS
-1. Mensal: R$ 47/mês.
-2. Semestral (recomendado): 12x de R$ 24,80 ou R$ 247 à vista.
-Link: ${STE_LANDING}
+## PASSO 4: APRESENTAÇÃO DO APP, DO GRUPO PREMIUM E CHECKOUT DIRETO
+Quando o lead demonstrar interesse em elevar o nível, assinar ferramentas ou pedir o link para garantir acesso imediato:
+- O App: Ferramenta própria com catalogador em tempo real, validador de padrões e gestão de banca blindada.
+  Link: ${steLink("app")}
+- O Grupo Premium (Sinais e Oportunidades):
+  "Além do app, nós temos o nosso Grupo Premium de Sinais. É uma lista de oportunidades super extensa analisada por mim pessoalmente, com 5 oportunidades diárias das 08:00 até 01:30, incluindo os sinais de 4x."
+  Link: ${steLink("premium")}
+- Checkout direto:
+  Link: ${steLink("checkout")}
 
-# GUARDRAILS
-1. Off-topic: redirecione para Aviator / app.
-2. Ofensa: uma desculpa neutra e NUNCA MAIS responder.`
+# HORÁRIOS DAS LIVES (FAQ / DÚVIDAS)
+- "Eu faço lives diárias para a gente operar junto e pegar as melhores velas. Anota aí os horários:"
+- Manhã: 10:30
+- Tarde: 15:30 (3:30 da tarde)
+- Noite: 20:30 (8:30 da noite)
+- "Sempre aviso lá no canal principal momentos antes de entrar ao vivo, então fica de olho!"
+
+# REGRA DE REMARKETING (7 HORAS APÓS A ENTRADA)
+- Se passarem 7 horas e o lead não finalizar a conversão, chame-o ativamente: pergunte como estão os resultados, se viu o minicurso, reforce a importância de não operar sozinho e envie os links mascarados das soluções ou o link de checkout direto.
+
+# REGRAS DE OURO PARA O TELEGRAM
+- Envie as mensagens em blocos curtos e separados (simulando digitação humana), nunca blocos gigantes de texto.
+- Seja sempre receptiva com quem está chegando agora e não te conhece.
+- Off-topic: redirecione para Aviator / método.
+- Ofensa: uma desculpa neutra e NUNCA MAIS responder.`
 
 export const STE_CLOSE =
   "Peço desculpas se te causei qualquer incômodo. Vou encerrar nosso atendimento por aqui para não te ocupar mais. Muito sucesso na sua jornada!"
 
-const OPENERS = [
-  "Fala, tudo joia? Me diz uma coisa: você costuma fechar o mês no lucro no Aviator ou tá naquele ciclo de ganhar hoje e devolver tudo amanhã?",
-  "Oi, tudo bom? Aqui é a Sté. Selecionei algumas pessoas para chamar hoje e trocar uma ideia. Me diz: como estão sendo seus resultados com o Aviator?",
+export const STE_WELCOME = [
+  "Opa, seja muito bem-vindo! Aqui é a Sté, conhecida como a Mãe do Aviator.",
+  "Criei esse espaço para guiar quem quer operar de forma profissional, sem cair em furada ou achismo.",
+  "Para eu te conhecer melhor e saber como posso te ajudar: você já joga Aviator? Tem experiência com o jogo ou está começando agora? Como têm sido seus resultados?",
+] as const
+
+export const STE_COURSE_BLOCK = [
+  "Te entendo perfeitamente! Para quem está começando ou quer alinhar a estratégia, eu preparei um minicurso completo do zero.",
+  "Ele ensina a se cadastrar na plataforma, jogar com segurança, acompanhar minhas lives e fazer a gestão da própria banca.",
+  steLink("course"),
+  "Dá uma olhada nesse material para pegar a base. Mas me diz uma coisa: você já tem conta na plataforma oficial onde eu opero e faço minhas transmissões?",
+]
+
+export const STE_SUPERBET_BLOCK = [
+  "Para rodar as nossas estratégias de verdade, operar junto comigo nas lives e ter resultado, você precisa estar na casa certa. Eu opero e recomendo a Superbet.",
+  "Lá tem gráfico exclusivo do Aviator, cashback diário, torneios semanais, alavancagem de banca e é onde rolam as lives.",
+  steLink("superbet"),
+]
+
+export const STE_SUPERBET_RESCUE =
+  "E aí, conseguiu fazer o cadastro na plataforma? Porque essa semana a gente conseguiu uma promoção para novos jogadores que, se você conseguir fazer o seu cadastro e fazer qualquer tipo de depósito, a gente te dá mais uma banca para você jogar. Me confirma aí se você conseguiu, se você é um cliente novo, que eu te dou esse bônus de entrada para jogar com a gente na próxima live."
+
+export const STE_OFFER_BLOCK = [
+  "O App é a ferramenta própria: catalogador em tempo real, validador de padrões e gestão de banca blindada.",
+  steLink("app"),
+  "Além do app, nós temos o nosso Grupo Premium de Sinais. É uma lista de oportunidades super extensa analisada por mim pessoalmente, com 5 oportunidades diárias das 08:00 até 01:30, incluindo os sinais de 4x.",
+  steLink("premium"),
+  "Se já quiser garantir a vaga agora:",
+  steLink("checkout"),
+]
+
+export const STE_LIVE_BLOCK = [
+  "Eu faço lives diárias para a gente operar junto e pegar as melhores velas. Anota aí os horários:",
+  "Manhã: 10:30. Tarde: 15:30 (3:30 da tarde). Noite: 20:30 (8:30 da noite).",
+  "Sempre aviso lá no canal principal momentos antes de entrar ao vivo, então fica de olho!",
+]
+
+export const STE_REMARKETING_BLOCK = [
+  "E aí, como estão os resultados desde que a gente se falou?",
+  `Você chegou a ver o minicurso? Se ainda não viu: ${steLink("course")}`,
+  "Operar sozinho é o que mais queima banca. Se quiser o caminho certo, eu deixo os links aqui.",
+  steLink("superbet"),
+  steLink("app"),
+  steLink("checkout"),
 ]
 
 const HOSTILE =
@@ -52,14 +140,40 @@ const HOSTILE =
 const OFFTOPIC =
   /\b(eleição|eleicao|bolsonaro|lula|receita de|bolo|clima|previsão do tempo|futebol|flamengo|política|politica)\b/i
 
-const LISTEN =
-  "Me fala sem filtro: no mês você fecha no lucro ou entra naquele vai-e-volta de ganhar e devolver?"
+const LIVE_HOURS =
+  /\b(live|lives|horário|horario|transmissão|transmissao|que horas|quando (voc[eê]|tu) (entra|opera|transmite)|hora da live)\b/i
 
-const REDIRECT =
-  "Bora ficar no Aviator — me conta como estão seus resultados, se tá lucrando ou devolvendo pra casa."
+const WANT_OFFER =
+  /\b(app|plano|planos|assinar|assinatura|ferramenta|catalogador|premium|checkout|vaga|preço|preco|valor|quanto custa|perfectpay|pagar|quero o (app|grupo)|link do (app|grupo|checkout))\b/i
 
-function nowIso() {
-  return new Date().toISOString()
+const SIGNED_UP =
+  /\b(cadastrei|me cadastrei|fiz o cadastro|criei a conta|já tenho conta|ja tenho conta|já tenho|ja tenho|depositei|depósito|deposito|sou cliente|conta feita|tá feito|ta feito)\b/i
+
+const CONVERTED = /\b(paguei|assinei|comprei|já assinei|ja assinei|já paguei|ja paguei)\b/i
+
+const MEM = {
+  superbet: "ste:superbet",
+  remarketing: "ste:remarketing",
+  rescued: "ste:rescued",
+  converted: "ste:converted",
+} as const
+
+const SUPERBET_WAIT_MS = 7 * 60_000
+const REMARKETING_MS = 7 * 60 * 60_000
+const REDIRECT = "Bora ficar no Aviator — me conta se você já joga, se está começando agora e como têm sido seus resultados."
+
+export type SteMarkup =
+  | { type: "text"; text: string }
+  | { type: "link"; text: string; url: string }
+
+export type SteResult = {
+  lead: Lead
+  replies: string[]
+  reply: string | null
+}
+
+function nowIso(now = Date.now()) {
+  return new Date(now).toISOString()
 }
 
 function cloneLead(lead: Lead): Lead {
@@ -67,91 +181,260 @@ function cloneLead(lead: Lead): Lead {
     ...lead,
     messages: [...(lead.messages ?? [])],
     stePhase: lead.stePhase ?? "entry",
+    memory: lead.memory ?? "",
   }
 }
 
-function push(lead: Lead, role: ChatMessage["role"], text: string) {
-  const at = nowIso()
+function memHas(lead: Lead, token: string) {
+  return (lead.memory || "").split(/\s+/).includes(token)
+}
+
+function memAdd(lead: Lead, token: string) {
+  if (memHas(lead, token)) return
+  lead.memory = `${lead.memory || ""} ${token}`.trim()
+}
+
+function memDel(lead: Lead, token: string) {
+  lead.memory = (lead.memory || "")
+    .split(/\s+/)
+    .filter((item) => item && item !== token)
+    .join(" ")
+}
+
+function push(lead: Lead, role: ChatMessage["role"], text: string, now = Date.now()) {
+  const at = nowIso(now)
   const message: ChatMessage = { id: uid(), at, role, text }
   lead.messages = [...(lead.messages ?? []), message]
   lead.lastMessage = text
   lead.updatedAt = at
-  if (role === "ste") lead.stage = lead.stePhase === "offer" ? "offer" : "attendance"
+  if (role === "ste") {
+    lead.stage = lead.stePhase === "offer" ? "offer" : lead.stePhase === "listen" ? "welcome" : "attendance"
+  }
 }
 
-function oneLine(text: string) {
-  return text.replace(/\s+/g, " ").trim().slice(0, 280)
+function pushAll(lead: Lead, texts: readonly string[], now = Date.now()) {
+  for (const text of texts) push(lead, "ste", text, now)
+}
+
+function pack(lead: Lead, replies: string[]): SteResult {
+  return { lead, replies, reply: replies.at(-1) ?? null }
 }
 
 function hasSteMessage(lead: Lead) {
   return (lead.messages ?? []).some((item) => item.role === "ste")
 }
 
-function openConversation(lead: Lead): { lead: Lead; reply: string } {
-  const opener = OPENERS[Math.floor(Math.random() * OPENERS.length)] ?? OPENERS[0]!
-  lead.stePhase = "listen"
-  push(lead, "ste", opener)
-  return { lead, reply: opener }
-}
-
-function listenLine(lead: Lead, incoming: string): { lead: Lead; reply: string } {
-  const reply = oneLine(OFFTOPIC.test(incoming) ? REDIRECT : LISTEN)
-  lead.stePhase = "listen"
-  push(lead, "ste", reply)
-  return { lead, reply }
-}
-
-/** Hostility, opener e um fallback curto. Sem walk de preço — isso fica no prompt da LLM. */
-function gateSte(lead: Lead, incoming?: string | null): { lead: Lead; reply: string | null; done: boolean } {
-  const next = cloneLead(lead)
-
-  if (next.steBlocked || next.stePhase === "closed") {
-    return { lead: next, reply: null, done: true }
+function scheduleRemarketing(lead: Lead, now: number) {
+  if (lead.steBlocked || memHas(lead, MEM.converted)) {
+    if (memHas(lead, MEM.remarketing) && !memHas(lead, MEM.superbet)) lead.waitUntil = undefined
+    return
   }
+  const due = new Date(lead.createdAt).getTime() + REMARKETING_MS
+  if (now >= due) return
+  memAdd(lead, MEM.remarketing)
+  if (memHas(lead, MEM.superbet)) return
+  lead.waitUntil = new Date(due).toISOString()
+}
+
+function scheduleSuperbet(lead: Lead, now: number) {
+  memAdd(lead, MEM.superbet)
+  memDel(lead, MEM.remarketing)
+  lead.waitUntil = new Date(now + SUPERBET_WAIT_MS).toISOString()
+}
+
+function cancelSuperbetWait(lead: Lead, now: number) {
+  memDel(lead, MEM.superbet)
+  scheduleRemarketing(lead, now)
+}
+
+export function isSteWait(lead: Lead) {
+  return Boolean(lead.waitUntil) && (memHas(lead, MEM.superbet) || memHas(lead, MEM.remarketing))
+}
+
+export function splitSteMarkup(text: string): SteMarkup[] {
+  const nodes: SteMarkup[] = []
+  const pattern = /\[([^\]]+)\]\((https?:[^)\s]+)\)/g
+  let cursor = 0
+  for (const match of text.matchAll(pattern)) {
+    const index = match.index ?? 0
+    if (index > cursor) nodes.push({ type: "text", text: text.slice(cursor, index) })
+    nodes.push({ type: "link", text: match[1] ?? "", url: match[2] ?? "" })
+    cursor = index + match[0].length
+  }
+  if (cursor < text.length) nodes.push({ type: "text", text: text.slice(cursor) })
+  return nodes.length ? nodes : [{ type: "text", text }]
+}
+
+export function toTelegramHtml(text: string) {
+  const parts = splitSteMarkup(text)
+  return parts
+    .map((part) => {
+      if (part.type === "text") {
+        return part.text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      }
+      const href = part.url.replace(/&/g, "&amp;").replace(/"/g, "&quot;")
+      const label = part.text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      return `<a href="${href}">${label}</a>`
+    })
+    .join("")
+}
+
+function setPhase(lead: Lead, phase: StePhase) {
+  lead.stePhase = phase
+}
+
+function welcome(lead: Lead, now: number) {
+  setPhase(lead, "listen")
+  pushAll(lead, STE_WELCOME, now)
+  scheduleRemarketing(lead, now)
+  return pack(lead, [...STE_WELCOME])
+}
+
+function course(lead: Lead, now: number) {
+  setPhase(lead, "diagnosis")
+  pushAll(lead, STE_COURSE_BLOCK, now)
+  scheduleRemarketing(lead, now)
+  return pack(lead, [...STE_COURSE_BLOCK])
+}
+
+function superbet(lead: Lead, now: number) {
+  setPhase(lead, "solution")
+  pushAll(lead, STE_SUPERBET_BLOCK, now)
+  scheduleSuperbet(lead, now)
+  return pack(lead, [...STE_SUPERBET_BLOCK])
+}
+
+function offer(lead: Lead, now: number) {
+  setPhase(lead, "offer")
+  cancelSuperbetWait(lead, now)
+  pushAll(lead, STE_OFFER_BLOCK, now)
+  scheduleRemarketing(lead, now)
+  return pack(lead, [...STE_OFFER_BLOCK])
+}
+
+function lives(lead: Lead, now: number) {
+  pushAll(lead, STE_LIVE_BLOCK, now)
+  return pack(lead, [...STE_LIVE_BLOCK])
+}
+
+function close(lead: Lead, now: number) {
+  lead.steBlocked = true
+  setPhase(lead, "closed")
+  lead.waitUntil = undefined
+  push(lead, "ste", STE_CLOSE, now)
+  return pack(lead, [STE_CLOSE])
+}
+
+function replyToIncoming(lead: Lead, incoming: string, now: number): SteResult {
+  if (HOSTILE.test(incoming)) return close(lead, now)
+  if (CONVERTED.test(incoming)) memAdd(lead, MEM.converted)
+  if (LIVE_HOURS.test(incoming)) return lives(lead, now)
+  if (WANT_OFFER.test(incoming)) return offer(lead, now)
+  if (OFFTOPIC.test(incoming)) {
+    push(lead, "ste", REDIRECT, now)
+    return pack(lead, [REDIRECT])
+  }
+
+  const phase = lead.stePhase ?? "entry"
+  if (phase === "listen" || phase === "entry") return course(lead, now)
+
+  if (phase === "diagnosis") return superbet(lead, now)
+
+  if (phase === "solution") {
+    cancelSuperbetWait(lead, now)
+    if (SIGNED_UP.test(incoming)) {
+      setPhase(lead, "offer")
+      const text = "Boa! Com a conta certa a gente opera junto nas lives. Qualquer depósito novo eu te encaixo no bônus de entrada."
+      push(lead, "ste", text, now)
+      return pack(lead, [text])
+    }
+    const text = "Me confirma se o cadastro na Superbet já saiu — se travar em alguma etapa, me fala que eu te ajudo."
+    push(lead, "ste", text, now)
+    return pack(lead, [text])
+  }
+
+  const text = `Se quiser subir de nível, o caminho é o App, o Grupo Premium ou o checkout direto: ${steLink("app")}`
+  push(lead, "ste", text, now)
+  setPhase(lead, "offer")
+  return pack(lead, [text])
+}
+
+export function replySte(lead: Lead, incoming?: string | null, now = Date.now()): SteResult {
+  const next = cloneLead(lead)
+  if (next.steBlocked || next.stePhase === "closed") return pack(next, [])
 
   const text = (incoming ?? "").trim()
-  if (text) {
-    push(next, "lead", text)
-    if (HOSTILE.test(text)) {
-      next.steBlocked = true
-      next.stePhase = "closed"
-      push(next, "ste", STE_CLOSE)
-      return { lead: next, reply: STE_CLOSE, done: true }
-    }
-  }
+  if (text) push(next, "lead", text, now)
 
   if (!text) {
-    if (!hasSteMessage(next)) return { ...openConversation(next), done: true }
-    return { lead: next, reply: null, done: true }
+    if (!hasSteMessage(next)) return welcome(next, now)
+    return pack(next, [])
   }
 
-  return { lead: next, reply: null, done: false }
+  return replyToIncoming(next, text, now)
 }
 
-export function replySte(lead: Lead, incoming?: string | null): { lead: Lead; reply: string | null } {
-  const gated = gateSte(lead, incoming)
-  if (gated.done) return { lead: gated.lead, reply: gated.reply }
-  return listenLine(gated.lead, (incoming ?? "").trim())
+export function replySteTick(lead: Lead, now = Date.now()): SteResult {
+  const next = cloneLead(lead)
+  if (next.steBlocked || next.stePhase === "closed") {
+    next.waitUntil = undefined
+    return pack(next, [])
+  }
+
+  const due = next.waitUntil ? new Date(next.waitUntil).getTime() : 0
+  if (!due || due > now) return pack(next, [])
+
+  if (memHas(next, MEM.superbet)) {
+    memDel(next, MEM.superbet)
+    memAdd(next, MEM.rescued)
+    setPhase(next, "offer")
+    push(next, "ste", STE_SUPERBET_RESCUE, now)
+    scheduleRemarketing(next, now)
+    return pack(next, [STE_SUPERBET_RESCUE])
+  }
+
+  if (memHas(next, MEM.remarketing) && !memHas(next, MEM.converted)) {
+    memDel(next, MEM.remarketing)
+    next.waitUntil = undefined
+    pushAll(next, STE_REMARKETING_BLOCK, now)
+    return pack(next, [...STE_REMARKETING_BLOCK])
+  }
+
+  next.waitUntil = undefined
+  return pack(next, [])
 }
 
 export const STE_LLM_MODEL = "glm-5.3-flash"
 export const STE_LLM_BASE_URL = "https://api.z.ai/api/coding/paas/v4"
 
+function splitBlocks(raw: string) {
+  return raw
+    .split(/\n{2,}/)
+    .map((item) => item.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .slice(0, 4)
+}
+
+export function advanceSteIfDue(lead: Lead, now = Date.now()): SteResult {
+  const due = lead.waitUntil ? new Date(lead.waitUntil).getTime() : 0
+  if (!due || due > now || !isSteWait(lead)) return { lead, replies: [], reply: null }
+  return replySteTick(lead, now)
+}
+
 export async function replySteSmart(
   lead: Lead,
   incoming: string | null | undefined,
   opts?: { apiKey?: string; baseUrl?: string; model?: string }
-): Promise<{ lead: Lead; reply: string | null }> {
-  const gated = gateSte(lead, incoming)
-  if (gated.done) return { lead: gated.lead, reply: gated.reply }
-
-  const next = gated.lead
-  const text = (incoming ?? "").trim()
+): Promise<SteResult> {
+  const scripted = replySte(lead, incoming)
   const key = opts?.apiKey
-  if (!key) return listenLine(next, text)
+  const generic = scripted.replies[0]?.startsWith("Se quiser subir de nível")
+  if (!key || !generic || scripted.lead.steBlocked) return scripted
 
+  const next = scripted.lead
+  next.messages = next.messages.slice(0, -1)
   try {
-    const history = next.messages.slice(-12).map((item) => ({
+    const history = next.messages.slice(-14).map((item) => ({
       role: item.role === "ste" ? "assistant" : "user",
       content: item.text,
     }))
@@ -169,19 +452,28 @@ export async function replySteSmart(
         thinking: { type: "enabled" },
         reasoning_effort: "low",
         messages: [
-          { role: "system", content: `${STE_SYSTEM_PROMPT}\n\nResponda só UMA frase curta, em português, como Telegram.` },
+          {
+            role: "system",
+            content: `${STE_SYSTEM_PROMPT}\n\nFase atual: offer. Responda em português, no máximo 3 blocos curtos separados por linha em branco. Links só como [texto](url). Sem URL crua.`,
+          },
           ...history,
         ],
       }),
     })
-    if (!res.ok) return listenLine(next, text)
+    if (!res.ok) {
+      pushAll(next, scripted.replies)
+      return scripted
+    }
     const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
-    const raw = oneLine(data.choices?.[0]?.message?.content ?? "")
-    if (!raw) return listenLine(next, text)
-    next.stePhase = raw.includes(STE_LANDING) ? "offer" : "listen"
-    push(next, "ste", raw)
-    return { lead: next, reply: raw }
+    const blocks = splitBlocks(data.choices?.[0]?.message?.content ?? "")
+    if (!blocks.length) {
+      pushAll(next, scripted.replies)
+      return scripted
+    }
+    pushAll(next, blocks)
+    return pack(next, blocks)
   } catch {
-    return listenLine(next, text)
+    pushAll(next, scripted.replies)
+    return scripted
   }
 }

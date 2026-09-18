@@ -13,7 +13,7 @@
     "enabled": true
   },
   "triggers": {
-    "crons": ["0 * * * *"]
+    "crons": ["*/5 * * * *"]
   },
   "vars": {
     "SUPABASE_URL": "https://eyjgmkmaixmpmeeahxon.supabase.co",
