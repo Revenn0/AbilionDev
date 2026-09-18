@@ -1,6 +1,6 @@
 import { handleAuth, kvAuthStore, sessionUser } from "./auth"
 import { campaignFor } from "../src/lib/labels"
-import { advanceSteIfDue, isSteWait, replySte, replySteSmart, steRuntimeFromSettings, toTelegramHtml } from "../src/lib/ste"
+import { advanceSteIfDue, isSteWait, replySte, replySteSmart, toTelegramHtml } from "../src/lib/ste"
 import { TRACKER_JS } from "../src/lib/tracker-script"
 import { campaignFromStart, originFromStart, parseTelegramStart, visitorIdFromStart } from "../src/lib/telegram-start"
 import { applyEvent, dueWaits, publishedSnapshot } from "../src/lib/runtime"
@@ -241,7 +241,6 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
 
   const incoming = joinUser || start.isStart ? null : (message?.text ?? null)
   const settings = await loadSettings(env)
-  const runtime = steRuntimeFromSettings(settings)
   const shouldTalk = settings.steLinkedTelegram !== false && !joinUser
   if (shouldTalk) {
     const useLlm = Boolean(env.OPENAI_API_KEY) && env.STE_USE_LLM !== "0" && Boolean(incoming?.trim())
@@ -250,9 +249,8 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
           apiKey: env.OPENAI_API_KEY,
           baseUrl: env.OPENAI_BASE_URL,
           model: env.STE_MODEL,
-          runtime,
         })
-      : replySte(lead, incoming, Date.now(), runtime)
+      : replySte(lead, incoming, Date.now())
     lead = talked.lead
     await sendSteReplies(token, chatId, talked.replies)
   }
@@ -272,7 +270,7 @@ async function processWaits(env: Env) {
   const token = env.TELEGRAM_BOT_TOKEN
   for (const lead of due) {
     if (isSteWait(lead)) {
-      const talked = advanceSteIfDue(lead, Date.now(), steRuntimeFromSettings(settings))
+      const talked = advanceSteIfDue(lead, Date.now())
       if (token && lead.telegramChatId) await sendSteReplies(token, lead.telegramChatId, talked.replies)
       await saveLead(env, talked.lead)
       continue
