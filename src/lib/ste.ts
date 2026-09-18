@@ -141,7 +141,7 @@ export function replySte(lead: Lead, incoming?: string | null): { lead: Lead; re
 }
 
 export const STE_LLM_MODEL = "glm-5.3-flash"
-export const STE_LLM_BASE_URL = "https://api.z.ai/api/paas/v4"
+export const STE_LLM_BASE_URL = "https://api.z.ai/api/coding/paas/v4"
 
 export async function replySteSmart(
   lead: Lead,
@@ -166,8 +166,10 @@ export async function replySteSmart(
       },
       body: JSON.stringify({
         model: opts?.model ?? STE_LLM_MODEL,
-        temperature: 0.7,
+        temperature: 1,
+        top_p: 0.95,
         max_tokens: 1024,
+        thinking: { type: "enabled" },
         reasoning_effort: "low",
         messages: [
           { role: "system", content: `${STE_SYSTEM_PROMPT}\n\nResponda só UMA frase curta, em português, como Telegram.` },

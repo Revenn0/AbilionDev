@@ -81,7 +81,7 @@ npx wrangler secret put ESTER_CHAT_ID
 npx wrangler secret put OPENAI_API_KEY
 ```
 
-Sté responde com **GLM 5.3 Flash** (`https://api.z.ai/api/paas/v4`). A chave vai só no secret do Worker.
+Sté responde com **GLM 5.3 Flash** no **GLM Coding Plan** (`https://api.z.ai/api/coding/paas/v4`). A chave vai só no secret do Worker. Não uses o endpoint geral `/api/paas/v4`.
 
 Webhook Telegram: `{origem}/api/telegram`  
 Cron de espera: hora a hora, ou `GET /api/cron?secret=…`  
@@ -95,7 +95,7 @@ O anúncio aponta para `https://t.me/BOT?start=fb` (ou `fb_campanha`). O Worker:
 
 - responde 200 na hora (`waitUntil`) para o Telegram não reenviar
 - procura **um** lead por contacto / chat, sem carregar a base
-- abre a Sté com o motor determinístico; as respostas usam **GLM 5.3 Flash** (`STE_MODEL`) no Worker
+- abre a Sté com o motor determinístico; as respostas usam **GLM 5.3 Flash** no GLM Coding Plan
 - reenvia se a API do Telegram devolver 429
 
 Correr [`supabase/migrations/003_facebook_scale.sql`](supabase/migrations/003_facebook_scale.sql) no SQL editor. A inbox mostra no máximo 80 conversas (aguardando / hoje / Facebook).
