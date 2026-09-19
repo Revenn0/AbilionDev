@@ -42,13 +42,15 @@ export function FunnelPreview({
     )
   }
 
-  const xs = nodes.map((node) => node.position.x)
-  const ys = nodes.map((node) => node.position.y)
-  const minX = Math.min(...xs) - 36
-  const minY = Math.min(...ys) - 36
-  const width = Math.max(Math.max(...xs) - minX + NODE_W + 72, 420)
-  const height = Math.max(Math.max(...ys) - minY + NODE_H + 72, 200)
-  const byId = new Map(nodes.map((node) => [node.id, node]))
+  const laid = nodes.map((node, index) => ({
+    ...node,
+    position: { x: 24 + index * (NODE_W + 52), y: 28 },
+  }))
+  const minX = 0
+  const minY = 0
+  const width = Math.max(laid.length * (NODE_W + 52) + 24, 420)
+  const height = NODE_H + 80
+  const byId = new Map(laid.map((node) => [node.id, node]))
 
   return (
     <div className={cn("relative h-[188px] overflow-hidden bg-muted/40", className)}>
@@ -72,7 +74,7 @@ export function FunnelPreview({
             />
           )
         })}
-        {nodes.map((node) => {
+        {laid.map((node) => {
           const meta = KIND[node.type] ?? KIND.traffic
           const x = node.position.x - minX
           const y = node.position.y - minY
