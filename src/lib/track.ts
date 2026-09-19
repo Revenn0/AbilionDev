@@ -26,6 +26,18 @@ export type TrackPoint = {
   views: number
   clicks: number
   telegrams: number
+  facebookAds: number
+  facebookViews: number
+  facebookClicks: number
+}
+
+export type FacebookTrack = {
+  adClicks: number
+  pageViews: number
+  buttonClicks: number
+  visitors: number
+  buttonVisitors: number
+  starts: number
 }
 
 export type TrackRecent = {
@@ -50,6 +62,7 @@ export type TrackSummary = {
   ads: number
   clicks: number
   telegrams: number
+  facebook: FacebookTrack
   conversion: number
   clickRate: number
   bounce: number
@@ -65,12 +78,22 @@ export type TrackSummary = {
   geos: Record<string, TrackGeo>
 }
 
+export const emptyFacebook = (): FacebookTrack => ({
+  adClicks: 0,
+  pageViews: 0,
+  buttonClicks: 0,
+  visitors: 0,
+  buttonVisitors: 0,
+  starts: 0,
+})
+
 export const emptySummary = (): TrackSummary => ({
   visitors: 0,
   views: 0,
   ads: 0,
   clicks: 0,
   telegrams: 0,
+  facebook: emptyFacebook(),
   conversion: 0,
   clickRate: 0,
   bounce: 0,
@@ -85,6 +108,18 @@ export const emptySummary = (): TrackSummary => ({
   devices: [],
   geos: {},
 })
+
+export function facebookOf(summary?: Partial<TrackSummary> | null): FacebookTrack {
+  const next = summary?.facebook
+  return {
+    ...emptyFacebook(),
+    ...(next && typeof next === "object" ? next : {}),
+  }
+}
+
+export function isFacebookTraffic(input: { campaign?: string; referrer?: string; path?: string }) {
+  return /facebook|fb\.com|\bfb\b|fbclid|Facebook · ads/i.test(`${input.campaign ?? ""} ${input.referrer ?? ""} ${input.path ?? ""}`)
+}
 
 export function sanitizeVisitorId(value: unknown) {
   const raw = String(value ?? "")
@@ -139,6 +174,10 @@ export function summarizeTrack(events: TrackEvent[], now = Date.now()): TrackSum
   const telegram = new Set<string>()
   const viewed = new Set<string>()
   const ads = new Set<string>()
+  const facebookVisitors = new Set<string>()
+  const facebookClicked = new Set<string>()
+  const facebookStarted = new Set<string>()
+  const firstFacebookView = new Set<string>()
   const first = new Map<string, number>()
   const last = new Map<string, number>()
   const referrers = new Map<string, number>()
@@ -155,13 +194,23 @@ export function summarizeTrack(events: TrackEvent[], now = Date.now()): TrackSum
       views: 0,
       clicks: 0,
       telegrams: 0,
+      facebookAds: 0,
+      facebookViews: 0,
+      facebookClicks: 0,
     }
   })
   const recent: TrackRecent[] = []
   let clicks = 0
   let telegrams = 0
   let views = 0
+  let facebookViews = 0
+  let facebookClicks = 0
+  let facebookStarts = 0
   let online = 0
+
+  for (const event of events) {
+    if (event.visitorId && isFacebookTraffic(event)) facebookVisitors.add(event.visitorId)
+  }
 
   for (const event of events) {
     const at = new Date(event.at).getTime()
@@ -183,10 +232,20 @@ export function summarizeTrack(events: TrackEvent[], now = Date.now()): TrackSum
 
     const slot = Math.floor((at - start) / 86_400_000)
     const point = slot >= 0 && slot < 30 ? series[slot] : undefined
+    const fromFacebook = facebookVisitors.has(event.visitorId)
+
     if (event.kind === "view") {
       views += 1
       viewed.add(event.visitorId)
-      if (/facebook|fb\.com|\bfb\b|ads/i.test(`${event.campaign} ${event.referrer}`)) ads.add(event.visitorId)
+      if (fromFacebook) {
+        ads.add(event.visitorId)
+        facebookViews += 1
+        if (point) point.facebookViews += 1
+        if (!firstFacebookView.has(event.visitorId)) {
+          firstFacebookView.add(event.visitorId)
+          if (point) point.facebookAds += 1
+        }
+      }
       if (point) point.views += 1
       referrers.set(event.campaign || event.referrer || "Direto", (referrers.get(event.campaign || event.referrer || "Direto") ?? 0) + 1)
       const countryLabel = formatGeo({ country: event.country, countryCode: code }) || countryName(code, event.country) || "Local"
@@ -209,11 +268,20 @@ export function summarizeTrack(events: TrackEvent[], now = Date.now()): TrackSum
       clicks += 1
       clicked.add(event.visitorId)
       if (point) point.clicks += 1
+      if (fromFacebook) {
+        facebookClicks += 1
+        facebookClicked.add(event.visitorId)
+        if (point) point.facebookClicks += 1
+      }
     }
     if (event.kind === "telegram") {
       telegrams += 1
       telegram.add(event.visitorId)
       if (point) point.telegrams += 1
+      if (fromFacebook) {
+        facebookStarts += 1
+        facebookStarted.add(event.visitorId)
+      }
       recent.push({ visitorId: event.visitorId, country: event.country, region: event.region || event.regionCode, at: event.at })
     }
   }
@@ -238,6 +306,14 @@ export function summarizeTrack(events: TrackEvent[], now = Date.now()): TrackSum
     ads: ads.size,
     clicks,
     telegrams,
+    facebook: {
+      adClicks: ads.size,
+      pageViews: facebookViews,
+      buttonClicks: facebookClicks,
+      visitors: ads.size,
+      buttonVisitors: facebookClicked.size,
+      starts: facebookStarts,
+    },
     conversion: viewed.size ? telegrams / viewed.size : 0,
     clickRate: viewed.size ? clicked.size / viewed.size : 0,
     bounce: viewed.size ? (viewed.size - clicked.size) / viewed.size : 0,

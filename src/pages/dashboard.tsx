@@ -4,11 +4,13 @@ import { PageChrome, StatusPill } from "@/components/layout/chrome"
 import { SparkBars, TrendLine } from "@/components/ui/spark"
 import { useStore } from "@/lib/store"
 import { deriveOps, seriesLast30 } from "@/lib/ops"
+import { facebookOf } from "@/lib/track"
 import { useTrackSummary } from "@/lib/use-track-summary"
 
 export function DashboardPage() {
   const { state } = useStore()
   const { summary } = useTrackSummary(8000)
+  const facebook = facebookOf(summary)
   const ops = deriveOps(state.leads)
   const empty = ops.leads === 0
   const channelTotal = ops.telegram
@@ -34,9 +36,9 @@ export function DashboardPage() {
             hint={empty ? "nenhuma iniciada" : "eventos do fluxo"}
             bars={spark}
           />
-          <Kpi href="/analytics" label="Página" value={summary.visitors} hint="viram a landing" bars={spark} />
-          <Kpi href="/analytics" label="Cliques" value={summary.clicks} hint="botão Telegram" bars={spark} />
-          <Kpi href="/leads" label="Facebook hoje" value={ops.facebookToday} hint="ads → Telegram" bars={spark} />
+          <Kpi href="/analytics" label="Anúncio" value={facebook.adClicks} hint="clique no ads" bars={spark} />
+          <Kpi href="/analytics" label="Page views" value={facebook.pageViews} hint="landing do Facebook" bars={spark} />
+          <Kpi href="/analytics" label="Botão TG" value={facebook.buttonClicks} hint="clique no Telegram" bars={spark} />
           <Kpi href="/leads" label="Aguardando" value={ops.waiting} hint="espera do fluxo" bars={waitSpark} />
           <Kpi href="/leads" label="Ofertas" value={ops.offered} hint="disparadas pelo quadro" bars={offerSpark} />
         </section>
@@ -77,6 +79,9 @@ export function DashboardPage() {
             <div className="mt-5 space-y-5">
               <ChannelRow label="Telegram · convite" value={ops.telegram} total={channelTotal} />
               <ChannelRow label="Facebook → Telegram" value={ops.facebook} total={ops.leads} />
+              <ChannelRow label="Clique no anúncio" value={facebook.adClicks} total={Math.max(facebook.adClicks, 1)} />
+              <ChannelRow label="Page views Facebook" value={facebook.pageViews} total={Math.max(facebook.pageViews, 1)} />
+              <ChannelRow label="Clique no botão" value={facebook.buttonClicks} total={Math.max(facebook.pageViews, facebook.buttonClicks, 1)} />
             </div>
           </div>
           <div className="surface p-6">

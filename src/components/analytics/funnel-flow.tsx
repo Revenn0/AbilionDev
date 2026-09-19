@@ -1,11 +1,11 @@
-import { Megaphone, MessagesSquare, PanelsTopLeft, Send } from "lucide-react"
+import { Megaphone, MessagesSquare, MousePointerClick, PanelsTopLeft } from "lucide-react"
 import { formatPercent } from "@/lib/track"
 import { stepDrop, type FunnelStep } from "@/lib/analytics-view"
 
 const ICONS = {
   ads: Megaphone,
   landing: PanelsTopLeft,
-  telegram: Send,
+  button: MousePointerClick,
   chat: MessagesSquare,
 } as const
 
@@ -15,10 +15,12 @@ export function FunnelFlow({ steps }: { steps: FunnelStep[] }) {
     <section className="surface p-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-[12.5px] text-muted-foreground">Funil</p>
-          <p className="mt-2 text-[22px] font-medium tracking-[-0.03em]">Ads → landing → Telegram → chat</p>
+          <p className="text-[12.5px] text-muted-foreground">Funil Facebook</p>
+          <p className="mt-2 text-[22px] font-medium tracking-[-0.03em]">Anúncio → page view → botão → chat</p>
         </div>
-        <p className="max-w-xs text-right text-[12px] text-muted-foreground">Pixel e inbox. Sem receita inventada.</p>
+        <p className="max-w-xs text-right text-[12px] text-muted-foreground">
+          Clique no anúncio, page view e botão do Telegram entram em colunas diferentes.
+        </p>
       </div>
 
       <div className="mt-6 hidden md:grid md:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] md:items-stretch md:gap-2">

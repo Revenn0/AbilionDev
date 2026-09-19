@@ -49,8 +49,8 @@ export function AreaChart({ series, className }: { series: TrackPoint[]; classNa
         })}
       </svg>
       <div className="mt-1 flex flex-wrap gap-4 px-1 text-[12px] text-muted-foreground">
-        <Legend color="bg-line" label="Landing" />
-        <Legend color="bg-foreground/40" label="Clique Telegram" />
+        <Legend color="bg-line" label="Page views" />
+        <Legend color="bg-foreground/40" label="Clique no botão" />
         <Legend color="bg-foreground/20" label="/start" />
       </div>
     </div>

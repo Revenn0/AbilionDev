@@ -1,9 +1,10 @@
 import { hasConversation } from "./ops.ts"
 import type { Lead } from "./types.ts"
 import { coordsFromGeo } from "./geo-coords.ts"
-import type { TrackGeo, TrackPoint, TrackSummary } from "./track.ts"
+import { formatGeo, leadGeo } from "./geo.ts"
+import { facebookOf, type TrackGeo, type TrackPoint, type TrackSummary } from "./track.ts"
 
-export type FunnelStepId = "ads" | "landing" | "telegram" | "chat"
+export type FunnelStepId = "ads" | "landing" | "button" | "chat"
 
 export type FunnelStep = {
   id: FunnelStepId
@@ -17,18 +18,33 @@ export function chatStarted(lead: Lead) {
 }
 
 export function funnelFrom(summary: TrackSummary, leads: Lead[]): FunnelStep[] {
-  const facebookLeads = leads.filter((lead) => lead.origin === "facebook").length
-  const ads = Math.max(summary.ads, facebookLeads)
-  const telegram = Math.max(summary.telegrams, summary.clicks, leads.filter((lead) => lead.channel === "telegram").length)
+  const facebook = facebookOf(summary)
+  const facebookLeads = leads.filter((lead) => lead.origin === "facebook")
+  const extraAds = facebookLeads.filter((lead) => !lead.visitorId).length
   return [
-    { id: "ads", label: "Ads", hint: "Facebook com pixel", value: ads },
-    { id: "landing", label: "Landing", hint: "viram a página", value: summary.visitors },
-    { id: "telegram", label: "Telegram", hint: "/start com fb_vid", value: telegram },
+    {
+      id: "ads",
+      label: "Clique no anúncio",
+      hint: "abriu a landing pelo Facebook",
+      value: facebook.adClicks + extraAds,
+    },
+    {
+      id: "landing",
+      label: "Page views",
+      hint: "visualizações da landing do ads",
+      value: facebook.pageViews,
+    },
+    {
+      id: "button",
+      label: "Clique no Telegram",
+      hint: "botão da landing, sem misturar com /start",
+      value: facebook.buttonClicks,
+    },
     {
       id: "chat",
       label: "Chat iniciado",
-      hint: "lead respondeu a Sté",
-      value: leads.filter((lead) => hasConversation(lead) && chatStarted(lead)).length,
+      hint: "lead do Facebook respondeu a Sté",
+      value: facebookLeads.filter((lead) => hasConversation(lead) && chatStarted(lead)).length,
     },
   ]
 }
@@ -52,12 +68,15 @@ export function splitSeries(series: TrackPoint[]) {
   const mid = Math.floor(series.length / 2)
   const previous = series.slice(0, mid)
   const current = series.slice(mid)
-  const sum = (rows: TrackPoint[], key: keyof Pick<TrackPoint, "views" | "clicks" | "telegrams">) =>
-    rows.reduce((total, row) => total + row[key], 0)
+  const sum = (rows: TrackPoint[], key: keyof Pick<TrackPoint, "views" | "clicks" | "telegrams" | "facebookAds" | "facebookViews" | "facebookClicks">) =>
+    rows.reduce((total, row) => total + (row[key] ?? 0), 0)
   return {
     views: { current: sum(current, "views"), previous: sum(previous, "views") },
     clicks: { current: sum(current, "clicks"), previous: sum(previous, "clicks") },
     telegrams: { current: sum(current, "telegrams"), previous: sum(previous, "telegrams") },
+    facebookAds: { current: sum(current, "facebookAds"), previous: sum(previous, "facebookAds") },
+    facebookViews: { current: sum(current, "facebookViews"), previous: sum(previous, "facebookViews") },
+    facebookClicks: { current: sum(current, "facebookClicks"), previous: sum(previous, "facebookClicks") },
   }
 }
 
@@ -80,7 +99,7 @@ export function markersFromGeos(geos: Record<string, TrackGeo>, limit = 18): Glo
     const location = coordsFromGeo(geo)
     if (!location) continue
     const key = `${geo.countryCode || ""}:${geo.regionCode || geo.region || ""}`
-    const label = [geo.region || geo.regionCode, geo.country || geo.countryCode].filter(Boolean).join(" · ")
+    const label = formatGeo(geo) || [geo.city, geo.region || geo.regionCode, geo.country || geo.countryCode].filter(Boolean).join(" · ")
     const current = buckets.get(key)
     if (current) current.count += 1
     else buckets.set(key, { location, label: label || "Visitante", count: 1 })
@@ -107,9 +126,22 @@ export function markersFromGeos(geos: Record<string, TrackGeo>, limit = 18): Glo
     }))
 }
 
-export const FALLBACK_MARKERS: GlobePulseMarker[] = [
-  { id: "pulse-1", location: [-23.55, -46.63], delay: 0, label: "São Paulo", count: 0 },
-  { id: "pulse-2", location: [-22.91, -43.17], delay: 0.4, label: "Rio de Janeiro", count: 0 },
-  { id: "pulse-3", location: [-12.97, -38.5], delay: 0.8, label: "Bahia", count: 0 },
-  { id: "pulse-4", location: [-3.72, -38.54], delay: 1.2, label: "Ceará", count: 0 },
-]
+export function geosFromLeads(leads: Lead[]): Record<string, TrackGeo> {
+  const geos: Record<string, TrackGeo> = {}
+  for (const lead of leads) {
+    const geo = leadGeo(lead)
+    if (!geo.countryCode && !geo.regionCode) continue
+    geos[lead.visitorId || lead.id] = {
+      country: geo.country || "",
+      countryCode: geo.countryCode || "",
+      city: geo.city || "",
+      region: geo.region || "",
+      regionCode: geo.regionCode || "",
+    }
+  }
+  return geos
+}
+
+export function mergeGlobeGeos(track: Record<string, TrackGeo> | undefined, leads: Lead[]) {
+  return { ...geosFromLeads(leads), ...(track ?? {}) }
+}

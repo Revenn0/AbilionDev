@@ -231,3 +231,52 @@
   background-image: radial-gradient(circle at 1px 1px, rgb(127 127 127 / 0.16) 1px, transparent 0);
   background-size: 18px 18px;
 }
+
+@keyframes pulse-expand {
+  0% {
+    transform: translate(-50%, -50%) scale(0.35);
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.55);
+    opacity: 0;
+  }
+}
+
+.globe-pin {
+  width: 0;
+  height: 0;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity 0.25s ease;
+}
+
+.globe-pin[data-visible="1"] {
+  opacity: 1;
+}
+
+.globe-ring {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgb(125 211 252 / 0.85);
+  border-radius: 999px;
+  animation: pulse-expand 2.1s ease-out infinite;
+}
+
+.globe-label {
+  position: absolute;
+  left: 0;
+  top: 16px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.72);
+  padding: 3px 8px;
+  font-size: 10px;
+  line-height: 1.2;
+  color: #f4f4f5;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.35);
+}

@@ -1,7 +1,7 @@
-import { chatStarted, funnelFrom, markersFromGeos, periodDelta, stepDrop } from "../src/lib/analytics-view.ts"
+import { chatStarted, funnelFrom, markersFromGeos, mergeGlobeGeos, periodDelta, stepDrop } from "../src/lib/analytics-view.ts"
 import { coordsFromGeo } from "../src/lib/geo-coords.ts"
 import { flagEmoji, formatGeo, mergeGeo, normalizeRegionCode, stateLabel } from "../src/lib/geo.ts"
-import { emptySummary } from "../src/lib/track.ts"
+import { emptySummary, isFacebookTraffic, summarizeTrack, type TrackEvent } from "../src/lib/track.ts"
 import {
   isolateLead,
   replySte,
@@ -114,6 +114,7 @@ assert(mergeGeo({ countryCode: "BR", regionCode: "SP" }, { countryCode: "", regi
 assert(mergeGeo({ countryCode: "BR", regionCode: "RJ" }, { countryCode: "BR", city: "Niterói" }).regionCode === "RJ", "CF sem UF nao apaga estado")
 assert(coordsFromGeo({ countryCode: "BR", regionCode: "SP" })?.[0] === -23.55, "SP no globo")
 assert(markersFromGeos({ a: { country: "Brasil", countryCode: "BR", city: "", region: "São Paulo", regionCode: "SP" } })[0]?.id === "pulse-1", "marker do pixel")
+assert(markersFromGeos({ a: { country: "Brasil", countryCode: "BR", city: "", region: "São Paulo", regionCode: "SP" } })[0]?.label.includes("São Paulo"), "estado no globo")
 assert(
   markersFromGeos({
     a: { country: "Brasil", countryCode: "BR", city: "", region: "São Paulo", regionCode: "SP" },
@@ -121,14 +122,66 @@ assert(
   }).every((item) => item.label !== "Brasil"),
   "UF vale mais que o pais sozinho"
 )
+assert(mergeGlobeGeos({}, [{ ...lead("geo-1"), facts: { countryCode: "BR", regionCode: "RJ", region: "Rio de Janeiro", country: "Brasil" } }])["geo-1"]?.regionCode === "RJ", "lead entra no globo")
 assert(periodDelta(120, 100) > 0, "delta positivo")
-const talking = { ...lead("chat"), messages: [{ id: "m1", at: new Date().toISOString(), role: "lead" as const, text: "oi" }] }
-const funnel = funnelFrom({ ...emptySummary(), visitors: 40, ads: 50, clicks: 12, telegrams: 10 }, [talking])
-assert(funnel.map((item) => item.id).join(">") === "ads>landing>telegram>chat", "ordem do funil")
-assert(funnel[3]?.value === 1, "chat iniciado")
+assert(isFacebookTraffic({ campaign: "Facebook · ads" }), "campanha facebook")
+assert(!isFacebookTraffic({ campaign: "Direto" }), "direto nao e ads")
+const talking = { ...lead("chat"), origin: "facebook" as const, visitorId: "aaaaaa", messages: [{ id: "m1", at: new Date().toISOString(), role: "lead" as const, text: "oi" }] }
+const organicTalk = { ...lead("org"), origin: "private" as const, messages: [{ id: "m2", at: new Date().toISOString(), role: "lead" as const, text: "oi" }] }
+const funnel = funnelFrom(
+  {
+    ...emptySummary(),
+    visitors: 80,
+    ads: 50,
+    clicks: 30,
+    telegrams: 22,
+    facebook: { adClicks: 20, pageViews: 41, buttonClicks: 12, visitors: 20, buttonVisitors: 9, starts: 7 },
+  },
+  [talking, organicTalk]
+)
+assert(funnel.map((item) => item.id).join(">") === "ads>landing>button>chat", "ordem do funil facebook")
+assert(funnel[0]?.value === 20, "anuncio separado")
+assert(funnel[1]?.value === 41, "page view separado")
+assert(funnel[2]?.value === 12, "botao telegram separado")
+assert(funnel[3]?.value === 1, "chat so do facebook")
+assert(funnel[0]?.value !== funnel[1]?.value, "anuncio != page view")
+assert(funnel[1]?.value !== funnel[2]?.value, "page view != botao")
 assert(chatStarted(talking), "lead falou")
 assert(stepDrop(7, 20) === 7 / 20, "queda do funil")
 assert(stepDrop(20, 12) === null, "nao inventa conversao acima de 100%")
+
+const now = new Date().toISOString()
+const sample = (partial: Partial<TrackEvent>): TrackEvent => ({
+  id: partial.id ?? "e",
+  visitorId: partial.visitorId ?? "aa",
+  kind: partial.kind ?? "view",
+  path: "/",
+  referrer: partial.referrer ?? "",
+  campaign: partial.campaign ?? "Direto",
+  country: "Brasil",
+  countryCode: "BR",
+  city: "",
+  region: "São Paulo",
+  regionCode: "SP",
+  device: "Chrome",
+  language: "pt-BR",
+  at: now,
+  ...partial,
+})
+const counted = summarizeTrack([
+  sample({ id: "v1", visitorId: "aaaaaa", kind: "view", campaign: "Facebook · ads", referrer: "https://l.facebook.com" }),
+  sample({ id: "v2", visitorId: "aaaaaa", kind: "view", campaign: "Facebook · ads" }),
+  sample({ id: "c1", visitorId: "aaaaaa", kind: "click", campaign: "Facebook · ads" }),
+  sample({ id: "t1", visitorId: "aaaaaa", kind: "telegram", campaign: "Facebook · ads" }),
+  sample({ id: "o1", visitorId: "bbbbbb", kind: "view", campaign: "Direto" }),
+  sample({ id: "o2", visitorId: "bbbbbb", kind: "click", campaign: "Direto" }),
+])
+assert(counted.facebook.adClicks === 1, "um clique no anuncio")
+assert(counted.facebook.pageViews === 2, "duas page views do ads")
+assert(counted.facebook.buttonClicks === 1, "um clique no botao")
+assert(counted.facebook.starts === 1, "/start nao mistura no botao")
+assert(counted.views === 3, "page view total inclui direto")
+assert(counted.clicks === 2, "clique total inclui direto")
 
 const kept = mergeSecrets({ telegramBotToken: "123:abc" }, { telegramBotToken: "•••• abc" })
 assert(kept.telegramBotToken === "123:abc", "mascara nao apaga o token")
