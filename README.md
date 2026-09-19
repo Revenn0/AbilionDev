@@ -98,7 +98,7 @@ npx wrangler secret put ESTER_CHAT_ID
 npx wrangler secret put OPENAI_API_KEY   # chave OpenRouter sk-or-v1…
 ```
 
-Sté fala com **OpenRouter**. O modelo desta lista é **Gemma 4 31B** (`google/gemma-4-31b-it:free`): o melhor português grátis para o 1:1. A chave `sk-or-v1…` grava-se em Configurações, nunca no git. Free tem limite de pedidos — no pico de 500–1000 /start o script da Sté continua; a IA só entra no papo livre da oferta. Para volume pago no mesmo OpenRouter: `z-ai/glm-5.3-flash`.
+Sté fala com **OpenRouter**. Principal: **Gemma 4 31B** (`google/gemma-4-31b-it:free`). Reserva automática: **DeepSeek V4 Flash** (`deepseek/deepseek-v4-flash-0731:free`) se o Gemma devolver 429 ou falhar. A chave `sk-or-v1…` grava-se em Configurações, nunca no git. Free tem limite de pedidos — no pico de 500–1000 /start o script da Sté continua; a IA só entra no papo livre da oferta. Para volume pago no mesmo OpenRouter: `z-ai/glm-5.3-flash`.
 
 Webhook Telegram: `{origem}/api/telegram`  
 Cron de espera: hora a hora, ou `GET /api/cron?secret=…`  
@@ -110,7 +110,7 @@ O anúncio aponta para `https://t.me/BOT?start=fb` (ou `fb_campanha`). O Worker:
 
 - responde 200 na hora (`waitUntil`) para o Telegram não reenviar
 - procura **um** lead por contacto / chat, sem carregar a base
-- abre a Sté com o motor determinístico; as respostas usam **GLM 5.3 Flash** no GLM Coding Plan
+- abre a Sté com o motor determinístico; o papo livre da oferta usa OpenRouter (Gemma, DeepSeek de reserva)
 - reenvia se a API do Telegram devolver 429
 
 Correr [`supabase/migrations/003_facebook_scale.sql`](supabase/migrations/003_facebook_scale.sql) e [`supabase/migrations/004_track_and_facts.sql`](supabase/migrations/004_track_and_facts.sql) no SQL editor. A inbox mostra no máximo 80 conversas (aguardando / hoje / Facebook).

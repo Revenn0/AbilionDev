@@ -23,7 +23,7 @@ import { cleanBotUsername } from "@/lib/migrate"
 import { useStore } from "@/lib/store"
 import { fetchHealth, workerUrl } from "@/lib/channel"
 import { fetchRuntime, saveRuntime, type RuntimeStatus } from "@/lib/runtime-api"
-import { STE_LLM_MODEL, STE_LLM_MODELS, normalizeSteModel } from "@/lib/llm"
+import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_LLM_MODELS, normalizeSteModel } from "@/lib/llm"
 import { adsDeepLink } from "@/lib/telegram-start"
 import { STE_REMARKETING_BLOCK, STE_WELCOME } from "@/lib/ste"
 import { cn } from "@/lib/utils"
@@ -154,6 +154,9 @@ function BotPane() {
           <StatusPill tone={runtime.llm || health.llm ? "success" : "muted"}>
             IA · {runtime.llm || health.llm ? runtime.model || health.model || "ligada" : "script da Sté"}
           </StatusPill>
+          <StatusPill>
+            Reserva · {runtime.fallbackModel || health.backup || STE_LLM_FALLBACK.split("/")[1]}
+          </StatusPill>
           <StatusPill tone={health.persist === "kv" || health.persist === "supabase" ? "success" : "muted"}>
             Leads · {health.persist === "supabase" ? "Supabase" : "Worker"}
           </StatusPill>
@@ -188,6 +191,7 @@ function BotPane() {
               ...(token.trim() ? { telegramBotToken: token.trim() } : {}),
               ...(glm.trim() ? { openaiApiKey: glm.trim() } : {}),
               steModel: model,
+              steFallbackModel: STE_LLM_FALLBACK,
             })
               .then((next) => {
                 setRuntime(next)
@@ -253,7 +257,7 @@ function BotPane() {
               ))}
             </select>
             <p className="text-[12px] text-muted-foreground">
-              {STE_LLM_MODELS.find((item) => item.id === model)?.hint}
+              {STE_LLM_MODELS.find((item) => item.id === model)?.hint} Se este falhar, a Sté usa DeepSeek V4 Flash.
             </p>
           </div>
           <div className="space-y-1.5">

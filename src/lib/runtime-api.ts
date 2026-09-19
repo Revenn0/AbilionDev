@@ -12,6 +12,7 @@ export type RuntimeStatus = {
   webhook?: string
   webhookOk?: boolean
   model?: string
+  fallbackModel?: string
   error?: string
 }
 
@@ -37,6 +38,7 @@ export async function saveRuntime(body: {
   telegramGroupUrl?: string
   openaiApiKey?: string
   steModel?: string
+  steFallbackModel?: string
 }) {
   return parse<RuntimeStatus>(
     await fetch("/api/runtime", {

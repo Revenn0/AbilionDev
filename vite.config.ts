@@ -22,6 +22,7 @@ function viteEnv(): Env {
     AUTH: fileKv(path.resolve(import.meta.dirname, ".data/kv")) as Env["AUTH"],
     OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
     STE_MODEL: "google/gemma-4-31b-it:free",
+    STE_FALLBACK_MODEL: "deepseek/deepseek-v4-flash-0731:free",
     STE_USE_LLM: "1",
     ABILION_ENV: "development",
     ABILION_OPERATOR_PASSWORD: process.env.ABILION_OPERATOR_PASSWORD,

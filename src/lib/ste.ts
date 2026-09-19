@@ -1,8 +1,8 @@
 import { uid } from "./format"
-import { openRouterHeaders, STE_LLM_BASE_URL, STE_LLM_MODEL } from "./llm"
+import { openRouterHeaders, steModelChain, STE_LLM_BASE_URL, STE_LLM_FALLBACK, STE_LLM_MODEL } from "./llm"
 import type { ChatMessage, Lead, Settings, StePhase } from "./types"
 
-export { STE_LLM_BASE_URL, STE_LLM_MODEL }
+export { STE_LLM_BASE_URL, STE_LLM_FALLBACK, STE_LLM_MODEL }
 
 export const STE_LANDING = "https://app.mundoaviator.com.br/"
 export const STE_COURSE = "https://mundoaviator.com.br/mini-curso/"
@@ -507,7 +507,7 @@ export function advanceSteIfDue(lead: Lead, now = Date.now(), runtime?: SteRunti
 export async function replySteSmart(
   lead: Lead,
   incoming: string | null | undefined,
-  opts?: { apiKey?: string; baseUrl?: string; model?: string; runtime?: SteRuntime }
+  opts?: { apiKey?: string; baseUrl?: string; model?: string; fallbackModel?: string; runtime?: SteRuntime }
 ): Promise<SteResult> {
   const isolated = isolateLead(lead)
   const scripted = replySte(isolated, incoming, Date.now(), opts?.runtime)
@@ -517,43 +517,55 @@ export async function replySteSmart(
 
   const next = scripted.lead
   next.messages = next.messages.slice(0, -1)
-  try {
-    const own = next.messages.filter((item) => item.id && next.id)
-    const history = own.slice(-14).map((item) => ({
+  const history = next.messages
+    .filter((item) => item.id && next.id)
+    .slice(-14)
+    .map((item) => ({
       role: item.role === "ste" ? "assistant" : "user",
       content: item.text,
     }))
-    const res = await fetch(`${(opts?.baseUrl ?? STE_LLM_BASE_URL).replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: openRouterHeaders(key),
-      body: JSON.stringify({
-        model: opts?.model ?? STE_LLM_MODEL,
-        temperature: 0.7,
-        top_p: 0.9,
-        max_tokens: 512,
-        messages: [
-          {
-            role: "system",
-            content: `${STE_SYSTEM_PROMPT}\n\nFase atual: offer. Fatos só deste lead: ${JSON.stringify(next.facts ?? {})}. Responda em português, no máximo 3 blocos curtos separados por linha em branco. Links só como [texto](url). Sem URL crua. Nunca use dados de outra conversa.`,
-          },
-          ...history,
-        ],
-      }),
-    })
-    if (!res.ok) {
-      pushAll(next, scripted.replies)
-      return scripted
+  const messages = [
+    {
+      role: "system",
+      content: `${STE_SYSTEM_PROMPT}\n\nFase atual: offer. Fatos só deste lead: ${JSON.stringify(next.facts ?? {})}. Responda em português, no máximo 3 blocos curtos separados por linha em branco. Links só como [texto](url). Sem URL crua. Nunca use dados de outra conversa.`,
+    },
+    ...history,
+  ]
+  const endpoint = `${(opts?.baseUrl ?? STE_LLM_BASE_URL).replace(/\/$/, "")}/chat/completions`
+
+  try {
+    for (const model of steModelChain(opts?.model, opts?.fallbackModel)) {
+      const blocks = await completeSte(endpoint, key, model, messages)
+      if (!blocks.length) continue
+      pushAll(next, blocks)
+      return pack(next, blocks)
     }
-    const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
-    const blocks = splitBlocks(data.choices?.[0]?.message?.content ?? "")
-    if (!blocks.length) {
-      pushAll(next, scripted.replies)
-      return scripted
-    }
-    pushAll(next, blocks)
-    return pack(next, blocks)
   } catch {
     pushAll(next, scripted.replies)
     return scripted
   }
+  pushAll(next, scripted.replies)
+  return scripted
+}
+
+async function completeSte(
+  endpoint: string,
+  apiKey: string,
+  model: string,
+  messages: Array<{ role: string; content: string }>
+) {
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: openRouterHeaders(apiKey),
+    body: JSON.stringify({
+      model,
+      temperature: 0.7,
+      top_p: 0.9,
+      max_tokens: 512,
+      messages,
+    }),
+  })
+  if (!res.ok) return []
+  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
+  return splitBlocks(data.choices?.[0]?.message?.content ?? "")
 }

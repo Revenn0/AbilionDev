@@ -5,6 +5,7 @@ import { emptySummary } from "../src/lib/track.ts"
 import {
   isolateLead,
   replySte,
+  replySteSmart,
   replySteTick,
   STE_WELCOME,
   STE_COURSE_BLOCK,
@@ -20,6 +21,7 @@ import { mergeLeads } from "../src/lib/crm.ts"
 import type { Lead } from "../src/lib/types.ts"
 import { findLeadInKv, upsertLeadKv } from "../worker/crm-store.ts"
 import { memoryKv } from "../worker/kv.ts"
+import { STE_LLM_FALLBACK, STE_LLM_MODEL, steModelChain } from "../src/lib/llm.ts"
 import { mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
 
 function lead(id = "lead-1", contact = "@fb1"): Lead {
@@ -139,7 +141,10 @@ assert(resolved.telegram, "telegram ligado")
 assert(resolved.llm, "llm ligada")
 assert(resolved.persist === "kv", "persistencia KV")
 assert(resolved.model === "google/gemma-4-31b-it:free", "Gemma 4 31B")
+assert(resolved.fallbackModel === "deepseek/deepseek-v4-flash-0731:free", "DeepSeek reserva")
 assert(resolved.baseUrl.includes("openrouter.ai"), "OpenRouter")
+assert(steModelChain()[1] === "deepseek/deepseek-v4-flash-0731:free", "cadeia Gemma→DeepSeek")
+assert(steModelChain(STE_LLM_FALLBACK, STE_LLM_FALLBACK).length === 1, "nao duplica reserva")
 const fallback = resolveRuntime({ AUTH: {} }, { steModel: "glm-5.3-flash" })
 assert(fallback.model === "google/gemma-4-31b-it:free", "modelo velho cai no Gemma")
 
@@ -152,5 +157,28 @@ assert(found?.id === "crm-1", "lead no KV por contacto")
 const newer = { ...first, lastMessage: "oi", updatedAt: new Date(Date.now() + 1000).toISOString() }
 assert(mergeLeads([first], [newer])[0]?.lastMessage === "oi", "merge fica com o mais novo")
 assert(mergeLeads([newer], [first])[0]?.lastMessage === "oi", "merge nao volta atras")
+
+const seen: string[] = []
+const realFetch = globalThis.fetch
+globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+  const body = JSON.parse(String(init?.body ?? "{}")) as { model?: string }
+  seen.push(body.model ?? "")
+  if ((body.model ?? "").includes("gemma")) return new Response("rate", { status: 429 })
+  return new Response(
+    JSON.stringify({
+      choices: [{ message: { content: "Me chama no privado que te passo os detalhes certinho." } }],
+    }),
+    { status: 200, headers: { "content-type": "application/json" } }
+  )
+}) as typeof fetch
+try {
+  const offerLead = { ...replySte(lead("llm-1"), null).lead, stePhase: "offer" as const }
+  const smart = await replySteSmart(offerLead, "e agora o que eu faço?", { apiKey: "sk-test" })
+  assert(seen[0] === STE_LLM_MODEL, "tenta Gemma primeiro")
+  assert(seen[1] === STE_LLM_FALLBACK, "DeepSeek entra no 429")
+  assert(smart.replies.some((item) => item.includes("privado")), "usa a resposta da reserva")
+} finally {
+  globalThis.fetch = realFetch
+}
 
 console.log("ste-flow ok")

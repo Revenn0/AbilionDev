@@ -1,6 +1,7 @@
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 export const STE_LLM_BASE_URL = OPENROUTER_BASE_URL
 export const STE_LLM_MODEL = "google/gemma-4-31b-it:free"
+export const STE_LLM_FALLBACK = "deepseek/deepseek-v4-flash-0731:free"
 
 export const STE_LLM_MODELS = [
   {
@@ -31,6 +32,12 @@ export function normalizeSteModel(value?: string) {
   const next = (value ?? "").trim()
   if (STE_LLM_MODELS.some((item) => item.id === next)) return next
   return STE_LLM_MODEL
+}
+
+export function steModelChain(primary?: string, backup?: string) {
+  const first = normalizeSteModel(primary)
+  const second = normalizeSteModel(backup || STE_LLM_FALLBACK)
+  return first === second ? [first] : [first, second]
 }
 
 export function openRouterHeaders(apiKey: string, origin = "https://www.abilion.lol") {

@@ -1,4 +1,4 @@
-import { normalizeSteModel, OPENROUTER_BASE_URL, STE_LLM_MODEL } from "../src/lib/llm.ts"
+import { normalizeSteModel, OPENROUTER_BASE_URL, STE_LLM_FALLBACK, STE_LLM_MODEL } from "../src/lib/llm.ts"
 import type { KvLike } from "./kv.ts"
 
 export const RUNTIME_KEY = "runtime:secrets"
@@ -9,6 +9,7 @@ export type RuntimeSecrets = {
   telegramGroupUrl?: string
   openaiApiKey?: string
   steModel?: string
+  steFallbackModel?: string
   openaiBaseUrl?: string
   webhookUrl?: string
   webhookOk?: boolean
@@ -20,6 +21,7 @@ export type RuntimeEnv = {
   OPENAI_API_KEY?: string
   STE_USE_LLM?: string
   STE_MODEL?: string
+  STE_FALLBACK_MODEL?: string
   OPENAI_BASE_URL?: string
   SUPABASE_URL?: string
   SUPABASE_SERVICE_ROLE?: string
@@ -39,6 +41,7 @@ export type ResolvedRuntime = {
   supabase: boolean
   persist: "supabase" | "kv" | "memory"
   model: string
+  fallbackModel: string
   baseUrl: string
 }
 
@@ -54,6 +57,7 @@ export type PublicRuntime = {
   webhook: string
   webhookOk: boolean
   model: string
+  fallbackModel: string
 }
 
 const MASK = /^[•*]+\s*\S{0,4}$/
@@ -86,6 +90,7 @@ export function mergeSecrets(current: RuntimeSecrets, patch: RuntimeSecrets): Ru
   if (patch.telegramBotUsername !== undefined) next.telegramBotUsername = patch.telegramBotUsername.trim()
   if (patch.telegramGroupUrl !== undefined) next.telegramGroupUrl = patch.telegramGroupUrl.trim()
   if (patch.steModel !== undefined) next.steModel = normalizeSteModel(patch.steModel)
+  if (patch.steFallbackModel !== undefined) next.steFallbackModel = normalizeSteModel(patch.steFallbackModel)
   if (patch.openaiBaseUrl !== undefined) {
     const url = patch.openaiBaseUrl.trim().replace(/\/$/, "")
     if (url) next.openaiBaseUrl = url
@@ -111,6 +116,7 @@ export function resolveRuntime(env: RuntimeEnv, secrets: RuntimeSecrets, webhook
     supabase: Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE),
     persist: env.SUPABASE_SERVICE_ROLE ? "supabase" : env.AUTH ? "kv" : "memory",
     model: normalizeSteModel(secrets.steModel || env.STE_MODEL || STE_LLM_MODEL),
+    fallbackModel: normalizeSteModel(secrets.steFallbackModel || env.STE_FALLBACK_MODEL || STE_LLM_FALLBACK),
     baseUrl: (secrets.openaiBaseUrl || env.OPENAI_BASE_URL || OPENROUTER_BASE_URL).replace(/\/$/, ""),
   }
 }
@@ -128,6 +134,7 @@ export function publicRuntime(resolved: ResolvedRuntime): PublicRuntime {
     webhook: resolved.webhookUrl,
     webhookOk: resolved.webhookOk,
     model: resolved.model,
+    fallbackModel: resolved.fallbackModel,
   }
 }
 

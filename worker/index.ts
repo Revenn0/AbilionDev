@@ -52,6 +52,7 @@ export interface Env {
   OPENAI_API_KEY?: string
   OPENAI_BASE_URL?: string
   STE_MODEL?: string
+  STE_FALLBACK_MODEL?: string
   STE_USE_LLM?: string
   AUTH?: KVNamespace
   ABILION_OPERATOR_PASSWORD?: string
@@ -119,6 +120,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       ste: true,
       llm: resolved.llm,
       model: resolved.model,
+      backup: resolved.fallbackModel,
       auth: Boolean(env.AUTH),
       persist: resolved.persist,
     })
@@ -371,6 +373,7 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
           apiKey: resolved.openaiApiKey,
           baseUrl: resolved.baseUrl,
           model: resolved.model,
+          fallbackModel: resolved.fallbackModel,
         })
       : replySte(lead, incoming, Date.now())
     lead = talked.lead
