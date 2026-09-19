@@ -27,7 +27,7 @@ import { mergeLeads } from "../src/lib/crm.ts"
 import type { Lead } from "../src/lib/types.ts"
 import { findLeadInKv, upsertLeadKv } from "../worker/crm-store.ts"
 import { memoryKv } from "../worker/kv.ts"
-import { STE_LLM_FALLBACK, STE_LLM_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
+import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
 
 function lead(id = "lead-1", contact = "@fb1"): Lead {
@@ -232,7 +232,15 @@ assert(resolved.baseUrl.includes("openrouter.ai"), "OpenRouter")
 assert(steModelChain()[0] === STE_LLM_MODEL, "cadeia começa no Gemma")
 assert(steModelChain()[1] === STE_LLM_FALLBACK, "depois DeepSeek")
 assert(steLlmAttempts({ openrouterKey: "or" }).map((item) => item.model).join(">") === `${STE_LLM_MODEL}>${STE_LLM_FALLBACK}`, "tentativas Gemma→DeepSeek")
-assert(steLlmAttempts({ opencodeKey: "oc" }).length === 0, "OpenCode nao entra mais")
+assert(steLlmAttempts({ opencodeKey: "oc" }).map((item) => item.model).join(">") === STE_OPENCODE_MODEL, "OpenCode sozinho é V4.1 Flash")
+assert(
+  steLlmAttempts({ opencodeKey: "oc", openrouterKey: "or" }).map((item) => item.model).join(">") ===
+    `${STE_OPENCODE_MODEL}>${STE_LLM_MODEL}>${STE_LLM_FALLBACK}`,
+  "OpenCode primeiro, OpenRouter reserva"
+)
+const withGo = resolveRuntime({ OPENCODE_API_KEY: "oc_sk", STE_USE_LLM: "1", AUTH: {} }, {})
+assert(withGo.model === STE_OPENCODE_MODEL && withGo.llm, "OpenCode liga DeepSeek V4.1 Flash")
+assert(withGo.fallbackModel === STE_LLM_MODEL, "Gemma fica de reserva")
 assert(steModelChain(STE_LLM_FALLBACK, STE_LLM_FALLBACK).length === 1, "nao duplica reserva")
 const fallback = resolveRuntime({ AUTH: {} }, { steModel: "z-ai/glm-5.3-flash" })
 assert(fallback.model === "z-ai/glm-5.3-flash", "glm conhecido fica")
@@ -273,9 +281,13 @@ globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
 }) as typeof fetch
 try {
   const offerLead = { ...replySte(lead("llm-1"), null).lead, stePhase: "offer" as const }
+  const chained = await replySteSmart(offerLead, "e agora o que eu faço?", { openCodeKey: "oc-test", openRouterKey: "sk-test" })
+  assert(seen[0] === STE_OPENCODE_MODEL, "tenta OpenCode DeepSeek V4.1 primeiro")
+  assert(chained.replies.some((item) => item.includes("enrolação")), "usa a resposta se o OpenCode já passou")
+  seen.length = 0
   const smart = await replySteSmart(offerLead, "e agora o que eu faço?", { apiKey: "sk-test" })
-  assert(seen[0] === STE_LLM_MODEL, "tenta Gemma primeiro")
-  assert(seen[1] === STE_LLM_FALLBACK, "DeepSeek entra no 429")
+  assert(seen[0] === STE_LLM_MODEL, "sem OpenCode tenta Gemma primeiro")
+  assert(seen[1] === STE_LLM_FALLBACK, "DeepSeek OpenRouter entra no 429")
   assert(smart.replies.some((item) => item.includes("enrolação")), "usa a resposta da reserva")
   assert(smart.replies.some((item) => item.includes("app.mundoaviator.com.br")), "IA precisa manter o link do passo")
   seen.length = 0

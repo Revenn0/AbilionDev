@@ -1,4 +1,12 @@
-import { baseUrlOf, normalizeSteModel, OPENROUTER_BASE_URL, STE_LLM_FALLBACK, STE_LLM_MODEL } from "../src/lib/llm.ts"
+import {
+  baseUrlOf,
+  normalizeSteModel,
+  OPENCODE_GO_BASE_URL,
+  OPENROUTER_BASE_URL,
+  STE_LLM_FALLBACK,
+  STE_LLM_MODEL,
+  STE_OPENCODE_MODEL,
+} from "../src/lib/llm.ts"
 import type { KvLike } from "./kv.ts"
 
 export const RUNTIME_KEY = "runtime:secrets"
@@ -20,10 +28,12 @@ export type RuntimeSecrets = {
 export type RuntimeEnv = {
   TELEGRAM_BOT_TOKEN?: string
   OPENAI_API_KEY?: string
+  OPENCODE_API_KEY?: string
   STE_USE_LLM?: string
   STE_MODEL?: string
   STE_FALLBACK_MODEL?: string
   OPENAI_BASE_URL?: string
+  OPENCODE_BASE_URL?: string
   SUPABASE_URL?: string
   SUPABASE_SERVICE_ROLE?: string
   APP_URL?: string
@@ -33,6 +43,7 @@ export type RuntimeEnv = {
 export type ResolvedRuntime = {
   telegramBotToken: string
   openaiApiKey: string
+  opencodeApiKey: string
   telegramBotUsername: string
   telegramGroupUrl: string
   webhookUrl: string
@@ -92,13 +103,16 @@ export function mergeSecrets(current: RuntimeSecrets, patch: RuntimeSecrets): Ru
   if (patch.telegramGroupUrl !== undefined) next.telegramGroupUrl = patch.telegramGroupUrl.trim()
   if (patch.steModel !== undefined) next.steModel = normalizeSteModel(patch.steModel)
   if (patch.steFallbackModel !== undefined) next.steFallbackModel = normalizeSteModel(patch.steFallbackModel)
+  if (patch.opencodeApiKey !== undefined) {
+    const key = patch.opencodeApiKey.trim()
+    if (!looksMasked(key)) next.opencodeApiKey = key
+  }
   if (patch.openaiBaseUrl !== undefined) {
     const url = patch.openaiBaseUrl.trim().replace(/\/$/, "")
     if (url) next.openaiBaseUrl = url
   }
   if (patch.webhookUrl !== undefined) next.webhookUrl = patch.webhookUrl
   if (patch.webhookOk !== undefined) next.webhookOk = patch.webhookOk
-  delete next.opencodeApiKey
   next.updatedAt = new Date().toISOString()
   return next
 }
@@ -106,23 +120,31 @@ export function mergeSecrets(current: RuntimeSecrets, patch: RuntimeSecrets): Ru
 export function resolveRuntime(env: RuntimeEnv, secrets: RuntimeSecrets, webhookFallback = ""): ResolvedRuntime {
   const telegramBotToken = (secrets.telegramBotToken || env.TELEGRAM_BOT_TOKEN || "").trim()
   const openaiApiKey = (secrets.openaiApiKey || env.OPENAI_API_KEY || "").trim()
-  const model = normalizeSteModel(secrets.steModel || env.STE_MODEL || STE_LLM_MODEL)
+  const opencodeApiKey = (secrets.opencodeApiKey || env.OPENCODE_API_KEY || "").trim()
+  const openrouterModel = normalizeSteModel(secrets.steModel || env.STE_MODEL || STE_LLM_MODEL)
   const rawFallback = normalizeSteModel(secrets.steFallbackModel || env.STE_FALLBACK_MODEL || STE_LLM_FALLBACK)
-  const fallbackModel = rawFallback === model ? STE_LLM_FALLBACK : rawFallback
+  const openrouterFallback = rawFallback === openrouterModel ? STE_LLM_FALLBACK : rawFallback
+  const model = opencodeApiKey ? STE_OPENCODE_MODEL : openrouterModel
+  const fallbackModel = opencodeApiKey ? openrouterModel : openrouterFallback
   return {
     telegramBotToken,
     openaiApiKey,
+    opencodeApiKey,
     telegramBotUsername: (secrets.telegramBotUsername || "").trim(),
     telegramGroupUrl: (secrets.telegramGroupUrl || "").trim(),
     webhookUrl: secrets.webhookUrl || webhookFallback,
     webhookOk: Boolean(secrets.webhookOk),
-    llm: Boolean(openaiApiKey) && env.STE_USE_LLM !== "0",
+    llm: Boolean(openaiApiKey || opencodeApiKey) && env.STE_USE_LLM !== "0",
     telegram: Boolean(telegramBotToken),
     supabase: Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE),
     persist: env.SUPABASE_SERVICE_ROLE ? "supabase" : env.AUTH ? "kv" : "memory",
     model,
     fallbackModel,
-    baseUrl: (secrets.openaiBaseUrl || env.OPENAI_BASE_URL || baseUrlOf(model) || OPENROUTER_BASE_URL).replace(/\/$/, ""),
+    baseUrl: (
+      opencodeApiKey
+        ? env.OPENCODE_BASE_URL || OPENCODE_GO_BASE_URL
+        : secrets.openaiBaseUrl || env.OPENAI_BASE_URL || baseUrlOf(model) || OPENROUTER_BASE_URL
+    ).replace(/\/$/, ""),
   }
 }
 

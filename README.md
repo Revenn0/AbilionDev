@@ -8,7 +8,7 @@ Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / M
 - Dashboard: leads, conversas, página / cliques, Facebook, espera, ofertas
 - Analytics: funil Ads → landing → Telegram → chat, globo de visitantes, gráficos de 30 dias, geo e device — no mesmo estúdio claro do funil
 - Leads no passo do fluxo (print, banca, espera, oferta só se o grafo deixar)
-- Conversas Telegram: a Sté segue o funil publicado (boas-vindas, minicurso, Superbet, App/Premium, remarketing). A voz muda conforme o que o lead falou; o passo, os links e a próxima fase não mudam. A IA é só OpenRouter: Gemma 4 31B, DeepSeek se o Gemma falhar. Sem chave, a voz local ainda reconhece o lead.
+- Conversas Telegram: a Sté segue o funil publicado (boas-vindas, minicurso, Superbet, App/Premium, remarketing). A voz muda conforme o que o lead falou; o passo, os links e a próxima fase não mudam. A IA começa no OpenCode (DeepSeek V4.1 Flash). Se falhar, cai no OpenRouter: Gemma 4 31B e depois DeepSeek V4 Flash. Sem chave, a voz local ainda reconhece o lead.
 - Funil com mapa e fluxo executável, no estúdio visual claro (catálogo, quadro e propriedades)
 - Telegram: webhook no Worker (`/api/telegram`) — /start abre a Sté
 - Facebook → Telegram: `https://t.me/BOT?start=fb` (500–1000 /start por dia)

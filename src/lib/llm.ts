@@ -1,9 +1,11 @@
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+export const OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1"
 export const STE_LLM_BASE_URL = OPENROUTER_BASE_URL
 export const STE_LLM_MODEL = "google/gemma-4-31b-it:free"
 export const STE_LLM_FALLBACK = "deepseek/deepseek-v4-flash-0731:free"
+export const STE_OPENCODE_MODEL = "deepseek-v4.1-flash"
 
-export type SteLlmProvider = "openrouter"
+export type SteLlmProvider = "openrouter" | "opencode"
 
 export type SteLlmRoute = {
   provider: SteLlmProvider
@@ -16,12 +18,12 @@ export const STE_LLM_MODELS = [
   {
     id: "google/gemma-4-31b-it:free",
     label: "Gemma 4 31B",
-    hint: "Padrão da Sté no OpenRouter. Português estável, tom de conversa.",
+    hint: "Reserva no OpenRouter se o DeepSeek V4.1 Flash do OpenCode falhar.",
   },
   {
     id: "deepseek/deepseek-v4-flash-0731:free",
     label: "DeepSeek V4 Flash",
-    hint: "Reserva automática se o Gemma devolver 429.",
+    hint: "Segunda reserva no OpenRouter.",
   },
   {
     id: "z-ai/glm-5.2:free",
@@ -37,12 +39,14 @@ export const STE_LLM_MODELS = [
 
 export type SteLlmModelId = (typeof STE_LLM_MODELS)[number]["id"]
 
-export function baseUrlOf(_model?: string) {
+export function baseUrlOf(model?: string) {
+  if ((model ?? "").trim() === STE_OPENCODE_MODEL) return OPENCODE_GO_BASE_URL
   return OPENROUTER_BASE_URL
 }
 
 export function normalizeSteModel(value?: string) {
   const next = (value ?? "").trim()
+  if (next === STE_OPENCODE_MODEL) return next
   if (STE_LLM_MODELS.some((item) => item.id === next)) return next
   return STE_LLM_MODEL
 }
@@ -72,7 +76,17 @@ export function openRouterHeaders(apiKey: string, origin = "https://www.abilion.
   }
 }
 
-export function llmHeaders(apiKey: string, _provider: SteLlmProvider = "openrouter") {
+export function openCodeHeaders(apiKey: string, session = "abilion-ste") {
+  return {
+    authorization: `Bearer ${apiKey}`,
+    "content-type": "application/json",
+    "user-agent": "AbilionSte/1.0",
+    "x-opencode-session": session,
+  }
+}
+
+export function llmHeaders(apiKey: string, provider: SteLlmProvider = "openrouter", session?: string) {
+  if (provider === "opencode") return openCodeHeaders(apiKey, session)
   return openRouterHeaders(apiKey)
 }
 
@@ -83,7 +97,20 @@ export function steLlmAttempts(opts?: {
   openrouterKey?: string
   apiKey?: string
 }) {
-  const apiKey = (opts?.openrouterKey || opts?.apiKey || "").trim()
-  if (!apiKey) return []
-  return steLlmRoutes(opts?.primary, opts?.fallback).map((route) => ({ ...route, apiKey }))
+  const opencodeKey = (opts?.opencodeKey || "").trim()
+  const openrouterKey = (opts?.openrouterKey || opts?.apiKey || "").trim()
+  const attempts: Array<SteLlmRoute & { apiKey: string }> = []
+  if (opencodeKey) {
+    attempts.push({
+      provider: "opencode",
+      model: STE_OPENCODE_MODEL,
+      baseUrl: OPENCODE_GO_BASE_URL,
+      label: "DeepSeek V4.1 Flash",
+      apiKey: opencodeKey,
+    })
+  }
+  if (openrouterKey) {
+    attempts.push(...steLlmRoutes(opts?.primary, opts?.fallback).map((route) => ({ ...route, apiKey: openrouterKey })))
+  }
+  return attempts
 }

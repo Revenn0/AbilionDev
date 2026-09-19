@@ -148,10 +148,10 @@ function BotPane() {
             {runtime.tokenHint ? `Token ${runtime.tokenHint}` : "Sem token no Worker"}
           </StatusPill>
           <StatusPill tone={runtime.llm || health.llm ? "success" : "muted"}>
-            IA · {runtime.llm || health.llm ? runtime.model || health.model || STE_LLM_MODEL : "script da Sté"}
+            IA · {runtime.llm || health.llm ? runtime.model || health.model || "deepseek-v4.1-flash" : "script da Sté"}
           </StatusPill>
           <StatusPill>
-            Reserva · {runtime.fallbackModel || health.backup || STE_LLM_FALLBACK}
+            Reserva · {runtime.fallbackModel || health.backup || STE_LLM_MODEL}
           </StatusPill>
           <StatusPill tone={health.persist === "kv" || health.persist === "supabase" ? "success" : "muted"}>
             Leads · {health.persist === "supabase" ? "Supabase" : "Worker"}
@@ -253,7 +253,8 @@ function BotPane() {
               ))}
             </select>
             <p className="text-[12px] text-muted-foreground">
-              {STE_LLM_MODELS.find((item) => item.id === model)?.hint} Se este falhar, a Sté usa DeepSeek V4 Flash.
+              A Sté fala primeiro com DeepSeek V4.1 Flash no OpenCode. Se cair, usa este modelo no OpenRouter e depois o
+              DeepSeek V4 Flash.
             </p>
           </div>
           <div className="space-y-1.5">

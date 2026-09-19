@@ -816,7 +816,8 @@ export async function replySteSmart(
           attempt.model,
           messages,
           maxBlocks,
-          attempt.provider
+          attempt.provider,
+          next.id
         )
         if (!blocks.length || !guardSteVoice(scripted.replies, blocks, scripted.beat)) continue
         pushAll(next, blocks, now)
@@ -847,16 +848,17 @@ async function completeSte(
   model: string,
   messages: Array<{ role: string; content: string }>,
   maxBlocks = 4,
-  provider: SteLlmProvider = "openrouter"
+  provider: SteLlmProvider = "openrouter",
+  session?: string
 ) {
   const res = await fetch(endpoint, {
     method: "POST",
-    headers: llmHeaders(apiKey, provider),
+    headers: llmHeaders(apiKey, provider, session),
     body: JSON.stringify({
       model,
       temperature: 0.75,
       top_p: 0.9,
-      max_tokens: 512,
+      max_tokens: provider === "opencode" ? 768 : 512,
       messages,
     }),
   })

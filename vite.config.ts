@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import path from "node:path"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import tailwindcss from "@tailwindcss/vite"
@@ -15,14 +16,31 @@ function readBody(req: IncomingMessage) {
   })
 }
 
+function readDevVars() {
+  try {
+    const raw = readFileSync(path.resolve(import.meta.dirname, ".dev.vars"), "utf8")
+    const out: Record<string, string> = {}
+    for (const line of raw.split("\n")) {
+      const cut = line.indexOf("=")
+      if (cut < 1 || line.startsWith("#")) continue
+      out[line.slice(0, cut).trim()] = line.slice(cut + 1).trim()
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
 function viteEnv(): Env {
-  const env = loadEnv("development", path.resolve(import.meta.dirname), "")
+  const env = { ...readDevVars(), ...loadEnv("development", path.resolve(import.meta.dirname), "") }
   return {
     ASSETS: { fetch: () => Promise.resolve(new Response("not found", { status: 404 })) },
     SUPABASE_URL: env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://eyjgmkmaixmpmeeahxon.supabase.co",
     AUTH: fileKv(path.resolve(import.meta.dirname, ".data/kv")) as Env["AUTH"],
     OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
+    OPENCODE_BASE_URL: env.OPENCODE_BASE_URL || process.env.OPENCODE_BASE_URL || "https://opencode.ai/zen/go/v1",
     OPENAI_API_KEY: env.OPENAI_API_KEY || process.env.OPENAI_API_KEY,
+    OPENCODE_API_KEY: env.OPENCODE_API_KEY || process.env.OPENCODE_API_KEY,
     STE_MODEL: "google/gemma-4-31b-it:free",
     STE_FALLBACK_MODEL: "deepseek/deepseek-v4-flash-0731:free",
     STE_USE_LLM: "1",
