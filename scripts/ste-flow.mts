@@ -28,7 +28,9 @@ import type { Lead } from "../src/lib/types.ts"
 import { findLeadInKv, upsertLeadKv } from "../worker/crm-store.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
+import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
+import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
 
 function lead(id = "lead-1", contact = "@fb1"): Lead {
   const now = new Date().toISOString()
@@ -248,6 +250,59 @@ const unknown = resolveRuntime({ AUTH: {} }, { steModel: "mimo-v2.5-free" })
 assert(unknown.model === STE_LLM_MODEL, "MiMo antigo cai no Gemma")
 const migrated = resolveRuntime({ AUTH: {} }, { steModel: "mimo-v2.5-free", steFallbackModel: "google/gemma-4-31b-it:free" })
 assert(migrated.model === STE_LLM_MODEL && migrated.fallbackModel === STE_LLM_FALLBACK, "KV velho vira Gemma→DeepSeek")
+
+assert(STE_VOICE_CLIPS.length === 8, "oito clips generalizados")
+assert(!STE_VOICE_CLIPS.some((item) => spokenHasUrl(item.script)), "script falado sem url")
+assert(voiceClipFor("welcome")?.id === "welcome", "boas-vindas tem audio")
+assert(voiceClipFor("offer")?.id === "offer", "oferta tem audio")
+assert(voiceClipFor("confirm") === null, "confirm fica texto")
+assert(voiceClipFor("redirect") === null, "redirect fica texto")
+assert(voiceClipFor("idle") === null, "idle fica texto")
+assert(clipHash("fala", "voz-1") === clipHash("fala", "voz-1"), "hash estavel")
+assert(clipHash("fala", "voz-1") !== clipHash("fala", "voz-2"), "troca de voz invalida o clip")
+assert(linksFromReplies(["veja [curso](https://mundoaviator.com.br/mini-curso/) e [app](https://app.mundoaviator.com.br/)"]).length === 2, "tira dois links")
+assert(linkFollowUp(["sem link"]) === "", "sem follow-up se nao tem link")
+assert(linkFollowUp(course.replies).includes("mundoaviator.com.br"), "links do curso saem no texto")
+const keptVoice = mergeSecrets({ elevenApiKey: "sk_old", elevenVoiceId: "voice_old" }, { elevenApiKey: "•••• old", elevenVoiceId: "•••• old" })
+assert(keptVoice.elevenApiKey === "sk_old" && keptVoice.elevenVoiceId === "voice_old", "mascara nao apaga a voz")
+const fromEnv = resolveRuntime({ ELEVENLABS_API_KEY: "sk_env", ELEVENLABS_VOICE_ID: "voice_env" }, {})
+assert(fromEnv.voice && fromEnv.elevenVoiceId === "voice_env", "env liga a voz")
+const fromKv = resolveRuntime({ ELEVENLABS_API_KEY: "sk_env" }, { elevenApiKey: "sk_kv", elevenVoiceId: "cloned" })
+assert(fromKv.elevenApiKey === "sk_kv" && fromKv.voice, "KV manda na chave da ElevenLabs")
+assert(!resolveRuntime({}, {}).voice, "sem chave a Sté fica em texto")
+const welcomeClip = voiceClipFor("welcome")
+assert(welcomeClip, "clip de boas-vindas existe")
+const readyStore = {
+  welcome: {
+    id: "welcome",
+    hash: clipHash(welcomeClip.script, "cloned"),
+    voiceId: "cloned",
+    mime: "audio/ogg" as const,
+    fileId: "tg-1",
+    updatedAt: "now",
+  },
+}
+assert(voiceClipStatus(readyStore, "cloned").find((item) => item.id === "welcome")?.ready, "clip com file_id esta pronto")
+assert(!voiceClipStatus(readyStore, "cloned").find((item) => item.id === "course")?.ready, "clip que falta fica a espera")
+assert(!voiceClipStatus(readyStore, "outra").find((item) => item.id === "welcome")?.ready, "outra voz invalida o cache")
+const voiceFetch = globalThis.fetch
+let elevenCalls = 0
+globalThis.fetch = (async (input: RequestInfo | URL) => {
+  elevenCalls += 1
+  if (String(input).includes("elevenlabs.io")) return new Response(Uint8Array.from([1, 2, 3, 4]), { status: 200 })
+  return new Response("no", { status: 404 })
+}) as typeof fetch
+try {
+  const voiceKv = memoryKv()
+  const firstClip = await ensureVoiceClip(voiceKv, welcomeClip, "sk_test", "voice_abc")
+  assert(firstClip.audioB64 && firstClip.hash === clipHash(welcomeClip.script, "voice_abc"), "ElevenLabs grava o clip")
+  const beforeReuse = elevenCalls
+  const reusedClip = await ensureVoiceClip(voiceKv, welcomeClip, "sk_test", "voice_abc")
+  assert(elevenCalls === beforeReuse, "reutiliza clip sem gastar ElevenLabs")
+  assert(reusedClip.audioB64 === firstClip.audioB64, "o mesmo arquivo volta do KV")
+} finally {
+  globalThis.fetch = voiceFetch
+}
 
 const first = lead("crm-1", "@ana")
 first.telegramChatId = "41"

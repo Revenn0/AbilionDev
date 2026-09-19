@@ -21,8 +21,9 @@ import { Switch } from "@/components/ui/switch"
 import { cleanBotUsername } from "@/lib/migrate"
 import { useStore } from "@/lib/store"
 import { fetchHealth, workerUrl } from "@/lib/channel"
-import { fetchRuntime, saveRuntime, type RuntimeStatus } from "@/lib/runtime-api"
+import { fetchRuntime, prepareVoice, saveRuntime, type RuntimeStatus } from "@/lib/runtime-api"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_LLM_MODELS, normalizeSteModel } from "@/lib/llm"
+import { STE_VOICE_CLIPS } from "@/lib/ste-voice"
 import { adsDeepLink } from "@/lib/telegram-start"
 import { cn } from "@/lib/utils"
 import type { PluginId } from "@/lib/types"
@@ -104,8 +105,12 @@ function BotPane() {
   const [token, setToken] = useState("")
   const [group, setGroup] = useState(state.settings.telegramGroupUrl)
   const [glm, setGlm] = useState("")
+  const [elevenKey, setElevenKey] = useState("")
+  const [voiceId, setVoiceId] = useState("")
   const [model, setModel] = useState(STE_LLM_MODEL)
   const [busy, setBusy] = useState(false)
+  const [voiceBusy, setVoiceBusy] = useState(false)
+  const [runtimeLoaded, setRuntimeLoaded] = useState(false)
   const [health, setHealth] = useState<Awaited<ReturnType<typeof fetchHealth>>>({ ok: false })
   const [runtime, setRuntime] = useState<RuntimeStatus>({ ok: false })
   const origin = workerUrl()
@@ -117,6 +122,7 @@ function BotPane() {
     const [nextHealth, nextRuntime] = await Promise.all([fetchHealth(), fetchRuntime()])
     setHealth(nextHealth)
     setRuntime(nextRuntime)
+    setRuntimeLoaded(true)
     if (nextRuntime.telegramBotUsername) setUsername(nextRuntime.telegramBotUsername)
     if (nextRuntime.telegramGroupUrl) setGroup(nextRuntime.telegramGroupUrl)
     if (nextRuntime.model) setModel(normalizeSteModel(nextRuntime.model))
@@ -155,6 +161,9 @@ function BotPane() {
           </StatusPill>
           <StatusPill tone={health.persist === "kv" || health.persist === "supabase" ? "success" : "muted"}>
             Leads · {health.persist === "supabase" ? "Supabase" : "Worker"}
+          </StatusPill>
+          <StatusPill tone={runtime.voice ? "success" : "muted"}>
+            Voz · {runtime.voice ? runtime.voiceHint || "ElevenLabs" : "texto"}
           </StatusPill>
         </div>
         <dl className="mt-5 space-y-2 text-[12.5px]">
@@ -281,6 +290,104 @@ function BotPane() {
             {busy ? "A ligar…" : "Vincular Telegram"}
           </Button>
         </form>
+      </section>
+      <section className="surface p-6">
+        <p className="text-[14px] font-medium">Voz da Sté · ElevenLabs</p>
+        <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+          Mensagem grande vira áudio. A ElevenLabs gera cada clip uma vez; o Telegram reenvia o mesmo arquivo. Respostas
+          curtas continuam texto. Os links saem numa mensagem à parte.
+        </p>
+        {!runtimeLoaded ? (
+          <p className="mt-4 text-[12.5px] text-muted-foreground">A ler a voz gravada no Worker…</p>
+        ) : !runtime.ok ? (
+          <p className="mt-4 text-[12.5px] text-muted-foreground">
+            Não consegui falar com o Worker. Recarrega para ver se a voz já está ligada.
+          </p>
+        ) : runtime.voice ? (
+          <p className="mt-4 text-[12.5px] text-muted-foreground">
+            Voz {runtime.voiceHint}. Gera os 8 clips uma vez; o Telegram reutiliza o mesmo arquivo.
+          </p>
+        ) : (
+          <p className="mt-4 text-[12.5px] text-muted-foreground">
+            Sem chave ou voice id a Sté continua em texto. Cola os dois campos e guarda — a chave não entra no git.
+          </p>
+        )}
+        <form
+          className="mt-5 space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault()
+            setVoiceBusy(true)
+            void saveRuntime({
+              ...(elevenKey.trim() ? { elevenApiKey: elevenKey.trim() } : {}),
+              ...(voiceId.trim() ? { elevenVoiceId: voiceId.trim() } : {}),
+            })
+              .then((next) => {
+                setRuntime(next)
+                setElevenKey("")
+                setVoiceId("")
+                toast.success(next.voice ? "Voz gravada no Worker." : "Falta a chave ou o voice id.")
+              })
+              .catch((error: Error) => toast.error(error.message))
+              .finally(() => setVoiceBusy(false))
+          }}
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="ste-voice-id">Voice id da Sté</Label>
+            <Input
+              id="ste-voice-id"
+              value={voiceId}
+              onChange={(event) => setVoiceId(event.target.value)}
+              placeholder={runtime.voiceHint ? `Já gravado ${runtime.voiceHint}. Cola outro para trocar.` : "Cola o voice id do clone"}
+              autoComplete="off"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ste-eleven">Chave ElevenLabs</Label>
+            <Input
+              id="ste-eleven"
+              type="password"
+              autoComplete="off"
+              value={elevenKey}
+              onChange={(event) => setElevenKey(event.target.value)}
+              placeholder={runtime.voice ? "Chave já ligada. Cola outra para trocar." : "Cola a chave sk_… da ElevenLabs"}
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" className="rounded-full" disabled={voiceBusy}>
+              {voiceBusy ? "A gravar…" : "Guardar voz"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="rounded-full"
+              disabled={voiceBusy || !runtime.voice}
+              onClick={() => {
+                setVoiceBusy(true)
+                void prepareVoice()
+                  .then((next) => {
+                    setRuntime(next)
+                    const ready = next.voiceClips?.filter((item) => item.ready).length ?? 0
+                    toast.success(`${ready} áudios prontos. Os próximos leads reutilizam.`)
+                  })
+                  .catch((error: Error) => toast.error(error.message))
+                  .finally(() => setVoiceBusy(false))
+              }}
+            >
+              Gerar áudios do funil
+            </Button>
+          </div>
+        </form>
+        <div className="mt-4 flex flex-wrap gap-1.5">
+          {STE_VOICE_CLIPS.map((clip) => {
+            const live = runtime.voiceClips?.find((item) => item.id === clip.id)
+            return (
+              <StatusPill key={clip.id} tone={live?.ready ? "success" : "muted"}>
+                {clip.label}
+                {voiceBusy && !live?.ready ? " · a gerar" : live?.ready ? " · pronto" : " · à espera"}
+              </StatusPill>
+            )
+          })}
+        </div>
       </section>
       <section className="surface p-6">
         <p className="text-[14px] font-medium">Pixel da landing</p>

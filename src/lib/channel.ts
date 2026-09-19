@@ -16,6 +16,7 @@ export async function fetchHealth() {
       persist?: "supabase" | "kv" | "memory"
       model?: string
       backup?: string
+      voice?: boolean
     }
   } catch {
     return { ok: false as const }

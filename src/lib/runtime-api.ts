@@ -13,6 +13,9 @@ export type RuntimeStatus = {
   webhookOk?: boolean
   model?: string
   fallbackModel?: string
+  voice?: boolean
+  voiceHint?: string
+  voiceClips?: Array<{ id: string; label: string; ready: boolean }>
   error?: string
 }
 
@@ -39,6 +42,8 @@ export async function saveRuntime(body: {
   openaiApiKey?: string
   steModel?: string
   steFallbackModel?: string
+  elevenApiKey?: string
+  elevenVoiceId?: string
 }) {
   return parse<RuntimeStatus>(
     await fetch("/api/runtime", {
@@ -46,6 +51,15 @@ export async function saveRuntime(body: {
       credentials: "include",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
+    })
+  )
+}
+
+export async function prepareVoice() {
+  return parse<RuntimeStatus>(
+    await fetch("/api/runtime/voice", {
+      method: "POST",
+      credentials: "include",
     })
   )
 }

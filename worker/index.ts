@@ -1,6 +1,7 @@
 import { handleAuth, kvAuthStore, sessionUser } from "./auth.ts"
 import { campaignFor } from "../src/lib/labels.ts"
-import { advanceSteIfDue, isSteWait, replySte, replySteSmart, steRuntimeFromFunnels, toTelegramHtml } from "../src/lib/ste.ts"
+import { advanceSteIfDue, isSteWait, replySte, replySteSmart, steRuntimeFromFunnels, toTelegramHtml, type SteBeat } from "../src/lib/ste.ts"
+import { linkFollowUp, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { campaignFromStart, originFromStart, parseTelegramStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { applyEvent, dueWaits, publishedSnapshot } from "../src/lib/runtime.ts"
@@ -30,6 +31,7 @@ import {
   setTelegramWebhook,
   type RuntimeSecrets,
 } from "./runtime-secrets.ts"
+import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
 import type { KvLike } from "./kv.ts"
 
 type Fetcher = { fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> }
@@ -53,6 +55,8 @@ export interface Env {
   OPENCODE_API_KEY?: string
   OPENAI_BASE_URL?: string
   OPENCODE_BASE_URL?: string
+  ELEVENLABS_API_KEY?: string
+  ELEVENLABS_VOICE_ID?: string
   STE_MODEL?: string
   STE_FALLBACK_MODEL?: string
   STE_USE_LLM?: string
@@ -84,6 +88,11 @@ export function backgroundCtx(): ExecutionContext {
 async function runtimeOf(env: Env, webhookFallback = "") {
   const secrets = kvOf(env) ? await loadSecrets(kvOf(env)!) : {}
   return { secrets, resolved: resolveRuntime(env, secrets, webhookFallback) }
+}
+
+async function publishedRuntime(env: Env, resolved: ReturnType<typeof resolveRuntime>) {
+  const store = kvOf(env) ? await loadVoiceStore(kvOf(env)!) : {}
+  return publicRuntime(resolved, voiceClipStatus(store, resolved.elevenVoiceId))
 }
 
 export default {
@@ -125,6 +134,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       backup: resolved.fallbackModel,
       auth: Boolean(env.AUTH),
       persist: resolved.persist,
+      voice: resolved.voice,
     })
   }
 
@@ -195,7 +205,22 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!user) return json({ error: "Sessão expirada." }, 401)
     const hook = webhookUrl(request, env)
     const { resolved } = await runtimeOf(env, hook)
-    return json(publicRuntime({ ...resolved, webhookUrl: resolved.webhookUrl || hook }))
+    return json(await publishedRuntime(env, { ...resolved, webhookUrl: resolved.webhookUrl || hook }))
+  }
+
+  if (url.pathname === "/api/runtime/voice" && request.method === "POST") {
+    if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
+    const user = await sessionUser(request, kvAuthStore(env.AUTH))
+    if (!user) return json({ error: "Sessão expirada." }, 401)
+    const { resolved } = await runtimeOf(env, webhookUrl(request, env))
+    if (!resolved.elevenApiKey || !resolved.elevenVoiceId) {
+      return json({ error: "Falta a chave da ElevenLabs e o voice id da Sté." }, 400)
+    }
+    const clips = await prepareVoiceClips(env.AUTH, resolved.elevenApiKey, resolved.elevenVoiceId)
+    if (!clips.some((item) => item.ready)) {
+      return json({ error: "A ElevenLabs não gerou os áudios. Confere a chave e o voice id." }, 400)
+    }
+    return json(await publishedRuntime(env, resolved))
   }
 
   if (url.pathname === "/api/runtime" && request.method === "POST") {
@@ -215,7 +240,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       next.webhookOk = hooked.ok
       if (!hooked.ok) {
         await saveSecrets(env.AUTH, next)
-        return json({ error: hooked.description || "Webhook do Telegram falhou.", ...publicRuntime(resolveRuntime(env, next, hook)) }, 400)
+        return json({ error: hooked.description || "Webhook do Telegram falhou.", ...(await publishedRuntime(env, resolveRuntime(env, next, hook))) }, 400)
       }
     } else if (next.telegramBotToken && !next.webhookOk) {
       const hooked = await setTelegramWebhook(next.telegramBotToken, hook, env.TELEGRAM_WEBHOOK_SECRET)
@@ -232,7 +257,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       steLinkedTelegram: settings.steLinkedTelegram !== false,
       plugins: { ...settings.plugins, telegram: Boolean(next.telegramBotToken) },
     })
-    return json(publicRuntime(resolveRuntime(env, next, hook)))
+    return json(await publishedRuntime(env, resolveRuntime(env, next, hook)))
   }
 
   if (url.pathname === "/api/crm" && request.method === "GET") {
@@ -382,7 +407,7 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
         })
       : replySte(lead, incoming, Date.now(), ste)
     lead = talked.lead
-    await sendSteReplies(token, chatId, talked.replies)
+    await sendSteReplies(env, token, chatId, talked.replies, talked.beat)
   }
 
   await saveLead(env, lead)
@@ -406,7 +431,7 @@ async function processWaits(env: Env) {
   for (const lead of due) {
     if (isSteWait(lead)) {
       const talked = advanceSteIfDue(lead, Date.now(), ste)
-      if (token && lead.telegramChatId) await sendSteReplies(token, lead.telegramChatId, talked.replies)
+      if (token && lead.telegramChatId) await sendSteReplies(env, token, lead.telegramChatId, talked.replies, talked.beat)
       await saveLead(env, talked.lead)
       continue
     }
@@ -581,7 +606,33 @@ async function rest<T>(env: Env, path: string, init?: RequestInit): Promise<T | 
   return text ? (JSON.parse(text) as T) : (true as T)
 }
 
-async function sendSteReplies(token: string, chatId: string, replies: string[]) {
+async function sendSteReplies(env: Env, token: string, chatId: string, replies: string[], beat?: SteBeat) {
+  const clip = beat ? voiceClipFor(beat.kind) : null
+  const kv = kvOf(env)
+  if (clip && kv) {
+    const { resolved } = await runtimeOf(env)
+    if (resolved.voice) {
+      try {
+        const stored = await ensureVoiceClip(kv, clip, resolved.elevenApiKey, resolved.elevenVoiceId)
+        const fileId = await sendStoredVoice(token, chatId, stored)
+        if (fileId) {
+          if (fileId !== stored.fileId) await rememberVoiceFile(kv, clip.id, fileId)
+          const links = linkFollowUp(replies)
+          if (links) {
+            await telegram(token, "sendMessage", {
+              chat_id: chatId,
+              text: toTelegramHtml(links),
+              parse_mode: "HTML",
+              disable_web_page_preview: true,
+            })
+          }
+          return
+        }
+      } catch {
+        /* cai no texto */
+      }
+    }
+  }
   for (const [index, text] of replies.entries()) {
     await telegram(token, "sendMessage", {
       chat_id: chatId,

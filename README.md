@@ -9,6 +9,7 @@ Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / M
 - Analytics: funil Ads → landing → Telegram → chat, globo de visitantes, gráficos de 30 dias, geo e device — no mesmo estúdio claro do funil
 - Leads no passo do fluxo (print, banca, espera, oferta só se o grafo deixar)
 - Conversas Telegram: a Sté segue o funil publicado (boas-vindas, minicurso, Superbet, App/Premium, remarketing). A voz muda conforme o que o lead falou; o passo, os links e a próxima fase não mudam. A IA começa no OpenCode (DeepSeek V4.1 Flash). Se falhar, cai no OpenRouter: Gemma 4 31B e depois DeepSeek V4 Flash. Sem chave, a voz local ainda reconhece o lead.
+- Áudio: mensagens grandes do funil saem como áudio da ElevenLabs. Cada clip é gerado uma vez, guardado e reutilizado. Os links continuam no texto.
 - Funil com mapa e fluxo executável, no estúdio visual claro (catálogo, quadro e propriedades)
 - Telegram: webhook no Worker (`/api/telegram`) — /start abre a Sté
 - Facebook → Telegram: `https://t.me/BOT?start=fb` (500–1000 /start por dia)
@@ -96,9 +97,14 @@ npx wrangler secret put SUPABASE_SERVICE_ROLE
 npx wrangler secret put CRON_SECRET
 npx wrangler secret put ESTER_CHAT_ID
 npx wrangler secret put OPENAI_API_KEY    # chave OpenRouter sk-or-v1…
+npx wrangler secret put OPENCODE_API_KEY  # chave OpenCode oc_sk_… (DeepSeek V4.1 Flash)
+npx wrangler secret put ELEVENLABS_API_KEY
+npx wrangler secret put ELEVENLABS_VOICE_ID
 ```
 
-Sté fala só com **OpenRouter**. Padrão: **Gemma 4 31B** (`google/gemma-4-31b-it:free`). Reserva: **DeepSeek V4 Flash** se o Gemma devolver 429. A chave `sk-or-v1…` grava-se em Configurações, nunca no git. Sem IA, o quadro e a voz local continuam.
+A Sté fala primeiro com **DeepSeek V4.1 Flash** no OpenCode. Se cair, usa OpenRouter: **Gemma 4 31B** e depois **DeepSeek V4 Flash**. As chaves `oc_sk_…` e `sk-or-v1…` gravam-se em Configurações, nunca no git. Sem IA, o quadro e a voz local continuam.
+
+Mensagens grandes saem em áudio da **ElevenLabs** (voz clonada da Sté). Cada beat gera um clip só uma vez; o Telegram reenvia o mesmo `file_id`. Cola o `voice_id` e a chave `sk_…` em Configurações → Bot → Voz da Sté. Sem isso, o bloco continua em texto.
 
 Webhook Telegram: `{origem}/api/telegram`  
 Cron de espera: hora a hora, ou `GET /api/cron?secret=…`  

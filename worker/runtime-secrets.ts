@@ -20,6 +20,8 @@ export type RuntimeSecrets = {
   steModel?: string
   steFallbackModel?: string
   openaiBaseUrl?: string
+  elevenApiKey?: string
+  elevenVoiceId?: string
   webhookUrl?: string
   webhookOk?: boolean
   updatedAt?: string
@@ -34,6 +36,8 @@ export type RuntimeEnv = {
   STE_FALLBACK_MODEL?: string
   OPENAI_BASE_URL?: string
   OPENCODE_BASE_URL?: string
+  ELEVENLABS_API_KEY?: string
+  ELEVENLABS_VOICE_ID?: string
   SUPABASE_URL?: string
   SUPABASE_SERVICE_ROLE?: string
   APP_URL?: string
@@ -55,6 +59,10 @@ export type ResolvedRuntime = {
   model: string
   fallbackModel: string
   baseUrl: string
+  elevenApiKey: string
+  elevenVoiceId: string
+  voice: boolean
+  voiceHint: string
 }
 
 export type PublicRuntime = {
@@ -70,6 +78,9 @@ export type PublicRuntime = {
   webhookOk: boolean
   model: string
   fallbackModel: string
+  voice: boolean
+  voiceHint: string
+  voiceClips?: Array<{ id: string; label: string; ready: boolean }>
 }
 
 const MASK = /^[•*]+\s*\S{0,4}$/
@@ -111,6 +122,14 @@ export function mergeSecrets(current: RuntimeSecrets, patch: RuntimeSecrets): Ru
     const url = patch.openaiBaseUrl.trim().replace(/\/$/, "")
     if (url) next.openaiBaseUrl = url
   }
+  if (patch.elevenApiKey !== undefined) {
+    const key = patch.elevenApiKey.trim()
+    if (!looksMasked(key)) next.elevenApiKey = key
+  }
+  if (patch.elevenVoiceId !== undefined) {
+    const voice = patch.elevenVoiceId.trim()
+    if (!looksMasked(voice)) next.elevenVoiceId = voice
+  }
   if (patch.webhookUrl !== undefined) next.webhookUrl = patch.webhookUrl
   if (patch.webhookOk !== undefined) next.webhookOk = patch.webhookOk
   next.updatedAt = new Date().toISOString()
@@ -121,6 +140,8 @@ export function resolveRuntime(env: RuntimeEnv, secrets: RuntimeSecrets, webhook
   const telegramBotToken = (secrets.telegramBotToken || env.TELEGRAM_BOT_TOKEN || "").trim()
   const openaiApiKey = (secrets.openaiApiKey || env.OPENAI_API_KEY || "").trim()
   const opencodeApiKey = (secrets.opencodeApiKey || env.OPENCODE_API_KEY || "").trim()
+  const elevenApiKey = (secrets.elevenApiKey || env.ELEVENLABS_API_KEY || "").trim()
+  const elevenVoiceId = (secrets.elevenVoiceId || env.ELEVENLABS_VOICE_ID || "").trim()
   const openrouterModel = normalizeSteModel(secrets.steModel || env.STE_MODEL || STE_LLM_MODEL)
   const rawFallback = normalizeSteModel(secrets.steFallbackModel || env.STE_FALLBACK_MODEL || STE_LLM_FALLBACK)
   const openrouterFallback = rawFallback === openrouterModel ? STE_LLM_FALLBACK : rawFallback
@@ -140,6 +161,10 @@ export function resolveRuntime(env: RuntimeEnv, secrets: RuntimeSecrets, webhook
     persist: env.SUPABASE_SERVICE_ROLE ? "supabase" : env.AUTH ? "kv" : "memory",
     model,
     fallbackModel,
+    elevenApiKey,
+    elevenVoiceId,
+    voice: Boolean(elevenApiKey && elevenVoiceId),
+    voiceHint: elevenVoiceId ? tokenHint(elevenVoiceId) : "",
     baseUrl: (
       opencodeApiKey
         ? env.OPENCODE_BASE_URL || OPENCODE_GO_BASE_URL
@@ -148,7 +173,10 @@ export function resolveRuntime(env: RuntimeEnv, secrets: RuntimeSecrets, webhook
   }
 }
 
-export function publicRuntime(resolved: ResolvedRuntime): PublicRuntime {
+export function publicRuntime(
+  resolved: ResolvedRuntime,
+  clips?: Array<{ id: string; label: string; ready: boolean }>
+): PublicRuntime {
   return {
     ok: true,
     telegram: resolved.telegram,
@@ -162,6 +190,9 @@ export function publicRuntime(resolved: ResolvedRuntime): PublicRuntime {
     webhookOk: resolved.webhookOk,
     model: resolved.model,
     fallbackModel: resolved.fallbackModel,
+    voice: resolved.voice,
+    voiceHint: resolved.voiceHint,
+    voiceClips: clips,
   }
 }
 

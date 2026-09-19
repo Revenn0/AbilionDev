@@ -41,6 +41,8 @@ function viteEnv(): Env {
     OPENCODE_BASE_URL: env.OPENCODE_BASE_URL || process.env.OPENCODE_BASE_URL || "https://opencode.ai/zen/go/v1",
     OPENAI_API_KEY: env.OPENAI_API_KEY || process.env.OPENAI_API_KEY,
     OPENCODE_API_KEY: env.OPENCODE_API_KEY || process.env.OPENCODE_API_KEY,
+    ELEVENLABS_API_KEY: env.ELEVENLABS_API_KEY || process.env.ELEVENLABS_API_KEY,
+    ELEVENLABS_VOICE_ID: env.ELEVENLABS_VOICE_ID || process.env.ELEVENLABS_VOICE_ID,
     STE_MODEL: "google/gemma-4-31b-it:free",
     STE_FALLBACK_MODEL: "deepseek/deepseek-v4-flash-0731:free",
     STE_USE_LLM: "1",
