@@ -26,8 +26,8 @@ export function AreaChart({ series, className }: { series: TrackPoint[]; classNa
       <svg viewBox={`0 0 ${width} ${height}`} className="h-[220px] w-full" preserveAspectRatio="none" aria-hidden>
         <defs>
           <linearGradient id="views-fill" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="var(--line)" stopOpacity="0.22" />
-            <stop offset="100%" stopColor="var(--line)" stopOpacity="0.02" />
+            <stop offset="0%" stopColor="#2f6bff" stopOpacity="0.2" />
+            <stop offset="100%" stopColor="#2f6bff" stopOpacity="0.02" />
           </linearGradient>
         </defs>
         {[0.25, 0.5, 0.75].map((slot) => (
@@ -42,9 +42,9 @@ export function AreaChart({ series, className }: { series: TrackPoint[]; classNa
           />
         ))}
         <path d={area} fill="url(#views-fill)" />
-        <path d={toPath("facebookViews")} fill="none" stroke="var(--line)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-        <path d={toPath("facebookAds")} fill="none" stroke="currentColor" strokeOpacity="0.45" strokeWidth="1.7" strokeLinejoin="round" />
-        <path d={toPath("facebookClicks")} fill="none" stroke="currentColor" strokeOpacity="0.22" strokeWidth="1.7" strokeLinejoin="round" />
+        <path d={toPath("facebookViews")} fill="none" stroke="#2f6bff" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        <path d={toPath("facebookAds")} fill="none" stroke="#38bdf8" strokeWidth="1.8" strokeLinejoin="round" />
+        <path d={toPath("facebookClicks")} fill="none" stroke="#f9a8d4" strokeWidth="1.8" strokeLinejoin="round" />
         {ticks.map((item) => {
           const index = series.indexOf(item)
           return (
@@ -55,9 +55,9 @@ export function AreaChart({ series, className }: { series: TrackPoint[]; classNa
         })}
       </svg>
       <div className="mt-1 flex flex-wrap gap-4 px-1 text-[12px] text-muted-foreground">
-        <Legend color="bg-foreground/40" label="Clique no anúncio" />
-        <Legend color="bg-line" label="Page views" />
-        <Legend color="bg-foreground/20" label="Clique no Telegram" />
+        <Legend color="bg-sky-400" label="Clique no anúncio" />
+        <Legend color="bg-primary" label="Page views" />
+        <Legend color="bg-pink-300" label="Clique no Telegram" />
       </div>
     </div>
   )

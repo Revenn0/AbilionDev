@@ -18,14 +18,15 @@ export function KpiCard({
   spark?: number[]
 }) {
   return (
-    <article className="surface p-5">
-      <p className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
+    <article className="surface px-5 py-4">
+      <p className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+        <span className="size-1.5 rounded-full bg-slate-300" />
         {label}
         {live ? <i className="size-1.5 rounded-full bg-success" /> : null}
       </p>
       <div className="mt-3 flex items-end justify-between gap-3">
         <div>
-          <p className="text-[28px] font-medium tracking-[-0.04em] tabular-nums">{value}</p>
+          <p className="text-[26px] font-medium tracking-[-0.04em] tabular-nums">{value}</p>
           <p className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
             <span>{hint}</span>
             {delta !== undefined ? (

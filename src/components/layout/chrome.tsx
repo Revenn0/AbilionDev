@@ -32,8 +32,8 @@ export function FilterChip({
   onClick?: () => void
 }) {
   const className = cn(
-    "inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[12.5px]",
-    active ? "bg-card text-foreground" : "bg-card/70 text-muted-foreground",
+    "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12.5px]",
+    active ? "border-border bg-card text-foreground shadow-sm" : "border-transparent bg-muted text-muted-foreground",
     onClick && "cursor-pointer hover:text-foreground"
   )
   if (onClick) {
@@ -61,11 +61,11 @@ export function StatusPill({
   return (
     <span
       className={cn(
-        "inline-flex h-6 items-center rounded-full px-2.5 text-[11.5px] font-medium",
+        "inline-flex h-6 items-center rounded-full border border-transparent px-2.5 text-[11.5px] font-medium",
         tone === "success" && "bg-success/15 text-success",
         tone === "warn" && "bg-chart-4/15 text-chart-4",
         tone === "danger" && "bg-destructive/15 text-destructive",
-        tone === "muted" && "bg-muted text-muted-foreground"
+        tone === "muted" && "border border-border bg-card text-muted-foreground"
       )}
     >
       {children}

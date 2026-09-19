@@ -135,6 +135,7 @@ export function GlobePulse({ markers = [], className = "", speed = 0.003 }: Glob
       canvas.style.cssText = "display:block;width:100%;height:100%;opacity:0;transition:opacity .45s ease"
       host.appendChild(canvas)
       const width = host.offsetWidth
+      const night = document.documentElement.classList.contains("dark")
       try {
         globe = createGlobe(canvas, {
           devicePixelRatio: Math.min(window.devicePixelRatio || 1, 2),
@@ -142,20 +143,20 @@ export function GlobePulse({ markers = [], className = "", speed = 0.003 }: Glob
           height: width,
           phi,
           theta: baseTheta,
-          dark: 1,
-          diffuse: 1.5,
+          dark: night ? 1 : 0,
+          diffuse: night ? 1.5 : 1.15,
           mapSamples: 18000,
-          mapBrightness: 8,
-          baseColor: [0.42, 0.42, 0.42],
-          markerColor: [0.2, 0.8, 0.9],
-          glowColor: [0.06, 0.08, 0.1],
+          mapBrightness: night ? 8 : 3.4,
+          baseColor: night ? [0.42, 0.42, 0.42] : [0.7, 0.76, 0.88],
+          markerColor: night ? [0.2, 0.8, 0.9] : [0.18, 0.42, 1],
+          glowColor: night ? [0.06, 0.08, 0.1] : [0.957, 0.961, 0.969],
           markerElevation: 0,
           markers: toCobeMarkers(markersRef.current),
           arcs: toCobeArcs(markersRef.current),
-          arcColor: [0.3, 0.85, 0.95],
+          arcColor: night ? [0.3, 0.85, 0.95] : [0.18, 0.42, 1],
           arcWidth: 0.45,
           arcHeight: 0.22,
-          opacity: 0.82,
+          opacity: night ? 0.82 : 0.96,
           scale: 1.18,
           offset: [0, 18],
         })
@@ -229,9 +230,9 @@ export function GlobePulse({ markers = [], className = "", speed = 0.003 }: Glob
           </div>
         ))}
       </div>
-      {!ready && !failed ? <div className="absolute inset-0 rounded-full bg-black/40" /> : null}
+      {!ready && !failed ? <div className="absolute inset-0 rounded-full bg-muted/80" /> : null}
       {failed ? (
-        <p className="absolute inset-0 grid place-items-center px-6 text-center text-[13px] text-zinc-400">
+        <p className="absolute inset-0 grid place-items-center px-6 text-center text-[13px] text-muted-foreground">
           O globo precisa de WebGL neste browser.
         </p>
       ) : null}

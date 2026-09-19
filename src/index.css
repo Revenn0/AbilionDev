@@ -57,46 +57,46 @@
 
 :root {
   color-scheme: light;
-  --background: #ececee;
-  --foreground: #111113;
+  --background: #f4f5f7;
+  --foreground: #0f172a;
   --card: #ffffff;
-  --card-foreground: #111113;
+  --card-foreground: #0f172a;
   --popover: #ffffff;
-  --popover-foreground: #111113;
-  --primary: #111113;
-  --primary-foreground: #f6f6f7;
-  --secondary: #f3f3f5;
-  --secondary-foreground: #111113;
-  --muted: #f3f3f5;
-  --muted-foreground: #6d6d74;
-  --accent: #f3f3f5;
-  --accent-foreground: #111113;
+  --popover-foreground: #0f172a;
+  --primary: #2f6bff;
+  --primary-foreground: #ffffff;
+  --secondary: #eef1f6;
+  --secondary-foreground: #0f172a;
+  --muted: #eef1f6;
+  --muted-foreground: #64748b;
+  --accent: #eef1f6;
+  --accent-foreground: #0f172a;
   --destructive: oklch(0.55 0.2 25);
-  --border: rgb(17 17 19 / 0.06);
-  --input: #e4e4e7;
-  --ring: #111113;
-  --chart-1: #111113;
-  --chart-2: #22c55e;
-  --chart-3: #5b8cff;
+  --border: rgb(15 23 42 / 0.08);
+  --input: #e2e8f0;
+  --ring: #2f6bff;
+  --chart-1: #2f6bff;
+  --chart-2: #38bdf8;
+  --chart-3: #a78bfa;
   --chart-4: #eab308;
   --chart-5: oklch(0.55 0.2 25);
-  --radius: 1.35rem;
+  --radius: 1.1rem;
   --sidebar: #ffffff;
-  --sidebar-foreground: #111113;
-  --sidebar-primary: #111113;
-  --sidebar-primary-foreground: #f6f6f7;
-  --sidebar-accent: #f3f3f5;
-  --sidebar-accent-foreground: #111113;
-  --sidebar-border: transparent;
-  --sidebar-ring: #111113;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: #2f6bff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f4f5f7;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: rgb(15 23 42 / 0.08);
+  --sidebar-ring: #2f6bff;
   --forecast: #7c6fd4;
-  --forecast-foreground: #111113;
+  --forecast-foreground: #0f172a;
   --success: #16a34a;
   --leak: oklch(0.55 0.18 18);
-  --canvas: #f4f4f6;
+  --canvas: #f4f5f7;
   --whatsapp: #25d366;
-  --line: #3b82f6;
-  --raise: rgb(0 0 0 / 0.04);
+  --line: #2f6bff;
+  --raise: rgb(15 23 42 / 0.04);
   --node: #ffffff;
 }
 
@@ -223,8 +223,9 @@
   }
   .surface {
     background: var(--card);
-    border: 0;
+    border: 1px solid var(--border);
     border-radius: 22px;
+    box-shadow: 0 10px 28px -22px rgb(15 23 42 / 0.22);
   }
   .dark .surface {
     background: var(--card);

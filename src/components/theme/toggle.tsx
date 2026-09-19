@@ -17,7 +17,7 @@ export function ThemeToggle({
     setReady(true)
   }, [])
 
-  const dark = !ready || resolvedTheme !== "light"
+  const dark = ready && resolvedTheme === "dark"
   const label = dark ? "Tema claro" : "Tema escuro"
 
   return (

@@ -6,6 +6,7 @@ import { KpiCard } from "@/components/analytics/kpi-card"
 import { RankList } from "@/components/analytics/rank-list"
 import { VisitorGlobe } from "@/components/analytics/visitor-globe"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
+import { StudioPanel } from "@/components/layout/studio"
 import { funnelFrom, periodDelta, splitSeries } from "@/lib/analytics-view"
 import { useStore } from "@/lib/store"
 import { facebookOf, formatPercent, formatSession } from "@/lib/track"
@@ -29,6 +30,9 @@ export function AnalyticsPage() {
     <div className="h-full overflow-y-auto">
       <div className="page-shell">
         <PageChrome icon={ChartNoAxesCombined} title="Analytics">
+          <span className="inline-flex h-8 items-center rounded-full border border-border bg-card px-3 text-[12px] font-medium shadow-sm">
+            Visual
+          </span>
           <StatusPill tone={status === "ok" ? "success" : status === "error" ? "danger" : "muted"}>
             {status === "ok" ? "Ao vivo · 30 dias" : status === "error" ? "Sem leitura" : "A carregar"}
           </StatusPill>
@@ -81,22 +85,20 @@ export function AnalyticsPage() {
           />
         </section>
 
-        <section className="surface p-6">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <p className="text-[12.5px] text-muted-foreground">30 dias</p>
-              <p className="mt-2 text-[32px] font-medium tracking-[-0.04em] tabular-nums">{facebook.pageViews || summary.views}</p>
-            </div>
-            <p className="text-[12px] text-muted-foreground">Anúncio, page view e clique no Telegram — linhas do Facebook, sem misturar /start</p>
-          </div>
+        <StudioPanel
+          eyebrow="30 dias"
+          title="Page views do Facebook"
+          hint="Anúncio, page view e clique no Telegram — linhas do Facebook, sem misturar /start."
+        >
+          <p className="mb-4 text-[32px] font-medium tracking-[-0.04em] tabular-nums">{facebook.pageViews || summary.views}</p>
           {empty ? (
-            <p className="mt-10 text-[13px] text-muted-foreground">
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
               Sem visitas ainda. Abre /l com fbclid ou cola o pixel. O Facebook conta anúncio, page view e botão à parte.
             </p>
           ) : (
-            <AreaChart series={summary.series} className="mt-6" />
+            <AreaChart series={summary.series} />
           )}
-        </section>
+        </StudioPanel>
 
         <section className="grid gap-3 lg:grid-cols-2">
           <RankList title="Campanha / origem" rows={summary.referrers} empty="Sem origem ainda." />

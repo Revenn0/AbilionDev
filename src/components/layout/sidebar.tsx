@@ -47,8 +47,8 @@ function NavLink({
       className={cn(
         "flex h-9 w-full items-center rounded-full px-2.5 text-[13px] font-medium",
         active
-          ? "bg-sidebar-accent text-sidebar-foreground"
-          : "text-muted-foreground hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"
+          ? "bg-sidebar-accent text-sidebar-foreground shadow-sm"
+          : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
       )}
     >
       <Icon className="size-4 shrink-0" strokeWidth={1.75} />
@@ -80,10 +80,10 @@ export function Sidebar({
       className={cn(
         "relative z-20 h-full shrink-0",
         "transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-        expanded ? "w-[236px]" : "w-[76px]"
+        expanded ? "w-[240px]" : "w-[76px]"
       )}
     >
-      <aside className="flex h-full w-full flex-col overflow-hidden rounded-[28px] bg-sidebar">
+      <aside className="flex h-full w-full flex-col overflow-hidden border-r border-border bg-sidebar">
         <div className="flex h-14 shrink-0 items-center gap-2.5 px-3">
           <LogoMark className="size-5 shrink-0" />
           <p

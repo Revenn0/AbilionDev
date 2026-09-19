@@ -1,62 +1,67 @@
 import { Megaphone, MessagesSquare, MousePointerClick, PanelsTopLeft } from "lucide-react"
+import { StudioMetric, StudioPanel, type StudioTone } from "@/components/layout/studio"
 import { formatPercent } from "@/lib/track"
 import { stepDrop, type FunnelStep } from "@/lib/analytics-view"
 
-const ICONS = {
-  ads: Megaphone,
-  landing: PanelsTopLeft,
-  button: MousePointerClick,
-  chat: MessagesSquare,
-} as const
+const META: Record<FunnelStep["id"], { icon: typeof Megaphone; tone: StudioTone }> = {
+  ads: { icon: Megaphone, tone: "blue" },
+  landing: { icon: PanelsTopLeft, tone: "sky" },
+  button: { icon: MousePointerClick, tone: "pink" },
+  chat: { icon: MessagesSquare, tone: "emerald" },
+}
 
 export function FunnelFlow({ steps }: { steps: FunnelStep[] }) {
   const peak = Math.max(...steps.map((item) => item.value), 1)
   return (
-    <section className="surface p-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-[12.5px] text-muted-foreground">Funil Facebook</p>
-          <p className="mt-2 text-[22px] font-medium tracking-[-0.03em]">Anúncio → page view → botão → chat</p>
-        </div>
-        <p className="max-w-xs text-right text-[12px] text-muted-foreground">
-          Clique no anúncio, page view e botão do Telegram entram em colunas diferentes.
-        </p>
-      </div>
-
-      <div className="mt-6 hidden md:grid md:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] md:items-stretch md:gap-2">
+    <StudioPanel
+      eyebrow="Funil Facebook"
+      title="Anúncio → page view → botão → chat"
+      hint="O mesmo caminho do quadro: Ads, landing, Telegram e conversa iniciada."
+    >
+      <div className="hidden md:grid md:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] md:items-stretch md:gap-1">
         {steps.map((step, index) => {
           const prev = steps[index - 1]
           const drop = prev ? stepDrop(step.value, prev.value) : null
-          const Icon = ICONS[step.id]
+          const meta = META[step.id]
+          const Icon = meta.icon
           return (
             <div key={step.id} className="contents">
               {index > 0 ? (
-                <div className="flex flex-col items-center justify-center px-1 text-[11.5px] text-muted-foreground">
+                <div className="flex flex-col items-center justify-center px-1 text-[11px] text-muted-foreground">
                   <span className="tabular-nums">{drop === null ? "—" : formatPercent(drop)}</span>
-                  <span className="mt-2 h-px w-8 bg-border" />
+                  <span className="mt-2 h-px w-8 bg-sky-200" />
                 </div>
               ) : null}
-              <article className="min-w-0 rounded-[18px] bg-muted/60 px-4 py-4">
-                <p className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
-                  <Icon className="size-3.5" strokeWidth={1.75} />
-                  {step.label}
-                </p>
-                <p className="mt-3 text-[28px] font-medium tracking-[-0.04em] tabular-nums">{step.value}</p>
-                <p className="mt-1 text-[12px] text-muted-foreground">{step.hint}</p>
-                <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-foreground/8">
-                  <div className="h-full rounded-full bg-line" style={{ width: `${Math.max(step.value ? 8 : 0, (step.value / peak) * 100)}%` }} />
-                </div>
-              </article>
+              <StudioMetric
+                title={step.label}
+                tone={meta.tone}
+                value={step.value}
+                hint={step.hint}
+                footer={
+                  <div className="mt-3">
+                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-primary"
+                        style={{ width: `${Math.max(step.value ? 8 : 0, (step.value / peak) * 100)}%` }}
+                      />
+                    </div>
+                    <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <Icon className="size-3.5" strokeWidth={1.75} />
+                      Passo {index + 1}
+                    </p>
+                  </div>
+                }
+              />
             </div>
           )
         })}
       </div>
 
-      <ol className="mt-6 space-y-3 md:hidden">
+      <ol className="space-y-3 md:hidden">
         {steps.map((step, index) => {
           const prev = steps[index - 1]
           const drop = prev ? stepDrop(step.value, prev.value) : null
-          const Icon = ICONS[step.id]
+          const meta = META[step.id]
           return (
             <li key={step.id}>
               {index > 0 ? (
@@ -64,18 +69,11 @@ export function FunnelFlow({ steps }: { steps: FunnelStep[] }) {
                   ↓ {drop === null ? "—" : formatPercent(drop)}
                 </p>
               ) : null}
-              <article className="rounded-[18px] bg-muted/60 px-4 py-4">
-                <p className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
-                  <Icon className="size-3.5" strokeWidth={1.75} />
-                  {step.label}
-                </p>
-                <p className="mt-2 text-[24px] font-medium tabular-nums">{step.value}</p>
-                <p className="mt-1 text-[12px] text-muted-foreground">{step.hint}</p>
-              </article>
+              <StudioMetric title={step.label} tone={meta.tone} value={step.value} hint={step.hint} />
             </li>
           )
         })}
       </ol>
-    </section>
+    </StudioPanel>
   )
 }

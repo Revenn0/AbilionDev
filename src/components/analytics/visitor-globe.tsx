@@ -1,5 +1,6 @@
 import { useMemo } from "react"
 import { GlobePulse } from "@/components/ui/cobe-globe-pulse"
+import { StudioPanel } from "@/components/layout/studio"
 import { markersFromGeos, mergeGlobeGeos } from "@/lib/analytics-view"
 import type { Lead } from "@/lib/types"
 import type { TrackGeo } from "@/lib/track"
@@ -20,46 +21,39 @@ export function VisitorGlobe({
   const people = markers.reduce((total, item) => total + item.count, 0)
 
   return (
-    <section className={cn("surface overflow-hidden", className)}>
-      <div className="flex items-start justify-between gap-3 px-6 pt-6">
-        <div>
-          <p className="text-[12.5px] text-muted-foreground">Onde estão</p>
-          <p className="mt-2 text-[22px] font-medium tracking-[-0.03em]">Visitantes no mapa</p>
-        </div>
-        <p className="text-right text-[12px] text-muted-foreground">
-          {live ? `${people} ${people === 1 ? "visitante" : "visitantes"} · ${markers.length} ${markers.length === 1 ? "lugar" : "lugares"}` : "Sem geo ainda"}
-          <span className="mt-1 block">Arrasta para girar</span>
-        </p>
-      </div>
-      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_minmax(220px,280px)]">
-        <div className="grid place-items-center bg-black px-2 py-3 sm:px-4 sm:py-4">
-          <div className="aspect-square w-full max-w-[420px]">
-            <GlobePulse markers={markers} />
-          </div>
-        </div>
-        <div className="border-t border-border px-6 py-5 lg:border-t-0 lg:border-l">
-          {live ? (
-            <ul className="space-y-3 text-[13px]">
-              {markers.slice(0, 10).map((item, index) => (
-                <li key={item.id} className="flex items-center justify-between gap-3">
-                  <span className="flex min-w-0 items-center gap-2">
-                    <i className="grid size-5 shrink-0 place-items-center rounded-full bg-muted text-[10px] font-medium">
-                      {index + 1}
-                    </i>
-                    <span className="truncate font-medium">{item.label}</span>
-                  </span>
-                  <span className="tabular-nums text-muted-foreground">{item.count}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-[13px] leading-relaxed text-muted-foreground">
-              O pixel ainda não gravou país ou UF. Quando a visita chegar, o ponto aparece no globo e o estado fica nesta
-              lista.
-            </p>
-          )}
+    <StudioPanel
+      className={className}
+      eyebrow="Onde estão"
+      title="Visitantes no mapa"
+      hint={live ? `${people} ${people === 1 ? "visitante" : "visitantes"} · ${markers.length} ${markers.length === 1 ? "lugar" : "lugares"}. Arrasta para girar.` : "Sem geo ainda. Arrasta para girar."}
+      bodyClassName="grid gap-0 p-0 pt-4 lg:grid-cols-[minmax(0,1fr)_minmax(220px,280px)]"
+    >
+      <div className="grid place-items-center bg-muted/50 px-2 py-3 sm:px-4 sm:py-4">
+        <div className="aspect-square w-full max-w-[420px]">
+          <GlobePulse markers={markers} />
         </div>
       </div>
-    </section>
+      <div className={cn("border-t border-border px-5 py-5 lg:border-t-0 lg:border-l")}>
+        {live ? (
+          <ul className="space-y-3 text-[13px]">
+            {markers.slice(0, 10).map((item, index) => (
+              <li key={item.id} className="flex items-center justify-between gap-3">
+                <span className="flex min-w-0 items-center gap-2">
+                  <i className="grid size-5 shrink-0 place-items-center rounded-full border border-border bg-muted text-[10px] font-medium">
+                    {index + 1}
+                  </i>
+                  <span className="truncate font-medium">{item.label}</span>
+                </span>
+                <span className="tabular-nums text-muted-foreground">{item.count}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-[13px] leading-relaxed text-muted-foreground">
+            O pixel ainda não gravou país ou UF. Quando a visita chegar, o ponto aparece no globo e o estado fica nesta lista.
+          </p>
+        )}
+      </div>
+    </StudioPanel>
   )
 }
