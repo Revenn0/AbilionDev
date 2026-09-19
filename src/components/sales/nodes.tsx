@@ -53,13 +53,19 @@ function StudioCard({
       >
         <span className="block truncate">{title}</span>
         {target ? (
-          <Handle type="target" position={Position.Left} className={cn("!-left-1.5 !size-3 !border-2 !border-white", skin.handle)} />
+          <Handle
+            type="target"
+            position={Position.Left}
+            style={{ top: 14 }}
+            className={cn("!-left-1.5 !size-3 !border-2 !border-white", skin.handle)}
+          />
         ) : null}
         {source ? (
           <Handle
             type="source"
             id={sourceId}
             position={Position.Right}
+            style={{ top: 14 }}
             className={cn("!-right-1.5 !size-3 !border-2 !border-white", skin.handle)}
           />
         ) : null}
@@ -101,10 +107,7 @@ export function EntryNode({ data, selected }: NodeProps<SalesCanvasNode>) {
     data.entryTrigger === "popup" ? "Popup do mini curso" : data.entryTrigger === "group_join" ? "Join no grupo" : data.entryTrigger === "start" ? "/start no Telegram" : "Qualquer entrada"
   return (
     <StudioCard title={data.title || "Entrada"} tone="emerald" selected={selected}>
-      <div className="space-y-2">
-        <Field label="Quando">{trigger}</Field>
-        <Field label="Runtime">O canal começa aqui. A Sté só fala se o quadro deixar.</Field>
-      </div>
+      <Field label="Quando">{trigger}</Field>
     </StudioCard>
   )
 }
