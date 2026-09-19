@@ -1,18 +1,24 @@
 import type { TrackPoint } from "@/lib/track"
 import { cn } from "@/lib/utils"
 
+type ChartKey = "facebookAds" | "facebookViews" | "facebookClicks"
+
+function seriesValue(item: TrackPoint, key: ChartKey) {
+  return item[key] ?? 0
+}
+
 export function AreaChart({ series, className }: { series: TrackPoint[]; className?: string }) {
   const width = 920
   const height = 220
   const pad = { top: 16, right: 8, bottom: 26, left: 4 }
   const innerW = width - pad.left - pad.right
   const innerH = height - pad.top - pad.bottom
-  const max = Math.max(...series.flatMap((item) => [item.views, item.clicks, item.telegrams]), 1)
+  const max = Math.max(...series.flatMap((item) => [seriesValue(item, "facebookAds"), seriesValue(item, "facebookViews"), seriesValue(item, "facebookClicks")]), 1)
   const x = (index: number) => pad.left + (index / Math.max(series.length - 1, 1)) * innerW
   const y = (value: number) => pad.top + innerH - (value / max) * innerH
-  const toPath = (key: keyof Pick<TrackPoint, "views" | "clicks" | "telegrams">) =>
-    series.map((item, index) => `${index === 0 ? "M" : "L"}${x(index)},${y(item[key])}`).join(" ")
-  const area = `${toPath("views")} L${x(series.length - 1)},${y(0)} L${x(0)},${y(0)} Z`
+  const toPath = (key: ChartKey) =>
+    series.map((item, index) => `${index === 0 ? "M" : "L"}${x(index)},${y(seriesValue(item, key))}`).join(" ")
+  const area = `${toPath("facebookViews")} L${x(series.length - 1)},${y(0)} L${x(0)},${y(0)} Z`
   const ticks = series.filter((_, index) => index === 0 || index === series.length - 1 || index % 7 === 0)
 
   return (
@@ -36,9 +42,9 @@ export function AreaChart({ series, className }: { series: TrackPoint[]; classNa
           />
         ))}
         <path d={area} fill="url(#views-fill)" />
-        <path d={toPath("views")} fill="none" stroke="var(--line)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-        <path d={toPath("clicks")} fill="none" stroke="currentColor" strokeOpacity="0.38" strokeWidth="1.7" strokeLinejoin="round" />
-        <path d={toPath("telegrams")} fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="1.7" strokeLinejoin="round" />
+        <path d={toPath("facebookViews")} fill="none" stroke="var(--line)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        <path d={toPath("facebookAds")} fill="none" stroke="currentColor" strokeOpacity="0.45" strokeWidth="1.7" strokeLinejoin="round" />
+        <path d={toPath("facebookClicks")} fill="none" stroke="currentColor" strokeOpacity="0.22" strokeWidth="1.7" strokeLinejoin="round" />
         {ticks.map((item) => {
           const index = series.indexOf(item)
           return (
@@ -49,9 +55,9 @@ export function AreaChart({ series, className }: { series: TrackPoint[]; classNa
         })}
       </svg>
       <div className="mt-1 flex flex-wrap gap-4 px-1 text-[12px] text-muted-foreground">
+        <Legend color="bg-foreground/40" label="Clique no anúncio" />
         <Legend color="bg-line" label="Page views" />
-        <Legend color="bg-foreground/40" label="Clique no botão" />
-        <Legend color="bg-foreground/20" label="/start" />
+        <Legend color="bg-foreground/20" label="Clique no Telegram" />
       </div>
     </div>
   )

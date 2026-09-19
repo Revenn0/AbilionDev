@@ -21,7 +21,7 @@ function phiFromLng(lng: number) {
 }
 
 function thetaFromLat(lat: number) {
-  return (lat * Math.PI) / 180 * 0.45
+  return (lat * Math.PI) / 180 * 0.62
 }
 
 const BRAZIL_PHI = phiFromLng(-47.9)
@@ -144,18 +144,20 @@ export function GlobePulse({ markers = [], className = "", speed = 0.003 }: Glob
           theta: baseTheta,
           dark: 1,
           diffuse: 1.5,
-          mapSamples: 16000,
-          mapBrightness: 10,
-          baseColor: [0.5, 0.5, 0.5],
+          mapSamples: 18000,
+          mapBrightness: 8,
+          baseColor: [0.42, 0.42, 0.42],
           markerColor: [0.2, 0.8, 0.9],
-          glowColor: [0.08, 0.1, 0.12],
+          glowColor: [0.06, 0.08, 0.1],
           markerElevation: 0,
           markers: toCobeMarkers(markersRef.current),
           arcs: toCobeArcs(markersRef.current),
           arcColor: [0.3, 0.85, 0.95],
-          arcWidth: 0.5,
-          arcHeight: 0.25,
-          opacity: 0.7,
+          arcWidth: 0.45,
+          arcHeight: 0.22,
+          opacity: 0.82,
+          scale: 1.18,
+          offset: [0, 18],
         })
       } catch {
         setFailed(true)
@@ -170,6 +172,8 @@ export function GlobePulse({ markers = [], className = "", speed = 0.003 }: Glob
           theta: baseTheta + thetaOffsetRef.current + dragOffset.current.theta,
           markers: toCobeMarkers(markersRef.current),
           arcs: toCobeArcs(markersRef.current),
+          scale: 1.18,
+          offset: [0, 18],
         })
         syncPins()
         frame = requestAnimationFrame(tick)
@@ -222,7 +226,6 @@ export function GlobePulse({ markers = [], className = "", speed = 0.003 }: Glob
             <span className="globe-ring" style={{ animationDelay: `${marker.delay}s` }} />
             <span className="globe-ring" style={{ animationDelay: `${marker.delay + 0.45}s` }} />
             <span className="globe-ring" style={{ animationDelay: `${marker.delay + 0.9}s` }} />
-            {marker.label ? <span className="globe-label">{marker.label}</span> : null}
           </div>
         ))}
       </div>

@@ -31,9 +31,9 @@ export function VisitorGlobe({
           <span className="mt-1 block">Arrasta para girar</span>
         </p>
       </div>
-      <div className="grid gap-0 lg:grid-cols-[minmax(0,1.15fr)_minmax(240px,0.85fr)]">
-        <div className="bg-black px-4 py-6 sm:px-8">
-          <div className="mx-auto w-full max-w-[520px]">
+      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_minmax(220px,280px)]">
+        <div className="grid place-items-center bg-black px-2 py-3 sm:px-4 sm:py-4">
+          <div className="aspect-square w-full max-w-[420px]">
             <GlobePulse markers={markers} />
           </div>
         </div>
@@ -54,8 +54,8 @@ export function VisitorGlobe({
             </ul>
           ) : (
             <p className="text-[13px] leading-relaxed text-muted-foreground">
-              O pixel ainda não gravou país ou UF. Quando a visita chegar, o ponto e o nome do estado aparecem em cima do
-              globo.
+              O pixel ainda não gravou país ou UF. Quando a visita chegar, o ponto aparece no globo e o estado fica nesta
+              lista.
             </p>
           )}
         </div>

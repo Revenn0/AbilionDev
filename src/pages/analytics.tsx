@@ -87,7 +87,7 @@ export function AnalyticsPage() {
               <p className="text-[12.5px] text-muted-foreground">30 dias</p>
               <p className="mt-2 text-[32px] font-medium tracking-[-0.04em] tabular-nums">{facebook.pageViews || summary.views}</p>
             </div>
-            <p className="text-[12px] text-muted-foreground">Page view, clique no botão e /start — linhas separadas</p>
+            <p className="text-[12px] text-muted-foreground">Anúncio, page view e clique no Telegram — linhas do Facebook, sem misturar /start</p>
           </div>
           {empty ? (
             <p className="mt-10 text-[13px] text-muted-foreground">
