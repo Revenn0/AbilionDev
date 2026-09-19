@@ -1,60 +1,94 @@
-import { Bell, Clock3, GitBranch, GitFork, Handshake, MessageSquare, Play, Tag, Zap } from "lucide-react"
+import { useMemo, useState } from "react"
+import { Bell, ChevronDown, Clock3, GitBranch, GitFork, Handshake, MessageSquare, Play, Search, Tag, Zap } from "lucide-react"
 import { MetaGlyph, YouTubeGlyph } from "@/components/canvas/icons"
 import { SALES_CATALOG, SALES_GROUPS } from "./catalog"
 import type { SalesKind } from "@/lib/types"
+import { cn } from "@/lib/utils"
 
 function ItemIcon({ id, kind }: { id: string; kind: SalesKind }) {
-  if (id === "traffic-yt") return <YouTubeGlyph className="size-5" />
-  if (id === "traffic-meta") return <MetaGlyph className="size-5" />
-  if (kind === "landing") return <Zap className="size-4 text-sky-500" />
-  if (kind === "split") return <GitFork className="size-4 text-violet-600" />
-  if (kind === "entry") return <Play className="size-4 text-emerald-600" />
-  if (kind === "message") return <MessageSquare className="size-4 text-sky-600" />
-  if (kind === "wait") return <Clock3 className="size-4 text-orange-600" />
-  if (kind === "condition") return <GitBranch className="size-4 text-violet-500" />
-  if (kind === "handoff") return <Handshake className="size-4 text-pink-500" />
-  if (kind === "notify") return <Bell className="size-4 text-amber-500" />
-  if (kind === "tag") return <Tag className="size-4 text-slate-400" />
-  if (kind === "offer") return <Zap className="size-4 text-emerald-500" />
-  return <GitFork className="size-4 text-primary" />
+  if (id === "traffic-yt") return <YouTubeGlyph className="size-4" />
+  if (id === "traffic-meta") return <MetaGlyph className="size-4" />
+  if (kind === "landing") return <Zap className="size-3.5 text-sky-500" />
+  if (kind === "split") return <GitFork className="size-3.5 text-violet-500" />
+  if (kind === "entry") return <Play className="size-3.5 text-emerald-500" />
+  if (kind === "message") return <MessageSquare className="size-3.5 text-sky-500" />
+  if (kind === "wait") return <Clock3 className="size-3.5 text-orange-500" />
+  if (kind === "condition") return <GitBranch className="size-3.5 text-violet-500" />
+  if (kind === "handoff") return <Handshake className="size-3.5 text-pink-500" />
+  if (kind === "notify") return <Bell className="size-3.5 text-amber-500" />
+  if (kind === "tag") return <Tag className="size-3.5 text-slate-400" />
+  if (kind === "offer") return <Zap className="size-3.5 text-emerald-500" />
+  return <GitFork className="size-3.5 text-sky-500" />
 }
 
-export function SalesPalette() {
+export function SalesPalette({ className }: { className?: string }) {
+  const [query, setQuery] = useState("")
+  const [open, setOpen] = useState<Record<string, boolean>>({ map: true, flow: true })
+  const needle = query.trim().toLowerCase()
+  const groups = useMemo(
+    () =>
+      SALES_GROUPS.map((group) => ({
+        ...group,
+        items: SALES_CATALOG.filter((item) => item.group === group.id).filter((item) => {
+          if (!needle) return true
+          return [item.label, item.hint, item.kind].some((value) => value.toLowerCase().includes(needle))
+        }),
+      })).filter((group) => group.items.length),
+    [needle]
+  )
+
   return (
-    <div className="w-[220px] shrink-0 overflow-y-auto border-r border-border bg-card">
-      <div className="px-3.5 pt-4 pb-2">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Construtor</p>
-        <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">Mapa explica. Fluxo executa. Arraste o bloco.</p>
+    <aside className={cn("flex w-[240px] shrink-0 flex-col border-r border-slate-200 bg-white", className)}>
+      <div className="border-b border-slate-100 px-3.5 py-3">
+        <p className="text-[13px] font-medium text-slate-800">Componentes</p>
+        <label className="mt-2 flex items-center gap-2 rounded-lg border border-slate-200 bg-[#fbfcfd] px-2.5 py-1.5">
+          <Search className="size-3.5 text-slate-400" />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar bloco"
+            className="w-full bg-transparent text-[12.5px] text-slate-700 outline-none placeholder:text-slate-400"
+          />
+        </label>
       </div>
-      <div className="space-y-4 px-2.5 pb-4">
-        {SALES_GROUPS.map((group) => (
+      <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2 py-2">
+        {groups.map((group) => (
           <div key={group.id}>
-            <p className="mb-0.5 px-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{group.label}</p>
-            <p className="mb-1.5 px-1.5 text-[11px] text-muted-foreground">{group.hint}</p>
-            <div className="space-y-1">
-              {SALES_CATALOG.filter((item) => item.group === group.id).map((item) => (
-                <div
-                  key={item.id}
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData("application/abilion-sales", JSON.stringify(item))
-                    e.dataTransfer.effectAllowed = "copy"
-                  }}
-                  className="flex cursor-grab items-center gap-2.5 rounded-xl border border-transparent px-2 py-2 hover:border-white/10 hover:bg-white/5 active:cursor-grabbing"
-                >
-                  <div className="grid size-9 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/5">
-                    <ItemIcon id={item.id} kind={item.kind} />
+            <button
+              type="button"
+              onClick={() => setOpen((current) => ({ ...current, [group.id]: !current[group.id] }))}
+              className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400"
+            >
+              {group.label}
+              <ChevronDown className={cn("size-3.5 transition-transform", open[group.id] === false && "-rotate-90")} />
+            </button>
+            {open[group.id] !== false && (
+              <div className="space-y-0.5 pb-2">
+                {group.items.map((item) => (
+                  <div
+                    key={item.id}
+                    draggable
+                    onDragStart={(event) => {
+                      event.dataTransfer.setData("application/abilion-sales", JSON.stringify(item))
+                      event.dataTransfer.effectAllowed = "copy"
+                    }}
+                    className="flex cursor-grab items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-50 active:cursor-grabbing"
+                  >
+                    <div className="grid size-7 shrink-0 place-items-center rounded-md border border-slate-200 bg-white">
+                      <ItemIcon id={item.id} kind={item.kind} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-[12.5px] font-medium text-slate-800">{item.label}</p>
+                      <p className="truncate text-[11px] text-slate-400">{item.hint}</p>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-[13px] font-medium text-foreground">{item.label}</p>
-                    <p className="truncate text-[11px] text-muted-foreground">{item.hint}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         ))}
+        {groups.length === 0 && <p className="px-2 py-6 text-center text-[12px] text-slate-400">Nenhum bloco com esse nome.</p>}
       </div>
-    </div>
+    </aside>
   )
 }

@@ -12,11 +12,11 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
-import { AlignHorizontalSpaceAround, ArrowLeft, Pencil } from "lucide-react"
+import { AlignHorizontalSpaceAround, ArrowLeft, PanelsTopLeft, Pencil, SlidersHorizontal } from "lucide-react"
 import { Link } from "react-router-dom"
 import { toast } from "sonner"
+import { LogoMark } from "@/components/brand/logo"
 import { Button } from "@/components/ui/button"
-import { ThemeToggle } from "@/components/theme/toggle"
 import { RenameFunnelDialog } from "./rename-dialog"
 import { autoLayout, positionFromPointer } from "@/components/canvas/layout"
 import { cn } from "@/lib/utils"
@@ -28,7 +28,7 @@ import { salesNodeTypes, type SalesCanvasNode } from "./nodes"
 import { SalesPalette } from "./palette"
 import { FlowSimulator } from "./simulator"
 
-const SALES_BOX = { w: 420, h: 320 }
+const SALES_BOX = { w: 300, h: 220 }
 
 function toRf(funnel: Pick<SalesFunnel, "nodes" | "edges">, cursor?: string): { nodes: SalesCanvasNode[]; edges: Edge[] } {
   return {
@@ -44,7 +44,7 @@ function toRf(funnel: Pick<SalesFunnel, "nodes" | "edges">, cursor?: string): { 
       source: e.source,
       target: e.target,
       sourceHandle: e.sourceHandle,
-      type: "smoothstep",
+      type: "default",
     })),
   }
 }
@@ -60,6 +60,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
   const [rf, setRf] = useState<ReactFlowInstance<SalesCanvasNode, Edge> | null>(null)
   const [renameOpen, setRenameOpen] = useState(false)
   const [cursor, setCursor] = useState<string | undefined>()
+  const [mobilePanel, setMobilePanel] = useState<"none" | "blocks" | "props">("none")
   const keepDropSelection = useRef(false)
   const didFit = useRef(false)
 
@@ -105,7 +106,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
   const onConnect = useCallback(
     (c: Connection) => {
       if (readOnly) return
-      setEdges((eds) => addEdge({ ...c, sourceHandle: c.sourceHandle || "next", type: "smoothstep" }, eds))
+      setEdges((eds) => addEdge({ ...c, sourceHandle: c.sourceHandle || "next", type: "default" }, eds))
     },
     [readOnly, setEdges]
   )
@@ -132,51 +133,74 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
     keepDropSelection.current = true
     setNodes((nds) => [...nds.map((n) => ({ ...n, selected: false })), node])
     setSelected(node)
+    if (window.innerWidth < 768) setMobilePanel("props")
   }
 
   return (
-    <div className="flex h-full flex-col bg-background">
-      <header className="flex min-h-12 flex-wrap items-center gap-2 border-b border-border bg-background px-3">
-        <Button asChild variant="ghost" size="sm" className="h-8 rounded-full text-[12px] -ml-1">
-          <Link to="/fluxo">
-            <ArrowLeft className="size-3.5" /> Voltar
-          </Link>
-        </Button>
-        <p className="max-w-[240px] truncate text-[15px] font-semibold">{name}</p>
-        <Button
+    <div className="sales-studio flex h-full flex-col bg-[#f4f5f7] text-slate-900">
+      <header className="grid min-h-12 grid-cols-[1fr_auto_1fr] items-center gap-2 border-b border-slate-200 bg-white px-3">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <LogoMark className="size-6 shrink-0" />
+          <Button asChild variant="ghost" size="sm" className="h-8 rounded-full text-[12px] text-slate-600 -ml-0.5 hover:bg-slate-100">
+            <Link to="/fluxo">
+              <ArrowLeft className="size-3.5" /> Voltar
+            </Link>
+          </Button>
+          <div className="hidden rounded-full border border-slate-200 bg-[#f4f5f7] p-0.5 text-[11px] sm:flex">
+            <span className="rounded-full bg-white px-2.5 py-1 text-slate-900 shadow-sm">Visual</span>
+          </div>
+          <div className="flex rounded-full border border-slate-200 bg-[#f4f5f7] p-0.5 text-[11px]">
+            <button
+              type="button"
+              className={cn("rounded-full px-2.5 py-1", version === "draft" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500")}
+              onClick={() => setVersion("draft")}
+            >
+              Rascunho
+            </button>
+            <button
+              type="button"
+              disabled={!production}
+              className={cn("rounded-full px-2.5 py-1 disabled:opacity-40", version === "production" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500")}
+              onClick={() => setVersion("production")}
+            >
+              Produção
+            </button>
+          </div>
+        </div>
+        <button
           type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Alterar nome do funil"
-          title="Alterar nome"
           disabled={readOnly}
           onClick={() => setRenameOpen(true)}
+          className="flex max-w-[240px] items-center gap-1.5 truncate rounded-full border border-slate-200 bg-[#f4f5f7] px-3 py-1 text-[13px] font-medium text-slate-800"
+          aria-label="Alterar nome do funil"
+          title="Alterar nome"
         >
-          <Pencil className="size-3.5" />
-        </Button>
-        <span className="rounded-full bg-white/6 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">Fluxo da operação</span>
-        <div className="flex rounded-full border p-0.5 text-[11px]">
-          <button
-            type="button"
-            className={cn("rounded-full px-2.5 py-1", version === "draft" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}
-            onClick={() => setVersion("draft")}
+          <span className="truncate">{name}</span>
+          <Pencil className="size-3 shrink-0 text-slate-400" />
+        </button>
+        <div className="ml-auto flex items-center gap-1.5">
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="rounded-full text-slate-500 md:hidden"
+            aria-label="Componentes"
+            onClick={() => setMobilePanel((current) => (current === "blocks" ? "none" : "blocks"))}
           >
-            Rascunho
-          </button>
-          <button
-            type="button"
-            disabled={!production}
-            className={cn("rounded-full px-2.5 py-1", version === "production" ? "bg-emerald-600 text-white" : "text-muted-foreground")}
-            onClick={() => setVersion("production")}
+            <PanelsTopLeft className="size-4" />
+          </Button>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="rounded-full text-slate-500 md:hidden"
+            aria-label="Propriedades"
+            onClick={() => setMobilePanel((current) => (current === "props" ? "none" : "props"))}
           >
-            Produção
-          </button>
-        </div>
-        <div className="ml-auto flex gap-1.5">
+            <SlidersHorizontal className="size-4" />
+          </Button>
           <Button
             size="sm"
             variant="outline"
-            className="h-8 rounded-full text-[12px]"
+            className="hidden h-8 rounded-full border-slate-200 bg-white text-[12px] text-slate-700 hover:bg-slate-50 sm:inline-flex"
             disabled={readOnly}
             onClick={() => {
               setNodes((nds) => autoLayout(nds, edges, SALES_BOX))
@@ -189,7 +213,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
           <Button
             size="sm"
             variant="outline"
-            className="h-8 rounded-full text-[12px]"
+            className="hidden h-8 rounded-full border-slate-200 bg-white text-[12px] text-slate-700 hover:bg-slate-50 sm:inline-flex"
             disabled={readOnly}
             onClick={() => {
               persist()
@@ -200,7 +224,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
           </Button>
           <Button
             size="sm"
-            className="h-8 rounded-full text-[12px]"
+            className="h-8 rounded-full bg-[#2f6bff] text-[12px] text-white hover:bg-[#2458d6]"
             disabled={readOnly}
             onClick={() => {
               const draftNodes = nodes.map((n) => ({
@@ -233,18 +257,30 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
           >
             Publicar
           </Button>
-          <ThemeToggle />
         </div>
       </header>
       <div
-        className="flex min-h-0 flex-1"
+        className="relative flex min-h-0 flex-1"
         onDragOver={(e) => {
           e.preventDefault()
           e.dataTransfer.dropEffect = "copy"
         }}
         onDrop={onDrop}
       >
-        <SalesPalette />
+        {mobilePanel !== "none" && (
+          <button
+            type="button"
+            className="absolute inset-0 z-20 bg-slate-900/20 md:hidden"
+            aria-label="Fechar painel"
+            onClick={() => setMobilePanel("none")}
+          />
+        )}
+        <SalesPalette
+          className={cn(
+            "max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:shadow-xl",
+            mobilePanel !== "blocks" && "max-md:hidden"
+          )}
+        />
         <div className="relative min-w-0 flex-1">
           <ReactFlow
             nodes={
@@ -259,7 +295,15 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
             nodeTypes={salesNodeTypes}
             onInit={setRf}
             onSelectionChange={handleSelectionChange}
-            onNodeClick={(_, node) => setSelected(node as SalesCanvasNode)}
+            onNodeClick={(_, node) => {
+              setSelected(node as SalesCanvasNode)
+              if (window.innerWidth < 768) setMobilePanel("props")
+            }}
+            onPaneClick={() => {
+              setSelected(undefined)
+              if (window.innerWidth < 768) setMobilePanel("none")
+            }}
+            connectionLineStyle={{ stroke: "#93c5fd", strokeWidth: 1.6 }}
             nodesDraggable={!readOnly}
             nodesConnectable={!readOnly}
             onlyRenderVisibleElements
@@ -269,9 +313,9 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
             deleteKeyCode={readOnly ? [] : ["Delete"]}
             minZoom={0.2}
             maxZoom={1.5}
-            defaultEdgeOptions={{ style: { stroke: "#94A3B8", strokeWidth: 1.8 }, type: "smoothstep" }}
+            defaultEdgeOptions={{ style: { stroke: "#93c5fd", strokeWidth: 1.6 }, type: "default" }}
           >
-            <Background id="sales-dots" variant={BackgroundVariant.Dots} gap={28} size={1.2} color="#3a404c" />
+            <Background id="sales-dots" variant={BackgroundVariant.Dots} gap={22} size={1.1} color="#d4d7de" />
             <Controls showInteractive={false} />
           </ReactFlow>
           <FlowSimulator
@@ -295,23 +339,31 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
             onCursor={setCursor}
           />
           {!selected && version === "draft" && (
-            <p className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-border bg-card/90 px-3.5 py-1.5 text-[12px] text-muted-foreground shadow-sm max-md:hidden">
-              Arraste as falas da Sté · o publicado é o que ela diz no Telegram
+            <p className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white/90 px-3.5 py-1.5 text-[12px] text-slate-500 shadow-sm max-md:hidden">
+              Arraste um bloco · o publicado é o que a Sté diz no Telegram
             </p>
           )}
-          <SalesInspector
-            node={version === "draft" ? selected : undefined}
-            readOnly={readOnly}
-            onClose={() => setSelected(undefined)}
-            onChange={(id, data) => setNodes((nds) => nds.map((n) => (n.id === id ? { ...n, data } : n)))}
-            onDelete={() => {
-              if (!selected) return
-              setNodes((nds) => nds.filter((n) => n.id !== selected.id))
-              setEdges((eds) => eds.filter((e) => e.source !== selected.id && e.target !== selected.id))
-              setSelected(undefined)
-            }}
-          />
         </div>
+        <SalesInspector
+          node={selected}
+          readOnly={readOnly}
+          className={cn(
+            "max-md:absolute max-md:inset-y-0 max-md:right-0 max-md:z-30 max-md:shadow-xl",
+            mobilePanel !== "props" && "max-md:hidden"
+          )}
+          onClose={() => {
+            setSelected(undefined)
+            setMobilePanel("none")
+          }}
+          onChange={(id, data) => setNodes((nds) => nds.map((n) => (n.id === id ? { ...n, data } : n)))}
+          onDelete={() => {
+            if (!selected) return
+            setNodes((nds) => nds.filter((n) => n.id !== selected.id))
+            setEdges((eds) => eds.filter((e) => e.source !== selected.id && e.target !== selected.id))
+            setSelected(undefined)
+            setMobilePanel("none")
+          }}
+        />
       </div>
       <RenameFunnelDialog
         open={renameOpen}

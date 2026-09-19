@@ -85,14 +85,14 @@ export function FlowSimulator({
           <Play className="size-3.5" /> Testar fluxo
         </Button>
       ) : (
-        <div className="rounded-2xl border border-border bg-card/95 p-3 shadow-lg backdrop-blur-md">
+        <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_12px_32px_-20px_rgba(15,23,42,0.35)]">
           <div className="flex items-center justify-between gap-2">
             <p className="text-[12px] font-medium">Simulador</p>
             <Button variant="ghost" size="sm" className="h-7 rounded-full text-[11px]" onClick={() => setOpen(false)}>
               Fechar
             </Button>
           </div>
-          <p className="mt-1 text-[11px] text-muted-foreground">
+          <p className="mt-1 text-[11px] text-slate-400">
             {lead.nodeId ? `No passo · ${lead.stage}` : "Ainda sem entrada"} · {lead.temperature}
             {lead.waitUntil ? " · à espera" : ""}
           </p>
@@ -107,7 +107,7 @@ export function FlowSimulator({
             </Button>
           </div>
           {log.length > 0 && (
-            <ul className="mt-2 max-h-28 space-y-1 overflow-y-auto text-[11px] text-muted-foreground">
+            <ul className="mt-2 max-h-28 space-y-1 overflow-y-auto text-[11px] text-slate-400">
               {log.map((line, index) => (
                 <li key={`${line}-${index}`}>{line}</li>
               ))}

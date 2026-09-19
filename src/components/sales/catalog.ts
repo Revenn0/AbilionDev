@@ -1,4 +1,4 @@
-import { BANCA_FIXED, type SalesKind, type SalesNodeData } from "@/lib/types"
+import { BANCA_FIXED, type SalesKind, type SalesNodeData, type SteLine } from "@/lib/types"
 
 export type SalesGroup = "map" | "flow"
 
@@ -15,6 +15,21 @@ export const SALES_GROUPS: { id: SalesGroup; label: string; hint: string }[] = [
   { id: "map", label: "Mapa", hint: "Tráfego e campanha — não executa" },
   { id: "flow", label: "Fluxo", hint: "O que o canal corre de verdade" },
 ]
+
+export const STE_LINE_LABELS: { id: SteLine; label: string }[] = [
+  { id: "welcome", label: "Boas-vindas" },
+  { id: "course", label: "Minicurso" },
+  { id: "superbet", label: "Superbet" },
+  { id: "rescue", label: "Resgate cadastro" },
+  { id: "offer", label: "App / Premium" },
+  { id: "lives", label: "Horário das lives" },
+  { id: "remarketing", label: "Remarketing 7h" },
+  { id: "close", label: "Encerrar" },
+]
+
+export function steLineLabel(id?: SteLine) {
+  return STE_LINE_LABELS.find((item) => item.id === id)?.label ?? id ?? ""
+}
 
 export const SALES_CATALOG: SalesCatalogItem[] = [
   {

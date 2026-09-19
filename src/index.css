@@ -144,6 +144,61 @@
   --node: #252529;
 }
 
+.sales-studio {
+  color-scheme: light;
+  --background: #f4f5f7;
+  --foreground: #111113;
+  --card: #ffffff;
+  --card-foreground: #111113;
+  --popover: #ffffff;
+  --popover-foreground: #111113;
+  --primary: #2f6bff;
+  --primary-foreground: #ffffff;
+  --secondary: #eef1f6;
+  --secondary-foreground: #111113;
+  --muted: #eef1f6;
+  --muted-foreground: #64748b;
+  --accent: #eef1f6;
+  --accent-foreground: #111113;
+  --border: rgb(15 23 42 / 0.08);
+  --input: #e2e8f0;
+  --ring: #2f6bff;
+  --canvas: #f4f5f7;
+  --node: #ffffff;
+}
+
+.sales-studio .react-flow,
+.sales-studio .react-flow__background {
+  background: #f4f5f7 !important;
+}
+
+.sales-studio .react-flow__controls {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+.sales-studio .react-flow__controls-button {
+  background: #ffffff !important;
+  fill: #334155 !important;
+  border-bottom-color: #e2e8f0 !important;
+}
+
+.sales-studio .react-flow__edge-path,
+.sales-studio .react-flow__connection-path {
+  stroke: #93c5fd !important;
+}
+
+.sales-studio input,
+.sales-studio textarea {
+  background: #fbfcfd;
+  color: #0f172a;
+  border-color: #e2e8f0;
+}
+
+.sales-studio .react-flow__node.selected {
+  outline: none;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

@@ -1,145 +1,136 @@
+import type { ReactNode } from "react"
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react"
-import { Bell, Clock3, GitFork, GitBranch, Handshake, MessageSquare, Play, Tag, Zap } from "lucide-react"
-import { GoogleGlyph, InstagramGlyph, MetaGlyph, OrganicGlyph, YouTubeGlyph } from "@/components/canvas/icons"
+import { steLineLabel } from "./catalog"
 import type { SalesKind, SalesNodeData } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 export type SalesCanvasNode = Node<SalesNodeData, SalesKind>
 
-function ChannelGlyph({ channel, className = "size-8" }: { channel?: SalesNodeData["channel"]; className?: string }) {
-  if (channel === "instagram") return <InstagramGlyph className={className} />
-  if (channel === "youtube") return <YouTubeGlyph className={className} />
-  if (channel === "google") return <GoogleGlyph className={className} />
-  if (channel === "meta") return <MetaGlyph className={className} />
-  return <OrganicGlyph className={className} />
+type Tone = "sky" | "pink" | "orange" | "violet" | "emerald" | "amber" | "slate" | "blue"
+
+const TONE: Record<Tone, { pill: string; card: string; handle: string }> = {
+  sky: { pill: "border-sky-200 bg-sky-100 text-sky-900", card: "border-sky-200", handle: "!bg-sky-500" },
+  pink: { pill: "border-pink-200 bg-pink-100 text-pink-900", card: "border-pink-200", handle: "!bg-pink-500" },
+  orange: { pill: "border-orange-200 bg-orange-100 text-orange-900", card: "border-orange-200", handle: "!bg-orange-500" },
+  violet: { pill: "border-violet-200 bg-violet-100 text-violet-900", card: "border-violet-200", handle: "!bg-violet-500" },
+  emerald: { pill: "border-emerald-200 bg-emerald-100 text-emerald-900", card: "border-emerald-200", handle: "!bg-emerald-500" },
+  amber: { pill: "border-amber-200 bg-amber-100 text-amber-950", card: "border-amber-200", handle: "!bg-amber-500" },
+  slate: { pill: "border-slate-200 bg-slate-100 text-slate-800", card: "border-slate-200", handle: "!bg-slate-400" },
+  blue: { pill: "border-blue-200 bg-blue-100 text-blue-900", card: "border-blue-200", handle: "!bg-blue-500" },
 }
 
-function Card({
+function StudioCard({
+  title,
+  tone,
   selected,
   active,
+  width = "w-[280px]",
   children,
-  accent,
-  width = "w-[400px]",
+  target = true,
+  source = true,
+  sourceId = "next",
 }: {
+  title: string
+  tone: Tone
   selected?: boolean
   active?: boolean
-  children: React.ReactNode
-  accent?: string
   width?: string
+  children: ReactNode
+  target?: boolean
+  source?: boolean
+  sourceId?: string
 }) {
+  const skin = TONE[tone]
   return (
-    <div
-      className={cn(
-        width,
-        "rounded-2xl border border-border bg-card shadow-[0_18px_40px_-24px_rgba(0,0,0,0.55)]",
-        selected ? "border-primary ring-2 ring-primary/25" : "border-white/10",
-        active && "ring-2 ring-emerald-400/70 border-emerald-400"
-      )}
-      style={accent ? { boxShadow: `0 18px 40px -24px rgba(15,23,42,0.35), inset 0 -3px 0 ${accent}` } : undefined}
-    >
-      {children}
+    <div className={cn(width, "relative")}>
+      <div
+        className={cn(
+          "relative z-10 mx-5 rounded-full border px-3 py-1 text-center text-[12px] font-medium leading-5 shadow-sm",
+          skin.pill,
+          selected && "ring-2 ring-sky-400/50",
+          active && "ring-2 ring-emerald-400/70"
+        )}
+      >
+        <span className="block truncate">{title}</span>
+        {target ? (
+          <Handle type="target" position={Position.Left} className={cn("!-left-1.5 !size-3 !border-2 !border-white", skin.handle)} />
+        ) : null}
+        {source ? (
+          <Handle
+            type="source"
+            id={sourceId}
+            position={Position.Right}
+            className={cn("!-right-1.5 !size-3 !border-2 !border-white", skin.handle)}
+          />
+        ) : null}
+      </div>
+      <div className={cn("-mt-2.5 rounded-[22px] border bg-white px-3 pb-3 pt-5 shadow-[0_10px_28px_-18px_rgba(15,23,42,0.28)]", skin.card)}>
+        {children}
+      </div>
     </div>
   )
 }
 
-function Head({ icon, title, tone }: { icon: React.ReactNode; title: string; tone: string }) {
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex items-center gap-3 px-5 pt-4 pb-2">
-      <div className={cn("size-10 rounded-xl grid place-items-center", tone)}>{icon}</div>
-      <p className="text-[16px] font-semibold tracking-tight text-foreground">{title}</p>
+    <div className="space-y-1">
+      <p className="flex items-center gap-1.5 text-[10px] font-medium text-slate-400">
+        <span className="size-1.5 rounded-full bg-slate-300" />
+        {label}
+      </p>
+      <div className="rounded-lg border border-slate-200 bg-[#fbfcfd] px-2.5 py-1.5 text-[12px] leading-relaxed text-slate-700">
+        {children}
+      </div>
     </div>
-  )
-}
-
-function Next() {
-  return <p className="px-5 pb-4 pt-2 text-right text-[12px] text-muted-foreground">Próximo passo</p>
-}
-
-function LeftHandle() {
-  return <Handle type="target" position={Position.Left} className="!size-3.5 !border-2 !border-[#16181d] !bg-slate-400" />
-}
-
-function NextHandle() {
-  return (
-    <Handle
-      type="source"
-      id="next"
-      position={Position.Right}
-      className="!right-5 !bottom-5 !top-auto !size-3.5 !border-2 !border-[#16181d] !bg-primary"
-    />
   )
 }
 
 export function TrafficNode({ data, selected }: NodeProps<SalesCanvasNode>) {
   return (
-    <Card selected={selected} width="w-[300px]">
-      <div className="px-4 py-4 flex items-start gap-3">
-        <ChannelGlyph channel={data.channel} className="size-11 shrink-0" />
-        <div className="min-w-0 flex-1">
-          {data.tag && (
-            <span className="inline-flex rounded-full bg-white/8 px-2.5 py-0.5 text-[11px] font-semibold tracking-wide text-muted-foreground">
-              {data.tag}
-            </span>
-          )}
-          <p className="mt-2 text-[16px] font-semibold leading-snug text-foreground">{data.title}</p>
-          {data.url && <p className="mt-1 text-[13px] text-primary truncate">{data.url}</p>}
-        </div>
+    <StudioCard title={data.title || "Tráfego"} tone="blue" selected={selected} target={false}>
+      <div className="space-y-2">
+        <Field label="Canal">{data.tag || data.channel || "orgânico"}</Field>
+        {data.url ? <Field label="Destino">{data.url}</Field> : null}
       </div>
-      <Handle type="source" position={Position.Right} className="!size-3.5 !border-2 !border-[#16181d] !bg-slate-500" />
-    </Card>
+    </StudioCard>
   )
 }
 
 export function EntryNode({ data, selected }: NodeProps<SalesCanvasNode>) {
   const trigger =
-    data.entryTrigger === "popup" ? "Popup" : data.entryTrigger === "group_join" ? "Join no grupo" : data.entryTrigger === "start" ? "/start" : "Qualquer entrada"
+    data.entryTrigger === "popup" ? "Popup do mini curso" : data.entryTrigger === "group_join" ? "Join no grupo" : data.entryTrigger === "start" ? "/start no Telegram" : "Qualquer entrada"
   return (
-    <Card selected={selected} accent="#4ade80">
-      <Head icon={<Play className="size-5 text-emerald-300" />} title={data.title} tone="bg-emerald-400/10" />
-      <div className="mx-5 mb-1 rounded-xl border border-white/8 bg-white/4 p-4">
-        <p className="text-[15px] font-semibold text-foreground">{trigger}</p>
-        <p className="mt-1.5 text-[14px] leading-relaxed text-muted-foreground">O runtime começa aqui. Canal só transporta.</p>
+    <StudioCard title={data.title || "Entrada"} tone="emerald" selected={selected}>
+      <div className="space-y-2">
+        <Field label="Quando">{trigger}</Field>
+        <Field label="Runtime">O canal começa aqui. A Sté só fala se o quadro deixar.</Field>
       </div>
-      <Next />
-      <LeftHandle />
-      <NextHandle />
-    </Card>
+    </StudioCard>
   )
 }
 
 export function MessageNode({ data, selected }: NodeProps<SalesCanvasNode>) {
   return (
-    <Card selected={selected} accent="#38bdf8">
-      <Head icon={<MessageSquare className="size-5 text-sky-300" />} title={data.title} tone="bg-sky-400/10" />
-      <div className="mx-5 mb-1 rounded-xl border border-sky-400/20 bg-sky-400/8 p-4">
-        {data.steLine ? (
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-300">Sté · {data.steLine}</p>
-        ) : null}
-        <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-foreground">{data.body}</p>
-        {data.cta && (
-          <div className="mt-4 rounded-full bg-sky-500 text-white text-center text-[14px] font-semibold py-2.5">{data.cta}</div>
-        )}
-        {data.url && <p className="mt-2.5 truncate text-[13px] text-sky-300">{data.url}</p>}
+    <StudioCard title={data.title || "Mensagem"} tone="sky" selected={selected} width="w-[300px]">
+      <div className="space-y-2">
+        {data.steLine ? <Field label="Fala da Sté">{steLineLabel(data.steLine)}</Field> : null}
+        <Field label="Texto">
+          <span className="line-clamp-4 whitespace-pre-wrap">{data.body || "—"}</span>
+        </Field>
+        {data.cta ? <Field label="Botão">{data.cta}</Field> : null}
       </div>
-      <Next />
-      <LeftHandle />
-      <NextHandle />
-    </Card>
+    </StudioCard>
   )
 }
 
 export function WaitNode({ data, selected }: NodeProps<SalesCanvasNode>) {
   return (
-    <Card selected={selected} accent="#fb923c">
-      <Head icon={<Clock3 className="size-5 text-orange-300" />} title={data.title} tone="bg-orange-400/10" />
-      <div className="mx-5 mb-1 rounded-xl border border-orange-400/20 bg-orange-400/8 p-4">
-        <p className="text-[28px] font-semibold leading-none tracking-tight text-foreground">Espere {data.delayHours ?? 1} horas</p>
-        <p className="mt-2 text-[14px] text-muted-foreground">e avance no horário {data.delayWindow || "comercial"}</p>
+    <StudioCard title={data.title || "Espera"} tone="orange" selected={selected}>
+      <div className="space-y-2">
+        <Field label="Horas">{data.delayHours ?? 1} h</Field>
+        <Field label="Janela">{data.delayWindow || "comercial"}</Field>
       </div>
-      <Next />
-      <LeftHandle />
-      <NextHandle />
-    </Card>
+    </StudioCard>
   )
 }
 
@@ -153,132 +144,98 @@ export function ConditionNode({ data, selected }: NodeProps<SalesCanvasNode>) {
           ? `Campanha = ${data.conditionValue || "?"}`
           : "Print recebido?"
   return (
-    <Card selected={selected} accent="#a78bfa" width="w-[340px]">
-      <Head icon={<GitBranch className="size-5 text-violet-300" />} title={data.title} tone="bg-violet-400/10" />
-      <div className="mx-5 mb-4 rounded-xl border border-white/8 bg-white/4 p-4">
-        <p className="text-[15px] font-medium text-foreground">{label}</p>
-        <div className="mt-3 flex justify-between text-[12px] text-muted-foreground">
+    <StudioCard title={data.title || "Condição"} tone="violet" selected={selected} source={false}>
+      <div className="space-y-2">
+        <Field label="Pergunta">{label}</Field>
+        <div className="relative flex justify-between px-1 text-[11px] text-slate-400">
           <span>Não</span>
           <span>Sim</span>
+          <Handle type="source" id="no" position={Position.Bottom} className="!left-6 !size-3 !border-2 !border-white !bg-slate-400" />
+          <Handle type="source" id="yes" position={Position.Right} className="!size-3 !border-2 !border-white !bg-emerald-500" />
         </div>
       </div>
-      <LeftHandle />
-      <Handle type="source" id="no" position={Position.Bottom} className="!left-8 !size-3.5 !border-2 !border-[#16181d] !bg-slate-400" />
-      <Handle type="source" id="yes" position={Position.Right} className="!size-3.5 !border-2 !border-[#16181d] !bg-emerald-400" />
-    </Card>
+    </StudioCard>
   )
 }
 
 export function HandoffNode({ data, selected }: NodeProps<SalesCanvasNode>) {
   return (
-    <Card selected={selected} accent="#f472b6">
-      <Head icon={<Handshake className="size-5 text-pink-300" />} title={data.title} tone="bg-pink-400/10" />
-      <div className="mx-5 mb-1 rounded-xl border border-pink-400/20 bg-pink-400/8 p-4">
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-pink-200">
-          {data.steTalk === false ? "Sté calada" : "Sté fala este quadro"}
-        </p>
-        <p className="text-[15px] leading-relaxed text-foreground">{data.body || "Sté no 1:1. O fluxo pausa."}</p>
+    <StudioCard title={data.title || "Sté"} tone="pink" selected={selected}>
+      <div className="space-y-2">
+        <Field label="Agente">{data.steTalk === false ? "Sté calada" : "Sté fala este quadro"}</Field>
+        <Field label="Texto">
+          <span className="line-clamp-3">{data.body || "Sté no 1:1. O fluxo pausa."}</span>
+        </Field>
       </div>
-      <Next />
-      <LeftHandle />
-      <NextHandle />
-    </Card>
+    </StudioCard>
   )
 }
 
 export function NotifyNode({ data, selected }: NodeProps<SalesCanvasNode>) {
   return (
-    <Card selected={selected} accent="#facc15">
-      <Head icon={<Bell className="size-5 text-amber-200" />} title={data.title} tone="bg-amber-400/10" />
-      <div className="mx-5 mb-1 rounded-xl border border-amber-400/20 bg-amber-400/8 p-4">
-        <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-amber-200">
-          {data.notifyKind === "banca" ? "Banca" : "Ester"} · texto fixo
-        </p>
-        <p className="mt-2 text-[14px] leading-relaxed text-foreground">{data.notifyBody}</p>
+    <StudioCard title={data.title || "Aviso"} tone="amber" selected={selected}>
+      <div className="space-y-2">
+        <Field label="Destino">{data.notifyKind === "banca" ? "Banca · texto fixo" : "Ester · texto fixo"}</Field>
+        <Field label="Payload">
+          <span className="line-clamp-3">{data.notifyBody || "—"}</span>
+        </Field>
       </div>
-      <Next />
-      <LeftHandle />
-      <NextHandle />
-    </Card>
+    </StudioCard>
   )
 }
 
 export function TagNode({ data, selected }: NodeProps<SalesCanvasNode>) {
   return (
-    <Card selected={selected} accent="#64748b" width="w-[300px]">
-      <Head icon={<Tag className="size-5 text-slate-200" />} title={data.title} tone="bg-white/8" />
-      <div className="mx-5 mb-1 rounded-xl border border-white/8 bg-white/4 p-4">
-        <p className="text-[15px] text-foreground">
-          {data.tagKind === "campaign" ? `Campanha · ${data.campaignLock ?? "—"}` : `Temperatura · ${data.temperature ?? "novo"}`}
-        </p>
-      </div>
-      <Next />
-      <LeftHandle />
-      <NextHandle />
-    </Card>
+    <StudioCard title={data.title || "Tag"} tone="slate" selected={selected}>
+      <Field label="Marca">
+        {data.tagKind === "campaign" ? `Campanha · ${data.campaignLock ?? "—"}` : `Temperatura · ${data.temperature ?? "novo"}`}
+      </Field>
+    </StudioCard>
   )
 }
 
 export function SplitNode({ data, selected }: NodeProps<SalesCanvasNode>) {
   return (
-    <Card selected={selected} accent="#7C3AED" width="w-[340px]">
-      <Head icon={<GitFork className="size-5 text-violet-300" />} title={data.title} tone="bg-violet-400/10" />
-      <div className="mx-5 mb-4 overflow-hidden rounded-xl border border-white/8 bg-white/4">
-        {(data.splits || []).map((s) => (
-          <div key={s.id} className="relative flex items-center justify-between gap-3 border-b border-white/8 px-3.5 py-3 text-[14px] last:border-0">
-            <span className="truncate font-medium text-foreground">
-              {s.percent}% → {s.label}
-            </span>
-            <Handle type="source" id={s.id} position={Position.Right} className="!size-3 !border-2 !border-[#16181d] !bg-violet-500 !right-[-10px]" />
+    <StudioCard title={data.title || "Divisor"} tone="violet" selected={selected} source={false}>
+      <div className="space-y-1.5">
+        {(data.splits || []).map((item) => (
+          <div key={item.id} className="relative">
+            <Field label={`${item.percent}%`}>{item.label}</Field>
+            <Handle
+              type="source"
+              id={item.id}
+              position={Position.Right}
+              className="!right-[-10px] !size-3 !border-2 !border-white !bg-violet-500"
+            />
           </div>
         ))}
       </div>
-      <LeftHandle />
-    </Card>
+    </StudioCard>
   )
 }
 
 export function LandingNode({ data, selected }: NodeProps<SalesCanvasNode>) {
   return (
-    <Card selected={selected} accent="#2F6BFF" width="w-[300px]">
-      <div className="h-[148px] bg-gradient-to-br from-slate-800 via-slate-700 to-slate-900 relative overflow-hidden rounded-t-2xl">
-        <div className="absolute inset-x-6 top-8 h-3 w-2/3 rounded bg-white/25" />
-        <div className="absolute inset-x-6 top-14 h-2.5 w-full rounded bg-white/15" />
-        <div className="absolute inset-x-6 top-[72px] h-2.5 w-4/5 rounded bg-white/15" />
-        <div className="absolute left-6 bottom-4 rounded-full bg-orange-500 px-4 py-1.5 text-[12px] font-semibold text-white">
-          {data.cta || "Abrir"}
-        </div>
+    <StudioCard title={data.title || "Landing"} tone="blue" selected={selected}>
+      <div className="space-y-2">
+        <Field label="Página">{data.url || "Landing do mini curso"}</Field>
+        <Field label="Botão">{data.cta || "Abrir"}</Field>
       </div>
-      <div className="px-4 py-3.5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Landing · mapa</p>
-        <p className="mt-1 text-[16px] font-semibold leading-snug text-foreground">{data.title}</p>
-        {data.url && <p className="text-[13px] text-primary truncate mt-1.5">{data.url}</p>}
-      </div>
-      <LeftHandle />
-      <Handle type="source" position={Position.Right} className="!size-3.5 !border-2 !border-[#16181d] !bg-primary" />
-    </Card>
+    </StudioCard>
   )
 }
 
 export function OfferNode({ data, selected }: NodeProps<SalesCanvasNode>) {
   return (
-    <Card selected={selected} accent="#34d399">
-      <Head icon={<Zap className="size-5 text-emerald-300" />} title={data.title} tone="bg-emerald-400/10" />
-      <div className="mx-5 mb-1 rounded-xl border border-emerald-400/20 bg-emerald-400/8 p-4">
-        {data.steLine ? (
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-300">Sté · {data.steLine}</p>
-        ) : null}
-        <p className="text-[15px] leading-relaxed text-foreground">{data.body || "O fluxo oferece o produto."}</p>
-        {data.cta && (
-          <div className="mt-4 rounded-full bg-emerald-500 text-[#052e16] text-center text-[14px] font-semibold py-2.5">
-            {data.cta}
-          </div>
-        )}
+    <StudioCard title={data.title || "Oferta"} tone="emerald" selected={selected} width="w-[300px]">
+      <div className="space-y-2">
+        {data.steLine ? <Field label="Fala da Sté">{steLineLabel(data.steLine)}</Field> : null}
+        <Field label="Texto">
+          <span className="line-clamp-4">{data.body || "O fluxo oferece o produto."}</span>
+        </Field>
+        {data.cta ? <Field label="Botão">{data.cta}</Field> : null}
       </div>
-      <Next />
-      <LeftHandle />
-      <NextHandle />
-    </Card>
+    </StudioCard>
   )
 }
 
