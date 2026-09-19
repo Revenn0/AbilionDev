@@ -67,7 +67,17 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
   useEffect(() => {
     if (!rf || didFit.current) return
     didFit.current = true
-    rf.fitView({ padding: 0.18 })
+    const anchor =
+      nodes.find((n) => n.type === "landing") ||
+      nodes.find((n) => n.type === "traffic") ||
+      nodes.find((n) => n.type === "entry") ||
+      nodes[0]
+    if (!anchor) {
+      rf.fitView({ padding: 0.2, minZoom: 0.7, maxZoom: 0.9 })
+      return
+    }
+    const mobile = window.innerWidth < 768
+    rf.setCenter(anchor.position.x + 140, anchor.position.y + 30, { zoom: mobile ? 0.72 : 0.88, duration: 0 })
   }, [rf])
 
   const handleSelectionChange = useCallback(({ nodes: n }: { nodes: SalesCanvasNode[] }) => {
@@ -204,7 +214,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
             disabled={readOnly}
             onClick={() => {
               setNodes((nds) => autoLayout(nds, edges, SALES_BOX))
-              rf?.fitView({ padding: 0.2 })
+              rf?.fitView({ padding: 0.18, minZoom: 0.45, maxZoom: 1 })
               toast.success("Organizado.")
             }}
           >
