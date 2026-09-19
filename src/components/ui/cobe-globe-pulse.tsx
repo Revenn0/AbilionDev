@@ -16,8 +16,16 @@ interface GlobePulseProps {
   speed?: number
 }
 
-const BRAZIL_PHI = 2.85
-const BRAZIL_THETA = 0.18
+function phiFromLng(lng: number) {
+  return ((270 - lng) * Math.PI) / 180
+}
+
+function thetaFromLat(lat: number) {
+  return (lat * Math.PI) / 180 * 0.45
+}
+
+const BRAZIL_PHI = phiFromLng(-47.9)
+const BRAZIL_THETA = thetaFromLat(-15.8)
 
 function markerSize(count = 1) {
   return Math.min(0.07, 0.028 + Math.log2(count + 1) * 0.01)
@@ -93,7 +101,9 @@ export function GlobePulse({ markers = [], className = "", speed = 0.003 }: Glob
     if (!host) return
     let globe: Globe | null = null
     let frame = 0
-    let phi = BRAZIL_PHI
+    const hub = markersRef.current[0]
+    let phi = hub ? phiFromLng(hub.location[1]) : BRAZIL_PHI
+    const baseTheta = hub ? thetaFromLat(hub.location[0]) : BRAZIL_THETA
     let canvas: HTMLCanvasElement | null = null
     let cancelled = false
 
@@ -130,8 +140,8 @@ export function GlobePulse({ markers = [], className = "", speed = 0.003 }: Glob
           devicePixelRatio: Math.min(window.devicePixelRatio || 1, 2),
           width,
           height: width,
-          phi: BRAZIL_PHI,
-          theta: BRAZIL_THETA,
+          phi,
+          theta: baseTheta,
           dark: 1,
           diffuse: 1.5,
           mapSamples: 16000,
@@ -157,7 +167,7 @@ export function GlobePulse({ markers = [], className = "", speed = 0.003 }: Glob
         if (!pausedRef.current) phi += speed
         globe.update({
           phi: phi + phiOffsetRef.current + dragOffset.current.phi,
-          theta: BRAZIL_THETA + thetaOffsetRef.current + dragOffset.current.theta,
+          theta: baseTheta + thetaOffsetRef.current + dragOffset.current.theta,
           markers: toCobeMarkers(markersRef.current),
           arcs: toCobeArcs(markersRef.current),
         })

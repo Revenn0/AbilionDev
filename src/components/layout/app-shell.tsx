@@ -13,6 +13,7 @@ function isCanvasEditor(pathname: string) {
 }
 
 function pageTitle(pathname: string) {
+  if (pathname.startsWith("/analytics")) return "Analytics"
   if (pathname.startsWith("/fluxo")) return "Funil"
   if (pathname.startsWith("/leads")) return "Leads"
   if (pathname.startsWith("/conversas")) return "Conversas"
