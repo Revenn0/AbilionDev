@@ -327,7 +327,7 @@ function resolveCopy(runtime?: SteRuntime) {
   const lives = cleanLines(runtime?.lives)
   const close = cleanLines(runtime?.close)
   return {
-    welcome: welcome.length ? welcome : [...STE_WELCOME],
+    welcome: welcome.length >= 3 ? welcome : welcome.length ? [...welcome, ...STE_WELCOME.slice(welcome.length)] : [...STE_WELCOME],
     remarketing: remarketing.length ? remarketing : [...STE_REMARKETING_BLOCK],
     course: course.length ? course : [...STE_COURSE_BLOCK],
     superbet: superbet.length ? superbet : [...STE_SUPERBET_BLOCK],
