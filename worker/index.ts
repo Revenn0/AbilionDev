@@ -1,6 +1,6 @@
 import { handleAuth, kvAuthStore, sessionUser } from "./auth.ts"
 import { campaignFor } from "../src/lib/labels.ts"
-import { advanceSteIfDue, isSteWait, replySte, replySteSmart, toTelegramHtml } from "../src/lib/ste.ts"
+import { advanceSteIfDue, isSteWait, replySte, replySteSmart, steRuntimeFromFunnels, toTelegramHtml } from "../src/lib/ste.ts"
 import { TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { campaignFromStart, originFromStart, parseTelegramStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { applyEvent, dueWaits, publishedSnapshot } from "../src/lib/runtime.ts"
@@ -364,8 +364,10 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
   }
 
   const incoming = joinUser || start.isStart ? null : (message?.text ?? null)
+  const funnels = await loadFunnels(env)
   const settings = await loadSettings(env)
-  const shouldTalk = settings.steLinkedTelegram !== false && !joinUser
+  const ste = steRuntimeFromFunnels(funnels, settings)
+  const shouldTalk = ste.talking !== false && !joinUser
   if (shouldTalk) {
     const useLlm = resolved.llm && Boolean(incoming?.trim())
     const talked = useLlm
@@ -374,8 +376,9 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
           baseUrl: resolved.baseUrl,
           model: resolved.model,
           fallbackModel: resolved.fallbackModel,
+          runtime: ste,
         })
-      : replySte(lead, incoming, Date.now())
+      : replySte(lead, incoming, Date.now(), ste)
     lead = talked.lead
     await sendSteReplies(token, chatId, talked.replies)
   }
@@ -394,12 +397,13 @@ async function processWaits(env: Env) {
   const funnels = await loadFunnels(env)
   const settings = await loadSettings(env)
   const snapshot = publishedSnapshot(funnels)
+  const ste = steRuntimeFromFunnels(funnels, settings)
   const { resolved } = await runtimeOf(env)
   const token = resolved.telegramBotToken
   const due = dueWaits([...byId.values()])
   for (const lead of due) {
     if (isSteWait(lead)) {
-      const talked = advanceSteIfDue(lead, Date.now())
+      const talked = advanceSteIfDue(lead, Date.now(), ste)
       if (token && lead.telegramChatId) await sendSteReplies(token, lead.telegramChatId, talked.replies)
       await saveLead(env, talked.lead)
       continue

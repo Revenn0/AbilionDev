@@ -23,11 +23,19 @@ function kindForNode(type: string, title?: string): SalesKind {
   return migrateKind(type)
 }
 
+function migrateNodeData(title?: string, data?: SalesFunnel["nodes"][number]["data"]) {
+  const next = { ...(data ?? { title: title || "Bloco" }) }
+  if (next.steLine) return next
+  if (/boas-vindas/i.test(next.title || title || "")) next.steLine = "welcome"
+  else if (/remarketing|7\s*h/i.test(next.title || title || "")) next.steLine = "remarketing"
+  return next
+}
+
 export function migrateFunnel(raw: SalesFunnel): SalesFunnel {
   const nodes = (raw.nodes ?? []).map((node) => ({
     ...node,
     type: kindForNode(node.type, node.data?.title),
-    data: { ...node.data },
+    data: migrateNodeData(node.data?.title, node.data),
   }))
   const production = raw.production
     ? {
@@ -35,7 +43,7 @@ export function migrateFunnel(raw: SalesFunnel): SalesFunnel {
         nodes: raw.production.nodes.map((node) => ({
           ...node,
           type: kindForNode(node.type, node.data?.title),
-          data: { ...node.data },
+          data: migrateNodeData(node.data?.title, node.data),
         })),
       }
     : raw.production

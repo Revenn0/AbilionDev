@@ -33,6 +33,7 @@ export type EntryTrigger = "popup" | "group_join" | "start" | "any"
 export type ConditionKind = "print" | "banca" | "temperature" | "campaign"
 export type NotifyKind = "ester" | "banca"
 export type TagKind = "temperature" | "campaign"
+export type SteLine = "welcome" | "course" | "superbet" | "rescue" | "offer" | "lives" | "remarketing" | "close"
 
 export type SalesSplit = {
   id: string
@@ -59,6 +60,9 @@ export type SalesNodeData = {
   temperature?: LeadTemp
   campaignLock?: LeadChannel
   handoffAgent?: "ste"
+  steLine?: SteLine
+  steTalk?: boolean
+  dieAfter?: boolean
 }
 
 export type FlowEdge = {

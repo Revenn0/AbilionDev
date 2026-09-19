@@ -296,7 +296,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
           />
           {!selected && version === "draft" && (
             <p className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-border bg-card/90 px-3.5 py-1.5 text-[12px] text-muted-foreground shadow-sm max-md:hidden">
-              Arraste entradas e condições · o publicado é o runtime
+              Arraste as falas da Sté · o publicado é o que ela diz no Telegram
             </p>
           )}
           <SalesInspector

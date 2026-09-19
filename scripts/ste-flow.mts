@@ -15,8 +15,10 @@ import {
   STE_LIVE_BLOCK,
   STE_REMARKETING_BLOCK,
   STE_CLOSE,
+  steRuntimeFromSnapshot,
   toTelegramHtml,
 } from "../src/lib/ste.ts"
+import { emptySalesFunnel } from "../src/lib/templates.ts"
 import { mergeLeads } from "../src/lib/crm.ts"
 import type { Lead } from "../src/lib/types.ts"
 import { findLeadInKv, upsertLeadKv } from "../worker/crm-store.ts"
@@ -47,6 +49,17 @@ function lead(id = "lead-1", contact = "@fb1"): Lead {
 function assert(cond: unknown, message: string) {
   if (!cond) throw new Error(message)
 }
+
+const script = steRuntimeFromSnapshot(emptySalesFunnel("teste"))
+assert(script.welcome?.[0] === STE_WELCOME[0], "funil carrega boas-vindas 1")
+assert((script.welcome?.length ?? 0) === 3, "tres falas de boas-vindas no template")
+assert(script.remarketing?.length, "remarketing vive no funil")
+assert(script.course?.[0] === STE_COURSE_BLOCK[0], "minicurso no template")
+assert(script.dieAfterRemarketing, "silencio depois do follow-up")
+assert(script.talking, "ste fala se o quadro tiver handoff")
+assert(script.remarketingHours === 7, "espera de 7h no wait")
+const customTalk = replySte(lead("funil"), null, Date.now(), { welcome: ["Oi do quadro.", "Segunda fala.", "Terceira."] })
+assert(customTalk.replies[0] === "Oi do quadro.", "copia do funil manda no /start")
 
 const start = replySte(lead(), null)
 assert(start.replies.join("|") === STE_WELCOME.join("|"), "passo 1: 3 boas-vindas")

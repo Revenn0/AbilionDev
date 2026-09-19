@@ -23,7 +23,7 @@ export function validatePublish(nodes: FlowNode[], edges: FlowEdge[]): PublishIs
       if (!outgoing.some((edge) => edge.sourceHandle === "yes")) {
         issues.push({ message: `Condição “${node.data.title}” precisa do ramo Sim.` })
       }
-    } else if (node.type !== "offer" && outgoing.length === 0 && node.type !== "handoff") {
+    } else if (node.type !== "offer" && outgoing.length === 0 && node.type !== "handoff" && !node.data.steLine) {
       issues.push({ message: `O bloco “${node.data.title}” não liga a nenhum passo.` })
     }
   }

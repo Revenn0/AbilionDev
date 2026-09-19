@@ -2,8 +2,9 @@ import { Plus, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
-import { isMapKind, type SalesNodeData } from "@/lib/types"
+import { isMapKind, type SalesNodeData, type SteLine } from "@/lib/types"
 import type { SalesCanvasNode } from "./nodes"
 
 const CHANNELS: { id: NonNullable<SalesNodeData["channel"]>; label: string }[] = [
@@ -11,6 +12,17 @@ const CHANNELS: { id: NonNullable<SalesNodeData["channel"]>; label: string }[] =
   { id: "google", label: "Google" },
   { id: "meta", label: "Meta" },
   { id: "organic", label: "Orgânico" },
+]
+
+const STE_LINES: { id: SteLine; label: string }[] = [
+  { id: "welcome", label: "Boas-vindas" },
+  { id: "course", label: "Minicurso" },
+  { id: "superbet", label: "Superbet" },
+  { id: "rescue", label: "Resgate cadastro" },
+  { id: "offer", label: "App / Premium" },
+  { id: "lives", label: "Horário das lives" },
+  { id: "remarketing", label: "Remarketing 7h" },
+  { id: "close", label: "Encerrar" },
 ]
 
 export function SalesInspector({
@@ -98,9 +110,46 @@ export function SalesInspector({
           </div>
         </Field>
       )}
+      {(node.type === "message" || node.type === "handoff" || node.type === "offer" || node.type === "wait") && (
+        <Field label="Fala da Sté">
+          <div className="flex flex-wrap gap-1.5">
+            {STE_LINES.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                disabled={readOnly}
+                onClick={() => set({ steLine: d.steLine === item.id ? undefined : item.id })}
+                className={`rounded-full border px-2.5 py-1 text-[11px] ${
+                  d.steLine === item.id ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-muted-foreground"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </Field>
+      )}
+      {node.type === "handoff" && (
+        <>
+          <label className="flex items-center justify-between gap-3 text-[12.5px]">
+            <span>Sté fala neste funil</span>
+            <Switch disabled={readOnly} checked={d.steTalk !== false} onCheckedChange={(checked) => set({ steTalk: checked })} />
+          </label>
+          <label className="flex items-center justify-between gap-3 text-[12.5px]">
+            <span>Silenciar depois do remarketing</span>
+            <Switch disabled={readOnly} checked={d.dieAfter !== false} onCheckedChange={(checked) => set({ dieAfter: checked })} />
+          </label>
+        </>
+      )}
+      {(node.type === "wait" || node.type === "offer") && d.steLine === "remarketing" && (
+        <label className="flex items-center justify-between gap-3 text-[12.5px]">
+          <span>Silenciar depois desta fala</span>
+          <Switch disabled={readOnly} checked={d.dieAfter !== false} onCheckedChange={(checked) => set({ dieAfter: checked })} />
+        </label>
+      )}
       {(node.type === "message" || node.type === "handoff" || node.type === "offer") && (
-        <Field label="Texto">
-          <Textarea disabled={readOnly} rows={5} value={d.body || ""} onChange={(e) => set({ body: e.target.value })} />
+        <Field label={d.steLine ? "O que a Sté diz (uma linha por bloco)" : "Texto"}>
+          <Textarea disabled={readOnly} rows={d.steLine ? 7 : 5} value={d.body || ""} onChange={(e) => set({ body: e.target.value })} />
         </Field>
       )}
       {node.type === "notify" && (

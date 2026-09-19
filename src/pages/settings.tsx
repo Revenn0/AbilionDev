@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { useSearchParams } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { useTheme } from "next-themes"
 import {
   Bell,
@@ -17,7 +17,6 @@ import { PageChrome, StatusPill } from "@/components/layout/chrome"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { cleanBotUsername } from "@/lib/migrate"
 import { useStore } from "@/lib/store"
@@ -25,14 +24,12 @@ import { fetchHealth, workerUrl } from "@/lib/channel"
 import { fetchRuntime, saveRuntime, type RuntimeStatus } from "@/lib/runtime-api"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_LLM_MODELS, normalizeSteModel } from "@/lib/llm"
 import { adsDeepLink } from "@/lib/telegram-start"
-import { STE_REMARKETING_BLOCK, STE_WELCOME } from "@/lib/ste"
 import { cn } from "@/lib/utils"
 import type { PluginId } from "@/lib/types"
 import { toast } from "sonner"
 
 const TABS = [
   { id: "bot", label: "Bot Telegram" },
-  { id: "ste", label: "Agente Sté" },
   { id: "plugins", label: "Plugins" },
   { id: "notificacoes", label: "Notificações" },
   { id: "aparencia", label: "Aparência" },
@@ -93,7 +90,6 @@ export function SettingsPage() {
         </div>
 
         {tab === "bot" && <BotPane />}
-        {tab === "ste" && <StePane />}
         {tab === "plugins" && <PluginsPane />}
         {tab === "notificacoes" && <NotifyPane />}
         {tab === "aparencia" && <ThemePane />}
@@ -135,8 +131,8 @@ function BotPane() {
       <section className="surface p-6">
         <p className="text-[14px] font-medium">Telegram em produção</p>
         <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
-          Vincular grava o token no Worker e aponta o webhook. A Sté passa a responder no Telegram. O token não fica no
-          browser nem no git.
+          Vincular grava o token no Worker e aponta o webhook. O que a Sté fala fica no funil publicado — não aqui. O
+          token não fica no browser nem no git.
         </p>
         <div className="mt-4 flex flex-wrap gap-1.5">
           <StatusPill tone={runtime.telegram || (health.ok && health.telegram) ? "success" : "muted"}>
@@ -271,6 +267,13 @@ function BotPane() {
               placeholder={runtime.llm ? "IA já ligada. Cola outra chave para trocar." : "Cola a chave sk-or-v1…"}
             />
           </div>
+          <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+            Boas-vindas, minicurso, Superbet, remarketing e o silêncio depois das 7 h editam-se no{" "}
+            <Link className="font-medium text-foreground underline-offset-2 hover:underline" to="/fluxo">
+              template do funil
+            </Link>
+            . Publica o quadro para a Sté falar essa cópia.
+          </p>
           {ads && <p className="break-all text-[12px] text-muted-foreground">Anúncio Facebook · {ads}</p>}
           <p className="break-all text-[12px] text-muted-foreground">Webhook · {hook}</p>
           <Button type="submit" className="rounded-full" disabled={busy}>
@@ -305,74 +308,6 @@ function BotPane() {
         </Button>
       </section>
     </div>
-  )
-}
-
-function StePane() {
-  const { state, saveSettings } = useStore()
-  const [w1, setW1] = useState(state.settings.steWelcomeLines[0] || STE_WELCOME[0])
-  const [w2, setW2] = useState(state.settings.steWelcomeLines[1] || STE_WELCOME[1])
-  const [w3, setW3] = useState(state.settings.steWelcomeLines[2] || STE_WELCOME[2])
-  const [remark, setRemark] = useState((state.settings.steRemarketingLines.length ? state.settings.steRemarketingLines : STE_REMARKETING_BLOCK).join("\n"))
-
-  return (
-    <section className="surface max-w-xl space-y-5 p-6">
-      <div>
-        <p className="text-[14px] font-medium">Sté · Telegram</p>
-        <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
-          Um bot no Telegram. Fora dele, cada lead tem o próprio cérebro. As 3 boas-vindas saem no /start e esperam. Às 7 h
-          ela oferece o Grupo Premium. Se silenciar, essa instância morre — sem segundo bot.
-        </p>
-      </div>
-      <label className="flex items-center justify-between gap-4">
-        <span className="text-[13.5px]">Sté a falar no Telegram</span>
-        <Switch
-          checked={state.settings.steLinkedTelegram}
-          onCheckedChange={(checked) => saveSettings({ steLinkedTelegram: checked })}
-          aria-label="Sté no Telegram"
-        />
-      </label>
-      <label className="flex items-center justify-between gap-4">
-        <span>
-          <span className="block text-[13.5px]">Silenciar depois do remarketing</span>
-          <span className="mt-1 block text-[12.5px] text-muted-foreground">Oferece o Premium às 7 h e para de responder.</span>
-        </span>
-        <Switch
-          checked={state.settings.steDieAfterRemarketing}
-          onCheckedChange={(checked) => saveSettings({ steDieAfterRemarketing: checked })}
-          aria-label="Silenciar depois do remarketing"
-        />
-      </label>
-      <div className="space-y-1.5">
-        <Label htmlFor="ste-w1">Boas-vindas 1</Label>
-        <Textarea id="ste-w1" value={w1} onChange={(event) => setW1(event.target.value)} rows={2} />
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="ste-w2">Boas-vindas 2</Label>
-        <Textarea id="ste-w2" value={w2} onChange={(event) => setW2(event.target.value)} rows={2} />
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="ste-w3">Boas-vindas 3</Label>
-        <Textarea id="ste-w3" value={w3} onChange={(event) => setW3(event.target.value)} rows={3} />
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="ste-remark">Follow-up 7 horas (uma linha por bloco)</Label>
-        <Textarea id="ste-remark" value={remark} onChange={(event) => setRemark(event.target.value)} rows={6} />
-      </div>
-      <Button
-        className="rounded-full"
-        onClick={() => {
-          saveSettings({
-            steWelcomeLines: [w1.trim() || STE_WELCOME[0], w2.trim() || STE_WELCOME[1], w3.trim() || STE_WELCOME[2]],
-            steWelcome: w1.trim() || STE_WELCOME[0],
-            steRemarketingLines: remark.split("\n").map((item) => item.trim()).filter(Boolean),
-          })
-          toast.success("Cópia da Sté gravada.")
-        }}
-      >
-        Guardar mensagens
-      </Button>
-    </section>
   )
 }
 

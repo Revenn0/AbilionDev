@@ -1,6 +1,6 @@
 import { uid } from "./format"
 import { openRouterHeaders, steModelChain, STE_LLM_BASE_URL, STE_LLM_FALLBACK, STE_LLM_MODEL } from "./llm"
-import type { ChatMessage, Lead, Settings, StePhase } from "./types"
+import type { ChatMessage, FlowNode, Lead, SalesSnapshot, Settings, SteLine, StePhase } from "./types"
 
 export { STE_LLM_BASE_URL, STE_LLM_FALLBACK, STE_LLM_MODEL }
 
@@ -170,9 +170,17 @@ export type SteMarkup =
   | { type: "link"; text: string; url: string }
 
 export type SteRuntime = {
+  talking?: boolean
   welcome?: string[]
+  course?: string[]
+  superbet?: string[]
+  rescue?: string[]
+  offer?: string[]
+  lives?: string[]
   remarketing?: string[]
+  close?: string[]
   dieAfterRemarketing?: boolean
+  remarketingHours?: number
 }
 
 export type SteResult = {
@@ -181,14 +189,69 @@ export type SteResult = {
   reply: string | null
 }
 
+function splitNodeCopy(body?: string) {
+  return (body ?? "")
+    .split(/\n+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function nodesForLine(nodes: FlowNode[], line: SteLine) {
+  return nodes
+    .filter((node) => node.data.steLine === line)
+    .sort((a, b) => a.position.x - b.position.x || a.position.y - b.position.y)
+}
+
+function copyForLine(nodes: FlowNode[], line: SteLine) {
+  return nodesForLine(nodes, line).flatMap((node) => splitNodeCopy(node.data.body))
+}
+
+export function steRuntimeFromSnapshot(snapshot?: Pick<SalesSnapshot, "nodes"> | null): SteRuntime {
+  const nodes = snapshot?.nodes ?? []
+  const welcome = copyForLine(nodes, "welcome")
+  const remarketing = copyForLine(nodes, "remarketing")
+  const course = copyForLine(nodes, "course")
+  const superbet = copyForLine(nodes, "superbet")
+  const rescue = copyForLine(nodes, "rescue")
+  const offer = copyForLine(nodes, "offer")
+  const lives = copyForLine(nodes, "lives")
+  const close = copyForLine(nodes, "close")
+  const wait = nodes.find((node) => node.type === "wait" && node.data.steLine === "remarketing")
+  const dieNode = nodes.find((node) => node.data.dieAfter !== undefined)
+  const handoff = nodes.find((node) => node.type === "handoff")
+  return {
+    talking: handoff ? handoff.data.steTalk !== false : nodes.some((node) => node.data.steLine) || !nodes.length,
+    welcome: welcome.length ? welcome : undefined,
+    course: course.length ? course : undefined,
+    superbet: superbet.length ? superbet : undefined,
+    rescue: rescue.length ? rescue : undefined,
+    offer: offer.length ? offer : undefined,
+    lives: lives.length ? lives : undefined,
+    remarketing: remarketing.length ? remarketing : undefined,
+    close: close.length ? close : undefined,
+    dieAfterRemarketing: dieNode ? dieNode.data.dieAfter !== false : true,
+    remarketingHours: wait?.data.delayHours && wait.data.delayHours > 0 ? wait.data.delayHours : undefined,
+  }
+}
+
 export function steRuntimeFromSettings(settings?: Partial<Settings> | null): SteRuntime {
   const welcome = settings?.steWelcomeLines?.filter(Boolean) ?? []
   const remarketing = settings?.steRemarketingLines?.filter(Boolean) ?? []
   return {
-    welcome: welcome.length === 3 ? welcome : undefined,
+    talking: settings?.steLinkedTelegram !== false,
+    welcome: welcome.length ? welcome : undefined,
     remarketing: remarketing.length ? remarketing : undefined,
     dieAfterRemarketing: settings?.steDieAfterRemarketing !== false,
   }
+}
+
+export function steRuntimeFromFunnels(funnels?: Array<{ production?: SalesSnapshot | null; status?: string }>, settings?: Partial<Settings> | null) {
+  const published = funnels?.find((item) => item.status === "active" && item.production)?.production ?? funnels?.find((item) => item.production)?.production
+  const fromFunnel = steRuntimeFromSnapshot(published)
+  if (published && (fromFunnel.welcome || fromFunnel.remarketing || published.nodes.some((node) => node.data.steLine || node.type === "handoff"))) {
+    return fromFunnel
+  }
+  return steRuntimeFromSettings(settings)
 }
 
 export function isolateLead(lead: Lead): Lead {
@@ -250,13 +313,30 @@ function nowIso(now = Date.now()) {
   return new Date(now).toISOString()
 }
 
+function cleanLines(value?: string[]) {
+  return value?.map((item) => item.trim()).filter(Boolean) ?? []
+}
+
 function resolveCopy(runtime?: SteRuntime) {
-  const welcome = runtime?.welcome?.map((item) => item.trim()).filter(Boolean)
-  const remarketing = runtime?.remarketing?.map((item) => item.trim()).filter(Boolean)
+  const welcome = cleanLines(runtime?.welcome)
+  const remarketing = cleanLines(runtime?.remarketing)
+  const course = cleanLines(runtime?.course)
+  const superbet = cleanLines(runtime?.superbet)
+  const rescue = cleanLines(runtime?.rescue)
+  const offer = cleanLines(runtime?.offer)
+  const lives = cleanLines(runtime?.lives)
+  const close = cleanLines(runtime?.close)
   return {
-    welcome: welcome && welcome.length === 3 ? welcome : [...STE_WELCOME],
-    remarketing: remarketing && remarketing.length ? remarketing : [...STE_REMARKETING_BLOCK],
+    welcome: welcome.length ? welcome : [...STE_WELCOME],
+    remarketing: remarketing.length ? remarketing : [...STE_REMARKETING_BLOCK],
+    course: course.length ? course : [...STE_COURSE_BLOCK],
+    superbet: superbet.length ? superbet : [...STE_SUPERBET_BLOCK],
+    rescue: rescue.length ? rescue : [STE_SUPERBET_RESCUE],
+    offer: offer.length ? offer : [...STE_OFFER_BLOCK],
+    lives: lives.length ? lives : [...STE_LIVE_BLOCK],
+    close: close[0] || STE_CLOSE,
     dieAfterRemarketing: runtime?.dieAfterRemarketing !== false,
+    remarketingMs: Math.max(1, runtime?.remarketingHours ?? 7) * 60 * 60_000,
   }
 }
 
@@ -303,12 +383,12 @@ function hasSteMessage(lead: Lead) {
   return (lead.messages ?? []).some((item) => item.role === "ste")
 }
 
-function scheduleRemarketing(lead: Lead, now: number) {
+function scheduleRemarketing(lead: Lead, now: number, remarketingMs = REMARKETING_MS) {
   if (lead.steBlocked || memHas(lead, MEM.converted)) {
     if (memHas(lead, MEM.remarketing) && !memHas(lead, MEM.superbet)) lead.waitUntil = undefined
     return
   }
-  const due = new Date(lead.createdAt).getTime() + REMARKETING_MS
+  const due = new Date(lead.createdAt).getTime() + remarketingMs
   if (now >= due) return
   memAdd(lead, MEM.remarketing)
   if (memHas(lead, MEM.superbet)) return
@@ -362,63 +442,63 @@ function setPhase(lead: Lead, phase: StePhase) {
   lead.stePhase = phase
 }
 
-function welcome(lead: Lead, now: number, lines: string[]) {
+function welcome(lead: Lead, now: number, lines: string[], remarketingMs: number) {
   setPhase(lead, "listen")
   pushAll(lead, lines, now)
-  scheduleRemarketing(lead, now)
+  scheduleRemarketing(lead, now, remarketingMs)
   return pack(lead, [...lines])
 }
 
-function course(lead: Lead, now: number) {
+function course(lead: Lead, now: number, lines: string[], remarketingMs: number) {
   setPhase(lead, "diagnosis")
-  pushAll(lead, STE_COURSE_BLOCK, now)
-  scheduleRemarketing(lead, now)
-  return pack(lead, [...STE_COURSE_BLOCK])
+  pushAll(lead, lines, now)
+  scheduleRemarketing(lead, now, remarketingMs)
+  return pack(lead, [...lines])
 }
 
-function superbet(lead: Lead, now: number) {
+function superbet(lead: Lead, now: number, lines: string[]) {
   setPhase(lead, "solution")
-  pushAll(lead, STE_SUPERBET_BLOCK, now)
+  pushAll(lead, lines, now)
   scheduleSuperbet(lead, now)
-  return pack(lead, [...STE_SUPERBET_BLOCK])
+  return pack(lead, [...lines])
 }
 
-function offer(lead: Lead, now: number) {
+function offer(lead: Lead, now: number, lines: string[], remarketingMs: number) {
   setPhase(lead, "offer")
   cancelSuperbetWait(lead, now)
-  pushAll(lead, STE_OFFER_BLOCK, now)
-  scheduleRemarketing(lead, now)
-  return pack(lead, [...STE_OFFER_BLOCK])
+  pushAll(lead, lines, now)
+  scheduleRemarketing(lead, now, remarketingMs)
+  return pack(lead, [...lines])
 }
 
-function lives(lead: Lead, now: number) {
-  pushAll(lead, STE_LIVE_BLOCK, now)
-  return pack(lead, [...STE_LIVE_BLOCK])
+function lives(lead: Lead, now: number, lines: string[]) {
+  pushAll(lead, lines, now)
+  return pack(lead, [...lines])
 }
 
-function close(lead: Lead, now: number) {
+function close(lead: Lead, now: number, text: string) {
   lead.steBlocked = true
   setPhase(lead, "closed")
   lead.waitUntil = undefined
-  push(lead, "ste", STE_CLOSE, now)
-  return pack(lead, [STE_CLOSE])
+  push(lead, "ste", text, now)
+  return pack(lead, [text])
 }
 
-function replyToIncoming(lead: Lead, incoming: string, now: number): SteResult {
+function replyToIncoming(lead: Lead, incoming: string, now: number, copy: ReturnType<typeof resolveCopy>): SteResult {
   applyLeadFacts(lead, incoming)
-  if (HOSTILE.test(incoming)) return close(lead, now)
+  if (HOSTILE.test(incoming)) return close(lead, now, copy.close)
   if (CONVERTED.test(incoming)) memAdd(lead, MEM.converted)
-  if (LIVE_HOURS.test(incoming)) return lives(lead, now)
-  if (WANT_OFFER.test(incoming)) return offer(lead, now)
+  if (LIVE_HOURS.test(incoming)) return lives(lead, now, copy.lives)
+  if (WANT_OFFER.test(incoming)) return offer(lead, now, copy.offer, copy.remarketingMs)
   if (OFFTOPIC.test(incoming)) {
     push(lead, "ste", REDIRECT, now)
     return pack(lead, [REDIRECT])
   }
 
   const phase = lead.stePhase ?? "entry"
-  if (phase === "listen" || phase === "entry") return course(lead, now)
+  if (phase === "listen" || phase === "entry") return course(lead, now, copy.course, copy.remarketingMs)
 
-  if (phase === "diagnosis") return superbet(lead, now)
+  if (phase === "diagnosis") return superbet(lead, now, copy.superbet)
 
   if (phase === "solution") {
     cancelSuperbetWait(lead, now)
@@ -446,12 +526,13 @@ export function replySte(lead: Lead, incoming?: string | null, now = Date.now(),
   const text = (incoming ?? "").trim()
   if (text) push(next, "lead", text, now)
 
+  const copy = resolveCopy(runtime)
   if (!text) {
-    if (!hasSteMessage(next)) return welcome(next, now, resolveCopy(runtime).welcome)
+    if (!hasSteMessage(next)) return welcome(next, now, copy.welcome, copy.remarketingMs)
     return pack(next, [])
   }
 
-  return replyToIncoming(next, text, now)
+  return replyToIncoming(next, text, now, copy)
 }
 
 export function replySteTick(lead: Lead, now = Date.now(), runtime?: SteRuntime): SteResult {
@@ -463,18 +544,18 @@ export function replySteTick(lead: Lead, now = Date.now(), runtime?: SteRuntime)
 
   const due = next.waitUntil ? new Date(next.waitUntil).getTime() : 0
   if (!due || due > now) return pack(next, [])
+  const copy = resolveCopy(runtime)
 
   if (memHas(next, MEM.superbet)) {
     memDel(next, MEM.superbet)
     memAdd(next, MEM.rescued)
     setPhase(next, "offer")
-    push(next, "ste", STE_SUPERBET_RESCUE, now)
-    scheduleRemarketing(next, now)
-    return pack(next, [STE_SUPERBET_RESCUE])
+    pushAll(next, copy.rescue, now)
+    scheduleRemarketing(next, now, copy.remarketingMs)
+    return pack(next, [...copy.rescue])
   }
 
   if (memHas(next, MEM.remarketing) && !memHas(next, MEM.converted)) {
-    const copy = resolveCopy(runtime)
     memDel(next, MEM.remarketing)
     next.waitUntil = undefined
     pushAll(next, copy.remarketing, now)

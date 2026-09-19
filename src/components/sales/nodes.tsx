@@ -112,6 +112,9 @@ export function MessageNode({ data, selected }: NodeProps<SalesCanvasNode>) {
     <Card selected={selected} accent="#38bdf8">
       <Head icon={<MessageSquare className="size-5 text-sky-300" />} title={data.title} tone="bg-sky-400/10" />
       <div className="mx-5 mb-1 rounded-xl border border-sky-400/20 bg-sky-400/8 p-4">
+        {data.steLine ? (
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-300">Sté · {data.steLine}</p>
+        ) : null}
         <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-foreground">{data.body}</p>
         {data.cta && (
           <div className="mt-4 rounded-full bg-sky-500 text-white text-center text-[14px] font-semibold py-2.5">{data.cta}</div>
@@ -171,6 +174,9 @@ export function HandoffNode({ data, selected }: NodeProps<SalesCanvasNode>) {
     <Card selected={selected} accent="#f472b6">
       <Head icon={<Handshake className="size-5 text-pink-300" />} title={data.title} tone="bg-pink-400/10" />
       <div className="mx-5 mb-1 rounded-xl border border-pink-400/20 bg-pink-400/8 p-4">
+        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-pink-200">
+          {data.steTalk === false ? "Sté calada" : "Sté fala este quadro"}
+        </p>
         <p className="text-[15px] leading-relaxed text-foreground">{data.body || "Sté no 1:1. O fluxo pausa."}</p>
       </div>
       <Next />
@@ -259,6 +265,9 @@ export function OfferNode({ data, selected }: NodeProps<SalesCanvasNode>) {
     <Card selected={selected} accent="#34d399">
       <Head icon={<Zap className="size-5 text-emerald-300" />} title={data.title} tone="bg-emerald-400/10" />
       <div className="mx-5 mb-1 rounded-xl border border-emerald-400/20 bg-emerald-400/8 p-4">
+        {data.steLine ? (
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-300">Sté · {data.steLine}</p>
+        ) : null}
         <p className="text-[15px] leading-relaxed text-foreground">{data.body || "O fluxo oferece o produto."}</p>
         {data.cta && (
           <div className="mt-4 rounded-full bg-emerald-500 text-[#052e16] text-center text-[14px] font-semibold py-2.5">

@@ -12,7 +12,7 @@ Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / M
 - Funil com mapa e fluxo executável
 - Telegram: webhook no Worker (`/api/telegram`) — /start abre a Sté
 - Facebook → Telegram: `https://t.me/BOT?start=fb` (500–1000 /start por dia)
-- Configurações: estado real do bot, cópia da Sté, pixel `/t.js`
+- Configurações: Telegram, webhook, pixel `/t.js`. A cópia da Sté edita-se no funil publicado
 - Persistência no Worker (KV) + Supabase quando houver service role
 
 ## Stack
@@ -39,7 +39,7 @@ Nós de **mapa** (não executam): tráfego, landing, divisor de campanha.
 
 Nós de **fluxo** (executam): entrada, mensagem, espera, condição, handoff Sté, avisar Ester, tag, oferta.
 
-No 1:1 a Sté segue o prompt interno (GLM). O resto do quadro corre: espera, print, banca, oferta.
+No 1:1 a Sté fala o que está no quadro publicado (boas-vindas, minicurso, Superbet, remarketing). O resto do quadro corre: espera, print, banca, oferta.
 
 Sem print → sem banca. Sem o nó de oferta → o canal não vende. O canal é Telegram.
 

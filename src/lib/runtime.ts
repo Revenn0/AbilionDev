@@ -226,9 +226,11 @@ export function applyEvent(
 
     if (node.type === "message") {
       const body = node.data.body || ""
-      effects.push({ kind: "send_message", body, cta: node.data.cta, url: node.data.url })
-      next.lastMessage = body
-      pushEvent(next, { kind: "message", nodeId: node.id, title: node.data.title, body, effect: "send_message" }, at)
+      if (!node.data.steLine) {
+        effects.push({ kind: "send_message", body, cta: node.data.cta, url: node.data.url })
+        next.lastMessage = body
+        pushEvent(next, { kind: "message", nodeId: node.id, title: node.data.title, body, effect: "send_message" }, at)
+      }
       const target = skipMap(nodes, outs, nextId(outs, node.id))
       if (!target || target === node.id) break
       next.nodeId = target

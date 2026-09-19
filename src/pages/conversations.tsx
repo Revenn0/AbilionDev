@@ -8,7 +8,7 @@ import { hasConversation } from "@/lib/ops"
 import { ORIGIN_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { GeoBadge } from "@/components/crm/geo-badge"
 import { factsWithTrack } from "@/lib/geo"
-import { advanceSteIfDue, replySte, splitSteMarkup, steRuntimeFromSettings, steStepLabel } from "@/lib/ste"
+import { advanceSteIfDue, replySte, splitSteMarkup, steRuntimeFromFunnels, steStepLabel } from "@/lib/ste"
 import { useTrackSummary } from "@/lib/use-track-summary"
 import { timeAgo } from "@/lib/format"
 import type { Lead } from "@/lib/types"
@@ -47,7 +47,7 @@ function matchesFilter(lead: Lead, filter: FilterId) {
 export function ConversationsPage() {
   const { state, saveLead } = useStore()
   const { summary } = useTrackSummary(4000)
-  const runtime = steRuntimeFromSettings(state.settings)
+  const runtime = steRuntimeFromFunnels(state.funnels, state.settings)
   const [filter, setFilter] = useState<FilterId>("waiting")
   const [query, setQuery] = useState("")
   const [id, setId] = useState<string | null>(null)
