@@ -1,22 +1,22 @@
 import type { SalesFunnel, SalesKind } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
-const KIND: Record<SalesKind, { label: string; tone: string }> = {
-  traffic: { label: "Tráfego", tone: "bg-slate-500" },
-  landing: { label: "Landing", tone: "bg-[#2F6BFF]" },
-  split: { label: "Campanha", tone: "bg-violet-600" },
-  entry: { label: "Entrada", tone: "bg-emerald-500" },
-  message: { label: "Mensagem", tone: "bg-sky-500" },
-  wait: { label: "Espera", tone: "bg-orange-400" },
-  condition: { label: "Condição", tone: "bg-violet-400" },
-  handoff: { label: "Sté", tone: "bg-pink-500" },
-  notify: { label: "Ester", tone: "bg-amber-400" },
-  tag: { label: "Tag", tone: "bg-slate-400" },
-  offer: { label: "Oferta", tone: "bg-emerald-400" },
+const KIND: Record<SalesKind, { label: string; pill: string; stroke: string }> = {
+  traffic: { label: "Tráfego", pill: "#dbeafe", stroke: "#bfdbfe" },
+  landing: { label: "Landing", pill: "#dbeafe", stroke: "#bfdbfe" },
+  split: { label: "Campanha", pill: "#ede9fe", stroke: "#ddd6fe" },
+  entry: { label: "Entrada", pill: "#d1fae5", stroke: "#a7f3d0" },
+  message: { label: "Mensagem", pill: "#e0f2fe", stroke: "#bae6fd" },
+  wait: { label: "Espera", pill: "#ffedd5", stroke: "#fed7aa" },
+  condition: { label: "Condição", pill: "#ede9fe", stroke: "#ddd6fe" },
+  handoff: { label: "Sté", pill: "#fce7f3", stroke: "#fbcfe8" },
+  notify: { label: "Ester", pill: "#fef3c7", stroke: "#fde68a" },
+  tag: { label: "Tag", pill: "#f1f5f9", stroke: "#e2e8f0" },
+  offer: { label: "Oferta", pill: "#d1fae5", stroke: "#a7f3d0" },
 }
 
-const NODE_W = 140
-const NODE_H = 56
+const NODE_W = 168
+const NODE_H = 70
 
 export function FunnelPreview({
   funnel,
@@ -28,7 +28,7 @@ export function FunnelPreview({
   const nodes = funnel.nodes
   if (nodes.length === 0) {
     return (
-      <div className={cn("relative grid h-[168px] place-items-center bg-foreground/3", className)}>
+      <div className={cn("relative grid h-[188px] place-items-center bg-muted/50", className)}>
         <p className="text-[12px] text-muted-foreground">Em branco</p>
       </div>
     )
@@ -36,54 +36,53 @@ export function FunnelPreview({
 
   const xs = nodes.map((node) => node.position.x)
   const ys = nodes.map((node) => node.position.y)
-  const minX = Math.min(...xs) - 24
-  const minY = Math.min(...ys) - 24
-  const width = Math.max(Math.max(...xs) - minX + NODE_W + 48, 360)
-  const height = Math.max(Math.max(...ys) - minY + NODE_H + 48, 160)
+  const minX = Math.min(...xs) - 36
+  const minY = Math.min(...ys) - 36
+  const width = Math.max(Math.max(...xs) - minX + NODE_W + 72, 420)
+  const height = Math.max(Math.max(...ys) - minY + NODE_H + 72, 200)
   const byId = new Map(nodes.map((node) => [node.id, node]))
 
   return (
-    <div className={cn("relative h-[168px] overflow-hidden bg-foreground/3", className)}>
-      <svg className="absolute inset-0 size-full" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" aria-hidden>
+    <div className={cn("relative h-[188px] overflow-hidden bg-muted/40", className)}>
+      <svg className="size-full" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" aria-hidden>
         {funnel.edges.map((edge) => {
           const from = byId.get(edge.source)
           const to = byId.get(edge.target)
           if (!from || !to) return null
           const x1 = from.position.x - minX + NODE_W
-          const y1 = from.position.y - minY + NODE_H / 2
+          const y1 = from.position.y - minY + 14
           const x2 = to.position.x - minX
-          const y2 = to.position.y - minY + NODE_H / 2
+          const y2 = to.position.y - minY + 14
           return (
             <path
               key={edge.id}
-              d={`M ${x1} ${y1} C ${x1 + 36} ${y1}, ${x2 - 36} ${y2}, ${x2} ${y2}`}
+              d={`M ${x1} ${y1} C ${x1 + 48} ${y1}, ${x2 - 48} ${y2}, ${x2} ${y2}`}
               fill="none"
-              stroke="currentColor"
+              stroke="#93c5fd"
               strokeWidth="2"
-              className="text-foreground/25"
             />
           )
         })}
+        {nodes.map((node) => {
+          const meta = KIND[node.type] ?? KIND.traffic
+          const x = node.position.x - minX
+          const y = node.position.y - minY
+          const title = node.data.title || meta.label
+          return (
+            <g key={node.id} transform={`translate(${x} ${y})`}>
+              <rect x="18" y="0" width={NODE_W - 36} height="28" rx="14" fill={meta.pill} stroke={meta.stroke} />
+              <rect x="0" y="16" width={NODE_W} height="48" rx="16" fill="#ffffff" stroke={meta.stroke} />
+              <rect x="18" y="0" width={NODE_W - 36} height="28" rx="14" fill={meta.pill} stroke={meta.stroke} />
+              <text x={NODE_W / 2} y="18" textAnchor="middle" fill="#334155" fontSize="11" fontWeight="500">
+                {title.length > 18 ? `${title.slice(0, 17)}…` : title}
+              </text>
+              <text x={NODE_W / 2} y="46" textAnchor="middle" fill="#94a3b8" fontSize="10">
+                {meta.label}
+              </text>
+            </g>
+          )
+        })}
       </svg>
-      {nodes.map((node) => {
-        const meta = KIND[node.type] ?? KIND.traffic
-        return (
-          <div
-            key={node.id}
-            className="absolute w-[140px] overflow-hidden rounded-lg border border-border bg-card/95 shadow-sm"
-            style={{
-              left: `${((node.position.x - minX) / width) * 100}%`,
-              top: `${((node.position.y - minY) / height) * 100}%`,
-            }}
-          >
-            <div className={cn("h-1 w-full", meta.tone)} />
-            <div className="px-2 py-1.5">
-              <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{meta.label}</p>
-              <p className="truncate text-[11px] font-medium leading-tight">{node.data.title || meta.label}</p>
-            </div>
-          </div>
-        )
-      })}
       <span className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full border border-border bg-card/90 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
         {nodes.length} {nodes.length === 1 ? "bloco" : "blocos"}
       </span>
