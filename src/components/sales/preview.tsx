@@ -25,8 +25,10 @@ export function FunnelPreview({
   funnel: Pick<SalesFunnel, "nodes" | "edges">
   className?: string
 }) {
-  const nodes = funnel.nodes
-  if (nodes.length === 0) {
+  const all = funnel.nodes
+  const ranked = [...all].sort((a, b) => a.position.x - b.position.x || a.position.y - b.position.y)
+  const nodes = ranked.slice(0, 5)
+  if (all.length === 0) {
     return (
       <div className={cn("relative grid h-[188px] place-items-center bg-muted/50", className)}>
         <p className="text-[12px] text-muted-foreground">Em branco</p>
@@ -46,6 +48,7 @@ export function FunnelPreview({
     <div className={cn("relative h-[188px] overflow-hidden bg-muted/40", className)}>
       <svg className="size-full" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" aria-hidden>
         {funnel.edges.map((edge) => {
+          if (!nodes.some((node) => node.id === edge.source) || !nodes.some((node) => node.id === edge.target)) return null
           const from = byId.get(edge.source)
           const to = byId.get(edge.target)
           if (!from || !to) return null
@@ -84,7 +87,7 @@ export function FunnelPreview({
         })}
       </svg>
       <span className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full border border-border bg-card/90 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-        {nodes.length} {nodes.length === 1 ? "bloco" : "blocos"}
+        {all.length} {all.length === 1 ? "bloco" : "blocos"}
       </span>
     </div>
   )
