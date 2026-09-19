@@ -50,9 +50,7 @@ export interface Env {
   ESTER_CHAT_ID?: string
   APP_URL?: string
   OPENAI_API_KEY?: string
-  OPENCODE_API_KEY?: string
   OPENAI_BASE_URL?: string
-  OPENCODE_BASE_URL?: string
   STE_MODEL?: string
   STE_FALLBACK_MODEL?: string
   STE_USE_LLM?: string
@@ -373,7 +371,7 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
   if (shouldTalk) {
     const talked = incoming?.trim()
       ? await replySteSmart(lead, incoming, {
-          openCodeKey: resolved.llm ? resolved.opencodeApiKey : undefined,
+          apiKey: resolved.llm ? resolved.openaiApiKey : undefined,
           openRouterKey: resolved.llm ? resolved.openaiApiKey : undefined,
           model: resolved.model,
           fallbackModel: resolved.fallbackModel,

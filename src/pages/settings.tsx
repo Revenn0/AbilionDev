@@ -22,7 +22,7 @@ import { cleanBotUsername } from "@/lib/migrate"
 import { useStore } from "@/lib/store"
 import { fetchHealth, workerUrl } from "@/lib/channel"
 import { fetchRuntime, saveRuntime, type RuntimeStatus } from "@/lib/runtime-api"
-import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_LLM_RESERVE } from "@/lib/llm"
+import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_LLM_MODELS, normalizeSteModel } from "@/lib/llm"
 import { adsDeepLink } from "@/lib/telegram-start"
 import { cn } from "@/lib/utils"
 import type { PluginId } from "@/lib/types"
@@ -104,7 +104,7 @@ function BotPane() {
   const [token, setToken] = useState("")
   const [group, setGroup] = useState(state.settings.telegramGroupUrl)
   const [glm, setGlm] = useState("")
-  const [opencode, setOpencode] = useState("")
+  const [model, setModel] = useState(STE_LLM_MODEL)
   const [busy, setBusy] = useState(false)
   const [health, setHealth] = useState<Awaited<ReturnType<typeof fetchHealth>>>({ ok: false })
   const [runtime, setRuntime] = useState<RuntimeStatus>({ ok: false })
@@ -119,7 +119,7 @@ function BotPane() {
     setRuntime(nextRuntime)
     if (nextRuntime.telegramBotUsername) setUsername(nextRuntime.telegramBotUsername)
     if (nextRuntime.telegramGroupUrl) setGroup(nextRuntime.telegramGroupUrl)
-    /* modelo principal é o MiMo; a reserva continua o OpenRouter */
+    if (nextRuntime.model) setModel(normalizeSteModel(nextRuntime.model))
   }
 
   useEffect(() => {
@@ -149,9 +149,6 @@ function BotPane() {
           </StatusPill>
           <StatusPill tone={runtime.llm || health.llm ? "success" : "muted"}>
             IA · {runtime.llm || health.llm ? runtime.model || health.model || STE_LLM_MODEL : "script da Sté"}
-          </StatusPill>
-          <StatusPill tone={runtime.opencodeHint ? "success" : "muted"}>
-            {runtime.opencodeHint ? `OpenCode ${runtime.opencodeHint}` : "Sem chave OpenCode"}
           </StatusPill>
           <StatusPill>
             Reserva · {runtime.fallbackModel || health.backup || STE_LLM_FALLBACK}
@@ -188,16 +185,14 @@ function BotPane() {
               telegramBotUsername: cleanUser,
               telegramGroupUrl: group.trim(),
               ...(token.trim() ? { telegramBotToken: token.trim() } : {}),
-              ...(opencode.trim() ? { opencodeApiKey: opencode.trim() } : {}),
               ...(glm.trim() ? { openaiApiKey: glm.trim() } : {}),
-              steModel: STE_LLM_MODEL,
+              steModel: model,
               steFallbackModel: STE_LLM_FALLBACK,
             })
               .then((next) => {
                 setRuntime(next)
                 setToken("")
                 setGlm("")
-                setOpencode("")
                 saveSettings({
                   telegramBotUsername: next.telegramBotUsername || cleanUser,
                   telegramGroupUrl: next.telegramGroupUrl || group.trim(),
@@ -244,33 +239,32 @@ function BotPane() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="bot-opencode">Chave OpenCode · MiMo V2.5</Label>
-            <Input
-              id="bot-opencode"
-              type="password"
-              autoComplete="off"
-              value={opencode}
-              onChange={(event) => setOpencode(event.target.value)}
-              placeholder={
-                runtime.opencodeHint
-                  ? `Já gravada ${runtime.opencodeHint}. Cola outra oc_sk… para trocar.`
-                  : "Cola a chave oc_sk…"
-              }
-            />
+            <Label htmlFor="bot-model">Modelo OpenRouter</Label>
+            <select
+              id="bot-model"
+              value={model}
+              onChange={(event) => setModel(normalizeSteModel(event.target.value))}
+              className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+            >
+              {STE_LLM_MODELS.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
             <p className="text-[12px] text-muted-foreground">
-              Principal: {STE_LLM_MODEL} no Zen. Se o Zen recusar (403/429), a Sté cai no {STE_LLM_FALLBACK} e depois no{" "}
-              {STE_LLM_RESERVE}.
+              {STE_LLM_MODELS.find((item) => item.id === model)?.hint} Se este falhar, a Sté usa DeepSeek V4 Flash.
             </p>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="bot-glm">Chave OpenRouter · reserva</Label>
+            <Label htmlFor="bot-glm">Chave OpenRouter</Label>
             <Input
               id="bot-glm"
               type="password"
               autoComplete="off"
               value={glm}
               onChange={(event) => setGlm(event.target.value)}
-              placeholder={runtime.llm ? "Reserva já ligada. Cola outra sk-or-v1… para trocar." : "Cola a chave sk-or-v1…"}
+              placeholder={runtime.llm ? "IA já ligada. Cola outra chave sk-or-v1… para trocar." : "Cola a chave sk-or-v1…"}
             />
           </div>
           <p className="text-[12.5px] leading-relaxed text-muted-foreground">

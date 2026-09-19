@@ -1,4 +1,4 @@
-import { baseUrlOf, normalizeSteModel, providerOf, STE_LLM_FALLBACK, STE_LLM_MODEL, STE_LLM_RESERVE } from "../src/lib/llm.ts"
+import { baseUrlOf, normalizeSteModel, OPENROUTER_BASE_URL, STE_LLM_FALLBACK, STE_LLM_MODEL } from "../src/lib/llm.ts"
 import type { KvLike } from "./kv.ts"
 
 export const RUNTIME_KEY = "runtime:secrets"
@@ -20,12 +20,10 @@ export type RuntimeSecrets = {
 export type RuntimeEnv = {
   TELEGRAM_BOT_TOKEN?: string
   OPENAI_API_KEY?: string
-  OPENCODE_API_KEY?: string
   STE_USE_LLM?: string
   STE_MODEL?: string
   STE_FALLBACK_MODEL?: string
   OPENAI_BASE_URL?: string
-  OPENCODE_BASE_URL?: string
   SUPABASE_URL?: string
   SUPABASE_SERVICE_ROLE?: string
   APP_URL?: string
@@ -35,7 +33,6 @@ export type RuntimeEnv = {
 export type ResolvedRuntime = {
   telegramBotToken: string
   openaiApiKey: string
-  opencodeApiKey: string
   telegramBotUsername: string
   telegramGroupUrl: string
   webhookUrl: string
@@ -58,7 +55,6 @@ export type PublicRuntime = {
   telegramBotUsername: string
   telegramGroupUrl: string
   tokenHint: string
-  opencodeHint: string
   webhook: string
   webhookOk: boolean
   model: string
@@ -92,10 +88,6 @@ export function mergeSecrets(current: RuntimeSecrets, patch: RuntimeSecrets): Ru
     const key = patch.openaiApiKey.trim()
     if (!looksMasked(key)) next.openaiApiKey = key
   }
-  if (patch.opencodeApiKey !== undefined) {
-    const key = patch.opencodeApiKey.trim()
-    if (!looksMasked(key)) next.opencodeApiKey = key
-  }
   if (patch.telegramBotUsername !== undefined) next.telegramBotUsername = patch.telegramBotUsername.trim()
   if (patch.telegramGroupUrl !== undefined) next.telegramGroupUrl = patch.telegramGroupUrl.trim()
   if (patch.steModel !== undefined) next.steModel = normalizeSteModel(patch.steModel)
@@ -106,6 +98,7 @@ export function mergeSecrets(current: RuntimeSecrets, patch: RuntimeSecrets): Ru
   }
   if (patch.webhookUrl !== undefined) next.webhookUrl = patch.webhookUrl
   if (patch.webhookOk !== undefined) next.webhookOk = patch.webhookOk
+  delete next.opencodeApiKey
   next.updatedAt = new Date().toISOString()
   return next
 }
@@ -113,29 +106,23 @@ export function mergeSecrets(current: RuntimeSecrets, patch: RuntimeSecrets): Ru
 export function resolveRuntime(env: RuntimeEnv, secrets: RuntimeSecrets, webhookFallback = ""): ResolvedRuntime {
   const telegramBotToken = (secrets.telegramBotToken || env.TELEGRAM_BOT_TOKEN || "").trim()
   const openaiApiKey = (secrets.openaiApiKey || env.OPENAI_API_KEY || "").trim()
-  const opencodeApiKey = (secrets.opencodeApiKey || env.OPENCODE_API_KEY || "").trim()
-  const stored = normalizeSteModel(secrets.steModel)
-  const storedIsPrimary = Boolean(secrets.steModel?.trim()) && providerOf(stored) === "opencode"
-  const model = storedIsPrimary ? stored : normalizeSteModel(env.STE_MODEL || STE_LLM_MODEL)
-  const storedBackup = Boolean(secrets.steModel?.trim()) && providerOf(stored) === "openrouter" ? stored : ""
+  const model = normalizeSteModel(secrets.steModel || env.STE_MODEL || STE_LLM_MODEL)
+  const rawFallback = normalizeSteModel(secrets.steFallbackModel || env.STE_FALLBACK_MODEL || STE_LLM_FALLBACK)
+  const fallbackModel = rawFallback === model ? STE_LLM_FALLBACK : rawFallback
   return {
     telegramBotToken,
     openaiApiKey,
-    opencodeApiKey,
     telegramBotUsername: (secrets.telegramBotUsername || "").trim(),
     telegramGroupUrl: (secrets.telegramGroupUrl || "").trim(),
     webhookUrl: secrets.webhookUrl || webhookFallback,
     webhookOk: Boolean(secrets.webhookOk),
-    llm: Boolean(openaiApiKey || opencodeApiKey) && env.STE_USE_LLM !== "0",
+    llm: Boolean(openaiApiKey) && env.STE_USE_LLM !== "0",
     telegram: Boolean(telegramBotToken),
     supabase: Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE),
     persist: env.SUPABASE_SERVICE_ROLE ? "supabase" : env.AUTH ? "kv" : "memory",
     model,
-    fallbackModel:
-      providerOf(model) === "opencode"
-        ? STE_LLM_FALLBACK
-        : normalizeSteModel(secrets.steFallbackModel || storedBackup || env.STE_FALLBACK_MODEL || STE_LLM_RESERVE),
-    baseUrl: (secrets.openaiBaseUrl || env.OPENCODE_BASE_URL || env.OPENAI_BASE_URL || baseUrlOf(model)).replace(/\/$/, ""),
+    fallbackModel,
+    baseUrl: (secrets.openaiBaseUrl || env.OPENAI_BASE_URL || baseUrlOf(model) || OPENROUTER_BASE_URL).replace(/\/$/, ""),
   }
 }
 
@@ -149,7 +136,6 @@ export function publicRuntime(resolved: ResolvedRuntime): PublicRuntime {
     telegramBotUsername: resolved.telegramBotUsername,
     telegramGroupUrl: resolved.telegramGroupUrl,
     tokenHint: tokenHint(resolved.telegramBotToken),
-    opencodeHint: tokenHint(resolved.opencodeApiKey),
     webhook: resolved.webhookUrl,
     webhookOk: resolved.webhookOk,
     model: resolved.model,
@@ -160,7 +146,10 @@ export function publicRuntime(resolved: ResolvedRuntime): PublicRuntime {
 export async function loadSecrets(kv: KvLike): Promise<RuntimeSecrets> {
   const raw = await kv.get(RUNTIME_KEY, "json")
   if (!raw || typeof raw !== "object") return emptySecrets()
-  return raw as RuntimeSecrets
+  const secrets = raw as RuntimeSecrets
+  if (secrets.steModel) secrets.steModel = normalizeSteModel(secrets.steModel)
+  if (secrets.steFallbackModel) secrets.steFallbackModel = normalizeSteModel(secrets.steFallbackModel)
+  return secrets
 }
 
 export async function saveSecrets(kv: KvLike, next: RuntimeSecrets) {

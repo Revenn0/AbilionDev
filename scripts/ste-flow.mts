@@ -27,7 +27,7 @@ import { mergeLeads } from "../src/lib/crm.ts"
 import type { Lead } from "../src/lib/types.ts"
 import { findLeadInKv, upsertLeadKv } from "../worker/crm-store.ts"
 import { memoryKv } from "../worker/kv.ts"
-import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_LLM_RESERVE, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
+import { STE_LLM_FALLBACK, STE_LLM_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
 
 function lead(id = "lead-1", contact = "@fb1"): Lead {
@@ -221,27 +221,25 @@ assert(kept.telegramBotToken === "123:abc", "mascara nao apaga o token")
 const swapped = mergeSecrets({ telegramBotToken: "123:abc" }, { telegramBotToken: "999:xyz" })
 assert(swapped.telegramBotToken === "999:xyz", "token novo substitui")
 assert(tokenHint("123:abcd") === "•••• abcd", "hint do token")
-const resolved = resolveRuntime({ TELEGRAM_BOT_TOKEN: "env-token", STE_USE_LLM: "1", AUTH: {} }, { telegramBotToken: "kv-token", openaiApiKey: "sk-or", opencodeApiKey: "oc_sk_test", steModel: "mimo-v2.5-free" })
+const resolved = resolveRuntime({ TELEGRAM_BOT_TOKEN: "env-token", STE_USE_LLM: "1", AUTH: {} }, { telegramBotToken: "kv-token", openaiApiKey: "sk-or", steModel: "google/gemma-4-31b-it:free" })
 assert(resolved.telegramBotToken === "kv-token", "KV manda no token")
 assert(resolved.telegram, "telegram ligado")
 assert(resolved.llm, "llm ligada")
 assert(resolved.persist === "kv", "persistencia KV")
-assert(resolved.model === "mimo-v2.5-free", "MiMo principal")
-assert(resolved.fallbackModel === STE_LLM_FALLBACK, "Gemma reserva")
-assert(resolved.opencodeApiKey.startsWith("oc_sk"), "chave OpenCode no runtime")
-assert(steModelChain()[0] === STE_LLM_MODEL, "cadeia começa no MiMo")
-assert(steModelChain()[1] === STE_LLM_FALLBACK, "depois Gemma")
-assert(steModelChain()[2] === STE_LLM_RESERVE, "DeepSeek no fim")
-assert(steLlmAttempts({ opencodeKey: "oc", openrouterKey: "or" }).map((item) => item.model).join(">") === `${STE_LLM_MODEL}>${STE_LLM_FALLBACK}>${STE_LLM_RESERVE}`, "tentativas MiMo→Gemma→DeepSeek")
-assert(steLlmAttempts({ openrouterKey: "or" })[0]?.model === STE_LLM_FALLBACK, "sem OpenCode pula pro Gemma")
-assert(steModelChain(STE_LLM_FALLBACK, STE_LLM_FALLBACK)[0] === STE_LLM_FALLBACK, "nao duplica Gemma")
+assert(resolved.model === STE_LLM_MODEL, "Gemma padrão")
+assert(resolved.fallbackModel === STE_LLM_FALLBACK, "DeepSeek reserva")
+assert(resolved.baseUrl.includes("openrouter.ai"), "OpenRouter")
+assert(steModelChain()[0] === STE_LLM_MODEL, "cadeia começa no Gemma")
+assert(steModelChain()[1] === STE_LLM_FALLBACK, "depois DeepSeek")
+assert(steLlmAttempts({ openrouterKey: "or" }).map((item) => item.model).join(">") === `${STE_LLM_MODEL}>${STE_LLM_FALLBACK}`, "tentativas Gemma→DeepSeek")
+assert(steLlmAttempts({ opencodeKey: "oc" }).length === 0, "OpenCode nao entra mais")
+assert(steModelChain(STE_LLM_FALLBACK, STE_LLM_FALLBACK).length === 1, "nao duplica reserva")
 const fallback = resolveRuntime({ AUTH: {} }, { steModel: "z-ai/glm-5.3-flash" })
-assert(fallback.model === STE_LLM_MODEL, "OpenRouter antigo nao fura o MiMo")
-assert(fallback.fallbackModel === STE_LLM_FALLBACK, "reserva publica e o Gemma")
-const unknown = resolveRuntime({ AUTH: {} }, { steModel: "modelo-inventado" })
-assert(unknown.model === STE_LLM_MODEL, "modelo velho cai no MiMo")
-const migrated = resolveRuntime({ AUTH: {} }, { steModel: "google/gemma-4-31b-it:free" })
-assert(migrated.model === STE_LLM_MODEL && migrated.fallbackModel === STE_LLM_FALLBACK, "Gemma gravado vira reserva")
+assert(fallback.model === "z-ai/glm-5.3-flash", "glm conhecido fica")
+const unknown = resolveRuntime({ AUTH: {} }, { steModel: "mimo-v2.5-free" })
+assert(unknown.model === STE_LLM_MODEL, "MiMo antigo cai no Gemma")
+const migrated = resolveRuntime({ AUTH: {} }, { steModel: "mimo-v2.5-free", steFallbackModel: "google/gemma-4-31b-it:free" })
+assert(migrated.model === STE_LLM_MODEL && migrated.fallbackModel === STE_LLM_FALLBACK, "KV velho vira Gemma→DeepSeek")
 
 const first = lead("crm-1", "@ana")
 first.telegramChatId = "41"
@@ -258,7 +256,7 @@ const realFetch = globalThis.fetch
 globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
   const body = JSON.parse(String(init?.body ?? "{}")) as { model?: string }
   seen.push(body.model ?? "")
-  if ((body.model ?? "").includes("mimo") || (body.model ?? "").includes("gemma")) return new Response("rate", { status: 429 })
+  if ((body.model ?? "").includes("gemma")) return new Response("rate", { status: 429 })
   return new Response(
     JSON.stringify({
       choices: [
@@ -276,9 +274,8 @@ globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
 try {
   const offerLead = { ...replySte(lead("llm-1"), null).lead, stePhase: "offer" as const }
   const smart = await replySteSmart(offerLead, "e agora o que eu faço?", { apiKey: "sk-test" })
-  assert(seen[0] === STE_LLM_MODEL, "tenta MiMo primeiro")
-  assert(seen[1] === STE_LLM_FALLBACK, "Gemma entra no 429 do Zen")
-  assert(seen[2] === STE_LLM_RESERVE, "DeepSeek entra no 429 do Gemma")
+  assert(seen[0] === STE_LLM_MODEL, "tenta Gemma primeiro")
+  assert(seen[1] === STE_LLM_FALLBACK, "DeepSeek entra no 429")
   assert(smart.replies.some((item) => item.includes("enrolação")), "usa a resposta da reserva")
   assert(smart.replies.some((item) => item.includes("app.mundoaviator.com.br")), "IA precisa manter o link do passo")
   seen.length = 0

@@ -1,4 +1,4 @@
-import { STE_LLM_FALLBACK, STE_LLM_RESERVE, openRouterHeaders, steModelChain } from "../src/lib/llm.ts"
+import { STE_LLM_FALLBACK, STE_LLM_MODEL, openRouterHeaders, steModelChain } from "../src/lib/llm.ts"
 import { replySte, replySteSmart } from "../src/lib/ste.ts"
 import type { Lead } from "../src/lib/types.ts"
 
@@ -61,7 +61,7 @@ async function probe(model: string) {
 }
 
 const probes = []
-for (const model of [STE_LLM_FALLBACK, STE_LLM_RESERVE, "z-ai/glm-5.2:free", "z-ai/glm-5.3-flash"]) {
+for (const model of [STE_LLM_MODEL, STE_LLM_FALLBACK, "z-ai/glm-5.2:free", "z-ai/glm-5.3-flash"]) {
   probes.push(await probe(model))
 }
 
@@ -95,4 +95,4 @@ if (!backupOk) {
   console.error("reserva DeepSeek falhou")
   process.exit(1)
 }
-console.log(primaryOk ? "openrouter-smoke ok (Gemma reserva + DeepSeek)" : "openrouter-smoke ok (DeepSeek reserva)")
+console.log(primaryOk ? "openrouter-smoke ok (Gemma + DeepSeek)" : "openrouter-smoke ok (DeepSeek reserva)")

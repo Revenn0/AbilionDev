@@ -8,7 +8,7 @@ Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / M
 - Dashboard: leads, conversas, página / cliques, Facebook, espera, ofertas
 - Analytics: funil Ads → landing → Telegram → chat, globo de visitantes, gráficos de 30 dias, geo e device
 - Leads no passo do fluxo (print, banca, espera, oferta só se o grafo deixar)
-- Conversas Telegram: a Sté segue o funil publicado (boas-vindas, minicurso, Superbet, App/Premium, remarketing). A voz muda conforme o que o lead falou; o passo, os links e a próxima fase não mudam. A IA tenta primeiro o MiMo V2.5 Free no OpenCode Zen; se o Zen recusar, cai no Gemma e no DeepSeek do OpenRouter. Sem chave, a voz local ainda reconhece o lead.
+- Conversas Telegram: a Sté segue o funil publicado (boas-vindas, minicurso, Superbet, App/Premium, remarketing). A voz muda conforme o que o lead falou; o passo, os links e a próxima fase não mudam. A IA é só OpenRouter: Gemma 4 31B, DeepSeek se o Gemma falhar. Sem chave, a voz local ainda reconhece o lead.
 - Funil com mapa e fluxo executável
 - Telegram: webhook no Worker (`/api/telegram`) — /start abre a Sté
 - Facebook → Telegram: `https://t.me/BOT?start=fb` (500–1000 /start por dia)
@@ -95,11 +95,10 @@ npx wrangler secret put TELEGRAM_WEBHOOK_SECRET
 npx wrangler secret put SUPABASE_SERVICE_ROLE
 npx wrangler secret put CRON_SECRET
 npx wrangler secret put ESTER_CHAT_ID
-npx wrangler secret put OPENCODE_API_KEY  # chave OpenCode oc_sk…
 npx wrangler secret put OPENAI_API_KEY    # chave OpenRouter sk-or-v1…
 ```
 
-Sté fala primeiro com **OpenCode Zen** no **MiMo V2.5 Free** (`mimo-v2.5-free`). O Zen grátis recusa pedidos feitos fora do app OpenCode (403); nesse caso a Sté cai no **Gemma 4 31B** e depois no **DeepSeek V4 Flash** do OpenRouter. As chaves `oc_sk…` e `sk-or-v1…` gravam-se em Configurações, nunca no git. Sem IA, o quadro e a voz local continuam.
+Sté fala só com **OpenRouter**. Padrão: **Gemma 4 31B** (`google/gemma-4-31b-it:free`). Reserva: **DeepSeek V4 Flash** se o Gemma devolver 429. A chave `sk-or-v1…` grava-se em Configurações, nunca no git. Sem IA, o quadro e a voz local continuam.
 
 Webhook Telegram: `{origem}/api/telegram`  
 Cron de espera: hora a hora, ou `GET /api/cron?secret=…`  

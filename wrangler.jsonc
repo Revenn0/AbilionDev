@@ -25,9 +25,8 @@
     "SUPABASE_URL": "https://eyjgmkmaixmpmeeahxon.supabase.co",
     "ABILION_ENV": "production",
     "OPENAI_BASE_URL": "https://openrouter.ai/api/v1",
-    "OPENCODE_BASE_URL": "https://opencode.ai/zen/v1",
-    "STE_MODEL": "mimo-v2.5-free",
-    "STE_FALLBACK_MODEL": "google/gemma-4-31b-it:free",
+    "STE_MODEL": "google/gemma-4-31b-it:free",
+    "STE_FALLBACK_MODEL": "deepseek/deepseek-v4-flash-0731:free",
     "STE_USE_LLM": "1"
   },
   "kv_namespaces": [

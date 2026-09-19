@@ -1,11 +1,9 @@
-export const OPENCODE_BASE_URL = "https://opencode.ai/zen/v1"
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-export const STE_LLM_BASE_URL = OPENCODE_BASE_URL
-export const STE_LLM_MODEL = "mimo-v2.5-free"
-export const STE_LLM_FALLBACK = "google/gemma-4-31b-it:free"
-export const STE_LLM_RESERVE = "deepseek/deepseek-v4-flash-0731:free"
+export const STE_LLM_BASE_URL = OPENROUTER_BASE_URL
+export const STE_LLM_MODEL = "google/gemma-4-31b-it:free"
+export const STE_LLM_FALLBACK = "deepseek/deepseek-v4-flash-0731:free"
 
-export type SteLlmProvider = "opencode" | "openrouter"
+export type SteLlmProvider = "openrouter"
 
 export type SteLlmRoute = {
   provider: SteLlmProvider
@@ -16,48 +14,31 @@ export type SteLlmRoute = {
 
 export const STE_LLM_MODELS = [
   {
-    id: "mimo-v2.5-free",
-    label: "MiMo V2.5 Free",
-    provider: "opencode" as const,
-    hint: "OpenCode Zen. Principal da Sté. Se o Zen recusar fora do app, cai no OpenRouter.",
-  },
-  {
     id: "google/gemma-4-31b-it:free",
     label: "Gemma 4 31B",
-    provider: "openrouter" as const,
-    hint: "Reserva OpenRouter. Português estável.",
+    hint: "Padrão da Sté no OpenRouter. Português estável, tom de conversa.",
   },
   {
     id: "deepseek/deepseek-v4-flash-0731:free",
     label: "DeepSeek V4 Flash",
-    provider: "openrouter" as const,
-    hint: "Última reserva OpenRouter.",
+    hint: "Reserva automática se o Gemma devolver 429.",
   },
   {
     id: "z-ai/glm-5.2:free",
     label: "GLM 5.2",
-    provider: "openrouter" as const,
     hint: "Família Z.ai, grátis no OpenRouter.",
   },
   {
     id: "z-ai/glm-5.3-flash",
     label: "GLM 5.3 Flash",
-    provider: "openrouter" as const,
-    hint: "Pago no OpenRouter.",
+    hint: "Pago no OpenRouter. Melhor para 500–1000 leads/dia.",
   },
 ] as const
 
 export type SteLlmModelId = (typeof STE_LLM_MODELS)[number]["id"]
 
-export function providerOf(model?: string): SteLlmProvider {
-  const id = (model ?? "").trim()
-  const row = STE_LLM_MODELS.find((item) => item.id === id)
-  if (row) return row.provider
-  return id.includes("/") ? "openrouter" : "opencode"
-}
-
-export function baseUrlOf(model?: string) {
-  return providerOf(model) === "opencode" ? OPENCODE_BASE_URL : OPENROUTER_BASE_URL
+export function baseUrlOf(_model?: string) {
+  return OPENROUTER_BASE_URL
 }
 
 export function normalizeSteModel(value?: string) {
@@ -68,20 +49,12 @@ export function normalizeSteModel(value?: string) {
 
 export function steLlmRoutes(primary?: string, backup?: string): SteLlmRoute[] {
   const first = normalizeSteModel(primary)
-  const ids = [first]
-  if (providerOf(first) === "opencode") {
-    for (const extra of [STE_LLM_FALLBACK, STE_LLM_RESERVE]) {
-      if (!ids.includes(extra)) ids.push(extra)
-    }
-  } else {
-    const second = normalizeSteModel(backup || STE_LLM_RESERVE)
-    if (!ids.includes(second)) ids.push(second)
-    if (!ids.includes(STE_LLM_RESERVE)) ids.push(STE_LLM_RESERVE)
-  }
+  const second = normalizeSteModel(backup || STE_LLM_FALLBACK)
+  const ids = first === second ? [first] : [first, second]
   return ids.map((model) => ({
-    provider: providerOf(model),
+    provider: "openrouter" as const,
     model,
-    baseUrl: baseUrlOf(model),
+    baseUrl: OPENROUTER_BASE_URL,
     label: STE_LLM_MODELS.find((item) => item.id === model)?.label ?? model,
   }))
 }
@@ -99,12 +72,8 @@ export function openRouterHeaders(apiKey: string, origin = "https://www.abilion.
   }
 }
 
-export function llmHeaders(apiKey: string, provider: SteLlmProvider = providerOf()) {
-  if (provider === "openrouter") return openRouterHeaders(apiKey)
-  return {
-    authorization: `Bearer ${apiKey}`,
-    "content-type": "application/json",
-  }
+export function llmHeaders(apiKey: string, _provider: SteLlmProvider = "openrouter") {
+  return openRouterHeaders(apiKey)
 }
 
 export function steLlmAttempts(opts?: {
@@ -114,11 +83,7 @@ export function steLlmAttempts(opts?: {
   openrouterKey?: string
   apiKey?: string
 }) {
-  const opencodeKey = (opts?.opencodeKey || "").trim()
-  const openrouterKey = (opts?.openrouterKey || "").trim()
-  const legacy = (opts?.apiKey || "").trim()
-  return steLlmRoutes(opts?.primary, opts?.fallback).flatMap((route) => {
-    const apiKey = route.provider === "opencode" ? opencodeKey || legacy : openrouterKey || legacy
-    return apiKey ? [{ ...route, apiKey }] : []
-  })
+  const apiKey = (opts?.openrouterKey || opts?.apiKey || "").trim()
+  if (!apiKey) return []
+  return steLlmRoutes(opts?.primary, opts?.fallback).map((route) => ({ ...route, apiKey }))
 }
