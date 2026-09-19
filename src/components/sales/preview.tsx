@@ -27,7 +27,13 @@ export function FunnelPreview({
 }) {
   const all = funnel.nodes
   const ranked = [...all].sort((a, b) => a.position.x - b.position.x || a.position.y - b.position.y)
-  const nodes = ranked.slice(0, 5)
+  const picked = [
+    all.find((node) => node.type === "traffic"),
+    all.find((node) => node.type === "landing"),
+    all.find((node) => node.type === "entry" && node.data.entryTrigger === "start") || all.find((node) => node.type === "entry"),
+    all.find((node) => node.type === "message"),
+  ].filter((node): node is (typeof all)[number] => Boolean(node))
+  const nodes = picked.length >= 2 ? picked : ranked.slice(0, 4)
   if (all.length === 0) {
     return (
       <div className={cn("relative grid h-[188px] place-items-center bg-muted/50", className)}>
