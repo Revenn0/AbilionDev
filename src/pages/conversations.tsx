@@ -8,7 +8,7 @@ import { hasConversation } from "@/lib/ops"
 import { ORIGIN_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { GeoBadge } from "@/components/crm/geo-badge"
 import { factsWithTrack } from "@/lib/geo"
-import { advanceSteIfDue, replySte, splitSteMarkup, steRuntimeFromFunnels, steStepLabel } from "@/lib/ste"
+import { advanceSteIfDue, replySteLived, splitSteMarkup, steHeardChips, steRuntimeFromFunnels, steStepLabel } from "@/lib/ste"
 import { useTrackSummary } from "@/lib/use-track-summary"
 import { timeAgo } from "@/lib/format"
 import type { Lead } from "@/lib/types"
@@ -102,7 +102,7 @@ export function ConversationsPage() {
     if (!lead || lead.steBlocked || lead.steQuiet) return
     const text = draft.trim()
     if (!text) return
-    const result = replySte(lead, text, Date.now(), runtime)
+    const result = replySteLived(lead, text, Date.now(), runtime)
     saveLead(result.lead)
     setDraft("")
   }
@@ -128,7 +128,7 @@ export function ConversationsPage() {
           <section className="surface grid place-items-center px-6 py-16 text-center">
             <p className="text-[14px] font-medium">Nenhuma conversa no Telegram</p>
             <p className="mt-1 max-w-md text-[13px] text-muted-foreground">
-              O anúncio do Facebook usa t.me/BOT?start=fb. /start abre a Sté com 3 boas-vindas e espera a resposta.
+              O anúncio do Facebook usa t.me/BOT?start=fb. /start manda as 3 boas-vindas do quadro. A resposta do lead a Sté ouve, sem sair do passo.
             </p>
           </section>
         ) : (
@@ -185,6 +185,15 @@ export function ConversationsPage() {
                       </span>
                       <GeoBadge facts={factsWithTrack(lead, summary.geos)} />
                     </p>
+                    {steHeardChips(lead.facts).length > 0 && (
+                      <p className="mt-1.5 flex flex-wrap gap-1">
+                        {steHeardChips(lead.facts).map((chip) => (
+                          <span key={chip} className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
+                            {chip}
+                          </span>
+                        ))}
+                      </p>
+                    )}
                   </div>
                   <StatusPill tone={lead.steQuiet || lead.steBlocked ? "danger" : lead.temperature === "quente" ? "danger" : "muted"}>
                     {lead.steQuiet ? "Quieto" : lead.steBlocked ? "Encerrado" : TEMP_LABEL[lead.temperature]}
@@ -223,7 +232,9 @@ export function ConversationsPage() {
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
                     placeholder={
-                      lead.steQuiet || lead.steBlocked ? "Esta instância já silenciou." : "Mensagem do lead no Telegram…"
+                      lead.steQuiet || lead.steBlocked
+                        ? "Esta instância já silenciou."
+                        : "Fale como o lead. A Sté ouve e segue o passo do funil."
                     }
                     disabled={lead.steBlocked || lead.steQuiet}
                   />

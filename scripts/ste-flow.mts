@@ -5,8 +5,12 @@ import { emptySummary, isFacebookTraffic, summarizeTrack, type TrackEvent } from
 import {
   isolateLead,
   replySte,
+  replySteLived,
   replySteSmart,
   replySteTick,
+  applySteVoice,
+  guardSteVoice,
+  listenLine,
   STE_WELCOME,
   STE_COURSE_BLOCK,
   STE_SUPERBET_BLOCK,
@@ -23,7 +27,7 @@ import { mergeLeads } from "../src/lib/crm.ts"
 import type { Lead } from "../src/lib/types.ts"
 import { findLeadInKv, upsertLeadKv } from "../worker/crm-store.ts"
 import { memoryKv } from "../worker/kv.ts"
-import { STE_LLM_FALLBACK, STE_LLM_MODEL, steModelChain } from "../src/lib/llm.ts"
+import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_LLM_RESERVE, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
 
 function lead(id = "lead-1", contact = "@fb1"): Lead {
@@ -74,6 +78,22 @@ assert(course.replies[0] === STE_COURSE_BLOCK[0], "passo 2 acolhe")
 assert(course.replies.some((item) => item.includes("minicurso gratuito")), "link mascarado do curso")
 assert(!course.replies.some((item) => item.includes("http") && !item.includes("](")), "sem url crua no curso")
 assert(course.lead.stePhase === "diagnosis", "fase diagnosis")
+assert(course.beat.kind === "course" && course.beat.vary, "passo do minicurso pode ter voz")
+assert(course.lead.facts.heard?.includes("perdendo"), "guarda o que o lead falou")
+assert(
+  listenLine({ experience: "beginner", results: "losing" }, "to começando agora e perdendo", "course")?.includes("prejuízo"),
+  "voz ouve iniciante no prejuízo"
+)
+const lived = replySteLived(start.lead, "to começando agora e perdendo")
+assert(lived.replies[0] !== STE_COURSE_BLOCK[0], "voz troca a primeira fala")
+assert(lived.replies[0].includes("prejuízo"), "primeira fala reconhece o lead")
+assert(lived.replies.some((item) => item.includes("minicurso gratuito")), "voz mantém o link do quadro")
+assert(lived.lead.stePhase === "diagnosis", "voz nao pula de fase")
+assert(!guardSteVoice(course.replies, ["oi sem link"], course.beat), "guarda derruba fala sem o link")
+assert(
+  !guardSteVoice(course.replies, [course.replies[0]!, "https://go.perfectpay.com.br/PPU38CQDT9B"], course.beat),
+  "guarda barra url crua e checkout"
+)
 
 const platform = replySte(course.lead, "ainda nao tenho conta")
 assert(platform.replies[0] === STE_SUPERBET_BLOCK[0], "passo 3 superbet")
@@ -201,18 +221,24 @@ assert(kept.telegramBotToken === "123:abc", "mascara nao apaga o token")
 const swapped = mergeSecrets({ telegramBotToken: "123:abc" }, { telegramBotToken: "999:xyz" })
 assert(swapped.telegramBotToken === "999:xyz", "token novo substitui")
 assert(tokenHint("123:abcd") === "•••• abcd", "hint do token")
-const resolved = resolveRuntime({ TELEGRAM_BOT_TOKEN: "env-token", STE_USE_LLM: "1", AUTH: {} }, { telegramBotToken: "kv-token", openaiApiKey: "sk-or", steModel: "google/gemma-4-31b-it:free" })
+const resolved = resolveRuntime({ TELEGRAM_BOT_TOKEN: "env-token", STE_USE_LLM: "1", AUTH: {} }, { telegramBotToken: "kv-token", openaiApiKey: "sk-or", opencodeApiKey: "oc_sk_test", steModel: "mimo-v2.5-free" })
 assert(resolved.telegramBotToken === "kv-token", "KV manda no token")
 assert(resolved.telegram, "telegram ligado")
 assert(resolved.llm, "llm ligada")
 assert(resolved.persist === "kv", "persistencia KV")
-assert(resolved.model === "google/gemma-4-31b-it:free", "Gemma 4 31B")
-assert(resolved.fallbackModel === "deepseek/deepseek-v4-flash-0731:free", "DeepSeek reserva")
-assert(resolved.baseUrl.includes("openrouter.ai"), "OpenRouter")
-assert(steModelChain()[1] === "deepseek/deepseek-v4-flash-0731:free", "cadeia Gemma→DeepSeek")
-assert(steModelChain(STE_LLM_FALLBACK, STE_LLM_FALLBACK).length === 1, "nao duplica reserva")
-const fallback = resolveRuntime({ AUTH: {} }, { steModel: "glm-5.3-flash" })
-assert(fallback.model === "google/gemma-4-31b-it:free", "modelo velho cai no Gemma")
+assert(resolved.model === "mimo-v2.5-free", "MiMo principal")
+assert(resolved.fallbackModel === STE_LLM_FALLBACK, "Gemma reserva")
+assert(resolved.opencodeApiKey.startsWith("oc_sk"), "chave OpenCode no runtime")
+assert(steModelChain()[0] === STE_LLM_MODEL, "cadeia começa no MiMo")
+assert(steModelChain()[1] === STE_LLM_FALLBACK, "depois Gemma")
+assert(steModelChain()[2] === STE_LLM_RESERVE, "DeepSeek no fim")
+assert(steLlmAttempts({ opencodeKey: "oc", openrouterKey: "or" }).map((item) => item.model).join(">") === `${STE_LLM_MODEL}>${STE_LLM_FALLBACK}>${STE_LLM_RESERVE}`, "tentativas MiMo→Gemma→DeepSeek")
+assert(steLlmAttempts({ openrouterKey: "or" })[0]?.model === STE_LLM_FALLBACK, "sem OpenCode pula pro Gemma")
+assert(steModelChain(STE_LLM_FALLBACK, STE_LLM_FALLBACK)[0] === STE_LLM_FALLBACK, "nao duplica Gemma")
+const fallback = resolveRuntime({ AUTH: {} }, { steModel: "z-ai/glm-5.3-flash" })
+assert(fallback.model === "z-ai/glm-5.3-flash", "glm conhecido fica")
+const unknown = resolveRuntime({ AUTH: {} }, { steModel: "modelo-inventado" })
+assert(unknown.model === STE_LLM_MODEL, "modelo velho cai no MiMo")
 
 const first = lead("crm-1", "@ana")
 first.telegramChatId = "41"
@@ -229,10 +255,17 @@ const realFetch = globalThis.fetch
 globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
   const body = JSON.parse(String(init?.body ?? "{}")) as { model?: string }
   seen.push(body.model ?? "")
-  if ((body.model ?? "").includes("gemma")) return new Response("rate", { status: 429 })
+  if ((body.model ?? "").includes("mimo") || (body.model ?? "").includes("gemma")) return new Response("rate", { status: 429 })
   return new Response(
     JSON.stringify({
-      choices: [{ message: { content: "Me chama no privado que te passo os detalhes certinho." } }],
+      choices: [
+        {
+          message: {
+            content:
+              "Quer subir de nível agora? Te passo o caminho sem enrolação.\n\n[clique aqui para conhecer os planos do App](https://app.mundoaviator.com.br/)",
+          },
+        },
+      ],
     }),
     { status: 200, headers: { "content-type": "application/json" } }
   )
@@ -240,9 +273,24 @@ globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
 try {
   const offerLead = { ...replySte(lead("llm-1"), null).lead, stePhase: "offer" as const }
   const smart = await replySteSmart(offerLead, "e agora o que eu faço?", { apiKey: "sk-test" })
-  assert(seen[0] === STE_LLM_MODEL, "tenta Gemma primeiro")
-  assert(seen[1] === STE_LLM_FALLBACK, "DeepSeek entra no 429")
-  assert(smart.replies.some((item) => item.includes("privado")), "usa a resposta da reserva")
+  assert(seen[0] === STE_LLM_MODEL, "tenta MiMo primeiro")
+  assert(seen[1] === STE_LLM_FALLBACK, "Gemma entra no 429 do Zen")
+  assert(seen[2] === STE_LLM_RESERVE, "DeepSeek entra no 429 do Gemma")
+  assert(smart.replies.some((item) => item.includes("enrolação")), "usa a resposta da reserva")
+  assert(smart.replies.some((item) => item.includes("app.mundoaviator.com.br")), "IA precisa manter o link do passo")
+  seen.length = 0
+  const badFetch = globalThis.fetch
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ choices: [{ message: { content: "Me chama no privado que te passo os detalhes certinho." } }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })) as typeof fetch
+  const rejected = await replySteSmart(offerLead, "e agora o que eu faço?", { apiKey: "sk-test" })
+  globalThis.fetch = badFetch
+  assert(!rejected.replies.some((item) => item.includes("privado")), "guarda recusa fala solta")
+  assert(rejected.replies.some((item) => item.includes("app.mundoaviator.com.br")), "cai na voz com o link do quadro")
+  const voicedOffer = applySteVoice(replySte(offerLead, "quero o app"), "quero o app")
+  assert(voicedOffer.beat.kind === "offer", "pedido de app continua oferta")
 } finally {
   globalThis.fetch = realFetch
 }

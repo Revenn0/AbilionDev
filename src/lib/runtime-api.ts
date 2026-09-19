@@ -13,6 +13,7 @@ export type RuntimeStatus = {
   webhookOk?: boolean
   model?: string
   fallbackModel?: string
+  opencodeHint?: string
   error?: string
 }
 
@@ -37,6 +38,7 @@ export async function saveRuntime(body: {
   telegramBotUsername?: string
   telegramGroupUrl?: string
   openaiApiKey?: string
+  opencodeApiKey?: string
   steModel?: string
   steFallbackModel?: string
 }) {

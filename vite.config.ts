@@ -2,7 +2,7 @@ import path from "node:path"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
-import { defineConfig, type ViteDevServer } from "vite"
+import { defineConfig, loadEnv, type ViteDevServer } from "vite"
 import { fileKv } from "./worker/file-kv.ts"
 import { backgroundCtx, handleRequest, type Env } from "./worker/index.ts"
 
@@ -16,16 +16,20 @@ function readBody(req: IncomingMessage) {
 }
 
 function viteEnv(): Env {
+  const env = loadEnv("development", path.resolve(import.meta.dirname), "")
   return {
     ASSETS: { fetch: () => Promise.resolve(new Response("not found", { status: 404 })) },
-    SUPABASE_URL: process.env.VITE_SUPABASE_URL || "https://eyjgmkmaixmpmeeahxon.supabase.co",
+    SUPABASE_URL: env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://eyjgmkmaixmpmeeahxon.supabase.co",
     AUTH: fileKv(path.resolve(import.meta.dirname, ".data/kv")) as Env["AUTH"],
     OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
-    STE_MODEL: "google/gemma-4-31b-it:free",
-    STE_FALLBACK_MODEL: "deepseek/deepseek-v4-flash-0731:free",
+    OPENCODE_BASE_URL: "https://opencode.ai/zen/v1",
+    OPENAI_API_KEY: env.OPENAI_API_KEY || process.env.OPENAI_API_KEY,
+    OPENCODE_API_KEY: env.OPENCODE_API_KEY || process.env.OPENCODE_API_KEY,
+    STE_MODEL: "mimo-v2.5-free",
+    STE_FALLBACK_MODEL: "google/gemma-4-31b-it:free",
     STE_USE_LLM: "1",
     ABILION_ENV: "development",
-    ABILION_OPERATOR_PASSWORD: process.env.ABILION_OPERATOR_PASSWORD,
+    ABILION_OPERATOR_PASSWORD: env.ABILION_OPERATOR_PASSWORD || process.env.ABILION_OPERATOR_PASSWORD,
   }
 }
 

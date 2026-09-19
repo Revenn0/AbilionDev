@@ -150,6 +150,11 @@ export function SalesInspector({
       {(node.type === "message" || node.type === "handoff" || node.type === "offer") && (
         <Field label={d.steLine ? "O que a Sté diz (uma linha por bloco)" : "Texto"}>
           <Textarea disabled={readOnly} rows={d.steLine ? 7 : 5} value={d.body || ""} onChange={(e) => set({ body: e.target.value })} />
+          {d.steLine ? (
+            <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+              Este passo é o padrão. A Sté pode mudar o tom e mostrar que ouviu o lead, mas não troca de fase nem inventa link.
+            </p>
+          ) : null}
         </Field>
       )}
       {node.type === "notify" && (

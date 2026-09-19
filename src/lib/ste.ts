@@ -1,6 +1,6 @@
 import { uid } from "./format"
-import { openRouterHeaders, steModelChain, STE_LLM_BASE_URL, STE_LLM_FALLBACK, STE_LLM_MODEL } from "./llm"
-import type { ChatMessage, FlowNode, Lead, SalesSnapshot, Settings, SteLine, StePhase } from "./types"
+import { llmHeaders, steLlmAttempts, type SteLlmProvider, STE_LLM_BASE_URL, STE_LLM_FALLBACK, STE_LLM_MODEL } from "./llm"
+import type { ChatMessage, FlowNode, Lead, LeadFacts, SalesSnapshot, Settings, SteLine, StePhase } from "./types"
 
 export { STE_LLM_BASE_URL, STE_LLM_FALLBACK, STE_LLM_MODEL }
 
@@ -169,6 +169,60 @@ export type SteMarkup =
   | { type: "text"; text: string }
   | { type: "link"; text: string; url: string }
 
+export type SteBeatKind =
+  | "welcome"
+  | "course"
+  | "superbet"
+  | "rescue"
+  | "offer"
+  | "lives"
+  | "remarketing"
+  | "close"
+  | "confirm"
+  | "redirect"
+  | "idle"
+
+export type SteBeat = {
+  kind: SteBeatKind
+  vary: boolean
+  requiredUrls: string[]
+  keepPhrases: string[]
+}
+
+const FROZEN_BEATS = new Set<SteBeatKind>(["welcome", "close", "idle", "rescue", "remarketing"])
+const INVENTED_CLAIM = /garantido|\b100\s?%|acerto de|te dou r\$|pix\s+\d|banca de\s+\d/i
+
+export function urlsIn(texts: readonly string[]) {
+  const found: string[] = []
+  const pattern = /\]\((https?:[^)\s]+)\)/g
+  for (const text of texts) {
+    for (const match of text.matchAll(pattern)) {
+      if (match[1] && !found.includes(match[1])) found.push(match[1])
+    }
+  }
+  return found
+}
+
+export function beatFor(kind: SteBeatKind, replies: readonly string[] = []): SteBeat {
+  return {
+    kind,
+    vary: !FROZEN_BEATS.has(kind),
+    requiredUrls: urlsIn(replies),
+    keepPhrases: kind === "lives" ? ["10:30", "15:30", "20:30"] : [],
+  }
+}
+
+export function steHeardChips(facts?: LeadFacts | null) {
+  const chips: string[] = []
+  if (facts?.experience === "beginner") chips.push("Começando")
+  if (facts?.experience === "experienced") chips.push("Já joga")
+  if (facts?.results === "losing") chips.push("No prejuízo")
+  if (facts?.results === "winning") chips.push("No positivo")
+  if (facts?.hasSuperbet === true) chips.push("Tem Superbet")
+  if (facts?.hasSuperbet === false) chips.push("Sem conta")
+  return chips
+}
+
 export type SteRuntime = {
   talking?: boolean
   welcome?: string[]
@@ -187,6 +241,7 @@ export type SteResult = {
   lead: Lead
   replies: string[]
   reply: string | null
+  beat: SteBeat
 }
 
 function splitNodeCopy(body?: string) {
@@ -290,10 +345,11 @@ export function applyLeadFacts(lead: Lead, incoming: string) {
   const text = incoming.trim()
   if (!text) return
   const facts = { ...(lead.facts ?? {}) }
+  facts.heard = text.slice(0, 140)
   if (/come[cç]ando|iniciante|primeira vez|nunca jog/i.test(text)) facts.experience = "beginner"
-  if (/j[aá] jogo|experien|veterano|h[aá] tempo/i.test(text)) facts.experience = "experienced"
-  if (/perdend|queim|no preju/i.test(text)) facts.results = "losing"
-  if (/ganhand|lucr|positivo/i.test(text)) facts.results = "winning"
+  if (/j[aá] jogo|experien|veterano|h[aá] tempo|j[aá] opero/i.test(text)) facts.experience = "experienced"
+  if (/perdend|queim|no preju|zerou|quebr|tilt/i.test(text)) facts.results = "losing"
+  if (/ganhand|lucr|positivo|no verde/i.test(text)) facts.results = "winning"
   if (SIGNED_UP.test(text)) facts.hasSuperbet = true
   if (/n[aã]o tenho conta|ainda n[aã]o tenho|sem conta/i.test(text)) facts.hasSuperbet = false
   lead.facts = facts
@@ -375,8 +431,139 @@ function pushAll(lead: Lead, texts: readonly string[], now = Date.now()) {
   for (const text of texts) push(lead, "ste", text, now)
 }
 
-function pack(lead: Lead, replies: string[]): SteResult {
-  return { lead, replies, reply: replies.at(-1) ?? null }
+function pack(lead: Lead, replies: string[], kind: SteBeatKind = "idle"): SteResult {
+  return { lead, replies, reply: replies.at(-1) ?? null, beat: beatFor(kind, replies) }
+}
+
+function dropLastSte(lead: Lead, count: number) {
+  if (count <= 0) return
+  const messages = [...(lead.messages ?? [])]
+  let left = count
+  for (let index = messages.length - 1; index >= 0 && left > 0; index--) {
+    if (messages[index]?.role === "ste") {
+      messages.splice(index, 1)
+      left--
+    }
+  }
+  lead.messages = messages
+}
+
+function hasRawUrl(text: string) {
+  return /https?:\/\//i.test(text.replace(/\[[^\]]+\]\(https?:[^)\s]+\)/g, ""))
+}
+
+export function listenLine(facts: LeadFacts | undefined, incoming: string, kind: SteBeatKind) {
+  const text = incoming.trim()
+  if (kind === "course") {
+    if (facts?.experience === "beginner" && facts.results === "losing") {
+      return "Começar e já estar no prejuízo é o mais comum — sem método a banca some rápido."
+    }
+    if (facts?.experience === "beginner") {
+      return "Beleza, então a gente começa do zero, sem pressa e sem furada."
+    }
+    if (facts?.experience === "experienced" && facts.results === "losing") {
+      return "Quem já joga e tá queimando precisa de gestão, não de mais palpite."
+    }
+    if (facts?.results === "winning") {
+      return "Bom ver resultado. Agora é proteger e repetir do jeito certo."
+    }
+    if (facts?.results === "losing") {
+      return "Te ouvi: tá no prejuízo. Primeiro a gente alinha o método."
+    }
+    return text ? "Te entendi. Vou te passar a base pra você não operar no achismo." : null
+  }
+  if (kind === "superbet") {
+    if (facts?.hasSuperbet === false) {
+      return "Sem conta na casa certa a estratégia não roda. Eu opero e recomendo a Superbet."
+    }
+    if (facts?.hasSuperbet === true) {
+      return "Conta feita. Pra operar junto comigo nas lives, o lugar é a Superbet."
+    }
+    return "Pra rodar as estratégias de verdade, você precisa estar na casa certa. Eu opero na Superbet."
+  }
+  if (kind === "confirm") {
+    if (facts?.hasSuperbet === true) {
+      return "Boa! Com a conta certa a gente opera junto nas lives. Qualquer depósito novo eu te encaixo no bônus de entrada."
+    }
+    return "Me confirma se o cadastro na Superbet já saiu — se travar em alguma etapa, me fala que eu te ajudo."
+  }
+  if (kind === "offer") {
+    return "Se quiser subir de nível agora, o caminho é o App, o Grupo Premium ou o checkout direto."
+  }
+  if (kind === "lives") {
+    return "Eu faço lives diárias pra gente operar junto e pegar as melhores velas. Anota os horários:"
+  }
+  if (kind === "redirect") {
+    return "Bora ficar no Aviator — me conta se você já joga, se está começando agora e como têm sido seus resultados."
+  }
+  return null
+}
+
+export function guardSteVoice(scripted: readonly string[], voiced: readonly string[], beat: SteBeat) {
+  if (!voiced.length || voiced.length > Math.max(4, scripted.length)) return false
+  if (voiced.some((item) => item.length > 420 || hasRawUrl(item))) return false
+  const allowed = new Set([...beat.requiredUrls, ...urlsIn(scripted)])
+  if (urlsIn(voiced).some((url) => !allowed.has(url))) return false
+  if (beat.requiredUrls.some((url) => !voiced.some((item) => item.includes(url)))) return false
+  if (beat.keepPhrases.some((phrase) => !voiced.some((item) => item.includes(phrase)))) return false
+  const joined = voiced.join("\n")
+  const base = scripted.join("\n")
+  if (INVENTED_CLAIM.test(joined) && !INVENTED_CLAIM.test(base)) return false
+  if (beat.kind === "course" && [STE_SUPERBET, STE_CHECKOUT, STE_PREMIUM, STE_LANDING].some((url) => joined.includes(url))) {
+    return false
+  }
+  if ((beat.kind === "superbet" || beat.kind === "confirm") && (joined.includes(STE_CHECKOUT) || joined.includes(STE_PREMIUM))) {
+    return false
+  }
+  if (beat.kind === "redirect" && urlsIn(voiced).length) return false
+  if (beat.kind === "close") return voiced.length === 1 && voiced[0] === scripted[0]
+  return true
+}
+
+function withKeptLinks(opening: string, source: string) {
+  if (urlsIn([opening]).length) return opening
+  const links = source.match(/\[[^\]]+\]\(https?:[^)\s]+\)/g) ?? []
+  return links.length ? `${opening} ${links.join(" ")}`.trim() : opening
+}
+
+export function applySteVoice(result: SteResult, incoming: string, now = Date.now()): SteResult {
+  const beat = result.beat
+  if (!beat.vary || result.lead.steBlocked || result.lead.steQuiet || !result.replies.length) return result
+  const opening = listenLine(result.lead.facts, incoming, beat.kind)
+  if (!opening) return result
+  const voiced = [withKeptLinks(opening, result.replies[0] ?? ""), ...result.replies.slice(1)]
+  if (voiced[0] === result.replies[0]) return result
+  if (!guardSteVoice(result.replies, voiced, beat)) return result
+  const lead = cloneLead(result.lead)
+  dropLastSte(lead, result.replies.length)
+  pushAll(lead, voiced, now)
+  return pack(lead, voiced, beat.kind)
+}
+
+export function replySteLived(lead: Lead, incoming?: string | null, now = Date.now(), runtime?: SteRuntime): SteResult {
+  return applySteVoice(replySte(lead, incoming, now, runtime), incoming ?? "", now)
+}
+
+function voicePrompt(lead: Lead, incoming: string, scripted: readonly string[], beat: SteBeat) {
+  const maxBlocks = Math.min(6, Math.max(2, scripted.length))
+  return `Você é a Sté, Mãe do Aviator. Tom receptivo, firme, acolhedor. Odeia robô milagroso.
+
+Você NÃO escolhe o próximo passo. O passo já está travado: ${beat.kind}.
+Não avance de fase. Não ofereça outro produto.
+
+Texto-base do quadro (mantenha a mesma intenção, a mesma pergunta e os mesmos links):
+${scripted.map((line, index) => `${index + 1}. ${line}`).join("\n")}
+
+O lead acabou de dizer: ${incoming.trim() || "(silêncio)"}
+Fatos só deste lead: ${JSON.stringify(lead.facts ?? {})}
+
+Reescreva em no máximo ${maxBlocks} blocos curtos separados por linha em branco.
+- Primeiro bloco: mostre que ouviu o lead, sem copiar a frase dele.
+- Links só neste formato [texto](url). Sem URL crua.
+- URLs obrigatórios: ${beat.requiredUrls.join(" ") || "(nenhum)"}
+- Frases que não podem mudar: ${beat.keepPhrases.join(", ") || "(nenhuma)"}
+- Sem inventar banca, preço, garantia, porcentagem de acerto ou bônus que não esteja no texto-base.
+- Português do Brasil.`
 }
 
 function hasSteMessage(lead: Lead) {
@@ -446,21 +633,21 @@ function welcome(lead: Lead, now: number, lines: string[], remarketingMs: number
   setPhase(lead, "listen")
   pushAll(lead, lines, now)
   scheduleRemarketing(lead, now, remarketingMs)
-  return pack(lead, [...lines])
+  return pack(lead, [...lines], "welcome")
 }
 
 function course(lead: Lead, now: number, lines: string[], remarketingMs: number) {
   setPhase(lead, "diagnosis")
   pushAll(lead, lines, now)
   scheduleRemarketing(lead, now, remarketingMs)
-  return pack(lead, [...lines])
+  return pack(lead, [...lines], "course")
 }
 
 function superbet(lead: Lead, now: number, lines: string[]) {
   setPhase(lead, "solution")
   pushAll(lead, lines, now)
   scheduleSuperbet(lead, now)
-  return pack(lead, [...lines])
+  return pack(lead, [...lines], "superbet")
 }
 
 function offer(lead: Lead, now: number, lines: string[], remarketingMs: number) {
@@ -468,12 +655,12 @@ function offer(lead: Lead, now: number, lines: string[], remarketingMs: number) 
   cancelSuperbetWait(lead, now)
   pushAll(lead, lines, now)
   scheduleRemarketing(lead, now, remarketingMs)
-  return pack(lead, [...lines])
+  return pack(lead, [...lines], "offer")
 }
 
 function lives(lead: Lead, now: number, lines: string[]) {
   pushAll(lead, lines, now)
-  return pack(lead, [...lines])
+  return pack(lead, [...lines], "lives")
 }
 
 function close(lead: Lead, now: number, text: string) {
@@ -481,7 +668,7 @@ function close(lead: Lead, now: number, text: string) {
   setPhase(lead, "closed")
   lead.waitUntil = undefined
   push(lead, "ste", text, now)
-  return pack(lead, [text])
+  return pack(lead, [text], "close")
 }
 
 function replyToIncoming(lead: Lead, incoming: string, now: number, copy: ReturnType<typeof resolveCopy>): SteResult {
@@ -492,7 +679,7 @@ function replyToIncoming(lead: Lead, incoming: string, now: number, copy: Return
   if (WANT_OFFER.test(incoming)) return offer(lead, now, copy.offer, copy.remarketingMs)
   if (OFFTOPIC.test(incoming)) {
     push(lead, "ste", REDIRECT, now)
-    return pack(lead, [REDIRECT])
+    return pack(lead, [REDIRECT], "redirect")
   }
 
   const phase = lead.stePhase ?? "entry"
@@ -506,17 +693,17 @@ function replyToIncoming(lead: Lead, incoming: string, now: number, copy: Return
       setPhase(lead, "offer")
       const text = "Boa! Com a conta certa a gente opera junto nas lives. Qualquer depósito novo eu te encaixo no bônus de entrada."
       push(lead, "ste", text, now)
-      return pack(lead, [text])
+      return pack(lead, [text], "confirm")
     }
     const text = "Me confirma se o cadastro na Superbet já saiu — se travar em alguma etapa, me fala que eu te ajudo."
     push(lead, "ste", text, now)
-    return pack(lead, [text])
+    return pack(lead, [text], "confirm")
   }
 
   const text = `Se quiser subir de nível, o caminho é o App, o Grupo Premium ou o checkout direto: ${steLink("app")}`
   push(lead, "ste", text, now)
   setPhase(lead, "offer")
-  return pack(lead, [text])
+  return pack(lead, [text], "offer")
 }
 
 export function replySte(lead: Lead, incoming?: string | null, now = Date.now(), runtime?: SteRuntime): SteResult {
@@ -552,7 +739,7 @@ export function replySteTick(lead: Lead, now = Date.now(), runtime?: SteRuntime)
     setPhase(next, "offer")
     pushAll(next, copy.rescue, now)
     scheduleRemarketing(next, now, copy.remarketingMs)
-    return pack(next, [...copy.rescue])
+    return pack(next, [...copy.rescue], "rescue")
   }
 
   if (memHas(next, MEM.remarketing) && !memHas(next, MEM.converted)) {
@@ -563,7 +750,7 @@ export function replySteTick(lead: Lead, now = Date.now(), runtime?: SteRuntime)
       next.steQuiet = true
       setPhase(next, "closed")
     }
-    return pack(next, [...copy.remarketing])
+    return pack(next, [...copy.remarketing], "remarketing")
   }
 
   next.waitUntil = undefined
@@ -571,82 +758,108 @@ export function replySteTick(lead: Lead, now = Date.now(), runtime?: SteRuntime)
 }
 
 
-function splitBlocks(raw: string) {
+function splitBlocks(raw: string, max = 4) {
   return raw
     .split(/\n{2,}/)
     .map((item) => item.replace(/\s+/g, " ").trim())
     .filter(Boolean)
-    .slice(0, 4)
+    .slice(0, max)
 }
 
 export function advanceSteIfDue(lead: Lead, now = Date.now(), runtime?: SteRuntime): SteResult {
   const due = lead.waitUntil ? new Date(lead.waitUntil).getTime() : 0
-  if (!due || due > now || !isSteWait(lead)) return { lead, replies: [], reply: null }
+  if (!due || due > now || !isSteWait(lead)) return pack(lead, [])
   return replySteTick(lead, now, runtime)
 }
 
 export async function replySteSmart(
   lead: Lead,
   incoming: string | null | undefined,
-  opts?: { apiKey?: string; baseUrl?: string; model?: string; fallbackModel?: string; runtime?: SteRuntime }
+  opts?: {
+    apiKey?: string
+    openCodeKey?: string
+    openRouterKey?: string
+    baseUrl?: string
+    model?: string
+    fallbackModel?: string
+    runtime?: SteRuntime
+  }
 ): Promise<SteResult> {
-  const isolated = isolateLead(lead)
-  const scripted = replySte(isolated, incoming, Date.now(), opts?.runtime)
-  const key = opts?.apiKey
-  const generic = scripted.replies[0]?.startsWith("Se quiser subir de nível")
-  if (!key || !generic || scripted.lead.steBlocked || scripted.lead.steQuiet) return scripted
+  const now = Date.now()
+  const scripted = replySte(isolateLead(lead), incoming, now, opts?.runtime)
+  if (!scripted.beat.vary || scripted.lead.steBlocked || scripted.lead.steQuiet) return scripted
 
-  const next = scripted.lead
-  next.messages = next.messages.slice(0, -1)
-  const history = next.messages
-    .filter((item) => item.id && next.id)
-    .slice(-14)
-    .map((item) => ({
+  const attempts = steLlmAttempts({
+    primary: opts?.model,
+    fallback: opts?.fallbackModel,
+    opencodeKey: opts?.openCodeKey,
+    openrouterKey: opts?.openRouterKey,
+    apiKey: opts?.apiKey,
+  })
+  if (attempts.length) {
+    const next = cloneLead(scripted.lead)
+    dropLastSte(next, scripted.replies.length)
+    const history = next.messages.slice(-14).map((item) => ({
       role: item.role === "ste" ? "assistant" : "user",
       content: item.text,
     }))
-  const messages = [
-    {
-      role: "system",
-      content: `${STE_SYSTEM_PROMPT}\n\nFase atual: offer. Fatos só deste lead: ${JSON.stringify(next.facts ?? {})}. Responda em português, no máximo 3 blocos curtos separados por linha em branco. Links só como [texto](url). Sem URL crua. Nunca use dados de outra conversa.`,
-    },
-    ...history,
-  ]
-  const endpoint = `${(opts?.baseUrl ?? STE_LLM_BASE_URL).replace(/\/$/, "")}/chat/completions`
-
-  try {
-    for (const model of steModelChain(opts?.model, opts?.fallbackModel)) {
-      const blocks = await completeSte(endpoint, key, model, messages)
-      if (!blocks.length) continue
-      pushAll(next, blocks)
-      return pack(next, blocks)
+    const messages = [
+      { role: "system", content: voicePrompt(next, incoming ?? "", scripted.replies, scripted.beat) },
+      ...history,
+    ]
+    const maxBlocks = Math.min(6, Math.max(2, scripted.replies.length))
+    try {
+      for (const attempt of attempts) {
+        const blocks = await completeSte(
+          `${attempt.baseUrl.replace(/\/$/, "")}/chat/completions`,
+          attempt.apiKey,
+          attempt.model,
+          messages,
+          maxBlocks,
+          attempt.provider
+        )
+        if (!blocks.length || !guardSteVoice(scripted.replies, blocks, scripted.beat)) continue
+        pushAll(next, blocks, now)
+        return pack(next, blocks, scripted.beat.kind)
+      }
+    } catch {
+      /* cai na voz do quadro */
     }
-  } catch {
-    pushAll(next, scripted.replies)
-    return scripted
   }
-  pushAll(next, scripted.replies)
-  return scripted
+
+  return applySteVoice(scripted, incoming ?? "", now)
+}
+
+function choiceText(data: {
+  choices?: Array<{ message?: { content?: string | Array<{ text?: string; content?: string }> } }>
+}) {
+  const content = data.choices?.[0]?.message?.content
+  if (typeof content === "string") return content
+  if (Array.isArray(content)) {
+    return content.map((part) => (typeof part === "string" ? part : part.text || part.content || "")).join("\n")
+  }
+  return ""
 }
 
 async function completeSte(
   endpoint: string,
   apiKey: string,
   model: string,
-  messages: Array<{ role: string; content: string }>
+  messages: Array<{ role: string; content: string }>,
+  maxBlocks = 4,
+  provider: SteLlmProvider = "openrouter"
 ) {
   const res = await fetch(endpoint, {
     method: "POST",
-    headers: openRouterHeaders(apiKey),
+    headers: llmHeaders(apiKey, provider),
     body: JSON.stringify({
       model,
-      temperature: 0.7,
+      temperature: 0.75,
       top_p: 0.9,
       max_tokens: 512,
       messages,
     }),
   })
   if (!res.ok) return []
-  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
-  return splitBlocks(data.choices?.[0]?.message?.content ?? "")
+  return splitBlocks(choiceText((await res.json()) as Parameters<typeof choiceText>[0]), maxBlocks)
 }

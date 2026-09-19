@@ -139,6 +139,7 @@ export type LeadFacts = {
   experience?: "beginner" | "experienced"
   results?: "losing" | "winning" | "unknown"
   hasSuperbet?: boolean
+  heard?: string
   country?: string
   countryCode?: string
   city?: string
