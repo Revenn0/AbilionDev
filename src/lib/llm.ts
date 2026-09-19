@@ -67,9 +67,17 @@ export function normalizeSteModel(value?: string) {
 }
 
 export function steLlmRoutes(primary?: string, backup?: string): SteLlmRoute[] {
-  const ids = [normalizeSteModel(primary), normalizeSteModel(backup || STE_LLM_FALLBACK), STE_LLM_RESERVE].filter(
-    (id, index, list) => list.indexOf(id) === index
-  )
+  const first = normalizeSteModel(primary)
+  const ids = [first]
+  if (providerOf(first) === "opencode") {
+    for (const extra of [STE_LLM_FALLBACK, STE_LLM_RESERVE]) {
+      if (!ids.includes(extra)) ids.push(extra)
+    }
+  } else {
+    const second = normalizeSteModel(backup || STE_LLM_RESERVE)
+    if (!ids.includes(second)) ids.push(second)
+    if (!ids.includes(STE_LLM_RESERVE)) ids.push(STE_LLM_RESERVE)
+  }
   return ids.map((model) => ({
     provider: providerOf(model),
     model,

@@ -1,4 +1,4 @@
-import { baseUrlOf, normalizeSteModel, STE_LLM_FALLBACK, STE_LLM_MODEL } from "../src/lib/llm.ts"
+import { baseUrlOf, normalizeSteModel, providerOf, STE_LLM_FALLBACK, STE_LLM_MODEL, STE_LLM_RESERVE } from "../src/lib/llm.ts"
 import type { KvLike } from "./kv.ts"
 
 export const RUNTIME_KEY = "runtime:secrets"
@@ -114,7 +114,10 @@ export function resolveRuntime(env: RuntimeEnv, secrets: RuntimeSecrets, webhook
   const telegramBotToken = (secrets.telegramBotToken || env.TELEGRAM_BOT_TOKEN || "").trim()
   const openaiApiKey = (secrets.openaiApiKey || env.OPENAI_API_KEY || "").trim()
   const opencodeApiKey = (secrets.opencodeApiKey || env.OPENCODE_API_KEY || "").trim()
-  const model = normalizeSteModel(secrets.steModel || env.STE_MODEL || STE_LLM_MODEL)
+  const stored = normalizeSteModel(secrets.steModel)
+  const storedIsPrimary = Boolean(secrets.steModel?.trim()) && providerOf(stored) === "opencode"
+  const model = storedIsPrimary ? stored : normalizeSteModel(env.STE_MODEL || STE_LLM_MODEL)
+  const storedBackup = Boolean(secrets.steModel?.trim()) && providerOf(stored) === "openrouter" ? stored : ""
   return {
     telegramBotToken,
     openaiApiKey,
@@ -128,7 +131,10 @@ export function resolveRuntime(env: RuntimeEnv, secrets: RuntimeSecrets, webhook
     supabase: Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE),
     persist: env.SUPABASE_SERVICE_ROLE ? "supabase" : env.AUTH ? "kv" : "memory",
     model,
-    fallbackModel: normalizeSteModel(secrets.steFallbackModel || env.STE_FALLBACK_MODEL || STE_LLM_FALLBACK),
+    fallbackModel:
+      providerOf(model) === "opencode"
+        ? STE_LLM_FALLBACK
+        : normalizeSteModel(secrets.steFallbackModel || storedBackup || env.STE_FALLBACK_MODEL || STE_LLM_RESERVE),
     baseUrl: (secrets.openaiBaseUrl || env.OPENCODE_BASE_URL || env.OPENAI_BASE_URL || baseUrlOf(model)).replace(/\/$/, ""),
   }
 }

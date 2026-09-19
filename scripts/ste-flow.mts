@@ -236,9 +236,12 @@ assert(steLlmAttempts({ opencodeKey: "oc", openrouterKey: "or" }).map((item) => 
 assert(steLlmAttempts({ openrouterKey: "or" })[0]?.model === STE_LLM_FALLBACK, "sem OpenCode pula pro Gemma")
 assert(steModelChain(STE_LLM_FALLBACK, STE_LLM_FALLBACK)[0] === STE_LLM_FALLBACK, "nao duplica Gemma")
 const fallback = resolveRuntime({ AUTH: {} }, { steModel: "z-ai/glm-5.3-flash" })
-assert(fallback.model === "z-ai/glm-5.3-flash", "glm conhecido fica")
+assert(fallback.model === STE_LLM_MODEL, "OpenRouter antigo nao fura o MiMo")
+assert(fallback.fallbackModel === STE_LLM_FALLBACK, "reserva publica e o Gemma")
 const unknown = resolveRuntime({ AUTH: {} }, { steModel: "modelo-inventado" })
 assert(unknown.model === STE_LLM_MODEL, "modelo velho cai no MiMo")
+const migrated = resolveRuntime({ AUTH: {} }, { steModel: "google/gemma-4-31b-it:free" })
+assert(migrated.model === STE_LLM_MODEL && migrated.fallbackModel === STE_LLM_FALLBACK, "Gemma gravado vira reserva")
 
 const first = lead("crm-1", "@ana")
 first.telegramChatId = "41"
