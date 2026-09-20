@@ -167,6 +167,18 @@ try {
     await page.waitForSelector("h1", { timeout: 10_000 })
   }
 
+  await open(page, "/telegram")
+  await page.waitForSelector("#pixel", { timeout: 8_000 })
+  const pixelCopy = await page.$eval("#pixel", (el) => el.textContent || "")
+  assert(pixelCopy.includes("www.abilion.lol/t.js"), "telegram mostra o snippet de produção")
+  assert(pixelCopy.includes("data-abilion-cta"), "telegram pede o atributo no botão")
+  await open(page, "/configuracoes")
+  await page.waitForSelector("#pixel", { timeout: 8_000 })
+  assert(
+    ((await page.$eval("#pixel", (el) => el.textContent || "")) || "").includes("www.abilion.lol/t.js"),
+    "configurações mostra o snippet de produção"
+  )
+
   const cookies = await page.cookies()
   await page.deleteCookie(...cookies.filter((item) => item.name === "abilion_session"))
   await page.evaluate(() => window.dispatchEvent(new Event("focus")))

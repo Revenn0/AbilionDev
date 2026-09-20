@@ -219,9 +219,9 @@ export function SalesCanvas({
       if (!dirty.current || readOnlyRef.current) return
       persistRef.current()
     }
-    window.addEventListener("pagehide", flush)
+    window.addEventListener("pagehide", flush, true)
     return () => {
-      window.removeEventListener("pagehide", flush)
+      window.removeEventListener("pagehide", flush, true)
       flush()
     }
   }, [])

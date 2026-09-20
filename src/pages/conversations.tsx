@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { simulateOpenLead } from "@/lib/burst"
 import { useStore } from "@/lib/store"
 import { pixelFigure } from "@/lib/analytics-view"
-import { hasConversation } from "@/lib/ops"
+import { hasConversation, leadsHydrating } from "@/lib/ops"
 import { ORIGIN_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { GeoBadge } from "@/components/crm/geo-badge"
 import { factsWithTrack } from "@/lib/geo"
@@ -53,7 +53,7 @@ function matchesFilter(lead: Lead, filter: FilterId) {
 
 export function ConversationsPage() {
   const { state, saveLead, createLead, flushLeadNow, inboxSync, persistSync } = useStore()
-  const hydrating = persistSync === "idle"
+  const hydrating = leadsHydrating(persistSync, state.leads.length)
   const { summary, status, hasData } = useTrackSummary(4000)
   const runtime = steRuntimeFromFunnels(state.funnels, state.settings)
   const runtimeKey = publishedFunnel(state.funnels)?.production?.publishedAt ?? ""
@@ -184,7 +184,7 @@ export function ConversationsPage() {
           }
           premium={hydrating && all.length === 0 ? "…" : all.filter((item) => item.stePhase === "offer" || item.steQuiet).length}
         />
-        {all.length === 0 && persistSync === "idle" ? (
+        {all.length === 0 && hydrating ? (
           <section className="surface">
             <HydratePanel>A carregar as conversas…</HydratePanel>
           </section>

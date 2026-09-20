@@ -64,7 +64,7 @@ import {
   settingsWriteFingerprint,
 } from "../src/lib/crm.ts"
 import { applyEvent, canAdvanceRemoteWait, publishedFunnel, publishedSnapshot, waitHours } from "../src/lib/runtime.ts"
-import { isTelegramAdsHref, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
+import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
 import { CRM_CRON_LOCK, CRM_FUNNELS, aliasKey, claimCronLock, claimLeadAlias, deleteLeadKv, dueLeadsKv, findLeadInKv, isLeadPageCursor, listLeadPage, listLeads, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, releaseCronLock, renewCronLock, reserveLeadIdentity, saveFunnelsKv, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
@@ -489,6 +489,15 @@ assert(visitorIdFromStart("fb") === undefined, "start fb sem vid não inventa vi
 assert(
   pixelSnippet("https://www.abilion.lol") === `<script src="https://www.abilion.lol/t.js" data-cta="[data-abilion-cta]"></script>`,
   "snippet do pixel usa a origem"
+)
+assert(ADS_ORIGIN === "https://www.abilion.lol", "pixel do ads aponta para produção")
+assert(
+  pixelPageHtml(ADS_ORIGIN, "https://t.me/steaviator?start=fb").includes('data-abilion-cta'),
+  "html da landing leva o atributo no botão"
+)
+assert(
+  pixelPageHtml(ADS_ORIGIN, "javascript:alert(1)") === pixelSnippet(ADS_ORIGIN),
+  "html da landing recusa href que não é t.me"
 )
 assert(cleanTelegramGroupUrl("https://t.me/+abc123").includes("t.me"), "convite t.me passa")
 assert(cleanTelegramGroupUrl("https://evil.com/x") === "", "url alheia cai")

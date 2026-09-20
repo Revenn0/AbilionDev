@@ -186,6 +186,10 @@ function BotPane() {
           </button>
         </p>
       )}
+      <PixelSnippet
+        origin={origin}
+        botUsername={cleanBotUsername(username) || runtime.telegramBotUsername || state.settings.telegramBotUsername}
+      />
       <section className="surface p-6">
         <p className="text-[14px] font-medium">Telegram em produção</p>
         <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
@@ -533,7 +537,6 @@ function BotPane() {
           })}
         </div>
       </section>
-      <PixelSnippet origin={origin} />
     </div>
   )
 }

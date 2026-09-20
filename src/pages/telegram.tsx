@@ -102,7 +102,12 @@ export function TelegramPage() {
           <Button asChild className="h-8 rounded-full px-3.5">
             <Link to="/configuracoes?tab=bot">Configurar bot</Link>
           </Button>
+          <Button asChild variant="outline" className="h-8 rounded-full px-3.5">
+            <a href="#pixel">Pixel Ads</a>
+          </Button>
         </PageChrome>
+
+        <PixelSnippet origin={workerUrl()} botUsername={botName} />
 
         <section className="grid gap-3 md:grid-cols-4">
           <article className="surface p-5">
@@ -153,7 +158,6 @@ export function TelegramPage() {
             </p>
           )}
         </section>
-        <PixelSnippet origin={workerUrl()} />
       </div>
     </div>
   )

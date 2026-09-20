@@ -1,8 +1,15 @@
 export const VISITOR_STORAGE_KEY = "abilion_vid"
+export const ADS_ORIGIN = "https://www.abilion.lol"
 
 export function pixelSnippet(origin: string) {
   const base = origin.replace(/\/$/, "")
   return `<script src="${base}/t.js" data-cta="[data-abilion-cta]"></script>`
+}
+
+export function pixelPageHtml(origin: string, telegramHref = "") {
+  const script = pixelSnippet(origin)
+  if (!/^https:\/\/t\.me\/[A-Za-z0-9_]{5,32}\?start=[A-Za-z0-9_\-:.]+$/.test(telegramHref)) return script
+  return `${script}\n<a href="${telegramHref}" data-abilion-cta>Falar no Telegram</a>`
 }
 
 export function readVisitorId() {
