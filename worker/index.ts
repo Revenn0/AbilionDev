@@ -78,13 +78,19 @@ function kvOf(env: Env): KvLike | null {
   return env.AUTH ?? null
 }
 
-export function backgroundCtx(): ExecutionContext {
+export type WorkerContext = ExecutionContext & { flush(): Promise<void> }
+
+export function backgroundCtx(): WorkerContext {
+  const pending: Promise<unknown>[] = []
   return {
     waitUntil(promise: Promise<unknown>) {
-      void promise
+      pending.push(Promise.resolve(promise).catch(() => undefined))
     },
     passThroughOnException() {},
-  } as ExecutionContext
+    async flush() {
+      await Promise.all(pending.splice(0))
+    },
+  } as WorkerContext
 }
 
 async function runtimeOf(env: Env, webhookFallback = "") {

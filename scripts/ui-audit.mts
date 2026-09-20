@@ -171,6 +171,14 @@ try {
 
   await open(page, "/configuracoes")
   await page.waitForSelector("#bot-user", { timeout: 8_000 })
+  await page.focus("#settings-tab-bot")
+  await page.keyboard.press("ArrowRight")
+  await page.waitForFunction(
+    () => document.body.innerText.includes("Conta do operador") || location.search.includes("tab=conta"),
+    { timeout: 5_000 }
+  )
+  await open(page, "/configuracoes")
+  await page.waitForSelector("#bot-user", { timeout: 8_000 })
   await page.click("#bot-user", { clickCount: 3 })
   await page.keyboard.press("Backspace")
   await page.type("#bot-user", "ab")

@@ -748,6 +748,31 @@ const wrongSecret = await handleRequest(
   backgroundCtx()
 )
 assert(wrongSecret.status === 401, "webhook com secret errado é 401")
+const startCtx = backgroundCtx()
+const startEnv = { ...apiEnv, TELEGRAM_WEBHOOK_SECRET: "hook-secret", TELEGRAM_BOT_TOKEN: "000:test" } as Env
+const startHook = await handleRequest(
+  new Request("http://local.test/api/telegram", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+    body: JSON.stringify({
+      message: {
+        chat: { id: 9001 },
+        text: "/start fb_aabbcc",
+        from: { id: 9001, username: "fbuser", first_name: "Ana" },
+      },
+    }),
+  }),
+  startEnv,
+  startCtx
+)
+assert(startHook.status === 200, "webhook /start Facebook é 200")
+await startCtx.flush()
+const started = await listLeads(startEnv.AUTH, 20, "all")
+const ana = started.find((item) => item.contact === "@fbuser")
+assert(ana?.origin === "facebook", "/start fb cria lead Facebook")
+assert(ana?.visitorId === "aabbcc", "/start fecha o visitor do pixel")
+assert((ana?.messages ?? []).some((item) => item.role === "ste"), "Sté mandou as boas-vindas")
+assert(!(ana?.messages ?? []).some((item) => item.role === "lead"), "/start não entra como fala do lead")
 
 const liveEnv = {
   ASSETS: { fetch: async () => new Response("ok") },
