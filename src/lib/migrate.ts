@@ -1,4 +1,4 @@
-import { defaultSettings, isFlowKind, isMapKind, type Lead, type SalesFunnel, type SalesKind, type Settings } from "./types.ts"
+import { defaultSettings, isFlowKind, isMapKind, type Lead, type SalesFunnel, type SalesKind, type SalesSnapshot, type Settings } from "./types.ts"
 
 export function migrateKind(raw: string): SalesKind {
   switch (raw) {
@@ -109,6 +109,25 @@ export function cleanTelegramGroupUrl(value?: string) {
   }
 }
 
+function sanitizeGraph(nodes: unknown, edges: unknown) {
+  return {
+    nodes: Array.isArray(nodes) ? nodes.slice(0, 200) : [],
+    edges: Array.isArray(edges) ? edges.slice(0, 400) : [],
+  }
+}
+
+function sanitizeProduction(raw: unknown): SalesSnapshot | null {
+  if (!raw || typeof raw !== "object") return null
+  const row = raw as Partial<SalesSnapshot>
+  const graph = sanitizeGraph(row.nodes, row.edges)
+  return {
+    name: String(row.name || "Funil").slice(0, 80) || "Funil",
+    publishedAt: typeof row.publishedAt === "string" ? row.publishedAt : new Date().toISOString(),
+    nodes: graph.nodes as SalesSnapshot["nodes"],
+    edges: graph.edges as SalesSnapshot["edges"],
+  }
+}
+
 export function sanitizeIncomingFunnel(raw: unknown): SalesFunnel | null {
   if (!raw || typeof raw !== "object") return null
   const row = raw as Partial<SalesFunnel>
@@ -117,15 +136,16 @@ export function sanitizeIncomingFunnel(raw: unknown): SalesFunnel | null {
   if (!id || id.length > 80) return null
   if (row.nodes !== undefined && !Array.isArray(row.nodes)) return null
   if (row.edges !== undefined && !Array.isArray(row.edges)) return null
+  const graph = sanitizeGraph(row.nodes, row.edges)
   return migrateFunnel({
     id,
     name: String(row.name || "Funil").slice(0, 80) || "Funil",
     mode: row.mode === "messages" ? "messages" : "sales",
     status: row.status === "active" ? "active" : "draft",
     updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : new Date().toISOString(),
-    nodes: Array.isArray(row.nodes) ? row.nodes.slice(0, 200) : [],
-    edges: Array.isArray(row.edges) ? row.edges.slice(0, 400) : [],
-    production: row.production && typeof row.production === "object" ? row.production : null,
+    nodes: graph.nodes as SalesFunnel["nodes"],
+    edges: graph.edges as SalesFunnel["edges"],
+    production: sanitizeProduction(row.production),
   })
 }
 

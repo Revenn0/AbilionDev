@@ -393,6 +393,24 @@ assert(sanitizeIncomingLead({ id: "x".repeat(81) }) === null, "lead com id longo
 assert(sanitizeIncomingFunnel({ id: "funil-1", name: "Quadro", nodes: [], edges: [] })?.id === "funil-1", "funil válido passa")
 assert(sanitizeIncomingFunnel({ id: "" }) === null, "funil sem id cai")
 assert(sanitizeIncomingFunnel({ id: "funil-1", nodes: "nope" }) === null, "funil com nodes inválidos cai")
+const fatProduction = sanitizeIncomingFunnel({
+  id: "funil-fat",
+  name: "Gordo",
+  nodes: [{ id: "n1", type: "message", position: { x: 0, y: 0 }, data: { title: "x" } }],
+  edges: [],
+  production: {
+    name: "Pub",
+    publishedAt: "2026-01-01T00:00:00.000Z",
+    nodes: Array.from({ length: 250 }, (_, i) => ({
+      id: `p${i}`,
+      type: "message",
+      position: { x: 0, y: 0 },
+      data: { title: "x" },
+    })),
+    edges: [],
+  },
+})
+assert(fatProduction?.production?.nodes.length === 200, "production também respeita o teto de nós")
 
 const publishedA = emptySalesFunnel("A")
 publishedA.status = "active"
