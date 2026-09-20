@@ -7,6 +7,7 @@ const COOKIE = "abilion_session"
 const DAY = 60 * 60 * 24
 const SESSION_TTL_MS = 7 * DAY * 1000
 const RESET_TTL_MS = 60 * 60 * 1000
+const SESSION_CAP = 5
 const PBKDF2_ITERATIONS = 100_000
 
 export type StoredUser = {
@@ -236,6 +237,15 @@ async function readBody(request: Request) {
   }
 }
 
+export function retainUserSessions(sessions: Session[], userId: string, next: Session, cap = SESSION_CAP) {
+  const others = sessions.filter((item) => item.userId !== userId)
+  const mine = sessions
+    .filter((item) => item.userId === userId)
+    .sort((a, b) => b.issuedAt - a.issuedAt)
+    .slice(0, Math.max(cap - 1, 0))
+  return [...others, ...mine, next]
+}
+
 export async function sessionUser(request: Request, store: AuthStore) {
   const token = readCookie(request)
   if (!token) return null
@@ -291,7 +301,12 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     const now = Date.now()
     const token = randomToken()
     snapshot = clearThrottle(snapshot, `login:${clientIp(request)}:${email}`)
-    snapshot.sessions.push({ token, userId: user.id, expiresAt: now + SESSION_TTL_MS, issuedAt: now })
+    snapshot.sessions = retainUserSessions(snapshot.sessions, user.id, {
+      token,
+      userId: user.id,
+      expiresAt: now + SESSION_TTL_MS,
+      issuedAt: now,
+    })
     await store.save(snapshot)
     return json({ user: publicUser(user) }, 200, { "set-cookie": cookieHeader(token, secure) })
   }
@@ -337,18 +352,29 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
 
   if (path === "/api/auth/password" && request.method === "POST") {
     const token = readCookie(request)
-    const snapshot = prune(await store.load())
+    let snapshot = prune(await store.load())
     const session = snapshot.sessions.find((item) => item.token === token)
     const user = session ? snapshot.users.find((item) => item.id === session.userId) : null
     if (!user) return json({ error: "Sessão expirada." }, 401)
+    const guard = consumeThrottle(snapshot, `password:${clientIp(request)}:${user.id}`, 5, 15 * 60 * 1000)
+    snapshot = guard.snapshot
+    if (!guard.ok) {
+      await store.save(snapshot)
+      return json({ error: "Muitas tentativas. Espera uns minutos e tenta de novo." }, 429)
+    }
     const body = await readBody(request)
     const currentPassword = body.currentPassword || ""
     const password = body.password || ""
     if (!(await verifyPassword(currentPassword, user.passwordHash))) {
+      await store.save(snapshot)
       return json({ error: "Senha atual inválida." }, 400)
     }
-    if (password.length < 6) return json({ error: "A nova senha precisa de 6+ caracteres." }, 400)
+    if (password.length < 6) {
+      await store.save(snapshot)
+      return json({ error: "A nova senha precisa de 6+ caracteres." }, 400)
+    }
     user.passwordHash = await hashPassword(password)
+    snapshot = clearThrottle(snapshot, `password:${clientIp(request)}:${user.id}`)
     snapshot.sessions = snapshot.sessions.filter((item) => item.userId !== user.id || item.token === token)
     await store.save(snapshot)
     return json({ ok: true })

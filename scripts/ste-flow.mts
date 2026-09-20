@@ -35,7 +35,7 @@ import { validateCapture } from "../src/lib/capture.ts"
 import { cleanBotUsername, cleanTelegramGroupUrl, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink } from "../src/lib/telegram-start.ts"
 import { mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
-import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, handleAuth, memoryAuthStore } from "../worker/auth.ts"
+import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, handleAuth, memoryAuthStore, retainUserSessions } from "../worker/auth.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
 import { backgroundCtx, handleRequest, type Env } from "../worker/index.ts"
 import { clearSessionExpired, noteUnauthorized, subscribeSessionExpired } from "../src/lib/session.ts"
@@ -455,6 +455,21 @@ const throttleKv = memoryKv()
 assert(await consumeKvThrottle(throttleKv, "track:kv-ip", 2, 60_000, 3000), "kv throttle primeira passa")
 assert(await consumeKvThrottle(throttleKv, "track:kv-ip", 2, 60_000, 3001), "kv throttle segunda passa")
 assert(!(await consumeKvThrottle(throttleKv, "track:kv-ip", 2, 60_000, 3002)), "kv throttle terceira bloqueia")
+const retained = retainUserSessions(
+  [
+    { token: "old", userId: "u1", expiresAt: 9, issuedAt: 1 },
+    { token: "mid", userId: "u1", expiresAt: 9, issuedAt: 2 },
+    { token: "fresh", userId: "u1", expiresAt: 9, issuedAt: 3 },
+    { token: "other", userId: "u2", expiresAt: 9, issuedAt: 4 },
+  ],
+  "u1",
+  { token: "new", userId: "u1", expiresAt: 9, issuedAt: 5 },
+  3
+)
+assert(retained.some((item) => item.token === "other"), "outras contas mantêm sessão")
+assert(retained.some((item) => item.token === "new"), "sessão nova entra")
+assert(!retained.some((item) => item.token === "old"), "sessão mais velha sai")
+assert(retained.filter((item) => item.userId === "u1").length === 3, "cap de 3 sessões por operador")
 
 const authStore = memoryAuthStore()
 const loginAttempt = (password: string) =>
@@ -541,6 +556,79 @@ const staleSeed = await handleAuth(
   { ABILION_ENV: "development", ABILION_OPERATOR_PASSWORD: "seedpass" }
 )
 assert(staleSeed.status === 401, "senha antiga do seed já não entra")
+
+const sessionStore = memoryAuthStore()
+const sessionCookies: string[] = []
+for (let i = 0; i < 6; i++) {
+  const res = await handleAuth(
+    new Request("http://local.test/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": `198.51.100.${10 + i}` },
+      body: JSON.stringify({ email: "victor@abilion.com", password: "sessao1" }),
+    }),
+    sessionStore,
+    { ABILION_ENV: "development" }
+  )
+  assert(res.status === 200, `login ${i + 1} cria sessão`)
+  sessionCookies.push(res.headers.get("set-cookie") || "")
+}
+const oldestMe = await handleAuth(
+  new Request("http://local.test/api/auth/me", { headers: { cookie: sessionCookies[0] || "" } }),
+  sessionStore,
+  { ABILION_ENV: "development" }
+)
+const oldestBody = (await oldestMe.json()) as { user: unknown }
+assert(oldestBody.user === null, "a 6ª sessão derruba a mais antiga")
+const newestMe = await handleAuth(
+  new Request("http://local.test/api/auth/me", { headers: { cookie: sessionCookies[5] || "" } }),
+  sessionStore,
+  { ABILION_ENV: "development" }
+)
+const newestBody = (await newestMe.json()) as { user: { email?: string } | null }
+assert(newestBody.user?.email === "victor@abilion.com", "a sessão mais nova continua")
+
+const pwdStore = memoryAuthStore()
+const pwdLogin = await handleAuth(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.80" },
+    body: JSON.stringify({ email: "gabriel@abilion.com", password: "senhaok" }),
+  }),
+  pwdStore,
+  { ABILION_ENV: "development" }
+)
+const pwdCookie = pwdLogin.headers.get("set-cookie") || ""
+for (let i = 0; i < 5; i++) {
+  assert(
+    (
+      await handleAuth(
+        new Request("http://local.test/api/auth/password", {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie: pwdCookie, "x-forwarded-for": "203.0.113.80" },
+          body: JSON.stringify({ currentPassword: "errada1", password: "novasenha" }),
+        }),
+        pwdStore,
+        { ABILION_ENV: "development" }
+      )
+    ).status === 400,
+    `password falha ${i + 1} entra no throttle`
+  )
+}
+assert(
+  (
+    await handleAuth(
+      new Request("http://local.test/api/auth/password", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: pwdCookie, "x-forwarded-for": "203.0.113.80" },
+        body: JSON.stringify({ currentPassword: "errada1", password: "novasenha" }),
+      }),
+      pwdStore,
+      { ABILION_ENV: "development" }
+    )
+  ).status === 429,
+  "password bloqueia na sexta falha"
+)
+
 for (let i = 0; i < 8; i++) {
   assert((await loginAttempt("errada1")).status === 401, `falha ${i + 1} ainda entra no throttle`)
 }
@@ -659,5 +747,48 @@ const wrongSecret = await handleRequest(
   backgroundCtx()
 )
 assert(wrongSecret.status === 401, "webhook com secret errado é 401")
+
+const liveEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://example.supabase.co",
+  AUTH: memoryKv(),
+  ABILION_ENV: "development",
+} as Env
+const liveLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  liveEnv,
+  backgroundCtx()
+)
+assert(liveLogin.status === 200, "login pelo handleRequest")
+const liveCookie = liveLogin.headers.get("set-cookie") || ""
+const persistFunnel = emptySalesFunnel("persistido")
+const crmPost = await handleRequest(
+  new Request("http://local.test/api/crm", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: liveCookie },
+    body: JSON.stringify({ funnels: [persistFunnel] }),
+  }),
+  liveEnv,
+  backgroundCtx()
+)
+assert(crmPost.status === 200, "CRM POST autenticado")
+const crmGet = (await (
+  await handleRequest(new Request("http://local.test/api/crm", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
+).json()) as { funnels?: Array<{ id?: string; name?: string }> }
+assert(crmGet.funnels?.some((item) => item.id === persistFunnel.id), "CRM GET devolve o funil gravado")
+const pixel = await handleRequest(
+  new Request("http://local.test/api/track", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind: "view", visitorId: "aabbcc" }),
+  }),
+  liveEnv,
+  backgroundCtx()
+)
+assert(pixel.status === 204, "pixel público grava")
 
 console.log("ste-flow ok")

@@ -267,14 +267,19 @@ try {
 
   await open(page, "/conversas")
   await page.waitForSelector("h1", { timeout: 10_000 })
-  const inboxCopy = await page.evaluate(() => document.body.innerText)
-  assert(
-    inboxCopy.includes("Nenhuma conversa") ||
+  const canSimulate = await page.evaluate(() => document.body.innerText.includes("Simular conversa"))
+  if (canSimulate) {
+    await clickNamed(page, "Simular conversa")
+    await page.waitForFunction(() => document.body.innerText.includes("Simular lead"), { timeout: 8_000 })
+  } else {
+    const inboxCopy = await page.evaluate(() => document.body.innerText)
+    assert(
       inboxCopy.includes("Simular lead") ||
-      inboxCopy.includes("Nada neste recorte") ||
-      inboxCopy.includes("Escreve como o lead"),
-    "conversas vazias, filtro vazio ou simulação explícita"
-  )
+        inboxCopy.includes("Nada neste recorte") ||
+        inboxCopy.includes("Escreve como o lead"),
+      "conversas vazias, filtro vazio ou simulação explícita"
+    )
+  }
 
   for (const viewport of VIEWPORTS) {
     await page.setViewport({ width: viewport.width, height: viewport.height })

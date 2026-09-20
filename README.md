@@ -65,7 +65,7 @@ URL no ar: [https://www.abilion.lol](https://www.abilion.lol) (apex [https://abi
 
 O Worker `abilion` (conta `73dd2cecfc9c7f0220a36fe999e3edf1`) serve o painel e `/api/*`. O CRM Next antigo saiu do ar.
 
-Login: só `victor@abilion.com` ou `gabriel@abilion.com`. O primeiro acesso de cada conta grava a senha no KV `abilion-auth`. Depois, só essa senha entra. Login e “Esqueceu a senha?” têm limite por IP (8 e 5 tentativas / 15 min). Token do Telegram e chaves de IA **não** entram no git — Configurações → Vincular Telegram grava no mesmo KV e aponta o webhook. Troca de senha: Configurações → Conta. “Esqueceu a senha?” só devolve link fora de produção (não há e-mail). Leads: busca por nome/@user, exclusão com confirmação e hidratação até 400 no login. Simular 100 /start pede confirmação.
+Login: só `victor@abilion.com` ou `gabriel@abilion.com`. O primeiro acesso de cada conta grava a senha no KV `abilion-auth`. Depois, só essa senha entra. Login, “Esqueceu a senha?” e troca de senha têm limite por IP (8, 5 e 5 tentativas / 15 min). Cada operador fica com no máximo 5 sessões activas. Token do Telegram e chaves de IA **não** entram no git — Configurações → Vincular Telegram grava no mesmo KV e aponta o webhook. Troca de senha: Configurações → Conta. “Esqueceu a senha?” só devolve link fora de produção (não há e-mail). Leads: busca por nome/@user, exclusão com confirmação e hidratação até 400 no login. Simular 100 /start pede confirmação.
 
 `ABILION_OPERATOR_PASSWORD` só **cria** as contas que ainda não existem. Depois de criadas, a troca em Configurações → Conta fica. Não reescreve o hash em cada `/api/auth/me`.
 
@@ -155,7 +155,7 @@ Autenticadas:
 - `/fluxo` — lista de funis.
 - `/fluxo/funil/:id` — editor visual + runtime.
 - `/leads` — CRM, captura, print/banca.
-- `/conversas` — inbox Telegram da Sté (máx. 80).
+- `/conversas` — inbox Telegram da Sté (máx. 80). Sem conversas, “Simular conversa” corre o motor no painel.
 - `/telegram` — saúde do bot, webhook, simulação de /start.
 - `/configuracoes` — bot, conta, plugins, notificações, aparência.
 
