@@ -5,7 +5,7 @@ import { SyncBanner } from "@/components/layout/sync-banner"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { burstFacebookLeads } from "@/lib/burst"
+import { simulateOpenLead } from "@/lib/burst"
 import { useStore } from "@/lib/store"
 import { hasConversation } from "@/lib/ops"
 import { ORIGIN_LABEL, TEMP_LABEL } from "@/lib/labels"
@@ -141,10 +141,10 @@ export function ConversationsPage() {
               O anúncio do Facebook usa t.me/BOT?start=fb. /start manda as 3 boas-vindas do quadro. Sem bot, podes simular uma conversa aqui — não envia Telegram.
             </p>
             <Button
+              type="button"
               className="mt-5 rounded-full"
               onClick={() => {
-                const [lead] = burstFacebookLeads(state.funnels, 1)
-                if (!lead) return
+                const lead = simulateOpenLead(state.funnels)
                 createLead(lead)
                 setFilter("all")
                 setId(lead.id)

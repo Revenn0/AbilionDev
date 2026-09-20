@@ -271,6 +271,11 @@ try {
   if (canSimulate) {
     await clickNamed(page, "Simular conversa")
     await page.waitForFunction(() => document.body.innerText.includes("Simular lead"), { timeout: 8_000 })
+    const draftOpen = await page.evaluate(() => {
+      const el = document.querySelector("#chat-draft") as HTMLInputElement | null
+      return Boolean(el && !el.disabled)
+    })
+    assert(draftOpen, "simular conversa deixa a caixa do lead aberta")
   } else {
     const inboxCopy = await page.evaluate(() => document.body.innerText)
     assert(

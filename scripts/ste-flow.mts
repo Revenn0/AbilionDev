@@ -34,6 +34,7 @@ import { safeAppPath } from "../src/lib/safe-path.ts"
 import { validateCapture } from "../src/lib/capture.ts"
 import { cleanBotUsername, cleanTelegramGroupUrl, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink } from "../src/lib/telegram-start.ts"
+import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
 import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, handleAuth, memoryAuthStore, retainUserSessions } from "../worker/auth.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
@@ -790,5 +791,15 @@ const pixel = await handleRequest(
   backgroundCtx()
 )
 assert(pixel.status === 204, "pixel público grava")
+
+const inboxLead = simulateOpenLead([emptySalesFunnel("inbox")])
+assert(!inboxLead.steBlocked && !inboxLead.steQuiet, "simular conversa não encerra")
+assert((inboxLead.messages ?? []).some((item) => item.role === "lead"), "simular conversa tem fala do lead")
+assert((inboxLead.messages ?? []).some((item) => item.role === "ste"), "simular conversa tem resposta da Sté")
+assert(inboxLead.stePhase !== "closed", "simular conversa fica no funil")
+const burstOne = burstFacebookLeads([emptySalesFunnel("lote-um")], 1)[0]
+assert(burstOne?.steBlocked, "o primeiro do lote de 100 ainda testa ofensa")
+const burstMix = burstStats(burstFacebookLeads([emptySalesFunnel("lote")], 100))
+assert(burstMix.blocked >= 1 && burstMix.talking >= 1, "lote Facebook mistura abertos e encerrados")
 
 console.log("ste-flow ok")
