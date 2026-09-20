@@ -24,7 +24,7 @@ import { isImportedLead, needsEster } from "@/lib/ops"
 import { applyEvent, nodeTitle, publishedSnapshot, type RuntimeEvent } from "@/lib/runtime"
 import { canTickSteLocally } from "@/lib/ste"
 import { timeAgo } from "@/lib/format"
-import { displayContact, isPhoneLikeName, leadMatchesQuery, resolvePersonName } from "@/lib/lead-name"
+import { displayContact, draftLeadField, isPhoneLikeName, leadMatchesQuery, resolvePersonName } from "@/lib/lead-name"
 import type { Lead, LeadOrigin, LeadTemp, SalesFunnel } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -550,6 +550,15 @@ function ImportLeadsDialog({
   )
 }
 
+function liveLeadDraft() {
+  const name = document.getElementById("lead-display-name")
+  const memory = document.getElementById("lead-memory")
+  return {
+    name: name instanceof HTMLInputElement ? name.value : undefined,
+    memory: memory instanceof HTMLTextAreaElement ? memory.value : undefined,
+  }
+}
+
 function Field({
   id,
   label,
@@ -627,12 +636,22 @@ function LeadDrawer({
   const flushEdits = () => {
     const current = leadRef.current
     if (!current) return
-    const nextName = dirtyName.current ? resolvePersonName(nameRef.current) || current.name : current.name
-    const nextMemory = dirtyMemory.current ? memoryRef.current : current.memory
-    if (!dirtyName.current && !dirtyMemory.current) return
+    const live = liveLeadDraft()
+    if (live.name !== undefined) nameRef.current = live.name
+    if (live.memory !== undefined) memoryRef.current = live.memory
+    const nextName = draftLeadField(current.name, nameRef.current, dirtyName.current, live.name)
+    const nextMemory = draftLeadField(current.memory, memoryRef.current, dirtyMemory.current, live.memory)
+    const resolvedName = dirtyName.current || live.name !== undefined ? resolvePersonName(nextName) || current.name : current.name
+    if (resolvedName === current.name && nextMemory === current.memory) {
+      dirtyName.current = false
+      dirtyMemory.current = false
+      return
+    }
     dirtyName.current = false
     dirtyMemory.current = false
-    onSave({ ...current, name: nextName, memory: nextMemory, updatedAt: new Date().toISOString() })
+    nameRef.current = resolvedName
+    memoryRef.current = nextMemory
+    onSave({ ...current, name: resolvedName, memory: nextMemory, updatedAt: new Date().toISOString() })
   }
   const flushEditsRef = useRef(flushEdits)
   const onFlushRef = useRef(onFlush)
@@ -642,10 +661,13 @@ function LeadDrawer({
   })
 
   const commit = (next: Lead) => {
+    const live = liveLeadDraft()
+    if (live.name !== undefined) nameRef.current = live.name
+    if (live.memory !== undefined) memoryRef.current = live.memory
     onSave({
       ...next,
       name: dirtyName.current ? resolvePersonName(nameRef.current) || next.name : next.name,
-      memory: memoryRef.current,
+      memory: draftLeadField(next.memory, memoryRef.current, dirtyMemory.current, live.memory),
     })
   }
 
@@ -669,8 +691,12 @@ function LeadDrawer({
   useEffect(() => {
     dirtyMemory.current = false
     dirtyName.current = false
-    setMemory(lead?.memory ?? "")
-    setName(lead?.name ?? "")
+    const nextMemory = lead?.memory ?? ""
+    const nextName = lead?.name ?? ""
+    memoryRef.current = nextMemory
+    nameRef.current = nextName
+    setMemory(nextMemory)
+    setName(nextName)
   }, [lead?.id])
 
   useEffect(() => {
@@ -767,6 +793,7 @@ function LeadDrawer({
           value={name}
           onChange={(event) => {
             dirtyName.current = true
+            nameRef.current = event.target.value
             setName(event.target.value)
           }}
           onBlur={() => {
@@ -882,6 +909,7 @@ function LeadDrawer({
           value={memory}
           onChange={(event) => {
             dirtyMemory.current = true
+            memoryRef.current = event.target.value
             setMemory(event.target.value)
           }}
           placeholder="O que esta pessoa já disse. Não misturar com outro chat."

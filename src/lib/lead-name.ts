@@ -175,3 +175,9 @@ export function preferLeadName(primary: string, fallback: string, contact?: stri
   if (right) return right
   return resolveLeadName(primary || fallback, contact, extra)
 }
+
+/** Rascunho da ficha: o valor visível no input ganha ao ref que ainda não correu o efeito. */
+export function draftLeadField(stored: string, draft: string, dirty: boolean, live?: string) {
+  if (live !== undefined) return live
+  return dirty ? draft : stored
+}

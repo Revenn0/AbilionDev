@@ -267,6 +267,10 @@ try {
   assert(closeBackdrop, "fundo da ficha do lead fecha com teclado")
   await page.click("#lead-memory", { clickCount: 3 })
   await page.type("#lead-memory", "memoria isolada")
+  await page.waitForFunction(
+    () => (document.querySelector("#lead-memory") as HTMLTextAreaElement | null)?.value.includes("memoria isolada"),
+    { timeout: 5_000 }
+  )
   const closed = await page.evaluate(() => {
     const el = document.querySelector<HTMLButtonElement>("[data-lead-close]")
     el?.click()

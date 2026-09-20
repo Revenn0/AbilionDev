@@ -86,7 +86,7 @@ import { LEAD_WRITE_BATCH, leadWriteChunks, leadWriteIds } from "../src/lib/runt
 import { safeAppPath, withSafeNext } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { contactLookups, normalizeTelegramContact, validateCapture } from "../src/lib/capture.ts"
-import { displayContact, formatPhoneContact, isPhoneLikeName, isResolvedPersonName, leadMatchesQuery, nameFromMessages, preferLeadName, resolveLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
+import { displayContact, draftLeadField, formatPhoneContact, isPhoneLikeName, isResolvedPersonName, leadMatchesQuery, nameFromMessages, preferLeadName, resolveLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, migrateLeadOrigin, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink, campaignFromStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { addPageScript, adsStartToken, pageInstallManual, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
@@ -219,6 +219,9 @@ assert(
   "o painel pode tirar a categoria"
 )
 assert(leadMatchesQuery({ id: "c1", name: "Ana", contact: "@ana", category: "Grupo" }, "grupo", 1), "busca local pela categoria")
+assert(draftLeadField("", "", true, "memoria isolada") === "memoria isolada", "rascunho da ficha lê o input visível")
+assert(draftLeadField("guarda", "", true) === "", "rascunho dirty sem input usa o ref")
+assert(draftLeadField("guarda", "rascunho", false) === "guarda", "sem dirty nem input mantém o gravado")
 assert(bob.lead.facts.hasSuperbet === false, "fato do Bob")
 
 const html = toTelegramHtml(STE_COURSE_BLOCK[2]!)
