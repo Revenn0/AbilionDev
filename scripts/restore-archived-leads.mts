@@ -128,16 +128,21 @@ const entries: CrmIndexEntry[] = unique.map((lead) => ({
 const rows: Array<{ key: string; value: string }> = [
   { key: CRM_INDEX, value: JSON.stringify({ entries: clipCrmIndex(entries) }) },
 ]
+const aliases = new Map<string, { id: string; updatedAt: string }>()
 for (const lead of unique) {
   rows.push({ key: leadKey(lead.id), value: JSON.stringify(lead) })
-  for (const lookup of contactLookups(lead.contact)) {
-    const key = aliasKey("contact", lookup)
-    if (key) rows.push({ key, value: JSON.stringify({ id: lead.id }) })
-  }
+  const keys = contactLookups(lead.contact).map((lookup) => aliasKey("contact", lookup)).filter(Boolean)
   if (lead.telegramChatId) {
-    const key = aliasKey("chat", lead.telegramChatId)
-    if (key) rows.push({ key, value: JSON.stringify({ id: lead.id }) })
+    const chat = aliasKey("chat", lead.telegramChatId)
+    if (chat) keys.push(chat)
   }
+  for (const key of keys) {
+    const prev = aliases.get(key)
+    if (!prev || lead.updatedAt >= prev.updatedAt) aliases.set(key, { id: lead.id, updatedAt: lead.updatedAt })
+  }
+}
+for (const [key, alias] of aliases) {
+  rows.push({ key, value: JSON.stringify({ id: alias.id }) })
 }
 
 writeFileSync(output, JSON.stringify(rows))
