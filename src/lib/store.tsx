@@ -23,6 +23,7 @@ import {
   leftoverPendingFunnelIds,
   mergeLeads,
   overlayPendingLeads,
+  remapAdoptedLeads,
   revertPublishedFunnels,
   pendingSeedFunnelIds,
   recoverPendingFunnelIds,
@@ -195,6 +196,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!batch.length) return true
       const result = await persistLeads(batch, opts)
       const savedIds = new Set(result.ids)
+      const adopted = result.adopted ?? {}
       const sent = batch.filter((lead) => savedIds.has(lead.id))
       const raced = sent.filter((lead) => removedLeadIds.current.has(lead.id))
       if (raced.length) await Promise.all(raced.map((lead) => removeRemoteLead(lead.id)))
@@ -203,7 +205,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const latest = pendingLeadWrites.current.get(lead.id)
         if (latest && latest.updatedAt === lead.updatedAt) pendingLeadWrites.current.delete(lead.id)
       }
+      for (const [from, to] of Object.entries(adopted)) {
+        const pending = pendingLeadWrites.current.get(from)
+        pendingLeadWrites.current.delete(from)
+        if (pending && !removedLeadIds.current.has(from) && !removedLeadIds.current.has(to)) {
+          pendingLeadWrites.current.set(to, { ...pending, id: to })
+        }
+      }
+      if (Object.keys(adopted).length) {
+        commitState({
+          ...stateRef.current,
+          leads: remapAdoptedLeads(stateRef.current.leads, adopted),
+        })
+      }
       persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
+      persistIdSet(REMOVED_LEADS, removedLeadIds.current, LEAD_REMOVED_CAP)
       const complete = batch.every((lead) => savedIds.has(lead.id) || removedLeadIds.current.has(lead.id))
       setPersistSync(result.ok && complete ? "ok" : "error")
       return result.ok && complete

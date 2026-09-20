@@ -211,18 +211,40 @@ export function leadWriteChunks(leads: Lead[], keepalive = false) {
   return chunks
 }
 
+export function leadWriteAdopted(data: unknown): Record<string, string> {
+  if (!data || typeof data !== "object") return {}
+  const raw = (data as { adopted?: unknown }).adopted
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {}
+  const out: Record<string, string> = {}
+  for (const [from, to] of Object.entries(raw as Record<string, unknown>)) {
+    if (!from || typeof to !== "string" || !to || from === to) continue
+    out[from] = to
+  }
+  return out
+}
+
 /** Só tira da fila o que o Worker gravou. Sem `ids`, só um `saved` igual ao lote inteiro conta. */
 export function leadWriteIds(data: unknown, chunk: Lead[]): string[] {
   const allowed = new Set(chunk.map((lead) => lead.id))
   if (!data || typeof data !== "object") return []
   const raw = data as { saved?: unknown; ids?: unknown }
+  const adopted = leadWriteAdopted(data)
+  const clientOf = new Map(Object.entries(adopted).map(([from, to]) => [to, from]))
   if (Array.isArray(raw.ids)) {
     const out: string[] = []
     const seen = new Set<string>()
-    for (const id of raw.ids) {
-      if (typeof id !== "string" || !allowed.has(id) || seen.has(id)) continue
+    const pushClient = (id: string) => {
+      if (!allowed.has(id) || seen.has(id)) return
       seen.add(id)
       out.push(id)
+    }
+    for (const id of raw.ids) {
+      if (typeof id !== "string") continue
+      if (allowed.has(id)) pushClient(id)
+      else {
+        const client = clientOf.get(id)
+        if (client) pushClient(client)
+      }
     }
     return out
   }
@@ -231,8 +253,9 @@ export function leadWriteIds(data: unknown, chunk: Lead[]): string[] {
 }
 
 export async function persistLeads(leads: Lead[], opts?: { keepalive?: boolean }) {
-  if (!leads.length) return { ok: true, saved: 0, ids: [] as string[] }
+  if (!leads.length) return { ok: true, saved: 0, ids: [] as string[], adopted: {} as Record<string, string> }
   const ids: string[] = []
+  const adopted: Record<string, string> = {}
   for (const chunk of leadWriteChunks(leads, Boolean(opts?.keepalive))) {
     try {
       const res = await fetchWrite(
@@ -246,14 +269,15 @@ export async function persistLeads(leads: Lead[], opts?: { keepalive?: boolean }
         opts
       )
       noteUnauthorized(res)
-      if (!res.ok) return { ok: false, saved: ids.length, ids }
+      if (!res.ok) return { ok: false, saved: ids.length, ids, adopted }
       const data = (await res.json().catch(() => ({}))) as unknown
       ids.push(...leadWriteIds(data, chunk))
+      Object.assign(adopted, leadWriteAdopted(data))
     } catch {
-      return { ok: false, saved: ids.length, ids }
+      return { ok: false, saved: ids.length, ids, adopted }
     }
   }
-  return { ok: true, saved: ids.length, ids }
+  return { ok: true, saved: ids.length, ids, adopted }
 }
 
 export async function removeRemoteLead(id: string, opts?: { keepalive?: boolean }) {

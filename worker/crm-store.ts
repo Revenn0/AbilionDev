@@ -54,6 +54,16 @@ export function leadKey(id: string) {
   return `crm:lead:${id}`
 }
 
+export function goneLeadKey(id: string) {
+  const next = id.trim()
+  return next && next.length <= 80 ? `crm:gone:${next}` : ""
+}
+
+export function goneFunnelKey(id: string) {
+  const next = id.trim()
+  return next && next.length <= 80 ? `crm:funnel-gone:${next}` : ""
+}
+
 export async function loadIndex(kv: KvLike): Promise<CrmIndex> {
   const raw = await kv.get(CRM_INDEX, "json")
   if (!raw || typeof raw !== "object") return { entries: [] }
@@ -176,8 +186,8 @@ async function loadAlias(kv: KvLike, kind: "contact" | "chat", value: string): P
 }
 
 async function aliasOwnerState(kv: KvLike, id: string): Promise<"live" | "reserved" | "dead"> {
+  if (await isLeadRemoved(kv, id)) return "dead"
   if (await loadLead(kv, id)) return "live"
-  if ((await loadRemovedLeadIds(kv)).includes(id)) return "dead"
   return "reserved"
 }
 
@@ -251,8 +261,7 @@ export async function resolveLeadWrite(kv: KvLike, lead: Lead): Promise<{ incomi
 
 export async function importOrAdoptLead(kv: KvLike, lead: Lead): Promise<Lead | null> {
   const { incoming, prev } = await resolveLeadWrite(kv, lead)
-  const removed = await loadRemovedLeadIds(kv)
-  if (removed.includes(incoming.id)) return null
+  if ((await isLeadRemoved(kv, incoming.id)) || (await isLeadRemoved(kv, lead.id))) return null
   const next = adoptOperatorLead(prev, incoming)
   let bounded = commitStoredLead(prev, next)
   const latest = await loadLead(kv, bounded.id)
@@ -295,14 +304,16 @@ export async function persistFunnelsMerge(kv: KvLike, incoming: SalesFunnel[], i
   if (!incoming.length) throw new Error("Mantém pelo menos um funil.")
   let clean = incoming
   for (let attempt = 0; attempt < 8; attempt++) {
-    const latestRemoved = await loadRemovedFunnelIds(kv)
+    const gone = await collectGoneFunnelIds(kv, [...incoming.map((item) => item.id), ...incomingRemoved])
+    const latestRemoved = clipRemovedIds([...(await loadRemovedFunnelIds(kv)), ...gone], FUNNEL_REMOVED_CAP)
     const latest = applyRemovedFunnels(await loadFunnelsKv(kv), latestRemoved)
     clean = enforceSinglePublished(commitCrmFunnels(latest, incoming, latestRemoved, incomingRemoved, latest, latestRemoved))
     if (!clean.length) throw new Error("Mantém pelo menos um funil.")
     if (clean.length > FUNNEL_CAP) throw new Error(`O estúdio aceita no máximo ${FUNNEL_CAP} funis.`)
     await saveFunnelsKv(kv, clean)
     if (incomingRemoved.length) await rememberRemovedFunnels(kv, incomingRemoved)
-    const afterRemoved = await loadRemovedFunnelIds(kv)
+    const afterGone = await collectGoneFunnelIds(kv, [...incoming.map((item) => item.id), ...incomingRemoved])
+    const afterRemoved = clipRemovedIds([...(await loadRemovedFunnelIds(kv)), ...afterGone], FUNNEL_REMOVED_CAP)
     const after = applyRemovedFunnels(await loadFunnelsKv(kv), afterRemoved)
     const again = enforceSinglePublished(commitCrmFunnels(after, incoming, afterRemoved, incomingRemoved, after, afterRemoved))
     if (funnelPersistKey(after) === funnelPersistKey(again)) break
@@ -415,16 +426,27 @@ export async function loadRemovedLeadIds(kv: KvLike): Promise<string[]> {
   return clipRemovedIds((raw as { ids?: unknown }).ids, LEAD_REMOVED_CAP)
 }
 
+export async function isLeadRemoved(kv: KvLike, id: string): Promise<boolean> {
+  const key = goneLeadKey(id)
+  if (key && (await kv.get(key, "json"))) return true
+  const next = id.trim()
+  return Boolean(next) && (await loadRemovedLeadIds(kv)).includes(next)
+}
+
 export async function rememberRemovedLead(kv: KvLike, id: string) {
   const next = id.trim()
   if (!next || next.length > 80) return
   const ids = clipRemovedIds([next, ...(await loadRemovedLeadIds(kv))], LEAD_REMOVED_CAP)
   await kv.put(CRM_REMOVED, JSON.stringify({ ids }))
+  const gone = goneLeadKey(next)
+  if (gone) await kv.put(gone, JSON.stringify({ at: new Date().toISOString() }))
 }
 
 export async function forgetRemovedLead(kv: KvLike, id: string) {
   const ids = (await loadRemovedLeadIds(kv)).filter((item) => item !== id)
   await kv.put(CRM_REMOVED, JSON.stringify({ ids }))
+  const gone = goneLeadKey(id)
+  if (gone) await kv.delete?.(gone)
 }
 
 export async function upsertLeadKv(kv: KvLike, lead: Lead) {
@@ -443,6 +465,7 @@ export async function upsertLeadKv(kv: KvLike, lead: Lead) {
   await writeAliases(kv, lead)
   await rememberLeadNames(kv, [lead])
   await commitIndex(kv, [entry])
+  return true
 }
 
 export async function deleteLeadKv(kv: KvLike, id: string) {
@@ -466,9 +489,32 @@ export async function loadRemovedFunnelIds(kv: KvLike): Promise<string[]> {
   return clipRemovedIds((raw as { ids?: unknown }).ids, FUNNEL_REMOVED_CAP)
 }
 
+export async function isFunnelRemoved(kv: KvLike, id: string): Promise<boolean> {
+  const key = goneFunnelKey(id)
+  if (key && (await kv.get(key, "json"))) return true
+  const next = id.trim()
+  return Boolean(next) && (await loadRemovedFunnelIds(kv)).includes(next)
+}
+
+async function collectGoneFunnelIds(kv: KvLike, ids: string[]) {
+  const gone: string[] = []
+  const seen = new Set<string>()
+  for (const id of ids) {
+    const next = id.trim()
+    if (!next || seen.has(next)) continue
+    seen.add(next)
+    if (await isFunnelRemoved(kv, next)) gone.push(next)
+  }
+  return gone
+}
+
 export async function rememberRemovedFunnels(kv: KvLike, ids: string[]) {
   const next = clipRemovedIds([...ids, ...(await loadRemovedFunnelIds(kv))], FUNNEL_REMOVED_CAP)
   await kv.put(CRM_REMOVED_FUNNELS, JSON.stringify({ ids: next }))
+  for (const id of ids) {
+    const key = goneFunnelKey(id)
+    if (key) await kv.put(key, JSON.stringify({ at: new Date().toISOString() }))
+  }
 }
 
 export async function forgetRemovedFunnels(kv: KvLike, ids: string[]) {

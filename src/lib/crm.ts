@@ -164,6 +164,24 @@ export function commitStoredLead(prev: Lead | null, incoming: Lead, latest: Lead
   return adoptStoredLead(latest, first)
 }
 
+/** POST adoptou um id local noutro lead canónico — a ficha fantasma some. */
+export function remapAdoptedLeads(leads: Lead[], adopted: Record<string, string>): Lead[] {
+  const pairs = Object.entries(adopted).filter(([from, to]) => from && to && from !== to)
+  if (!pairs.length) return leads
+  const byId = new Map(leads.map((lead) => [lead.id, lead]))
+  let changed = false
+  for (const [from, to] of pairs) {
+    const phantom = byId.get(from)
+    if (!phantom) continue
+    byId.delete(from)
+    const live = byId.get(to)
+    const renamed = { ...phantom, id: to }
+    byId.set(to, live ? adoptStoredLead(live, renamed) : renamed)
+    changed = true
+  }
+  return changed ? [...byId.values()] : leads
+}
+
 export function mergeLeads(current: Lead[], incoming: Lead[], pinIds: Iterable<string> = []): Lead[] {
   const pin = new Set(pinIds)
   if (!incoming.length && !pin.size) return current

@@ -67,6 +67,7 @@ import {
   mergeLeadEvents,
   mergeLeads,
   overlayPendingLeads,
+  remapAdoptedLeads,
   publicSettings,
   reconcileFunnels,
   reconcileLeads,
@@ -77,13 +78,13 @@ import { applyEvent, canAdvanceRemoteWait, eventFromOrigin, pickLiveDueLead, pub
 import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
-import { CRM_CRON_LOCK, CRM_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, deleteLeadKv, dueLeadsKv, findLeadInKv, importOrAdoptLead, isLeadPageCursor, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, deleteLeadKv, dueLeadsKv, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
-import { LEAD_WRITE_BATCH, leadWriteChunks, leadWriteIds } from "../src/lib/runtime-api.ts"
+import { LEAD_WRITE_BATCH, leadWriteAdopted, leadWriteChunks, leadWriteIds } from "../src/lib/runtime-api.ts"
 import { safeAppPath, withSafeNext } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { contactLookups, normalizeTelegramContact, sameLeadContact, validateCapture } from "../src/lib/capture.ts"
@@ -1021,6 +1022,15 @@ assert(
   mergedFunnels.some((item) => item.id === funnelKeep.id) && mergedFunnels.some((item) => item.id === funnelExtra.id),
   "persist de funis une o quadro novo sem largar o outro"
 )
+const goneFunnel = emptySalesFunnel("Gone")
+await rememberRemovedFunnels(funnelKv, [goneFunnel.id])
+await funnelKv.put(CRM_REMOVED_FUNNELS, JSON.stringify({ ids: [] }))
+assert(await isFunnelRemoved(funnelKv, goneFunnel.id), "funil apagado fica gone depois do recorte")
+const keptAfterGone = await persistFunnelsMerge(funnelKv, [funnelKeep, goneFunnel])
+assert(
+  keptAfterGone.some((item) => item.id === funnelKeep.id) && !keptAfterGone.some((item) => item.id === goneFunnel.id),
+  "merge não ressuscita funil gone"
+)
 assert(parseLeadImportLine("Ana Silva, 11987654321")?.contact === "11987654321", "import lê nome e telefone")
 assert(parseLeadImportLine("@carlos")?.contact === "@carlos", "import lê @user")
 assert(parseLeadImportText("Ana, 11987654321\nAna, 11987654321").rows.length === 1, "import não duplica o mesmo contacto")
@@ -1898,7 +1908,11 @@ assert(leadWriteIds({ ok: true, saved: 3, ids: ["a", "c"] }, writeChunk).join() 
 assert(leadWriteIds({ ok: true, saved: 2 }, writeChunk).length === 0, "saved parcial sem ids não esvazia a fila")
 assert(leadWriteIds({ ok: true, saved: 3 }, writeChunk).join() === "a,b,c", "Worker velho com saved completo ainda devolve o lote")
 assert(leadWriteIds({ ok: true, ids: ["a", "ghost", "a"] }, writeChunk).join() === "a", "id de outro lote e repetido não entram")
+assert(leadWriteIds({ ok: true, ids: ["live"], adopted: { a: "live" } }, writeChunk).join() === "a", "id canónico conta o local como gravado")
+assert(leadWriteAdopted({ adopted: { a: "live", b: "b" } }).a === "live" && !leadWriteAdopted({ adopted: { b: "b" } }).b, "adopted ignora id igual")
 assert(leadWriteIds({}, writeChunk).length === 0, "200 sem saved não finge que gravou")
+const remapped = remapAdoptedLeads([lead("phantom", "@a"), lead("live", "@a")], { phantom: "live" })
+assert(remapped.length === 1 && remapped[0]?.id === "live", "ficha fantasma cede ao id canónico")
 assert(LEAD_INDEX_REST_CAP === 4000, "simulação sem chat cabe até 4000 no índice")
 assert(LEAD_INDEX_PINNED_CAP === 8000, "chats sem espera cabem 8000 no índice")
 const clippedChats = clipCrmIndex(
@@ -1957,6 +1971,16 @@ assert(clipRemovedIds(Array.from({ length: 8010 }, (_, i) => `gone-${i}`), LEAD_
 const tombKv = memoryKv()
 for (let i = 0; i < 12; i++) await rememberRemovedLead(tombKv, `gone-${i}`)
 assert((await loadRemovedLeadIds(tombKv)).length === 12, "tombstones recentes ficam")
+const durableGone = memoryKv()
+await upsertLeadKv(durableGone, lead("old-id", "@oldgone"))
+await deleteLeadKv(durableGone, "old-id")
+await durableGone.put(CRM_REMOVED, JSON.stringify({ ids: [] }))
+assert(!(await loadRemovedLeadIds(durableGone)).includes("old-id"), "lista de tombstone rolou")
+assert(await isLeadRemoved(durableGone, "old-id"), "chave gone sobrevive ao recorte")
+assert((await importOrAdoptLead(durableGone, lead("old-id", "@oldgone"))) === null, "import não ressuscita id apagado")
+assert(await isLeadRemoved(durableGone, "old-id"), "import recusado não limpa o gone")
+assert((await loadLead(durableGone, "old-id")) === null, "id gone não volta pelo import")
+assert((await claimLeadAlias(durableGone, "contact", "@oldgone", "fresh-id")) === "fresh-id", "alias de id gone cede o contacto")
 const olderIdx = { id: "a", contact: "@a", updatedAt: "2020-01-01T00:00:00.000Z", channel: "telegram" as const }
 const newerIdx = { id: "a", contact: "@a", updatedAt: "2026-01-01T00:00:00.000Z", channel: "telegram" as const }
 const otherIdx = { id: "b", contact: "@b", updatedAt: "2026-01-02T00:00:00.000Z", channel: "telegram" as const }
@@ -2393,6 +2417,65 @@ await dupAgain.flush()
 const duda = (await listLeads(dupEnv.AUTH, 20, "all")).find((item) => item.contact === "@dup")
 assert((duda?.messages ?? []).filter((item) => item.role === "ste").length === dudaSte, "update_id repetido não reenvia")
 assert(await claimTelegramUpdate(dupEnv.AUTH, 42) === false, "update_id já visto não volta a entrar")
+const saveFailBase = memoryKv()
+const saveFailKv = {
+  get: (key: string, type: "json") => saveFailBase.get(key, type),
+  async put(key: string, value: string) {
+    if (key.startsWith("crm:lead:")) throw new Error("kv down")
+    return saveFailBase.put(key, value)
+  },
+  delete: (key: string) => saveFailBase.delete?.(key),
+}
+let saveFailCalls = 0
+const saveFailFetch = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("api.telegram.org")) {
+    saveFailCalls += 1
+    return new Response(JSON.stringify({ ok: true }), { status: 200 })
+  }
+  return saveFailFetch(input, init)
+}) as typeof fetch
+const saveFailEnv = { ...apiEnv, AUTH: saveFailKv, TELEGRAM_WEBHOOK_SECRET: "hook-secret", TELEGRAM_BOT_TOKEN: "000:savefail" } as Env
+const saveFailBody = {
+  update_id: 501,
+  message: {
+    chat: { id: 9301 },
+    text: "/start fb_savefail",
+    from: { id: 9301, username: "savefail", first_name: "Lia" },
+  },
+}
+const saveFailCtx = backgroundCtx()
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/telegram", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+        body: JSON.stringify(saveFailBody),
+      }),
+      saveFailEnv,
+      saveFailCtx
+    )
+  ).status === 200,
+  "envio ok com KV a falhar ainda é 200"
+)
+await saveFailCtx.flush()
+const firstSaveFailCalls = saveFailCalls
+assert(firstSaveFailCalls > 0, "Telegram recebeu as boas-vindas antes do KV falhar")
+assert((await claimTelegramUpdate(saveFailKv, 501)) === false, "KV a falhar depois do envio não esquece o update")
+const saveFailAgain = backgroundCtx()
+await handleRequest(
+  new Request("http://local.test/api/telegram", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+    body: JSON.stringify(saveFailBody),
+  }),
+  saveFailEnv,
+  saveFailAgain
+)
+await saveFailAgain.flush()
+assert(saveFailCalls === firstSaveFailCalls, "retry do mesmo update não volta a mandar")
+globalThis.fetch = saveFailFetch
 await forgetTelegramUpdate(dupEnv.AUTH, 42)
 assert(await claimTelegramUpdate(dupEnv.AUTH, 42), "esquecer o update permite retry")
 const claimedOnce = mergeTelegramClaims(
@@ -3185,6 +3268,29 @@ const lookCreate = await handleRequest(
   backgroundCtx()
 )
 assert(lookCreate.status === 200, "POST do lead da busca")
+const canonCreate = await handleRequest(
+  new Request("http://local.test/api/leads", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: liveCookie },
+    body: JSON.stringify({ lead: lead("canon-live", "@canon") }),
+  }),
+  liveEnv,
+  backgroundCtx()
+)
+assert(canonCreate.status === 200, "POST do lead canónico")
+const canonRematch = await handleRequest(
+  new Request("http://local.test/api/leads", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: liveCookie },
+    body: JSON.stringify({ lead: lead("canon-phantom", "@canon") }),
+  }),
+  liveEnv,
+  backgroundCtx()
+)
+const canonBody = (await canonRematch.json()) as { ids?: string[]; adopted?: Record<string, string> }
+assert(canonRematch.status === 200 && canonBody.ids?.includes("canon-live"), "POST devolve o id canónico")
+assert(canonBody.adopted?.["canon-phantom"] === "canon-live", "POST mapeia o id local para o canónico")
+assert((await listLeads(liveEnv.AUTH, 20, "all")).filter((item) => item.contact === "@canon").length === 1, "POST rematch não cria segunda ficha")
 const lookQuery = await handleRequest(
   new Request("http://local.test/api/leads?q=@lookme", { headers: { cookie: liveCookie } }),
   liveEnv,

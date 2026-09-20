@@ -24,7 +24,6 @@ import {
   emptySettings,
   mergeLeadEvents,
   publicSettings,
-  commitCrmFunnels,
   FUNNEL_CAP,
   resolveLeadLookup,
 } from "../src/lib/crm.ts"
@@ -47,12 +46,12 @@ import {
   loadRemovedFunnelIds,
   loadRemovedLeadIds,
   loadSettingsKv,
-  rememberRemovedFunnels,
   releaseCronLock,
+  persistFunnelsMerge,
   persistSettingsMerge,
+  isLeadRemoved,
   reserveLeadIdentity,
   resolveLeadWrite,
-  saveFunnelsKv,
   upsertLeadKv,
 } from "./crm-store.ts"
 import {
@@ -422,7 +421,6 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       const rawFunnels = body.funnels
       const incoming = rawFunnels.map(sanitizeIncomingFunnel).filter((item): item is NonNullable<typeof item> => Boolean(item))
       const incomingRemoved = clipRemovedIds(body.removedFunnelIds, 400)
-      const storedRemoved = env.AUTH ? await loadRemovedFunnelIds(env.AUTH) : []
       const stored = await loadFunnels(env)
       for (const funnel of incoming) {
         if (funnel.status !== "active" || !funnel.production) continue
@@ -440,17 +438,11 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
         }
         return json({ error: issue.message }, 400)
       }
-      const latest = await loadFunnels(env)
-      const latestRemoved = env.AUTH ? await loadRemovedFunnelIds(env.AUTH) : storedRemoved
-      const funnels = commitCrmFunnels(stored, incoming, storedRemoved, incomingRemoved, latest, latestRemoved)
-      if (!funnels.length) return json({ error: "Mantém pelo menos um funil." }, 400)
-      if (funnels.length > FUNNEL_CAP) return json({ error: `O estúdio aceita no máximo ${FUNNEL_CAP} funis.` }, 400)
       try {
-        await persistFunnels(env, funnels)
+        await persistFunnels(env, incoming, incomingRemoved)
       } catch (error) {
         return json({ error: error instanceof Error ? error.message : "Não gravei os funis." }, 400)
       }
-      if (env.AUTH && incomingRemoved.length) await rememberRemovedFunnels(env.AUTH, incomingRemoved)
     }
     if (body.settings) await persistSettings(env, body.settings)
     return json({ ok: true })
@@ -490,16 +482,19 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!parsed.ok) return jsonReadError(parsed)
     const body = parsed.value
     const rows = (body.leads?.length ? body.leads : body.lead ? [body.lead] : []).slice(0, 120)
-    const removed = await loadRemovedLeadIds(env.AUTH)
     const ids: string[] = []
+    const adopted: Record<string, string> = {}
     for (const row of rows) {
       const lead = sanitizeIncomingLead(row)
       if (!lead) continue
       const { incoming, prev } = await resolveLeadWrite(env.AUTH, lead)
-      if (removed.includes(incoming.id) || removed.includes(lead.id)) continue
-      if (await saveLead(env, adoptOperatorLead(prev, incoming))) ids.push(lead.id)
+      if ((await isLeadRemoved(env.AUTH, incoming.id)) || (await isLeadRemoved(env.AUTH, lead.id))) continue
+      const next = adoptOperatorLead(prev, incoming)
+      if (!(await saveLead(env, next))) continue
+      ids.push(next.id)
+      if (lead.id !== next.id) adopted[lead.id] = next.id
     }
-    return json({ ok: true, saved: ids.length, ids })
+    return json({ ok: true, saved: ids.length, ids, adopted })
   }
 
   if (url.pathname === "/api/leads" && request.method === "DELETE") {
@@ -571,20 +566,21 @@ async function runTelegram(env: Env, update: TelegramUpdate) {
   const updateId = typeof update.update_id === "number" && update.update_id > 0 ? update.update_id : 0
   const kv = kvOf(env)
   if (updateId && kv && !(await claimTelegramUpdate(kv, updateId))) return
+  let sent = false
   try {
-    await deliverTelegram(env, update, resolved.telegramBotToken)
+    sent = (await deliverTelegram(env, update, resolved.telegramBotToken)).sent
   } catch (error) {
-    if (updateId && kv) await forgetTelegramUpdate(kv, updateId)
+    if (updateId && kv && !sent) await forgetTelegramUpdate(kv, updateId)
     throw error
   }
 }
 
-async function deliverTelegram(env: Env, update: TelegramUpdate, token: string) {
+async function deliverTelegram(env: Env, update: TelegramUpdate, token: string): Promise<{ sent: boolean }> {
   const { resolved } = await runtimeOf(env)
   const joinUser = update.message?.new_chat_members?.[0] ?? (update.chat_member?.new_chat_member?.status === "member" ? update.chat_member.new_chat_member.user : undefined)
   const message = update.message
   const from = joinUser ?? message?.from
-  if (!from) return
+  if (!from) return { sent: false }
 
   const contact = from.username ? `@${from.username}` : `tg:${from.id}`
   const telegramName = resolvePersonName([from.first_name, from.last_name].filter(Boolean).join(" "))
@@ -683,9 +679,14 @@ async function deliverTelegram(env: Env, update: TelegramUpdate, token: string) 
     }
   }
 
-  await saveLead(env, lead)
-  const updateId = typeof update.update_id === "number" && update.update_id > 0 ? update.update_id : 0
-  if (!delivered && updateId && env.AUTH) await forgetTelegramUpdate(env.AUTH, updateId)
+  if (delivered) {
+    if (!(await persistLeadAfterSend(env, lead))) console.error("telegram lead após envio não gravou")
+  } else {
+    await saveLead(env, lead)
+    const updateId = typeof update.update_id === "number" && update.update_id > 0 ? update.update_id : 0
+    if (updateId && env.AUTH) await forgetTelegramUpdate(env.AUTH, updateId)
+  }
+  return { sent: delivered }
 }
 
 async function processWaits(env: Env) {
@@ -751,12 +752,13 @@ async function notifyEster(env: Env, token: string, body: string) {
   await sendTelegramMarkup(token, chat, body || BANCA_FIXED)
 }
 
-async function persistFunnels(env: Env, funnels: SalesFunnel[]) {
-  const clean = enforceSinglePublished(
-    funnels.map(sanitizeIncomingFunnel).filter((item): item is SalesFunnel => Boolean(item))
-  )
-  if (clean.length > FUNNEL_CAP) throw new Error(`O estúdio aceita no máximo ${FUNNEL_CAP} funis.`)
-  if (env.AUTH) await saveFunnelsKv(env.AUTH, clean)
+async function persistFunnels(env: Env, incoming: SalesFunnel[], incomingRemoved: string[] = []) {
+  const clean = env.AUTH
+    ? await persistFunnelsMerge(env.AUTH, incoming, incomingRemoved)
+    : enforceSinglePublished(
+        incoming.map(sanitizeIncomingFunnel).filter((item): item is SalesFunnel => Boolean(item))
+      )
+  if (!env.AUTH && clean.length > FUNNEL_CAP) throw new Error(`O estúdio aceita no máximo ${FUNNEL_CAP} funis.`)
   if (!env.SUPABASE_SERVICE_ROLE) return
   if (clean.length) {
     await rest(env, "funnels", {
@@ -946,12 +948,23 @@ async function removeLead(env: Env, id: string) {
   if (leadGone === null || eventsGone === null) console.error("supabase delete incompleto")
 }
 
+async function persistLeadAfterSend(env: Env, lead: Lead) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      if (await saveLead(env, lead)) return true
+    } catch {
+      /* o Telegram já entregou — não largamos o update */
+    }
+    if (attempt < 3) await sleep(40 * (attempt + 1))
+  }
+  return false
+}
+
 async function saveLead(env: Env, lead: Lead) {
   let bounded = sanitizeIncomingLead(lead)
   if (!bounded) return false
   if (env.AUTH) {
-    const removed = await loadRemovedLeadIds(env.AUTH)
-    if (removed.includes(bounded.id)) return false
+    if (await isLeadRemoved(env.AUTH, bounded.id)) return false
     const prev = await loadLead(env.AUTH, bounded.id)
     bounded = commitStoredLead(prev, bounded)
     const latest = await loadLead(env.AUTH, bounded.id)
