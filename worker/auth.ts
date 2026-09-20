@@ -15,6 +15,7 @@ export const TOKEN_CAP = 20
 const PBKDF2_ITERATIONS = 100_000
 
 export const AUTH_REVOKED_CAP = 2000
+export const AUTH_REVOKED_API_CAP = 2000
 export const AUTH_SPENT_RESET_CAP = 200
 
 export type UserRole = "owner" | "operator"
@@ -34,6 +35,7 @@ export type StoredUser = {
   passwordHash: string
   createdAt: string
   passwordUpdatedAt?: number
+  accountUpdatedAt?: number
   role?: UserRole
   disabled?: boolean
   tokens?: ApiToken[]
@@ -77,6 +79,7 @@ export type AuthSnapshot = {
   resets: Record<string, ResetRecord>
   throttles?: Record<string, AuthThrottle>
   revoked?: string[]
+  revokedApi?: string[]
   spentResets?: string[]
 }
 
@@ -177,13 +180,14 @@ export function isValidEmail(value: string) {
   return value.length >= 6 && value.length <= 120 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
 }
 
-export function mergeTokens(left?: ApiToken[], right?: ApiToken[], cap = TOKEN_CAP): ApiToken[] {
+export function mergeTokens(left?: ApiToken[], right?: ApiToken[], drop: Iterable<string> = [], cap = TOKEN_CAP): ApiToken[] {
+  const revoked = new Set([...drop].map((id) => id.trim()).filter(Boolean))
   const byId = new Map<string, ApiToken>()
   for (const token of [...(left ?? []), ...(right ?? [])]) {
     if (!token?.id || !token.hash) continue
     const id = token.id.trim().slice(0, 40)
     const hash = token.hash.trim().slice(0, 80)
-    if (!id || !hash) continue
+    if (!id || !hash || revoked.has(id)) continue
     const prev = byId.get(id)
     const next: ApiToken = {
       id,
@@ -208,7 +212,7 @@ export function clipUsers(users: StoredUser[], cap = USER_CAP): StoredUser[] {
 }
 
 function emptySnapshot(): AuthSnapshot {
-  return { users: [], sessions: [], resets: {}, throttles: {}, revoked: [], spentResets: [] }
+  return { users: [], sessions: [], resets: {}, throttles: {}, revoked: [], revokedApi: [], spentResets: [] }
 }
 
 export function clipAuthTokens(ids: unknown, cap = AUTH_REVOKED_CAP): string[] {
@@ -281,6 +285,10 @@ function passwordAt(user: StoredUser | undefined) {
   return user?.passwordUpdatedAt ?? 0
 }
 
+function accountAt(user: StoredUser | undefined) {
+  return user?.accountUpdatedAt ?? 0
+}
+
 function preferUser(prev: StoredUser, next: StoredUser): StoredUser {
   const prevAt = passwordAt(prev)
   const nextAt = passwordAt(next)
@@ -290,13 +298,17 @@ function preferUser(prev: StoredUser, next: StoredUser): StoredUser {
       : prevAt > nextAt
         ? { ...next, ...prev, id: prev.id, passwordHash: prev.passwordHash, passwordUpdatedAt: prevAt }
         : { ...prev, ...next, id: prev.id, passwordHash: next.passwordHash || prev.passwordHash }
+  const prevAcc = accountAt(prev)
+  const nextAcc = accountAt(next)
+  const account = nextAcc > prevAcc ? next : prevAcc > nextAcc ? prev : winner
   const seeded = isOperatorEmail(prev.email) || isOperatorEmail(next.email)
   return {
     ...winner,
     id: prev.id,
     email: prev.email,
-    role: seeded ? "owner" : winner.role === "owner" ? "owner" : "operator",
-    disabled: seeded ? false : Boolean(winner.disabled),
+    role: seeded ? "owner" : account.role === "owner" ? "owner" : "operator",
+    disabled: seeded ? false : nextAcc !== prevAcc ? Boolean(account.disabled) : Boolean(prev.disabled || next.disabled),
+    accountUpdatedAt: Math.max(prevAcc, nextAcc, winner.accountUpdatedAt ?? 0) || undefined,
     tokens: mergeTokens(prev.tokens, next.tokens),
   }
 }
@@ -348,8 +360,10 @@ export function mergeAuthSnapshots(left: AuthSnapshot, right: AuthSnapshot): Aut
     sessions.set(session.token, { ...session, userId })
   }
   const revoked = clipAuthTokens([...(left.revoked ?? []), ...(right.revoked ?? [])], AUTH_REVOKED_CAP)
+  const revokedApi = clipAuthTokens([...(left.revokedApi ?? []), ...(right.revokedApi ?? [])], AUTH_REVOKED_API_CAP)
   const spentResets = clipAuthTokens([...(left.spentResets ?? []), ...(right.spentResets ?? [])], AUTH_SPENT_RESET_CAP)
   const drop = new Set(revoked)
+  const dropApi = new Set(revokedApi)
   const now = Date.now()
   const resetByUser = new Map<string, { token: string; rec: ResetRecord }>()
   for (const [token, rec] of [...Object.entries(left.resets ?? {}), ...Object.entries(right.resets ?? {})]) {
@@ -360,13 +374,17 @@ export function mergeAuthSnapshots(left: AuthSnapshot, right: AuthSnapshot): Aut
   }
 
   return {
-    users,
+    users: users.map((user) => ({
+      ...user,
+      tokens: mergeTokens(user.tokens, [], dropApi),
+    })),
     sessions: capSessions(
       [...sessions.values()].filter((item) => !drop.has(item.token) && item.expiresAt > now)
     ),
     resets: Object.fromEntries([...resetByUser.values()].map((item) => [item.token, item.rec])),
     throttles: mergeThrottles(left.throttles ?? {}, right.throttles ?? {}),
     revoked,
+    revokedApi,
     spentResets,
   }
 }
@@ -463,16 +481,22 @@ export function clientIp(request: Request) {
 
 function prune(snapshot: AuthSnapshot, now = Date.now()): AuthSnapshot {
   const revoked = clipAuthTokens(snapshot.revoked, AUTH_REVOKED_CAP)
+  const revokedApi = clipAuthTokens(snapshot.revokedApi, AUTH_REVOKED_API_CAP)
   const spentResets = clipAuthTokens(snapshot.spentResets, AUTH_SPENT_RESET_CAP)
   const drop = new Set(revoked)
+  const dropApi = new Set(revokedApi)
   return {
-    users: snapshot.users,
+    users: snapshot.users.map((user) => ({
+      ...user,
+      tokens: mergeTokens(user.tokens, [], dropApi),
+    })),
     sessions: snapshot.sessions.filter((item) => item.expiresAt > now && !drop.has(item.token)),
     resets: Object.fromEntries(
       Object.entries(snapshot.resets).filter(([token, item]) => item.expiresAt > now && !spentResets.includes(token))
     ),
     throttles: Object.fromEntries(Object.entries(snapshot.throttles ?? {}).filter(([, item]) => item.resetAt > now)),
     revoked,
+    revokedApi,
     spentResets,
   }
 }
@@ -584,13 +608,22 @@ export function mintApiToken(name: string) {
   }
 }
 
+export function rememberRevokedApi(snapshot: AuthSnapshot, ids: Iterable<string>): AuthSnapshot {
+  return {
+    ...snapshot,
+    revokedApi: clipAuthTokens([...ids, ...(snapshot.revokedApi ?? [])], AUTH_REVOKED_API_CAP),
+  }
+}
+
 export async function findUserByApiToken(snapshot: AuthSnapshot, token: string) {
   if (!token.startsWith("abn_") || token.length > 200) return null
   const hash = await hashApiToken(token)
   const id = token.split("_")[1] || ""
+  const dropApi = new Set(snapshot.revokedApi ?? [])
+  if (id && dropApi.has(id)) return null
   for (const user of snapshot.users) {
     if (user.disabled) continue
-    const rec = (user.tokens ?? []).find((item) => item.hash === hash && (!id || item.id === id))
+    const rec = (user.tokens ?? []).find((item) => item.hash === hash && (!id || item.id === id) && !dropApi.has(item.id))
     if (rec) return { user, token: rec }
   }
   return null
@@ -804,6 +837,7 @@ export function kvAuthStore(kv: { get(key: string, type: "json"): Promise<unknow
         resets: value.resets && typeof value.resets === "object" ? value.resets : {},
         throttles: value.throttles && typeof value.throttles === "object" ? value.throttles : {},
         revoked: clipAuthTokens(value.revoked, AUTH_REVOKED_CAP),
+        revokedApi: clipAuthTokens(value.revokedApi, AUTH_REVOKED_API_CAP),
         spentResets: clipAuthTokens(value.spentResets, AUTH_SPENT_RESET_CAP),
       }
     },

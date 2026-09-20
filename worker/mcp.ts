@@ -191,6 +191,16 @@ const TOOLS = [
       additionalProperties: false,
     },
   },
+  {
+    name: "abilion_revoke_token",
+    description: "Revoga um token MCP/API desta conta. O id fica no tombstone do KV e não volta no merge.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
 ] as const
 
 async function funnelsOf(env: McpEnv): Promise<SalesFunnel[]> {
@@ -347,6 +357,14 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     const res = await callHttp(request, env, actor, "/api/tokens", "POST", { name: str(args.name) || "MCP" })
     const data = await res.json()
     if (!res.ok) throw new Error(typeof data === "object" && data && "error" in data ? String((data as { error: string }).error) : "Não criei o token.")
+    return data
+  }
+  if (name === "abilion_revoke_token") {
+    const id = str(args.id).trim()
+    if (!id) throw new Error("Falta o id do token.")
+    const res = await callHttp(request, env, actor, `/api/tokens?id=${encodeURIComponent(id)}`, "DELETE")
+    const data = await res.json()
+    if (!res.ok) throw new Error(typeof data === "object" && data && "error" in data ? String((data as { error: string }).error) : "Não revoguei o token.")
     return data
   }
   throw new Error(`Ferramenta desconhecida: ${name}`)

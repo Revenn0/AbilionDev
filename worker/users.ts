@@ -13,13 +13,22 @@ import {
   publicApiToken,
   publicManagedUser,
   randomToken,
+  rememberRevokedApi,
   TOKEN_CAP,
   USER_CAP,
   type AuthStore,
+  type AuthSnapshot,
   type PublicUser,
   type StoredUser,
   type UserRole,
 } from "./auth.ts"
+
+function dropUserApiTokens(snapshot: AuthSnapshot, user: StoredUser) {
+  const ids = (user.tokens ?? []).map((item) => item.id)
+  const next = rememberRevokedApi(snapshot, ids)
+  snapshot.revokedApi = next.revokedApi
+  user.tokens = []
+}
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -71,6 +80,7 @@ export async function handleUsers(request: Request, store: AuthStore, actor: Pub
       passwordHash: await hashPassword(password),
       createdAt: new Date().toISOString(),
       passwordUpdatedAt: Date.now(),
+      accountUpdatedAt: Date.now(),
       role,
       disabled: false,
       tokens: [],
@@ -119,8 +129,10 @@ export async function handleUsers(request: Request, store: AuthStore, actor: Pub
         const dropped = snapshot.sessions.filter((item) => item.userId === user.id)
         snapshot.revoked = clipAuthTokens([...dropped.map((item) => item.token), ...(snapshot.revoked ?? [])], AUTH_REVOKED_CAP)
         snapshot.sessions = snapshot.sessions.filter((item) => item.userId !== user.id)
+        dropUserApiTokens(snapshot, user)
       }
     }
+    user.accountUpdatedAt = Date.now()
     await store.save(snapshot)
     return json({ ok: true, user: publicManagedUser(user) })
   }
@@ -171,6 +183,8 @@ export async function handleTokens(request: Request, store: AuthStore, actor: Pu
     const user = snapshot.users.find((item) => item.id === actor.id)
     if (!user) return json({ error: "Sessão expirada." }, 401)
     user.tokens = (user.tokens ?? []).filter((item) => item.id !== id)
+    const next = rememberRevokedApi(snapshot, [id])
+    snapshot.revokedApi = next.revokedApi
     await store.save(snapshot)
     return json({ ok: true })
   }

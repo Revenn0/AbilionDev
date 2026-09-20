@@ -92,7 +92,7 @@ import { campaignFor } from "../src/lib/labels.ts"
 import { barShare, hasConversation, isImportedLead, isOperatorLockedLead, leadsHydrating } from "../src/lib/ops.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
-import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, handleAuth, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeThrottles, retainUserSessions, sessionUser } from "../worker/auth.ts"
+import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, handleAuth, hashApiToken, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, retainUserSessions, sessionUser } from "../worker/auth.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTelegramClaims, telegramCall } from "../worker/telegram.ts"
@@ -1350,6 +1350,43 @@ await hashStore.save({
 const hashRaced = await hashStore.load()
 assert(hashRaced.users[0]?.passwordHash === "new", "KV não reverte a senha na corrida do login")
 assert(!hashRaced.sessions.some((item) => item.token === "tok-stale"), "KV não ressuscita sessão anterior à troca")
+const apiTok = { id: "tokapi1", name: "Agente", hash: "deadbeef", prefix: "abn_tokapi1", createdAt: "2026-01-01T00:00:00.000Z" }
+assert(mergeTokens([apiTok], [apiTok], ["tokapi1"]).length === 0, "mergeTokens ignora id no drop")
+const opUser = {
+  id: "ana-merge",
+  email: "ana-merge@abilion.com",
+  name: "Ana",
+  passwordHash: "h",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  role: "operator" as const,
+  disabled: false,
+  tokens: [apiTok],
+  accountUpdatedAt: 1000,
+}
+const disabledUser = { ...opUser, disabled: true, tokens: [], accountUpdatedAt: 2000 }
+const mergedDisable = mergeAuthSnapshots(
+  { users: [disabledUser], sessions: [], resets: {}, revokedApi: ["tokapi1"] },
+  { users: [opUser], sessions: [], resets: {}, revokedApi: [] }
+)
+assert(mergedDisable.users[0]?.disabled === true, "desligar ganha do snapshot velho")
+assert(!(mergedDisable.users[0]?.tokens ?? []).some((item) => item.id === "tokapi1"), "token da conta desligada não volta")
+assert(mergedDisable.revokedApi?.includes("tokapi1"), "tombstone de token MCP fica no merge")
+const mergedEqualDisable = mergeAuthSnapshots(
+  { users: [{ ...opUser, disabled: true, accountUpdatedAt: 0 }], sessions: [], resets: {} },
+  { users: [{ ...opUser, disabled: false, accountUpdatedAt: 0 }], sessions: [], resets: {} }
+)
+assert(mergedEqualDisable.users[0]?.disabled === true, "sem carimbo, disabled ganha")
+const mintedApi = mintApiToken("revoke")
+const mintedHash = await hashApiToken(mintedApi.token)
+const revokedSnap = {
+  users: [{ ...opUser, tokens: [{ id: mintedApi.id, name: "revoke", hash: mintedHash, prefix: mintedApi.prefix, createdAt: "2026-01-01T00:00:00.000Z" }], disabled: false }],
+  sessions: [],
+  resets: {},
+  revokedApi: [mintedApi.id],
+}
+assert((await findUserByApiToken(revokedSnap, mintedApi.token)) === null, "token no revokedApi não autentica")
+const liveSnap = { ...revokedSnap, revokedApi: [] }
+assert((await findUserByApiToken(liveSnap, mintedApi.token))?.user.email === "ana-merge@abilion.com", "token vivo ainda autentica")
 
 const authStore = memoryAuthStore()
 const loginAttempt = (password: string) =>
@@ -3419,6 +3456,23 @@ const anaLogin = await handleRequest(
 )
 assert(anaLogin.status === 200, "operador criado entra")
 const anaCookie = anaLogin.headers.get("set-cookie") || ""
+const anaMinted = await handleRequest(
+  new Request("http://local.test/api/tokens", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: anaCookie, "x-forwarded-for": "203.0.113.202" },
+    body: JSON.stringify({ name: "Ana MCP" }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const anaMintedBody = (await anaMinted.json()) as { token?: string; item?: { id?: string } }
+assert(anaMinted.status === 201 && anaMintedBody.token?.startsWith("abn_"), "operador também gera token")
+const anaBearerOk = await sessionUser(
+  new Request("http://local.test/api/crm", { headers: { authorization: `Bearer ${anaMintedBody.token}` } }),
+  kvAuthStore(teamEnv.AUTH!)
+)
+assert(anaBearerOk?.email === "ana@abilion.com", "Bearer da Ana resolve")
+const staleAnaSnap = await kvAuthStore(teamEnv.AUTH!).load()
 const anaForbidden = await handleRequest(
   new Request("http://local.test/api/users", {
     method: "POST",
@@ -3478,6 +3532,19 @@ const mcpInit = await handleRequest(
 const mcpInitBody = (await mcpInit.json()) as { result?: { serverInfo?: { name?: string }; protocolVersion?: string } }
 assert(mcpInit.status === 200 && mcpInitBody.result?.serverInfo?.name === "abilion", "MCP initialize")
 assert(mcpInitBody.result?.protocolVersion === "2025-03-26", "MCP aceita 2025-03-26")
+const mcpTools = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 10, method: "tools/list" }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const mcpToolsBody = (await mcpTools.json()) as { result?: { tools?: Array<{ name?: string }> } }
+const mcpToolNames = (mcpToolsBody.result?.tools ?? []).map((item) => item.name)
+assert(mcpToolNames.includes("abilion_patch_user"), "MCP lista patch_user")
+assert(mcpToolNames.includes("abilion_revoke_token"), "MCP lista revoke_token")
 
 const mcpCreate = await handleRequest(
   new Request("http://local.test/mcp", {
@@ -3638,8 +3705,62 @@ const mcpToken = await handleRequest(
   backgroundCtx()
 )
 const mcpTokenBody = (await mcpToken.json()) as { result?: { content?: Array<{ text?: string }> } }
-const mcpTokenOut = JSON.parse(mcpTokenBody.result?.content?.[0]?.text || "{}") as { token?: string }
+const mcpTokenOut = JSON.parse(mcpTokenBody.result?.content?.[0]?.text || "{}") as { token?: string; item?: { id?: string } }
 assert(mcpToken.status === 200 && mcpTokenOut.token?.startsWith("abn_"), "MCP cria token")
+const mcpRevoke = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 11,
+      method: "tools/call",
+      params: { name: "abilion_revoke_token", arguments: { id: mcpTokenOut.item?.id } },
+    }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const mcpRevokeBody = (await mcpRevoke.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
+const mcpRevoked = JSON.parse(mcpRevokeBody.result?.content?.[0]?.text || "{}") as { ok?: boolean }
+assert(mcpRevoke.status === 200 && mcpRevoked.ok && !mcpRevokeBody.result?.isError, "MCP revoga token")
+const revokedBearer = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mcpTokenOut.token}` },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 12, method: "initialize", params: { protocolVersion: "2025-03-26" } }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+assert(revokedBearer.status === 401, "token MCP revogado não entra")
+const staleTokenSnap = await kvAuthStore(teamEnv.AUTH!).load()
+const revivedOwner = staleTokenSnap.users.find((item) => item.email === "victor@abilion.com")
+assert(Boolean(revivedOwner), "dono ainda está no snapshot")
+await kvAuthStore(teamEnv.AUTH!).save({
+  ...staleTokenSnap,
+  revokedApi: [],
+  users: staleTokenSnap.users.map((item) =>
+    item.email === "victor@abilion.com"
+      ? {
+          ...item,
+          tokens: [
+            ...(item.tokens ?? []),
+            {
+              id: mcpTokenOut.item?.id || "missing",
+              name: "Agente MCP",
+              hash: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+              prefix: "abn_dead",
+              createdAt: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+        }
+      : item
+  ),
+})
+const afterRevive = await kvAuthStore(teamEnv.AUTH!).load()
+assert(afterRevive.revokedApi?.includes(mcpTokenOut.item?.id || ""), "tombstone do token MCP sobrevive ao save velho")
+assert(!(afterRevive.users.find((item) => item.email === "victor@abilion.com")?.tokens ?? []).some((item) => item.id === mcpTokenOut.item?.id), "token revogado não volta na conta")
 
 const mcpLimitEnv = {
   ASSETS: { fetch: async () => new Response("ok") },
@@ -3710,5 +3831,19 @@ const anaDisabledLogin = await handleRequest(
   backgroundCtx()
 )
 assert(anaDisabledLogin.status === 401, "conta desligada não entra")
+const anaBearerDead = await sessionUser(
+  new Request("http://local.test/api/crm", { headers: { authorization: `Bearer ${anaMintedBody.token}` } }),
+  kvAuthStore(teamEnv.AUTH!)
+)
+assert(anaBearerDead === null, "token da conta desligada cai")
+await kvAuthStore(teamEnv.AUTH!).save(staleAnaSnap)
+const anaAfterStale = (await kvAuthStore(teamEnv.AUTH!).load()).users.find((item) => item.email === "ana@abilion.com")
+assert(anaAfterStale?.disabled === true, "save velho não volta a ligar a Ana")
+assert(!(anaAfterStale?.tokens ?? []).some((item) => item.id === anaMintedBody.item?.id), "token da Ana desligada não volta")
+const anaBearerAfterStale = await sessionUser(
+  new Request("http://local.test/api/crm", { headers: { authorization: `Bearer ${anaMintedBody.token}` } }),
+  kvAuthStore(teamEnv.AUTH!)
+)
+assert(anaBearerAfterStale === null, "Bearer da Ana continua morto depois do save velho")
 
 console.log("ste-flow ok")
