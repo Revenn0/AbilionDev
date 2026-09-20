@@ -1,7 +1,9 @@
 import type { User } from "@/lib/types"
+import { noteUnauthorized } from "@/lib/session"
 
-async function parse<T>(res: Promise<Response>): Promise<T> {
+async function parse<T>(res: Promise<Response>, expireOn401 = false): Promise<T> {
   const response = await res
+  if (expireOn401) noteUnauthorized(response)
   const data = (await response.json().catch(() => ({}))) as T & { error?: string }
   if (!response.ok) throw new Error(data.error || "Não foi possível autenticar.")
   return data
@@ -44,7 +46,8 @@ export function changePasswordRequest(currentPassword: string, password: string)
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ currentPassword, password }),
-    })
+    }),
+    true
   )
 }
 

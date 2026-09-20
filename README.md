@@ -155,7 +155,7 @@ Autenticadas:
 - `/fluxo` — lista de funis.
 - `/fluxo/funil/:id` — editor visual + runtime.
 - `/leads` — CRM, captura, print/banca.
-- `/conversas` — inbox Telegram da Sté (máx. 80). Sem conversas, “Simular conversa” corre o motor no painel.
+- `/conversas` — inbox Telegram da Sté (máx. 80). Sem conversas, “Simular conversa” corre o motor no painel. Leads com `telegramChatId` real não avançam a espera no browser — o cron é que manda o Telegram.
 - `/telegram` — saúde do bot, webhook, simulação de /start.
 - `/configuracoes` — bot, conta, plugins, notificações, aparência.
 
@@ -211,7 +211,7 @@ npx tsx scripts/ui-audit.mts
 
 `scripts/ui-audit.mts` percorre login, rotas do painel, 404, skip-link, teclado das tabs, captura, logout → forgot/reset e as larguras 320 / 375 / 768 / 1024 / 1440. Precisa do `npm run dev` em `http://127.0.0.1:43173`.
 
-`scripts/ste-flow.mts` cobre o webhook assinado (`/start fb`, segundo `/start` sem spam, fala do lead, join no grupo), inbox autenticada, runtime sem vazar o token, DELETE do lead, cron com duas esperas e recusa de JSON enorme (413).
+`scripts/ste-flow.mts` cobre o webhook assinado (`/start fb`, segundo `/start` sem spam, fala do lead, join no grupo), inbox autenticada, runtime sem vazar o token, DELETE do lead, cron com duas esperas, recusa de JSON enorme (413) e a regra de que simulação/lote não inventam `telegramChatId`.
 
 ```bash
 npx tsx scripts/ui-audit.mts

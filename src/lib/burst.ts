@@ -27,7 +27,6 @@ function seedFacebookLead(funnels: SalesFunnel[], index: number): Lead {
   )
   captured.startPayload = payload
   captured.campaign = campaignFromStart(payload)
-  captured.telegramChatId = String(800_000 + index)
   const ufs = ["SP", "RJ", "MG", "BA", "PR", "RS", "PE", "CE", "GO", "SC"] as const
   captured.facts = { ...captured.facts, ...factsFromGeo({ countryCode: "BR", regionCode: ufs[index % ufs.length] }) }
   return captured

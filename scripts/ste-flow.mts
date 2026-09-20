@@ -4,6 +4,7 @@ import { flagEmoji, formatGeo, mergeGeo, normalizeRegionCode, stateLabel } from 
 import { emptySummary, isFacebookTraffic, summarizeTrack, type TrackEvent } from "../src/lib/track.ts"
 import {
   isolateLead,
+  canTickSteLocally,
   replySte,
   replySteLived,
   replySteSmart,
@@ -1107,8 +1108,12 @@ assert(!inboxLead.steBlocked && !inboxLead.steQuiet, "simular conversa não ence
 assert((inboxLead.messages ?? []).some((item) => item.role === "lead"), "simular conversa tem fala do lead")
 assert((inboxLead.messages ?? []).some((item) => item.role === "ste"), "simular conversa tem resposta da Sté")
 assert(inboxLead.stePhase !== "closed", "simular conversa fica no funil")
+assert(!inboxLead.telegramChatId, "simular conversa não inventa chat id")
+assert(canTickSteLocally(inboxLead), "simulação avança no painel")
+assert(!canTickSteLocally({ ...inboxLead, telegramChatId: "9001" }), "lead real do Telegram não avança no painel")
 const burstOne = burstFacebookLeads([emptySalesFunnel("lote-um")], 1)[0]
 assert(burstOne?.steBlocked, "o primeiro do lote de 100 ainda testa ofensa")
+assert(!burstOne?.telegramChatId, "lote não inventa chat id")
 const burstMix = burstStats(burstFacebookLeads([emptySalesFunnel("lote")], 100))
 assert(burstMix.blocked >= 1 && burstMix.talking >= 1, "lote Facebook mistura abertos e encerrados")
 assert(barShare(0, 0) === 0, "barra vazia fica em 0")

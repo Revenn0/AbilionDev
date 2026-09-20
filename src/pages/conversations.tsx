@@ -11,7 +11,7 @@ import { hasConversation } from "@/lib/ops"
 import { ORIGIN_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { GeoBadge } from "@/components/crm/geo-badge"
 import { factsWithTrack } from "@/lib/geo"
-import { advanceSteIfDue, replySteLived, splitSteMarkup, steHeardChips, steRuntimeFromFunnels, steStepLabel } from "@/lib/ste"
+import { advanceSteIfDue, canTickSteLocally, replySteLived, splitSteMarkup, steHeardChips, steRuntimeFromFunnels, steStepLabel } from "@/lib/ste"
 import { useTrackSummary } from "@/lib/use-track-summary"
 import { timeAgo } from "@/lib/format"
 import type { Lead } from "@/lib/types"
@@ -93,7 +93,7 @@ export function ConversationsPage() {
   const lead = selected ?? rows[0] ?? null
 
   useEffect(() => {
-    if (!lead) return
+    if (!lead || !canTickSteLocally(lead)) return
     const result = advanceSteIfDue(lead, Date.now(), runtime)
     if (result.replies.length) saveLead(result.lead)
   }, [lead?.id, lead?.waitUntil])

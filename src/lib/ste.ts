@@ -766,6 +766,10 @@ function splitBlocks(raw: string, max = 4) {
     .slice(0, max)
 }
 
+export function canTickSteLocally(lead: Lead) {
+  return !lead.telegramChatId
+}
+
 export function advanceSteIfDue(lead: Lead, now = Date.now(), runtime?: SteRuntime): SteResult {
   const due = lead.waitUntil ? new Date(lead.waitUntil).getTime() : 0
   if (!due || due > now || !isSteWait(lead)) return pack(lead, [])
