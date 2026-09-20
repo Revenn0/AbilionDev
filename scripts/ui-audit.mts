@@ -92,6 +92,11 @@ try {
   await waitAuthPage(page)
   assert(page.url().includes("/forgot"), "forgot público sem sessão")
   assert(await page.$("#email"), "forgot tem e-mail")
+  assert(
+    (await page.evaluate(() => document.body.innerText)).includes("não há e-mail") ||
+      (await page.evaluate(() => document.body.innerText)).includes("Configurações"),
+    "forgot explica que produção não envia e-mail"
+  )
   await page.click("button[type=submit]")
   await page.waitForSelector("#forgot-error", { timeout: 3_000 })
 
@@ -273,7 +278,7 @@ try {
 
   for (const viewport of VIEWPORTS) {
     await page.setViewport({ width: viewport.width, height: viewport.height })
-    for (const route of ["/", "/leads", "/conversas", "/configuracoes", "/fluxo", editorPath] as const) {
+    for (const route of ["/", "/analytics", "/leads", "/conversas", "/telegram", "/configuracoes", "/fluxo", editorPath] as const) {
       await open(page, route)
       const box = await overflow(page)
       assert(!box.overflow, `overflow ${viewport.name}px em ${route} (${box.scrollWidth}>${box.clientWidth})`)

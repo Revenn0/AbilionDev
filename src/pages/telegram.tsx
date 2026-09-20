@@ -22,12 +22,13 @@ export function TelegramPage() {
   }).length
   const hook = `${workerUrl()}/api/telegram`
   const ads = adsDeepLink(settings.telegramBotUsername)
-  const [health, setHealth] = useState<Awaited<ReturnType<typeof fetchHealth>>>({ ok: false })
+  const [health, setHealth] = useState<Awaited<ReturnType<typeof fetchHealth>> | null>(null)
   const [burstLock, setBurstLock] = useState(false)
 
   useEffect(() => {
     void fetchHealth().then(setHealth)
   }, [])
+  const healthReady = health !== null
 
   return (
     <div className="h-full overflow-y-auto">
@@ -35,7 +36,7 @@ export function TelegramPage() {
         <SyncBanner
           items={[
             {
-              ok: !health.unreachable,
+              ok: !health?.unreachable,
               message: "O Worker não respondeu. Confere se o painel está a falar com /api/health.",
             },
           ]}
@@ -71,11 +72,11 @@ export function TelegramPage() {
             <p className="text-[12.5px] text-muted-foreground">Bot</p>
             <p className="mt-2 text-[18px] font-medium">{settings.telegramBotUsername || "Por configurar"}</p>
             <div className="mt-3 flex flex-wrap gap-1.5">
-              <StatusPill tone={settings.telegramBotUsername || health.telegram ? "success" : "muted"}>
-                {settings.telegramBotUsername || health.telegram ? "Configurado" : "Ainda sem bot"}
+              <StatusPill tone={settings.telegramBotUsername || health?.telegram ? "success" : "muted"}>
+                {!healthReady ? "A verificar…" : settings.telegramBotUsername || health?.telegram ? "Configurado" : "Ainda sem bot"}
               </StatusPill>
-              <StatusPill tone={health.ok && health.telegram ? "success" : "muted"}>
-                {health.ok && health.telegram ? "Telegram ligado" : "À espera do token"}
+              <StatusPill tone={health?.ok && health.telegram ? "success" : "muted"}>
+                {!healthReady ? "A verificar…" : health?.ok && health.telegram ? "Telegram ligado" : "À espera do token"}
               </StatusPill>
             </div>
           </article>

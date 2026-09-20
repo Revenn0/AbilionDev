@@ -22,7 +22,7 @@ Vite + React + TypeScript + Tailwind + shadcn/ui + React Flow. Globo de visitant
 
 Worker Cloudflare (`abilion`) serve o estático e as rotas `/api/*` em [abilion.lol](https://www.abilion.lol).
 
-Dados: o Worker grava leads, funis e o token do Telegram no KV `abilion-auth`. Sem service role do Supabase a operação continua. O browser não fala com o Supabase nem guarda o token — só o Worker.
+Dados: o Worker grava leads, funis e o token do Telegram no KV `abilion-auth`. Sem service role do Supabase a operação continua. O browser não fala com o Supabase — não há cliente nem chave anónima no frontend. Só o Worker usa `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE`.
 
 ## Correr
 
@@ -57,7 +57,7 @@ Projecto já usado no wrangler:
 
 - URL: `https://eyjgmkmaixmpmeeahxon.supabase.co`
 - Correr [`supabase/migrations/001_flow.sql`](supabase/migrations/001_flow.sql), [`002_ste_chat.sql`](supabase/migrations/002_ste_chat.sql) e [`003_facebook_scale.sql`](supabase/migrations/003_facebook_scale.sql) no SQL editor
-- Anon em `.env`. Service role só no Worker
+- Service role só no Worker. Não há chave anónima no browser
 
 ## Produção
 

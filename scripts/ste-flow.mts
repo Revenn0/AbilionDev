@@ -470,6 +470,21 @@ assert(
   "produção sem senha de operador recusa o primeiro acesso"
 )
 assert((await loginAttempt("senhaok")).status === 200, "primeiro acesso define a senha")
+const meAnon = await handleAuth(new Request("http://local.test/api/auth/me"), memoryAuthStore(), {
+  ABILION_ENV: "development",
+})
+const meAnonBody = (await meAnon.json()) as { user: unknown }
+assert(meAnon.status === 200 && meAnonBody.user === null, "me sem cookie devolve user null")
+const passwordWrong = await handleAuth(
+  new Request("http://local.test/api/auth/password", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: (await loginAttempt("senhaok")).headers.get("set-cookie") || "" },
+    body: JSON.stringify({ currentPassword: "errada1", password: "novasenha" }),
+  }),
+  authStore,
+  { ABILION_ENV: "development" }
+)
+assert(passwordWrong.status === 400, "senha actual errada é 400, não 401")
 for (let i = 0; i < 8; i++) {
   assert((await loginAttempt("errada1")).status === 401, `falha ${i + 1} ainda entra no throttle`)
 }

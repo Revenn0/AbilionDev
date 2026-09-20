@@ -330,7 +330,7 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     const currentPassword = body.currentPassword || ""
     const password = body.password || ""
     if (!(await verifyPassword(currentPassword, user.passwordHash))) {
-      return json({ error: "Senha atual inválida." }, 401)
+      return json({ error: "Senha atual inválida." }, 400)
     }
     if (password.length < 6) return json({ error: "A nova senha precisa de 6+ caracteres." }, 400)
     user.passwordHash = await hashPassword(password)

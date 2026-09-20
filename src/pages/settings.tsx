@@ -171,8 +171,8 @@ function BotPane() {
           token não fica no browser nem no git.
         </p>
         <div className="mt-4 flex flex-wrap gap-1.5">
-          <StatusPill tone={runtime.telegram || (health.ok && health.telegram) ? "success" : "muted"}>
-            Telegram · {runtime.telegram || health.telegram ? "ligado" : "à espera do token"}
+          <StatusPill tone={runtime.telegram || (runtimeLoaded && health.ok && health.telegram) ? "success" : "muted"}>
+            Telegram · {!runtimeLoaded ? "a verificar" : runtime.telegram || health.telegram ? "ligado" : "à espera do token"}
           </StatusPill>
           <StatusPill tone={runtime.webhookOk ? "success" : "muted"}>
             Webhook · {runtime.webhookOk ? "activo" : "ainda não apontado"}
@@ -561,7 +561,8 @@ function AccountPane() {
             type="password"
             autoComplete="current-password"
             value={current}
-            aria-invalid={error.includes("actual")}
+            aria-invalid={Boolean(error) && (error.includes("actual") || error.includes("inválida"))}
+            aria-describedby={error ? "password-error" : undefined}
             onChange={(event) => setCurrent(event.target.value)}
           />
         </div>
