@@ -670,9 +670,9 @@ assert(retained.some((item) => item.token === "other"), "outras contas mantêm s
 assert(retained.some((item) => item.token === "new"), "sessão nova entra")
 assert(!retained.some((item) => item.token === "old"), "sessão mais velha sai")
 assert(retained.filter((item) => item.userId === "u1").length === 3, "cap de 3 sessões por operador")
-const now = Date.now() + 60_000
-const victorSession = { token: "tok-v", userId: "victor", expiresAt: now, issuedAt: 1 }
-const gabrielSession = { token: "tok-g", userId: "gabriel", expiresAt: now, issuedAt: 2 }
+const sessionExp = Date.now() + 60_000
+const victorSession = { token: "tok-v", userId: "victor", expiresAt: sessionExp, issuedAt: 1 }
+const gabrielSession = { token: "tok-g", userId: "gabriel", expiresAt: sessionExp, issuedAt: 2 }
 const victorUser = { id: "victor", email: "victor@abilion.com", name: "Victor", passwordHash: "h1", createdAt: "2026-01-01T00:00:00.000Z" }
 const gabrielUser = { id: "gabriel", email: "gabriel@abilion.com", name: "Gabriel", passwordHash: "h2", createdAt: "2026-01-01T00:00:00.000Z" }
 const mergedLogin = mergeAuthSnapshots(
@@ -688,7 +688,7 @@ const mergedLogout = mergeAuthSnapshots(
 assert(!mergedLogout.sessions.some((item) => item.token === "tok-v"), "tombstone de logout ganha do snapshot velho")
 assert(mergedLogout.sessions.some((item) => item.token === "tok-g"), "logout de um não derruba o outro")
 const mergedReset = mergeAuthSnapshots(
-  { users: [victorUser], sessions: [], resets: { old: { userId: "victor", expiresAt: now } }, spentResets: [] },
+  { users: [victorUser], sessions: [], resets: { old: { userId: "victor", expiresAt: sessionExp } }, spentResets: [] },
   { users: [victorUser], sessions: [], resets: {}, spentResets: ["old"] }
 )
 assert(!mergedReset.resets.old, "reset gasto não volta no merge")
