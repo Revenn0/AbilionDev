@@ -580,7 +580,7 @@ const deletedOld = reconcileFunnels(
   [{ ...publishedA, updatedAt: "2026-01-01T00:00:00.000Z" }, { ...publishedC, updatedAt: "2026-01-02T00:00:00.000Z" }],
   [{ ...publishedA, updatedAt: "2026-04-01T00:00:00.000Z" }]
 )
-assert(!deletedOld.some((item) => item.id === publishedC.id), "reconcile deixa apagar funil mais velho")
+assert(deletedOld.some((item) => item.id === publishedC.id), "sem tombstone o funil mais velho fica")
 const newestKept = reconcileFunnels(
   [{ ...publishedA, updatedAt: "2026-01-01T00:00:00.000Z" }, { ...publishedC, updatedAt: "2026-05-01T00:00:00.000Z" }],
   [{ ...publishedA, updatedAt: "2026-04-01T00:00:00.000Z" }]
@@ -594,7 +594,15 @@ const seedWipe = reconcileFunnels(
   [{ ...publishedA, updatedAt: "2024-01-01T00:00:00.000Z" }],
   [{ ...emptySalesFunnel("seed"), updatedAt: "2026-09-20T00:00:00.000Z" }]
 )
-assert(!seedWipe.some((item) => item.id === publishedA.id), "POST só com seed apaga o quadro do Worker")
+assert(seedWipe.some((item) => item.id === publishedA.id), "POST só com seed já não apaga o quadro do Worker")
+const staleTab = reconcileFunnels(
+  [
+    { ...publishedA, updatedAt: "2026-01-01T00:00:00.000Z" },
+    { ...publishedC, updatedAt: "2026-03-01T00:00:00.000Z" },
+  ],
+  [{ ...publishedA, name: "separador-velho", updatedAt: "2026-04-01T00:00:00.000Z" }]
+)
+assert(staleTab.some((item) => item.id === publishedC.id), "separador velho não apaga o funil do outro")
 assert(!canFlushCrm(false), "sem hydrate o painel não grava CRM")
 assert(canFlushCrm(true), "depois do GET o painel pode gravar")
 assert(pendingSeedFunnelIds([], [{ ...emptySalesFunnel("seed"), id: "seed-1" }]).includes("seed-1"), "Worker vazio adopta o seed")
@@ -1696,6 +1704,40 @@ const crmWithoutTombstone = (await (
   await handleRequest(new Request("http://local.test/api/crm", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
 ).json()) as { funnels?: Array<{ id?: string }> }
 assert(crmWithoutTombstone.funnels?.some((item) => item.id === extraFunnel.id), "sem tombstone o extra mais novo fica")
+const olderExtra = emptySalesFunnel("velho")
+olderExtra.updatedAt = "2020-01-01T00:00:00.000Z"
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/crm", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: liveCookie },
+        body: JSON.stringify({ funnels: [persistFunnel, extraFunnel, olderExtra] }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 200,
+  "CRM POST grava o funil mais velho"
+)
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/crm", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: liveCookie },
+        body: JSON.stringify({ funnels: [persistFunnel] }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 200,
+  "CRM POST do separador velho sem o extra"
+)
+const crmKeepsOlder = (await (
+  await handleRequest(new Request("http://local.test/api/crm", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
+).json()) as { funnels?: Array<{ id?: string }> }
+assert(crmKeepsOlder.funnels?.some((item) => item.id === olderExtra.id), "separador velho não apaga o funil mais antigo")
 assert(
   (
     await handleRequest(

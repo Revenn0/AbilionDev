@@ -212,7 +212,6 @@ export function mergeFunnels(current: SalesFunnel[], incoming: SalesFunnel[]): S
 
 export function reconcileFunnels(server: SalesFunnel[], incoming: SalesFunnel[]): SalesFunnel[] {
   if (!incoming.length) return server
-  const newestIncoming = incoming.reduce((max, item) => (item.updatedAt > max ? item.updatedAt : max), "")
   const seen = new Set<string>()
   const next: SalesFunnel[] = []
   for (const funnel of incoming) {
@@ -221,13 +220,12 @@ export function reconcileFunnels(server: SalesFunnel[], incoming: SalesFunnel[])
     seen.add(funnel.id)
   }
   for (const funnel of server) {
-    if (seen.has(funnel.id)) continue
-    if (funnel.updatedAt > newestIncoming) next.push(funnel)
+    if (!seen.has(funnel.id)) next.push(funnel)
   }
   return next.slice(0, 20)
 }
 
-/** Sem hydrate, um POST do seed local apaga os quadros mais velhos do Worker. */
+/** Sem hydrate, um POST do seed local criava um quadro a mais ou, no reconcile antigo, apagava os outros. */
 export function canFlushCrm(hydrated: boolean) {
   return hydrated
 }
