@@ -634,23 +634,31 @@ function LeadDrawer({
     nameRef.current = name
   }, [name])
 
-  const flushEdits = () => {
+  const persistDraft = () => {
     const current = leadRef.current
     if (!current) return
     const live = liveLeadDraft()
+    if (live.memory !== undefined && live.memory !== memoryRef.current) {
+      memoryRef.current = live.memory
+      dirtyMemory.current = true
+    }
+    if (live.name !== undefined && live.name !== nameRef.current) {
+      nameRef.current = live.name
+      dirtyName.current = true
+    }
     const nextName = draftLeadField(current.name, nameRef.current, dirtyName.current, live.name)
     const nextMemory = draftLeadField(current.memory, memoryRef.current, dirtyMemory.current, live.memory)
     const resolvedName = dirtyName.current || live.name !== undefined ? resolvePersonName(nextName) || current.name : current.name
-    if (resolvedName === current.name && nextMemory === current.memory) {
-      dirtyName.current = false
-      dirtyMemory.current = false
-      return
-    }
-    dirtyName.current = false
-    dirtyMemory.current = false
+    if (resolvedName === current.name && nextMemory === current.memory) return
     nameRef.current = resolvedName
     memoryRef.current = nextMemory
     onSave({ ...current, name: resolvedName, memory: nextMemory, updatedAt: new Date().toISOString() })
+  }
+
+  const flushEdits = () => {
+    persistDraft()
+    dirtyName.current = false
+    dirtyMemory.current = false
   }
   const flushEditsRef = useRef(flushEdits)
   const onFlushRef = useRef(onFlush)
@@ -676,7 +684,9 @@ function LeadDrawer({
 
   useEffect(() => {
     return () => {
-      flushEditsRef.current()
+      if (document.getElementById("lead-memory") || document.getElementById("lead-display-name")) {
+        flushEditsRef.current()
+      }
       void onFlushRef.current?.()
     }
   }, [lead?.id])
@@ -793,6 +803,7 @@ function LeadDrawer({
             dirtyName.current = true
             nameRef.current = event.target.value
             setName(event.target.value)
+            persistDraft()
           }}
           onBlur={() => {
             if (!dirtyName.current) return
@@ -909,6 +920,7 @@ function LeadDrawer({
             dirtyMemory.current = true
             memoryRef.current = event.target.value
             setMemory(event.target.value)
+            persistDraft()
           }}
           placeholder="O que esta pessoa já disse. Não misturar com outro chat."
         />

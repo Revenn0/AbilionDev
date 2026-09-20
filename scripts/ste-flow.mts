@@ -224,6 +224,13 @@ assert(leadMatchesQuery({ id: "c1", name: "Ana", contact: "@ana", category: "Gru
 assert(draftLeadField("ste:remarketing", "memoria isolada", true, "ste:remarketing") === "memoria isolada", "dirty ganha do input revertido")
 assert(draftLeadField("ste:remarketing", "ste:remarketing", false, "memoria isolada") === "memoria isolada", "sem dirty o input visível ganha")
 assert(draftLeadField("guarda", "rascunho", false) === "guarda", "sem dirty nem input mantém o gravado")
+assert(
+  adoptOperatorLead(
+    { ...alice.lead, memory: "ste:welcome", updatedAt: "2026-01-01T00:00:00.000Z" },
+    { ...alice.lead, memory: "memoria isolada", updatedAt: "2026-06-01T00:00:00.000Z" }
+  ).memory === "memoria isolada",
+  "nota da ficha ganha dos tokens da Sté"
+)
 assert(bob.lead.facts.hasSuperbet === false, "fato do Bob")
 
 const html = toTelegramHtml(STE_COURSE_BLOCK[2]!)
