@@ -21,6 +21,7 @@ import { captureAgainstFunnels } from "@/lib/templates"
 import { ORIGIN_LABEL, STAGE_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { needsEster } from "@/lib/ops"
 import { applyEvent, nodeTitle, publishedSnapshot, type RuntimeEvent } from "@/lib/runtime"
+import { canTickSteLocally } from "@/lib/ste"
 import { timeAgo } from "@/lib/format"
 import type { Lead, LeadOrigin, LeadTemp, SalesFunnel } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -399,7 +400,12 @@ function LeadDrawer({
 
   if (!lead) return null
 
+  const localFlow = canTickSteLocally(lead)
   const run = (event: RuntimeEvent, ok: string, blocked?: string) => {
+    if (!canTickSteLocally(lead)) {
+      toast.error("Este chat corre no Telegram. A ficha não avança o quadro.")
+      return
+    }
     const result = applyEvent(snapshot, { ...lead, memory: memoryRef.current }, event)
     commit(result.lead)
     const stop = result.effects.find((item) => item.kind === "blocked")
@@ -464,7 +470,8 @@ function LeadDrawer({
             size="sm"
             variant="outline"
             className="rounded-full"
-            onClick={() => run({ type: "print" }, "Print no fluxo. A Ester só é avisada se o Worker tiver ESTER_CHAT_ID.")}
+            disabled={!localFlow}
+            onClick={() => run({ type: "print" }, "Print marcado no CRM. A Ester só é avisada se o Worker tiver ESTER_CHAT_ID.")}
           >
             Print do cadastro
           </Button>
@@ -472,29 +479,45 @@ function LeadDrawer({
             size="sm"
             variant="outline"
             className="rounded-full"
-            disabled={!lead.printAt}
-            onClick={() => run({ type: "banca" }, "Ester enviou a banca.", "Sem print não há banca.")}
+            disabled={!localFlow || !lead.printAt}
+            onClick={() => run({ type: "banca" }, "Banca marcada no CRM.", "Sem print não há banca.")}
           >
             Ester enviou a banca
           </Button>
-          <Button size="sm" variant="outline" className="rounded-full" onClick={() => run({ type: "resume" }, "Fluxo segue a partir da Sté.")}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="rounded-full"
+            disabled={!localFlow}
+            onClick={() => run({ type: "resume" }, "Quadro avançado no CRM.")}
+          >
             Sté no 1:1 / seguir
           </Button>
           <Button
             size="sm"
             variant="outline"
             className="rounded-full"
+            disabled={!localFlow}
             onClick={() => {
+              if (!canTickSteLocally(lead)) {
+                toast.error("Este chat corre no Telegram. A ficha não avança o quadro.")
+                return
+              }
               const when = lead.waitUntil ? new Date(lead.waitUntil).getTime() + 1000 : Date.now()
               const result = applyEvent(snapshot, { ...lead, memory: memoryRef.current }, { type: "timer" }, when)
               commit(result.lead)
               const offered = result.effects.some((item) => item.kind === "offer")
-              toast.success(offered ? "Oferta disparada pelo fluxo." : "Espera avançada.")
+              toast.success(offered ? "Oferta marcada no CRM. Nada foi enviado." : "Espera avançada no CRM.")
             }}
           >
             Avançar espera / oferta
           </Button>
         </div>
+        {!localFlow ? (
+          <p className="mt-3 text-[12.5px] text-muted-foreground">
+            Este chat corre no Telegram. Print, espera e oferta ficam no bot — a ficha só guarda nota e temperatura.
+          </p>
+        ) : null}
 
         <Label htmlFor="lead-memory" className="mt-6">
           Memória individual (Sté)

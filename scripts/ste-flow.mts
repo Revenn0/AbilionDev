@@ -33,6 +33,7 @@ import {
   adoptDueLeads,
   adoptLeadStores,
   adoptStoredLead,
+  adoptOperatorLead,
   adoptRemoteFunnels,
   mergeLeadMessages,
   applyRemovedFunnels,
@@ -681,6 +682,33 @@ const adopted = adoptStoredLead(olderLead, newerEmpty)
 assert(adopted.memory === "local", "gravação nova sem memória não apaga a nota")
 assert(adopted.messages?.[0]?.id === "m-1", "gravação nova sem mensagens conserva o chat")
 assert(adoptStoredLead(olderLead, { ...newerEmpty, updatedAt: "2019-01-01T00:00:00.000Z" }) === olderLead, "gravação antiga perde para o KV")
+const telegramWait = {
+  ...olderLead,
+  id: "tg-flow",
+  telegramChatId: "9001",
+  waitUntil: "2026-09-21T00:00:00.000Z",
+  stage: "welcome" as const,
+  memory: "nota",
+  temperature: "novo" as const,
+}
+const panelAdvance = {
+  ...telegramWait,
+  waitUntil: undefined,
+  stage: "offer" as const,
+  printAt: "2026-09-22T00:00:00.000Z",
+  memory: "nova",
+  temperature: "quente" as const,
+  updatedAt: "2026-09-22T00:00:00.000Z",
+}
+const operatorKept = adoptOperatorLead(telegramWait, panelAdvance)
+assert(operatorKept.waitUntil === telegramWait.waitUntil, "painel não come a espera do Telegram")
+assert(operatorKept.stage === "welcome", "painel não muda o passo do Telegram")
+assert(!operatorKept.printAt, "painel não marca print no chat real")
+assert(operatorKept.memory === "nova", "painel ainda grava a nota do Telegram")
+assert(operatorKept.temperature === "quente", "painel ainda grava a temperatura")
+const localWait = { ...olderLead, id: "local-flow", waitUntil: "2026-09-21T00:00:00.000Z" }
+const localAdvanced = adoptOperatorLead(localWait, { ...localWait, waitUntil: undefined, updatedAt: "2026-09-22T00:00:00.000Z" })
+assert(!localAdvanced.waitUntil, "simulação local ainda avança a espera")
 const chatPrev = {
   ...olderLead,
   updatedAt: "2026-06-01T00:00:00.000Z",
@@ -1922,6 +1950,56 @@ assert(
   "POST lead mais novo sem memória é 200"
 )
 assert((await loadLead(liveEnv.AUTH, "mem-1"))?.memory === "guarda", "POST novo sem memória não apaga a nota")
+const telegramPanel = lead("tg-panel", "@tgpanel")
+telegramPanel.telegramChatId = "9001"
+telegramPanel.waitUntil = "2026-09-21T00:00:00.000Z"
+telegramPanel.stage = "welcome"
+telegramPanel.memory = "nota"
+telegramPanel.updatedAt = "2026-06-04T00:00:00.000Z"
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/leads", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: liveCookie },
+        body: JSON.stringify({ lead: telegramPanel }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 200,
+  "POST lead do Telegram"
+)
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/leads", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: liveCookie },
+        body: JSON.stringify({
+          lead: {
+            ...telegramPanel,
+            waitUntil: undefined,
+            stage: "offer",
+            printAt: "2026-09-22T00:00:00.000Z",
+            memory: "nova",
+            temperature: "quente",
+            updatedAt: "2026-09-22T00:00:00.000Z",
+          },
+        }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 200,
+  "POST da ficha no chat real é 200"
+)
+const afterPanel = await loadLead(liveEnv.AUTH, "tg-panel")
+assert(afterPanel?.waitUntil === telegramPanel.waitUntil, "POST da ficha não come a espera do Telegram")
+assert(afterPanel?.stage === "welcome", "POST da ficha não muda o passo")
+assert(!afterPanel?.printAt, "POST da ficha não marca print")
+assert(afterPanel?.memory === "nova", "POST da ficha grava a nota")
+assert(afterPanel?.temperature === "quente", "POST da ficha grava a temperatura")
 const chatLead = lead("chat-1", "@chatmerge")
 chatLead.messages = [
   { id: "cm-1", at: "2026-06-01T00:00:00.000Z", role: "ste", text: "oi" },

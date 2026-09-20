@@ -12,6 +12,7 @@ import { parseDevice } from "../src/lib/track.ts"
 import {
   adoptDueLeads,
   adoptLeadStores,
+  adoptOperatorLead,
   adoptStoredLead,
   applyRemovedFunnels,
   applyRemovedLeads,
@@ -395,7 +396,8 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     for (const row of rows) {
       const lead = sanitizeIncomingLead(row)
       if (!lead) continue
-      await saveLead(env, lead)
+      const prev = env.AUTH ? await loadLead(env.AUTH, lead.id) : null
+      await saveLead(env, adoptOperatorLead(prev, lead))
       saved += 1
     }
     return json({ ok: true, saved })

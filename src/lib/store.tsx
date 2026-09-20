@@ -4,7 +4,7 @@ import { clearSessionExpired, noteSessionExpired, subscribeSessionExpired } from
 import { toast } from "sonner"
 import {
   activatePublishedFunnels,
-  adoptStoredLead,
+  adoptOperatorLead,
   applyRemovedFunnels,
   applyRemovedLeads,
   canDeleteFunnel,
@@ -500,7 +500,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       saveLead: (lead) => {
         setState((prev) => {
           const current = prev.leads.find((item) => item.id === lead.id)
-          const next = current ? adoptStoredLead(current, lead) : lead
+          const next = adoptOperatorLead(current ?? null, lead)
           queueLeadWrite(next)
           return {
             ...prev,

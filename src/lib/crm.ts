@@ -76,6 +76,22 @@ export function adoptStoredLead(prev: Lead, incoming: Lead): Lead {
   }
 }
 
+/** POST do painel: em lead com chat real só actualiza nota, nome e temperatura. */
+export function adoptOperatorLead(prev: Lead | null, incoming: Lead): Lead {
+  if (!prev) return incoming
+  if (!prev.telegramChatId && !incoming.telegramChatId) return adoptStoredLead(prev, incoming)
+  const patched: Lead = {
+    ...prev,
+    name: incoming.name || prev.name,
+    contact: incoming.contact || prev.contact,
+    temperature: incoming.temperature,
+    memory: incoming.memory,
+    facts: incoming.facts,
+    updatedAt: incoming.updatedAt > prev.updatedAt ? incoming.updatedAt : prev.updatedAt,
+  }
+  return adoptStoredLead(prev, patched)
+}
+
 export function mergeLeads(current: Lead[], incoming: Lead[]): Lead[] {
   if (!incoming.length) return current
   const map = new Map(current.map((lead) => [lead.id, lead]))
