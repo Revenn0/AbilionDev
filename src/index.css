@@ -211,6 +211,31 @@
   }
 }
 
+.skip-link {
+  position: absolute;
+  left: 0.75rem;
+  top: -3.5rem;
+  z-index: 100;
+  border-radius: 999px;
+  background: var(--foreground);
+  color: var(--background);
+  padding: 0.45rem 0.9rem;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.skip-link:focus {
+  top: 0.75rem;
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .globe-ring {
+    animation: none;
+  }
+}
+
 @layer components {
   .page-shell {
     @apply space-y-5 p-5 md:p-7;

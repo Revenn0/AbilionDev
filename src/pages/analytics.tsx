@@ -6,6 +6,7 @@ import { KpiCard } from "@/components/analytics/kpi-card"
 import { RankList } from "@/components/analytics/rank-list"
 import { VisitorGlobe } from "@/components/analytics/visitor-globe"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
+import { SyncBanner } from "@/components/layout/sync-banner"
 import { StudioPanel } from "@/components/layout/studio"
 import { funnelFrom, periodDelta, splitSeries } from "@/lib/analytics-view"
 import { useStore } from "@/lib/store"
@@ -29,11 +30,14 @@ export function AnalyticsPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="page-shell">
-        {status === "error" && (
-          <p className="mb-3 rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-[12.5px] text-destructive">
-            Não consegui ler o pixel. Recarrega ou confere a sessão — os números abaixo podem estar vazios.
-          </p>
-        )}
+        <SyncBanner
+          items={[
+            {
+              ok: status !== "error",
+              message: "Não consegui ler o pixel. Recarrega ou confere a sessão — os números abaixo podem estar vazios.",
+            },
+          ]}
+        />
         <PageChrome icon={ChartNoAxesCombined} title="Analytics">
           <span className="inline-flex h-8 items-center rounded-full border border-border bg-card px-3 text-[12px] font-medium shadow-sm">
             Visual

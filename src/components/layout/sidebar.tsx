@@ -44,6 +44,7 @@ function NavLink({
       onClick={onNavigate}
       title={label}
       aria-label={label}
+      aria-current={active ? "page" : undefined}
       className={cn(
         "flex h-9 w-full items-center rounded-full px-2.5 text-[13px] font-medium",
         active

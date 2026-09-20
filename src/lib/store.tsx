@@ -55,9 +55,14 @@ function bootState(): AppState {
   return saved
 }
 
+type SyncState = "idle" | "ok" | "error"
+
 type Store = {
   ready: boolean
   remote: "off" | "local" | "cloud"
+  crmSync: SyncState
+  inboxSync: SyncState
+  persistSync: SyncState
   state: AppState
   login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
@@ -77,6 +82,9 @@ const StoreContext = createContext<Store | null>(null)
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false)
   const [remote, setRemote] = useState<Store["remote"]>(supabaseEnabled() ? "off" : "local")
+  const [crmSync, setCrmSync] = useState<SyncState>("idle")
+  const [inboxSync, setInboxSync] = useState<SyncState>("idle")
+  const [persistSync, setPersistSync] = useState<SyncState>("idle")
   const [state, setState] = useState<AppState>(bootState)
   const skipPush = useRef(true)
   const persistTimer = useRef(0)
@@ -123,6 +131,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     skipPush.current = true
     void Promise.all([fetchCrm(), fetchRuntime()]).then(([crm, runtime]) => {
       if (cancelled) return
+      setCrmSync(crm.ok ? "ok" : "error")
       setState((prev) => ({
         ...prev,
         funnels: crm.ok && crm.funnels.length ? crm.funnels.map(migrateFunnel) : prev.funnels,
@@ -149,16 +158,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!state.user) return
     let cancelled = false
     const pull = async () => {
-      try {
-        const incoming = (await fetchInbox()).map((lead) => migrateLead(lead))
-        if (cancelled || !incoming.length) return
-        setState((prev) => {
-          const leads = mergeLeads(prev.leads, incoming)
-          return leads === prev.leads ? prev : { ...prev, leads }
-        })
-      } catch {
-        return
-      }
+      const inbox = await fetchInbox()
+      if (cancelled) return
+      setInboxSync(inbox.ok ? "ok" : "error")
+      const incoming = inbox.leads.map((lead) => migrateLead(lead))
+      if (!incoming.length) return
+      setState((prev) => {
+        const leads = mergeLeads(prev.leads, incoming)
+        return leads === prev.leads ? prev : { ...prev, leads }
+      })
     }
     void pull()
     const timer = window.setInterval(() => void pull(), 5000)
@@ -223,6 +231,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     () => ({
       ready,
       remote,
+      crmSync,
+      inboxSync,
+      persistSync,
       state,
       login: async (email, password) => {
         const data = await loginRequest(email, password)
@@ -230,6 +241,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       logout: async () => {
         await logoutRequest().catch(() => undefined)
+        setCrmSync("idle")
+        setInboxSync("idle")
+        setPersistSync("idle")
         setState((prev) => ({ ...prev, user: null }))
       },
       createFunnel: (funnel) => {
@@ -249,22 +263,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       createLead: (lead) => {
         setState((prev) => ({ ...prev, leads: [lead, ...prev.leads] }))
-        void persistLeads([lead])
+        void persistLeads([lead]).then((ok) => setPersistSync(ok ? "ok" : "error"))
       },
       createLeads: (leads) => {
         setState((prev) => ({ ...prev, leads: [...leads, ...prev.leads] }))
-        void persistLeads(leads)
+        void persistLeads(leads).then((ok) => setPersistSync(ok ? "ok" : "error"))
       },
       saveLead: (lead) => {
         setState((prev) => ({
           ...prev,
           leads: prev.leads.map((item) => (item.id === lead.id ? lead : item)),
         }))
-        void persistLeads([lead])
+        void persistLeads([lead]).then((ok) => setPersistSync(ok ? "ok" : "error"))
       },
       deleteLead: (id) => {
         setState((prev) => ({ ...prev, leads: prev.leads.filter((item) => item.id !== id) }))
-        void removeRemoteLead(id)
+        void removeRemoteLead(id).then((ok) => setPersistSync(ok ? "ok" : "error"))
       },
       saveSettings: (patch) => {
         setState((prev) => ({
@@ -285,7 +299,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         pushWorker()
       },
     }),
-    [ready, remote, state]
+    [ready, remote, crmSync, inboxSync, persistSync, state]
   )
 
   return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>

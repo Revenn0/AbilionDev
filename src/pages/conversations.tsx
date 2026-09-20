@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { MessagesSquare } from "lucide-react"
 import { FilterChip, PageChrome, StatusPill } from "@/components/layout/chrome"
+import { SyncBanner } from "@/components/layout/sync-banner"
+import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useStore } from "@/lib/store"
@@ -45,7 +47,7 @@ function matchesFilter(lead: Lead, filter: FilterId) {
 }
 
 export function ConversationsPage() {
-  const { state, saveLead } = useStore()
+  const { state, saveLead, inboxSync } = useStore()
   const { summary } = useTrackSummary(4000)
   const runtime = steRuntimeFromFunnels(state.funnels, state.settings)
   const [filter, setFilter] = useState<FilterId>("waiting")
@@ -110,6 +112,9 @@ export function ConversationsPage() {
   return (
     <div className="h-full overflow-hidden">
       <div className="page-shell h-full !space-y-4">
+        <SyncBanner
+          items={[{ ok: inboxSync !== "error", message: "A inbox do Telegram não sincronizou. Conversas novas podem faltar." }]}
+        />
         <PageChrome icon={MessagesSquare} title="Conversas">
           {FILTERS.map((item) => (
             <FilterChip key={item.id} active={filter === item.id} onClick={() => setFilter(item.id)}>
@@ -135,7 +140,11 @@ export function ConversationsPage() {
           <section className="surface grid min-h-[520px] overflow-hidden md:grid-cols-[280px_1fr]">
             <div className="flex min-h-0 flex-col border-b border-border md:border-b-0 md:border-r">
               <div className="border-b border-border p-3">
+                <Label htmlFor="inbox-search" className="sr-only">
+                  Buscar conversas
+                </Label>
                 <Input
+                  id="inbox-search"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Nome, @user ou campanha"
@@ -228,7 +237,11 @@ export function ConversationsPage() {
                   <div ref={end} />
                 </div>
                 <form onSubmit={send} className="flex gap-2 border-t border-border p-3">
+                  <Label htmlFor="chat-draft" className="sr-only">
+                    Mensagem como o lead
+                  </Label>
                   <Input
+                    id="chat-draft"
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
                     placeholder={

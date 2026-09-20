@@ -1,6 +1,6 @@
-import { Link, useParams } from "react-router-dom"
+import { useParams } from "react-router-dom"
 import { SalesCanvas } from "@/components/sales/canvas"
-import { Button } from "@/components/ui/button"
+import { NotFoundPage } from "@/pages/not-found"
 import { useStore } from "@/lib/store"
 
 export function FunnelEditorPage() {
@@ -10,14 +10,12 @@ export function FunnelEditorPage() {
 
   if (!funnel) {
     return (
-      <div className="h-full grid place-items-center">
-        <div className="text-center space-y-3">
-          <p className="font-semibold">Funil não encontrado</p>
-          <Button asChild>
-            <Link to="/fluxo">Voltar</Link>
-          </Button>
-        </div>
-      </div>
+      <NotFoundPage
+        title="Funil não encontrado"
+        hint="Este quadro não está no CRM. Pode ter sido removido ou o endereço está incompleto."
+        to="/fluxo"
+        action="Voltar aos funis"
+      />
     )
   }
 

@@ -137,3 +137,74 @@ Não dá para inventar uma base GeoIP. O rastreio junta três fontes abertas, se
 Bandeira vem do ISO 3166-1 (emoji). UF brasileira usa a tabela IBGE. Conversas, Leads e Analytics mostram `🇧🇷 São Paulo (SP)`.
 
 Simulador de 100 leads Facebook roda UFs reais para o CRM não ficar “Sem estado” sem pixel.
+
+## Rotas
+
+Públicas:
+
+- `/login` — entrada. Só `victor@abilion.com` ou `gabriel@abilion.com`.
+- `/forgot` — localmente gera link de reset. Em produção não envia e-mail.
+- `/reset?token=` — nova senha a partir do link local.
+- `/privacidade` — política do CRM interno.
+- `/l` — landing de teste do pixel + CTA Telegram.
+
+Autenticadas:
+
+- `/` — dashboard (leads, conversas, Facebook, espera, ofertas).
+- `/analytics` — funil Ads → landing → Telegram, globo, 30 dias.
+- `/fluxo` — lista de funis.
+- `/fluxo/funil/:id` — editor visual + runtime.
+- `/leads` — CRM, captura, print/banca.
+- `/conversas` — inbox Telegram da Sté (máx. 80).
+- `/telegram` — saúde do bot, webhook, simulação de /start.
+- `/configuracoes` — bot, conta, plugins, notificações, aparência.
+
+Endereços desconhecidos no painel mostram 404. `next=` no login só aceita estas rotas.
+
+## API do Worker
+
+Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exigem sessão, salvo o que está abaixo.
+
+| Rota | Quem |
+| --- | --- |
+| `GET /api/health` | público (sem secrets) |
+| `POST /api/auth/login` | público, 8 tentativas / 15 min por IP |
+| `POST /api/auth/logout` | sessão |
+| `GET /api/auth/me` | sessão |
+| `POST /api/auth/forgot` | público; em produção não devolve link |
+| `POST /api/auth/reset` | token de reset |
+| `POST /api/auth/password` | sessão |
+| `GET/POST /api/crm` | sessão — funis e settings (sem token) |
+| `POST/DELETE /api/leads` | sessão |
+| `GET /api/inbox` | sessão — leads do Telegram |
+| `GET/POST /api/runtime` | sessão — Telegram, IA, voz |
+| `POST /api/runtime/voice` | sessão — gera clips ElevenLabs |
+| `POST /api/track` | público, CORS aberto só aqui (pixel) |
+| `GET /api/track/summary` | sessão |
+| `POST /api/telegram` | Telegram; `secret_token` do webhook |
+| `GET /api/cron` | `CRON_SECRET` obrigatório |
+| `GET /t.js` | pixel |
+
+## Limitações e bloqueios
+
+Estes itens dependem de credenciais ou de uma decisão humana. O código não inventa valores.
+
+- **Telegram em produção** continua desligado até existir `TELEGRAM_BOT_TOKEN` (e, se quiseres fixar, `TELEGRAM_WEBHOOK_SECRET`). Sem isso não há /start reais.
+- **Voz da Sté** fica em texto até `ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID`. Não há `voice_id` inventado.
+- **Esqueceu a senha?** em produção não envia e-mail. Troca em Configurações → Conta.
+- **Supabase** só entra com `SUPABASE_SERVICE_ROLE`. Sem isso a operação corre no KV `abilion-auth`.
+- **Senhas dos operadores** em produção já estão no KV. Não estão neste repositório. Primeiro acesso local define a senha (6+).
+- Plugin **Agenda** é “Em breve” de propósito — não é código morto.
+- `ESTER_CHAT_ID` só é preciso se a Ester receber aviso no Telegram.
+
+## Auditoria
+
+```bash
+npm run typecheck
+npm run lint
+npm test
+npm run build
+npx tsx scripts/ui-audit.mts
+```
+
+`scripts/ui-audit.mts` percorre login, rotas do painel, 404, skip-link, captura, logout → forgot/reset e as larguras 320 / 375 / 768 / 1024 / 1440. Precisa do `npm run dev` em `http://127.0.0.1:43173` e de Puppeteer (`npx puppeteer browsers install chrome` na primeira vez).

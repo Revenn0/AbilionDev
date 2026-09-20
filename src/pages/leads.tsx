@@ -1,6 +1,8 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Plus, Users } from "lucide-react"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
+import { SyncBanner } from "@/components/layout/sync-banner"
+import { validateCapture } from "@/lib/capture"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -37,7 +39,7 @@ const FILTERS = [
 ] as const
 
 export function LeadsPage() {
-  const { state, createLead, saveLead } = useStore()
+  const { state, createLead, saveLead, crmSync, inboxSync, persistSync } = useStore()
   const { summary } = useTrackSummary(8000)
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("all")
   const [open, setOpen] = useState(false)
@@ -58,6 +60,13 @@ export function LeadsPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="page-shell">
+        <SyncBanner
+          items={[
+            { ok: crmSync !== "error", message: "Não consegui ler o CRM do Worker." },
+            { ok: inboxSync !== "error", message: "A inbox do Telegram não sincronizou." },
+            { ok: persistSync !== "error", message: "A gravação de leads no Worker falhou." },
+          ]}
+        />
         <PageChrome icon={Users} title="Leads">
           <Button className="h-8 rounded-full px-3.5" onClick={() => setOpen(true)}>
             <Plus /> Nova captura
@@ -70,9 +79,10 @@ export function LeadsPage() {
               <button
                 key={item.id}
                 type="button"
+                aria-pressed={filter === item.id}
                 onClick={() => setFilter(item.id)}
                 className={cn(
-                  "pb-1",
+                  "min-h-8 pb-1",
                   filter === item.id ? "border-b-2 border-foreground font-medium" : "text-muted-foreground"
                 )}
               >
@@ -163,14 +173,20 @@ function CaptureDialog({
   const [name, setName] = useState("")
   const [contact, setContact] = useState("")
   const [origin, setOrigin] = useState<LeadOrigin>("popup")
+  const [errors, setErrors] = useState<{ name?: string; contact?: string }>({})
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
-    if (!name.trim() || !contact.trim()) return
+    const check = validateCapture(name, contact)
+    if (!check.ok) {
+      setErrors(check.errors)
+      return
+    }
     onCreate(captureAgainstFunnels({ name, contact, channel: "telegram", origin }, funnels))
     toast.success("Lead no fluxo.")
     setName("")
     setContact("")
+    setErrors({})
     onOpenChange(false)
   }
 
@@ -182,8 +198,27 @@ function CaptureDialog({
           <DialogDescription>O lead entra no funil publicado — não numa planilha.</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-3">
-          <Field id="lead-name" label="Nome" value={name} onChange={setName} />
-          <Field id="lead-contact" label="Contacto" value={contact} onChange={setContact} placeholder="@user do Telegram" />
+          <Field
+            id="lead-name"
+            label="Nome"
+            value={name}
+            error={errors.name}
+            onChange={(value) => {
+              setName(value)
+              setErrors((prev) => ({ ...prev, name: undefined }))
+            }}
+          />
+          <Field
+            id="lead-contact"
+            label="Contacto"
+            value={contact}
+            error={errors.contact}
+            onChange={(value) => {
+              setContact(value)
+              setErrors((prev) => ({ ...prev, contact: undefined }))
+            }}
+            placeholder="@user do Telegram"
+          />
           <div className="space-y-1.5">
             <Label htmlFor="lead-origin">Origem</Label>
             <select
@@ -203,9 +238,7 @@ function CaptureDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={!name.trim() || !contact.trim()}>
-              Guardar no CRM
-            </Button>
+            <Button type="submit">Guardar no CRM</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -219,17 +252,31 @@ function Field({
   value,
   onChange,
   placeholder,
+  error,
 }: {
   id: string
   label: string
   value: string
   onChange: (value: string) => void
   placeholder?: string
+  error?: string
 }) {
   return (
     <div className="space-y-1.5">
       <Label htmlFor={id}>{label}</Label>
-      <Input id={id} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />
+      <Input
+        id={id}
+        value={value}
+        placeholder={placeholder}
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? `${id}-error` : undefined}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      {error ? (
+        <p id={`${id}-error`} role="alert" className="text-[12px] text-destructive">
+          {error}
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -249,8 +296,20 @@ function LeadDrawer({
   onClose: () => void
   onSave: (lead: Lead) => void
 }) {
-  if (!lead) return null
+  const panel = useRef<HTMLElement>(null)
   const snapshot = publishedSnapshot(funnels)
+
+  useEffect(() => {
+    if (!lead) return
+    panel.current?.focus()
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [lead, onClose])
+
+  if (!lead) return null
 
   const run = (event: RuntimeEvent, ok: string, blocked?: string) => {
     const result = applyEvent(snapshot, lead, event)
@@ -266,11 +325,20 @@ function LeadDrawer({
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <aside className="relative z-10 flex h-full w-full max-w-md flex-col overflow-y-auto bg-card p-6 shadow-xl">
+      <aside
+        ref={panel}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="lead-drawer-title"
+        tabIndex={-1}
+        className="relative z-10 flex h-full w-full max-w-md flex-col overflow-y-auto bg-card p-6 shadow-xl outline-none"
+      >
         <p className="text-[12px] text-muted-foreground">
           {ORIGIN_LABEL[lead.origin]} · {lead.campaign}
         </p>
-        <h2 className="mt-1 text-[20px] font-medium tracking-tight">{lead.name}</h2>
+        <h2 id="lead-drawer-title" className="mt-1 text-[20px] font-medium tracking-tight">
+          {lead.name}
+        </h2>
         <p className="mt-1 text-[13px] text-muted-foreground">{lead.contact}</p>
         <p className="mt-2 text-[13.5px] font-medium">
           <GeoBadge facts={factsWithTrack(lead, geos)} empty="Estado ainda sem rastreio" />

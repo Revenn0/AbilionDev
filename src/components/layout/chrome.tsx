@@ -38,7 +38,7 @@ export function FilterChip({
   )
   if (onClick) {
     return (
-      <button type="button" onClick={onClick} className={className}>
+      <button type="button" aria-pressed={Boolean(active)} onClick={onClick} className={className}>
         {children}
       </button>
     )

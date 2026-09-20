@@ -65,10 +65,14 @@ export async function prepareVoice() {
 }
 
 export async function fetchInbox() {
-  const res = await fetch("/api/inbox", { credentials: "include", cache: "no-store" })
-  if (!res.ok) return [] as Lead[]
-  const data = (await res.json()) as { leads?: Lead[] }
-  return data.leads ?? []
+  try {
+    const res = await fetch("/api/inbox", { credentials: "include", cache: "no-store" })
+    if (!res.ok) return { ok: false as const, leads: [] as Lead[] }
+    const data = (await res.json()) as { leads?: Lead[] }
+    return { ok: true as const, leads: data.leads ?? [] }
+  } catch {
+    return { ok: false as const, leads: [] as Lead[] }
+  }
 }
 
 export async function fetchCrm() {

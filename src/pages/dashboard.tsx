@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom"
 import { LayoutDashboard, Radio } from "lucide-react"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
+import { SyncBanner } from "@/components/layout/sync-banner"
 import { SparkBars, TrendLine } from "@/components/ui/spark"
 import { useStore } from "@/lib/store"
 import { deriveOps, seriesLast30 } from "@/lib/ops"
@@ -8,8 +9,8 @@ import { facebookOf } from "@/lib/track"
 import { useTrackSummary } from "@/lib/use-track-summary"
 
 export function DashboardPage() {
-  const { state } = useStore()
-  const { summary } = useTrackSummary(8000)
+  const { state, crmSync, inboxSync, persistSync } = useStore()
+  const { summary, status } = useTrackSummary(8000)
   const facebook = facebookOf(summary)
   const ops = deriveOps(state.leads)
   const empty = ops.leads === 0
@@ -22,9 +23,17 @@ export function DashboardPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="page-shell">
+        <SyncBanner
+          items={[
+            { ok: crmSync !== "error", message: "Não consegui ler os funis do Worker. O quadro local pode estar desactualizado." },
+            { ok: inboxSync !== "error", message: "A inbox do Telegram não sincronizou. Leads novos podem faltar." },
+            { ok: persistSync !== "error", message: "Não consegui gravar leads no Worker. A lista local pode divergir." },
+            { ok: status !== "error", message: "Não consegui ler o pixel. Os números de tráfego abaixo podem estar vazios." },
+          ]}
+        />
         <PageChrome icon={LayoutDashboard} title="Dashboard">
           <StatusPill>Últimos 30 dias</StatusPill>
-          <StatusPill tone="success">Telegram</StatusPill>
+          <StatusPill tone={status === "error" ? "danger" : "success"}>Telegram</StatusPill>
         </PageChrome>
 
         <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">

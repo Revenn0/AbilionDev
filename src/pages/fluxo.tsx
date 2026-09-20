@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom"
 import { Pencil, Plus, Trash2, Workflow } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
+import { SyncBanner } from "@/components/layout/sync-banner"
 import { FunnelPreview } from "@/components/sales/preview"
 import { RenameFunnelDialog } from "@/components/sales/rename-dialog"
 import { useStore } from "@/lib/store"
@@ -12,7 +13,7 @@ import type { SalesFunnel } from "@/lib/types"
 import { toast } from "sonner"
 
 export function FluxoPage() {
-  const { state, createFunnel, saveFunnel, deleteFunnel } = useStore()
+  const { state, createFunnel, saveFunnel, deleteFunnel, crmSync } = useStore()
   const navigate = useNavigate()
   const funnels = state.funnels
   const [renaming, setRenaming] = useState<SalesFunnel | null>(null)
@@ -27,6 +28,9 @@ export function FluxoPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="page-shell">
+        <SyncBanner
+          items={[{ ok: crmSync !== "error", message: "Não consegui ler os funis do Worker. O quadro local pode estar desactualizado." }]}
+        />
         <PageChrome icon={Workflow} title="Funil">
           <Button className="h-8 rounded-full px-3.5" onClick={createSales}>
             <Plus /> Novo funil

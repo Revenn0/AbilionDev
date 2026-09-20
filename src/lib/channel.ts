@@ -6,9 +6,10 @@ export function workerUrl() {
 export async function fetchHealth() {
   try {
     const res = await fetch(`${workerUrl()}/api/health`)
-    if (!res.ok) return { ok: false as const }
+    if (!res.ok) return { ok: false as const, unreachable: true }
     return (await res.json()) as {
       ok: boolean
+      unreachable?: boolean
       telegram?: boolean
       supabase?: boolean
       llm?: boolean
@@ -19,6 +20,6 @@ export async function fetchHealth() {
       voice?: boolean
     }
   } catch {
-    return { ok: false as const }
+    return { ok: false as const, unreachable: true }
   }
 }

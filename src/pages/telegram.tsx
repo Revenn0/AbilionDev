@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { Send } from "lucide-react"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
+import { SyncBanner } from "@/components/layout/sync-banner"
 import { Button } from "@/components/ui/button"
 import { useStore } from "@/lib/store"
 import { fetchHealth, workerUrl } from "@/lib/channel"
@@ -22,6 +23,7 @@ export function TelegramPage() {
   const hook = `${workerUrl()}/api/telegram`
   const ads = adsDeepLink(settings.telegramBotUsername)
   const [health, setHealth] = useState<Awaited<ReturnType<typeof fetchHealth>>>({ ok: false })
+  const [burstLock, setBurstLock] = useState(false)
 
   useEffect(() => {
     void fetchHealth().then(setHealth)
@@ -30,21 +32,33 @@ export function TelegramPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="page-shell">
+        <SyncBanner
+          items={[
+            {
+              ok: !health.unreachable,
+              message: "O Worker não respondeu. Confere se o painel está a falar com /api/health.",
+            },
+          ]}
+        />
         <PageChrome icon={Send} title="Telegram">
           <Button
             type="button"
             variant="outline"
             className="h-8 rounded-full px-3.5"
+            disabled={burstLock}
             onClick={() => {
+              if (burstLock) return
+              setBurstLock(true)
               const batch = burstFacebookLeads(state.funnels, 100)
               createLeads(batch)
               const stats = burstStats(batch)
               toast.success(
                 `${stats.facebook} /start Facebook. ${stats.talking} responderam. ${stats.blocked} encerrados. ${stats.offered} na oferta.`
               )
+              window.setTimeout(() => setBurstLock(false), 800)
             }}
           >
-            Simular 100 /start
+            {burstLock ? "A simular…" : "Simular 100 /start"}
           </Button>
           <Button asChild className="h-8 rounded-full px-3.5">
             <Link to="/configuracoes?tab=bot">Configurar bot</Link>

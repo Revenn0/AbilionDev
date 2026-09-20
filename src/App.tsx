@@ -5,6 +5,7 @@ import { DashboardPage } from "@/pages/dashboard"
 import { ForgotPage } from "@/pages/forgot"
 import { LoginPage } from "@/pages/login"
 import { LandingPage } from "@/pages/landing"
+import { NotFoundPage } from "@/pages/not-found"
 import { PrivacyPage } from "@/pages/privacy"
 import { ResetPage } from "@/pages/reset"
 import { useStore } from "@/lib/store"
@@ -25,7 +26,11 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 }
 
 function PageFallback() {
-  return <div className="h-full bg-background" />
+  return (
+    <div className="grid h-full place-items-center bg-background" role="status" aria-live="polite">
+      <p className="text-[13px] text-muted-foreground">A carregar…</p>
+    </div>
+  )
 }
 
 function AppRoutes() {
@@ -71,7 +76,7 @@ function AppRoutes() {
                 <Route path="/conversas" element={<ConversationsPage />} />
                 <Route path="/telegram" element={<TelegramPage />} />
                 <Route path="/configuracoes" element={<SettingsPage />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
+                <Route path="*" element={<NotFoundPage />} />
               </Routes>
             </Suspense>
           </AppShell>
@@ -84,7 +89,12 @@ function AppRoutes() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AppRoutes />
+      <a href="#conteudo" className="skip-link">
+        Ir para o conteúdo
+      </a>
+      <div id="conteudo" tabIndex={-1}>
+        <AppRoutes />
+      </div>
     </BrowserRouter>
   )
 }

@@ -77,11 +77,13 @@ export function SettingsPage() {
       <div className="page-shell">
         <PageChrome icon={SettingsIcon} title="Configurações" />
 
-        <div className="flex w-fit flex-wrap gap-1 rounded-full bg-card p-1">
+        <div role="tablist" aria-label="Secções de configurações" className="flex w-fit flex-wrap gap-1 rounded-full bg-card p-1">
           {TABS.map((item) => (
             <button
               key={item.id}
               type="button"
+              role="tab"
+              aria-selected={tab === item.id}
               onClick={() => go(item.id)}
               className={cn(
                 "h-8 rounded-full px-3.5 text-[12.5px] font-medium",
@@ -428,6 +430,7 @@ function AccountPane() {
   const [current, setCurrent] = useState("")
   const [next, setNext] = useState("")
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState("")
 
   return (
     <section className="surface max-w-3xl p-6">
@@ -449,10 +452,15 @@ function AccountPane() {
         className="mt-5 space-y-4"
         onSubmit={(event) => {
           event.preventDefault()
-          if (next.length < 6) {
-            toast.error("A nova senha precisa de 6+ caracteres.")
+          if (!current.trim()) {
+            setError("Informa a senha actual.")
             return
           }
+          if (next.length < 6) {
+            setError("A nova senha precisa de 6+ caracteres.")
+            return
+          }
+          setError("")
           setBusy(true)
           void changePasswordRequest(current, next)
             .then(() => {
@@ -460,7 +468,10 @@ function AccountPane() {
               setNext("")
               toast.success("Senha actualizada.")
             })
-            .catch((error: Error) => toast.error(error.message))
+            .catch((err: Error) => {
+              setError(err.message)
+              toast.error(err.message)
+            })
             .finally(() => setBusy(false))
         }}
       >
@@ -471,6 +482,7 @@ function AccountPane() {
             type="password"
             autoComplete="current-password"
             value={current}
+            aria-invalid={error.includes("actual")}
             onChange={(event) => setCurrent(event.target.value)}
           />
         </div>
@@ -481,10 +493,17 @@ function AccountPane() {
             type="password"
             autoComplete="new-password"
             value={next}
+            aria-invalid={error.includes("6+")}
+            aria-describedby={error ? "password-error" : undefined}
             onChange={(event) => setNext(event.target.value)}
           />
         </div>
-        <Button type="submit" className="rounded-full" disabled={busy || !current || next.length < 6}>
+        {error ? (
+          <p id="password-error" role="alert" className="text-[12px] text-destructive">
+            {error}
+          </p>
+        ) : null}
+        <Button type="submit" className="rounded-full" disabled={busy}>
           <KeyRound className="size-3.5" />
           {busy ? "A gravar…" : "Guardar senha"}
         </Button>
@@ -588,6 +607,7 @@ function ThemePane() {
       <button
         type="button"
         onClick={() => setTheme("dark")}
+        aria-pressed={dark}
         className={cn("surface p-5 text-left", dark && "ring-1 ring-foreground/20")}
       >
         <Moon className="size-4 text-muted-foreground" />
@@ -597,6 +617,7 @@ function ThemePane() {
       <button
         type="button"
         onClick={() => setTheme("light")}
+        aria-pressed={!dark}
         className={cn("surface p-5 text-left", !dark && "ring-1 ring-foreground/20")}
       >
         <Sun className="size-4 text-muted-foreground" />
