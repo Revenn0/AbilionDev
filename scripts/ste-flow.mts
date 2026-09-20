@@ -38,6 +38,7 @@ import {
   mergeLeadMessages,
   applyRemovedFunnels,
   applyRemovedLeads,
+  leadsStillOnRemote,
   canDeleteFunnel,
   canFlushCrm,
   clipRemovedIds,
@@ -883,6 +884,11 @@ assert(
   "pending local sobrevive ao hydrate"
 )
 assert(!applyRemovedLeads([freshLead, liveLead], ["fresh"]).some((item) => item.id === "fresh"), "tombstone tira o lead da lista")
+assert(
+  leadsStillOnRemote(["fresh", "gone"], [freshLead, liveLead]).join(",") === "fresh",
+  "tombstone ainda no Worker volta a tentar o DELETE"
+)
+assert(leadsStillOnRemote(["gone"], [freshLead]).length === 0, "tombstone sem linha remota não dispara DELETE")
 assert(
   mergeLeads(applyRemovedLeads([liveLead], ["fresh"]), [freshLead]).some((item) => item.id === "fresh"),
   "sem tombstone a inbox volta a trazer o lead"

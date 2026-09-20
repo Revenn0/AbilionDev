@@ -217,19 +217,24 @@ function CaptureDialog({
     }
     creating.current = true
     const created = captureAgainstFunnels({ name, contact, channel: "telegram", origin }, funnels)
-    void Promise.resolve(onCreate(created)).then((ok) => {
-      if (ok === false) {
+    void Promise.resolve(onCreate(created))
+      .then((ok) => {
+        if (ok === false) {
+          toast.error("Não gravei o lead no Worker.")
+          return
+        }
+        toast.success("Lead no fluxo.")
+        setName("")
+        setContact("")
+        setErrors({})
+        onOpenChange(false)
+      })
+      .catch(() => {
         toast.error("Não gravei o lead no Worker.")
+      })
+      .finally(() => {
         creating.current = false
-        return
-      }
-      toast.success("Lead no fluxo.")
-      setName("")
-      setContact("")
-      setErrors({})
-      onOpenChange(false)
-      creating.current = false
-    })
+      })
   }
 
   return (

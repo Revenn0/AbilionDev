@@ -121,11 +121,14 @@ export function ConversationsPage() {
     sending.current = true
     const result = replySteLived(lead, text, Date.now(), runtime)
     saveLead(result.lead)
-    void flushLeadNow()
     setDraft("")
-    window.setTimeout(() => {
-      sending.current = false
-    }, 250)
+    void flushLeadNow()
+      .then((ok) => {
+        if (!ok) toast.error("Não gravei a fala no Worker.")
+      })
+      .finally(() => {
+        sending.current = false
+      })
   }
 
   return (

@@ -7,6 +7,7 @@ import {
   adoptOperatorLead,
   applyRemovedFunnels,
   applyRemovedLeads,
+  leadsStillOnRemote,
   canDeleteFunnel,
   canFlushCrm,
   clipRemovedIds,
@@ -170,6 +171,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     })
   }
 
+  const flushRemovedLeads = (ids: string[]) => {
+    const batch = ids.filter((id) => id && removedLeadIds.current.has(id)).slice(0, 40)
+    if (!batch.length) return Promise.resolve(true)
+    return Promise.all(batch.map((id) => removeRemoteLead(id))).then((results) => {
+      const ok = results.every(Boolean)
+      setPersistSync(ok ? "ok" : "error")
+      return ok
+    })
+  }
+
   const queueLeadWrite = (lead: Lead) => {
     pendingLeadWrites.current.set(lead.id, lead)
     persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
@@ -186,7 +197,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setState(next)
   }
 
-  const flushCrm = (): Promise<{ ok: boolean; error?: string; queued?: boolean }> => {
+  const flushCrm = (opts?: { silent?: boolean }): Promise<{ ok: boolean; error?: string; queued?: boolean }> => {
     window.clearTimeout(crmTimer.current)
     const current = stateRef.current
     if (!current.user) return Promise.resolve({ ok: false, error: "Sessão expirada." })
@@ -211,7 +222,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             return next
           })
         }
-        toast.error(result.error || "Não gravei o CRM no Worker.")
+        if (!opts?.silent) toast.error(result.error || "Não gravei o CRM no Worker.")
       }
       setCrmSync(result.ok ? "ok" : "error")
       return result
@@ -328,6 +339,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (pendingFunnelIds.current.size || removedFunnelIds.current.size || settingsDirty.current) pushWorker()
         if (pendingLeadWrites.current.size) void flushLeadWrites()
       }
+      if (remoteLeads.ok) {
+        const retry = leadsStillOnRemote(removedLeadIds.current, remoteLeads.leads)
+        if (retry.length) void flushRemovedLeads(retry)
+      }
     })
     return () => {
       cancelled = true
@@ -386,6 +401,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         stateRef.current = next
         return next
       })
+      const retry = leadsStillOnRemote(removedLeadIds.current, remoteLeads.leads)
+      if (retry.length) void flushRemovedLeads(retry)
     }
     const timer = window.setInterval(() => void reconcile(), 30_000)
     return () => {
@@ -506,7 +523,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         })
         pushWorker()
       },
-      flushCrmNow: () => flushCrm(),
+      flushCrmNow: () => flushCrm({ silent: true }),
       flushLeadNow: () => flushLeadWrites(),
       deleteFunnel: (id) => {
         const gate = canDeleteFunnel(stateRef.current.funnels, id)
@@ -520,7 +537,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         persistIdSet(REMOVED_FUNNELS, removedFunnelIds.current)
         const prev = stateRef.current
         commitState({ ...prev, funnels: prev.funnels.filter((item) => item.id !== id) })
-        return flushCrm().then((result) => result.ok)
+        return flushCrm({ silent: true }).then((result) => result.ok)
       },
       createLead: (lead) => {
         removedLeadIds.current.delete(lead.id)

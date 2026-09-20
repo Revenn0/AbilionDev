@@ -191,6 +191,12 @@ export function applyRemovedLeads(leads: Lead[], removedIds: Iterable<string>): 
   return next.length === leads.length ? leads : next
 }
 
+export function leadsStillOnRemote(removedIds: Iterable<string>, remote: Array<{ id: string }>) {
+  const drop = new Set(removedIds)
+  if (!drop.size) return []
+  return remote.filter((item) => drop.has(item.id)).map((item) => item.id)
+}
+
 export function mergeLeadEvents(local: LeadEvent[], remote: LeadEvent[], cap = 80): LeadEvent[] {
   if (!remote.length) return local
   if (!local.length) return remote.slice(-cap)
