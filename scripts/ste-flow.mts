@@ -67,7 +67,7 @@ import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateSettings,
 import { adsDeepLink } from "../src/lib/telegram-start.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { barShare } from "../src/lib/ops.ts"
-import { mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
+import { loadSecrets, mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
 import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, handleAuth, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeThrottles, retainUserSessions } from "../worker/auth.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTelegramClaims, telegramCall } from "../worker/telegram.ts"
@@ -1646,6 +1646,60 @@ const liveLogin = await handleRequest(
 )
 assert(liveLogin.status === 200, "login pelo handleRequest")
 const liveCookie = liveLogin.headers.get("set-cookie") || ""
+const hookEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  AUTH: memoryKv(),
+  ABILION_ENV: "development",
+} as Env
+const hookLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  hookEnv,
+  backgroundCtx()
+)
+assert(hookLogin.status === 200, "login no KV do runtime")
+const hookCookie = hookLogin.headers.get("set-cookie") || ""
+const runtimeFetch = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("api.telegram.org")) {
+    return new Response(JSON.stringify({ ok: false, description: "Bad Request: failed to set webhook" }), { status: 200 })
+  }
+  return runtimeFetch(input, init)
+}) as typeof fetch
+const hookFail = await handleRequest(
+  new Request("http://local.test/api/runtime", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: hookCookie },
+    body: JSON.stringify({ telegramBotToken: "111:retry-me" }),
+  }),
+  hookEnv,
+  backgroundCtx()
+)
+const hookBody = (await hookFail.json()) as { ok?: boolean; telegram?: boolean; warning?: string }
+assert(hookFail.status === 200, "webhook falhou mas o token ficou")
+assert(hookBody.ok === true && hookBody.telegram === true && Boolean(hookBody.warning), "runtime avisa sem recusar o token")
+assert((await loadSecrets(hookEnv.AUTH)).telegramBotToken === "111:retry-me", "token sobrevive ao webhook falhado")
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("api.telegram.org")) {
+    return new Response(JSON.stringify({ ok: false, description: "Unauthorized" }), { status: 401 })
+  }
+  return runtimeFetch(input, init)
+}) as typeof fetch
+const hookDenied = await handleRequest(
+  new Request("http://local.test/api/runtime", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: hookCookie },
+    body: JSON.stringify({ telegramBotToken: "000:bad" }),
+  }),
+  hookEnv,
+  backgroundCtx()
+)
+assert(hookDenied.status === 400, "token recusado continua 400")
+assert((await loadSecrets(hookEnv.AUTH)).telegramBotToken === "111:retry-me", "token recusado não pisa o gravado")
+globalThis.fetch = runtimeFetch
 const forgotOnce = (await (
   await handleRequest(
     new Request("http://local.test/api/auth/forgot", {

@@ -19,6 +19,7 @@ import { useTrackSummary } from "@/lib/use-track-summary"
 import { timeAgo } from "@/lib/format"
 import type { Lead } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { toast } from "sonner"
 
 const INBOX_CAP = 80
 
@@ -165,9 +166,11 @@ export function ConversationsPage() {
               className="mt-5 rounded-full"
               onClick={() => {
                 const lead = simulateOpenLead(state.funnels)
-                createLead(lead)
-                setFilter("all")
-                setId(lead.id)
+                void createLead(lead).then((ok) => {
+                  setFilter("all")
+                  setId(lead.id)
+                  if (!ok) toast.error("Não gravei a conversa no Worker.")
+                })
               }}
             >
               Simular conversa

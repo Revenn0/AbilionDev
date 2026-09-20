@@ -296,6 +296,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     const hook = webhookUrl(request, env)
     const webhookSecret = (env.TELEGRAM_WEBHOOK_SECRET || next.telegramWebhookSecret || randomToken()).trim()
     if (!env.TELEGRAM_WEBHOOK_SECRET) next.telegramWebhookSecret = webhookSecret
+    let warning: string | undefined
     if (next.telegramBotToken && next.telegramBotToken !== current.telegramBotToken) {
       const hooked = await setTelegramWebhook(next.telegramBotToken, hook, webhookSecret)
       if (!hooked.ok && /unauthorized/i.test(hooked.description)) {
@@ -303,14 +304,12 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       }
       next.webhookUrl = hook
       next.webhookOk = hooked.ok
-      if (!hooked.ok) {
-        await saveSecrets(env.AUTH, next)
-        return json({ error: hooked.description || "Webhook do Telegram falhou.", ...(await publishedRuntime(env, resolveRuntime(env, next, hook))) }, 400)
-      }
+      if (!hooked.ok) warning = "O token ficou gravado. O webhook ainda não apontou — tenta Vincular outra vez."
     } else if (next.telegramBotToken && !next.webhookOk) {
       const hooked = await setTelegramWebhook(next.telegramBotToken, hook, webhookSecret)
       next.webhookUrl = hook
       next.webhookOk = hooked.ok
+      if (!hooked.ok) warning = "O token ficou gravado. O webhook ainda não apontou — tenta Vincular outra vez."
     }
     await saveSecrets(env.AUTH, next)
     const settings = await loadSettings(env)
@@ -322,7 +321,8 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       steLinkedTelegram: settings.steLinkedTelegram !== false,
       plugins: { ...settings.plugins, telegram: Boolean(next.telegramBotToken) },
     })
-    return json(await publishedRuntime(env, resolveRuntime(env, next, hook)))
+    const published = await publishedRuntime(env, resolveRuntime(env, next, hook))
+    return json(warning ? { ...published, warning } : published)
   }
 
   if (url.pathname === "/api/crm" && request.method === "GET") {

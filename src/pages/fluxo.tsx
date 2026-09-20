@@ -15,7 +15,7 @@ import type { SalesFunnel } from "@/lib/types"
 import { toast } from "sonner"
 
 export function FluxoPage() {
-  const { state, createFunnel, saveFunnel, deleteFunnel, crmSync } = useStore()
+  const { state, createFunnel, saveFunnel, deleteFunnel, flushCrmNow, crmSync } = useStore()
   const navigate = useNavigate()
   const funnels = state.funnels
   const [renaming, setRenaming] = useState<SalesFunnel | null>(null)
@@ -26,11 +26,12 @@ export function FluxoPage() {
     creating.current = true
     const funnel = emptySalesFunnel("Novo funil")
     createFunnel(funnel)
-    toast.success("Funil criado.")
     navigate(`/fluxo/funil/${funnel.id}`)
-    window.setTimeout(() => {
+    void flushCrmNow().then((result) => {
+      if (result.ok && result.queued) toast.message("Funil criado. A gravar no Worker…")
+      else if (result.ok) toast.success("Funil criado.")
       creating.current = false
-    }, 800)
+    })
   }
 
   return (
@@ -97,8 +98,9 @@ export function FluxoPage() {
                         return
                       }
                       if (!confirm("Remover este funil? Isto não se desfaz.")) return
-                      if (!deleteFunnel(funnel.id)) return
-                      toast.success("Funil removido.")
+                      void deleteFunnel(funnel.id).then((ok) => {
+                        if (ok) toast.success("Funil removido.")
+                      })
                     }}
                   >
                     <Trash2 />
@@ -120,7 +122,10 @@ export function FluxoPage() {
         onSave={(name) => {
           if (!renaming) return
           saveFunnel({ ...renaming, name, updatedAt: new Date().toISOString() })
-          toast.success("Nome actualizado.")
+          void flushCrmNow().then((result) => {
+            if (result.ok && result.queued) toast.message("Nome no painel. A gravar no Worker…")
+            else if (result.ok) toast.success("Nome actualizado.")
+          })
         }}
       />
     </div>

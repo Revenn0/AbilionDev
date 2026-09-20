@@ -105,11 +105,12 @@ type Store = {
   createFunnel: (funnel: SalesFunnel) => void
   saveFunnel: (funnel: SalesFunnel) => void
   flushCrmNow: () => Promise<{ ok: boolean; error?: string; queued?: boolean }>
-  deleteFunnel: (id: string) => boolean
+  flushLeadNow: () => Promise<boolean>
+  deleteFunnel: (id: string) => Promise<boolean>
   createLead: (lead: Lead) => Promise<boolean>
-  createLeads: (leads: Lead[]) => void
+  createLeads: (leads: Lead[]) => Promise<boolean>
   saveLead: (lead: Lead) => void
-  deleteLead: (id: string) => void
+  deleteLead: (id: string) => Promise<boolean>
   saveSettings: (patch: Partial<Settings>) => void
 }
 
@@ -134,11 +135,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const lastGoodFunnels = useRef<SalesFunnel[]>([])
   const stateRef = useRef(state)
 
-  const flushLeadWrites = () => {
+  const flushLeadWrites = (): Promise<boolean> => {
     window.clearTimeout(leadWriteTimer.current)
     const batch = [...pendingLeadWrites.current.values()].filter((lead) => !removedLeadIds.current.has(lead.id))
-    if (!batch.length) return
-    void persistLeads(batch).then((ok) => {
+    if (!batch.length) return Promise.resolve(true)
+    return persistLeads(batch).then((ok) => {
       const raced = batch.filter((lead) => removedLeadIds.current.has(lead.id))
       if (raced.length) void Promise.all(raced.map((lead) => removeRemoteLead(lead.id)))
       if (ok) {
@@ -149,6 +150,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
       }
       setPersistSync(ok ? "ok" : "error")
+      return ok
     })
   }
 
@@ -161,6 +163,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     stateRef.current = state
   }, [state])
+
+  const commitState = (next: AppState) => {
+    stateRef.current = next
+    setState(next)
+  }
 
   const flushCrm = (): Promise<{ ok: boolean; error?: string; queued?: boolean }> => {
     window.clearTimeout(crmTimer.current)
@@ -423,7 +430,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       login: async (email, password) => {
         const data = await loginRequest(email, password)
         clearSessionExpired()
-        setState((prev) => ({ ...prev, user: data.user }))
+        commitState({ ...stateRef.current, user: data.user })
       },
       logout: async () => {
         flushLeadWrites()
@@ -434,64 +441,56 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setCrmSync("idle")
         setInboxSync("idle")
         setPersistSync("idle")
-        setState((prev) => ({ ...prev, user: null }))
+        commitState({ ...stateRef.current, user: null })
       },
       createFunnel: (funnel) => {
         pendingFunnelIds.current.add(funnel.id)
         removedFunnelIds.current.delete(funnel.id)
         persistIdSet(REMOVED_FUNNELS, removedFunnelIds.current)
-        setState((prev) => {
-          const next = {
-            ...prev,
-            funnels:
-              funnel.status === "active" && funnel.production
-                ? activatePublishedFunnels([funnel, ...prev.funnels], funnel.id)
-                : [funnel, ...prev.funnels],
-          }
-          stateRef.current = next
-          return next
+        const prev = stateRef.current
+        commitState({
+          ...prev,
+          funnels:
+            funnel.status === "active" && funnel.production
+              ? activatePublishedFunnels([funnel, ...prev.funnels], funnel.id)
+              : [funnel, ...prev.funnels],
         })
         pushWorker()
       },
       saveFunnel: (funnel) => {
         pendingFunnelIds.current.add(funnel.id)
-        setState((prev) => {
-          const exists = prev.funnels.some((item) => item.id === funnel.id)
-          const nextFunnels = exists
-            ? prev.funnels.map((item) => (item.id === funnel.id ? funnel : item))
-            : [funnel, ...prev.funnels]
-          const next = {
-            ...prev,
-            funnels: funnel.status === "active" && funnel.production ? activatePublishedFunnels(nextFunnels, funnel.id) : nextFunnels,
-          }
-          stateRef.current = next
-          return next
+        const prev = stateRef.current
+        const exists = prev.funnels.some((item) => item.id === funnel.id)
+        const nextFunnels = exists
+          ? prev.funnels.map((item) => (item.id === funnel.id ? funnel : item))
+          : [funnel, ...prev.funnels]
+        commitState({
+          ...prev,
+          funnels: funnel.status === "active" && funnel.production ? activatePublishedFunnels(nextFunnels, funnel.id) : nextFunnels,
         })
         pushWorker()
       },
       flushCrmNow: () => flushCrm(),
+      flushLeadNow: () => flushLeadWrites(),
       deleteFunnel: (id) => {
         const gate = canDeleteFunnel(stateRef.current.funnels, id)
         if (!gate.ok) {
           toast.error(gate.reason)
-          return false
+          return Promise.resolve(false)
         }
         pendingFunnelIds.current.delete(id)
         removedFunnelIds.current.add(id)
         persistIdSet(REMOVED_FUNNELS, removedFunnelIds.current)
-        setState((prev) => {
-          const next = { ...prev, funnels: prev.funnels.filter((item) => item.id !== id) }
-          stateRef.current = next
-          return next
-        })
-        pushWorker()
-        return true
+        const prev = stateRef.current
+        commitState({ ...prev, funnels: prev.funnels.filter((item) => item.id !== id) })
+        return flushCrm().then((result) => result.ok)
       },
       createLead: (lead) => {
         removedLeadIds.current.delete(lead.id)
         persistIdSet(REMOVED_LEADS, removedLeadIds.current)
         pendingLeadWrites.current.set(lead.id, lead)
-        setState((prev) => ({ ...prev, leads: [lead, ...prev.leads] }))
+        const prev = stateRef.current
+        commitState({ ...prev, leads: [lead, ...prev.leads] })
         return persistLeads([lead]).then((ok) => {
           if (ok) {
             const latest = pendingLeadWrites.current.get(lead.id)
@@ -507,8 +506,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           pendingLeadWrites.current.set(lead.id, lead)
         }
         persistIdSet(REMOVED_LEADS, removedLeadIds.current)
-        setState((prev) => ({ ...prev, leads: [...leads, ...prev.leads] }))
-        void persistLeads(leads).then((ok) => {
+        const prev = stateRef.current
+        commitState({ ...prev, leads: [...leads, ...prev.leads] })
+        return persistLeads(leads).then((ok) => {
           if (ok) {
             for (const lead of leads) {
               const latest = pendingLeadWrites.current.get(lead.id)
@@ -516,35 +516,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             }
           }
           setPersistSync(ok ? "ok" : "error")
+          return ok
         })
       },
       saveLead: (lead) => {
-        setState((prev) => {
-          const current = prev.leads.find((item) => item.id === lead.id)
-          const next = adoptOperatorLead(current ?? null, lead)
-          queueLeadWrite(next)
-          return {
-            ...prev,
-            leads: prev.leads.map((item) => (item.id === lead.id ? next : item)),
-          }
+        const prev = stateRef.current
+        const current = prev.leads.find((item) => item.id === lead.id)
+        const nextLead = adoptOperatorLead(current ?? null, lead)
+        queueLeadWrite(nextLead)
+        commitState({
+          ...prev,
+          leads: prev.leads.map((item) => (item.id === lead.id ? nextLead : item)),
         })
       },
       deleteLead: (id) => {
         pendingLeadWrites.current.delete(id)
         removedLeadIds.current.add(id)
         persistIdSet(REMOVED_LEADS, removedLeadIds.current)
-        setState((prev) => ({ ...prev, leads: prev.leads.filter((item) => item.id !== id) }))
-        void removeRemoteLead(id).then((ok) => setPersistSync(ok ? "ok" : "error"))
+        const prev = stateRef.current
+        commitState({ ...prev, leads: prev.leads.filter((item) => item.id !== id) })
+        return removeRemoteLead(id).then((ok) => {
+          setPersistSync(ok ? "ok" : "error")
+          return ok
+        })
       },
       saveSettings: (patch) => {
         settingsDirty.current = true
-        setState((prev) => {
-          const next = {
-            ...prev,
-            settings: { ...prev.settings, ...patch, telegramBotToken: "", plugins: patch.plugins ?? prev.settings.plugins },
-          }
-          stateRef.current = next
-          return next
+        const prev = stateRef.current
+        commitState({
+          ...prev,
+          settings: { ...prev.settings, ...patch, telegramBotToken: "", plugins: patch.plugins ?? prev.settings.plugins },
         })
         pushWorker()
       },

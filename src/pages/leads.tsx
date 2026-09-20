@@ -41,7 +41,7 @@ const FILTERS = [
 ] as const
 
 export function LeadsPage() {
-  const { state, createLead, saveLead, deleteLead, crmSync, inboxSync, persistSync } = useStore()
+  const { state, createLead, saveLead, flushLeadNow, deleteLead, crmSync, inboxSync, persistSync } = useStore()
   const { summary } = useTrackSummary(8000)
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("all")
   const [query, setQuery] = useState("")
@@ -179,9 +179,11 @@ export function LeadsPage() {
         geos={summary.geos}
         onClose={() => setSelected(null)}
         onSave={saveLead}
-        onDelete={(id) => {
-          deleteLead(id)
+        onFlush={flushLeadNow}
+        onDelete={async (id) => {
+          const ok = await deleteLead(id)
           setSelected(null)
+          return ok
         }}
       />
     </div>
@@ -327,6 +329,7 @@ function LeadDrawer({
   geos,
   onClose,
   onSave,
+  onFlush,
   onDelete,
 }: {
   lead: Lead | null
@@ -334,7 +337,8 @@ function LeadDrawer({
   geos?: Record<string, { country?: string; countryCode?: string; city?: string; region?: string; regionCode?: string }>
   onClose: () => void
   onSave: (lead: Lead) => void
-  onDelete: (id: string) => void
+  onFlush?: () => Promise<boolean>
+  onDelete: (id: string) => void | Promise<boolean>
 }) {
   const panel = useRef<HTMLElement>(null)
   const snapshot = publishedSnapshot(funnels)
@@ -406,19 +410,28 @@ function LeadDrawer({
   if (!lead) return null
 
   const localFlow = canTickSteLocally(lead)
-  const run = (event: RuntimeEvent, ok: string, blocked?: string) => {
+  const run = (
+    event: RuntimeEvent,
+    ok: string | ((effects: ReturnType<typeof applyEvent>["effects"]) => string),
+    blocked?: string,
+    when?: number
+  ) => {
     if (!canTickSteLocally(lead)) {
       toast.error("Este chat corre no Telegram. A ficha não avança o quadro.")
       return
     }
-    const result = applyEvent(snapshot, { ...lead, memory: memoryRef.current }, event)
+    const result = applyEvent(snapshot, { ...lead, memory: memoryRef.current }, event, when)
     commit(result.lead)
     const stop = result.effects.find((item) => item.kind === "blocked")
     if (stop) {
       toast.error(blocked ?? stop.reason)
       return
     }
-    toast.success(ok)
+    const message = typeof ok === "function" ? ok(result.effects) : ok
+    void (onFlush?.() ?? Promise.resolve(true)).then((saved) => {
+      if (saved) toast.success(message)
+      else toast.error("Não gravei o lead no Worker.")
+    })
   }
 
   return (
@@ -504,15 +517,16 @@ function LeadDrawer({
             className="rounded-full"
             disabled={!localFlow}
             onClick={() => {
-              if (!canTickSteLocally(lead)) {
-                toast.error("Este chat corre no Telegram. A ficha não avança o quadro.")
-                return
-              }
               const when = lead.waitUntil ? new Date(lead.waitUntil).getTime() + 1000 : Date.now()
-              const result = applyEvent(snapshot, { ...lead, memory: memoryRef.current }, { type: "timer" }, when)
-              commit(result.lead)
-              const offered = result.effects.some((item) => item.kind === "offer")
-              toast.success(offered ? "Oferta marcada no CRM. Nada foi enviado." : "Espera avançada no CRM.")
+              run(
+                { type: "timer" },
+                (effects) =>
+                  effects.some((item) => item.kind === "offer")
+                    ? "Oferta marcada no CRM. Nada foi enviado."
+                    : "Espera avançada no CRM.",
+                undefined,
+                when
+              )
             }}
           >
             Avançar espera / oferta
@@ -558,8 +572,10 @@ function LeadDrawer({
             className="rounded-full text-destructive"
             onClick={() => {
               if (!confirm("Remover este lead? Isto não se desfaz.")) return
-              onDelete(lead.id)
-              toast.success("Lead removido.")
+              void Promise.resolve(onDelete(lead.id)).then((ok) => {
+                if (ok === false) toast.error("Não removi o lead no Worker.")
+                else toast.success("Lead removido.")
+              })
             }}
           >
             Excluir lead

@@ -318,7 +318,12 @@ export function SalesCanvas({
             disabled={readOnly}
             onClick={() => {
               persist()
-              toast.success("Rascunho salvo.")
+              void (onFlush?.() ?? Promise.resolve({ ok: true as const, queued: false as boolean | undefined, error: undefined as string | undefined })).then(
+                (result) => {
+                  if (result.ok && result.queued) toast.message("Rascunho no painel. A gravar no Worker…")
+                  else if (result.ok) toast.success("Rascunho salvo.")
+                }
+              )
             }}
           >
             Salvar rascunho
@@ -498,7 +503,12 @@ export function SalesCanvas({
         onSave={(next) => {
           setName(next)
           persist(production, funnel.status, next)
-          toast.success("Nome actualizado.")
+          void (onFlush?.() ?? Promise.resolve({ ok: true as const, queued: false as boolean | undefined, error: undefined as string | undefined })).then(
+            (result) => {
+              if (result.ok && result.queued) toast.message("Nome no painel. A gravar no Worker…")
+              else if (result.ok) toast.success("Nome actualizado.")
+            }
+          )
         }}
       />
     </div>

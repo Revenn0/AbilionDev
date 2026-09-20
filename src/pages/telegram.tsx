@@ -59,12 +59,17 @@ export function TelegramPage() {
               if (!confirm("Isto cria 100 leads Facebook no CRM. Continuar?")) return
               setBurstLock(true)
               const batch = burstFacebookLeads(state.funnels, 100)
-              createLeads(batch)
               const stats = burstStats(batch)
-              toast.success(
-                `${stats.facebook} /start Facebook. ${stats.talking} responderam. ${stats.blocked} encerrados. ${stats.offered} na oferta.`
-              )
-              window.setTimeout(() => setBurstLock(false), 800)
+              void createLeads(batch).then((ok) => {
+                if (ok) {
+                  toast.success(
+                    `${stats.facebook} /start Facebook. ${stats.talking} responderam. ${stats.blocked} encerrados. ${stats.offered} na oferta.`
+                  )
+                } else {
+                  toast.error("Não gravei o lote no Worker.")
+                }
+                setBurstLock(false)
+              })
             }}
           >
             {burstLock ? "A simular…" : "Simular 100 /start"}
