@@ -100,6 +100,7 @@ export function FluxoPage() {
                     <Link to={`/fluxo/funil/${funnel.id}`}>Abrir</Link>
                   </Button>
                   <Button
+                    type="button"
                     variant="ghost"
                     size="icon-sm"
                     className="rounded-full"

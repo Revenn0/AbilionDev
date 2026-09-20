@@ -8,9 +8,8 @@ export function PrivacyPage() {
         <LogoWord />
         <h1 className="page-title mt-8">Política de privacidade</h1>
         <p className="page-hint">
-          O Abilion é um CRM interno. Não há cadastro público. Só os operadores{" "}
-          <span className="text-foreground">victor@abilion.com</span> e{" "}
-          <span className="text-foreground">gabriel@abilion.com</span> entram.
+          O Abilion é um CRM interno. Não há cadastro público. Victor e Gabriel entram no primeiro acesso; as
+          outras contas só depois de um dono as criar em Utilizadores.
         </p>
 
         <section className="mt-8 space-y-3 text-[14px] leading-relaxed text-muted-foreground">

@@ -374,7 +374,7 @@ try {
 
   for (const viewport of VIEWPORTS) {
     await page.setViewport({ width: viewport.width, height: viewport.height })
-    for (const route of ["/", "/analytics", "/leads", "/conversas", "/telegram", "/configuracoes", "/fluxo", editorPath, "/l", "/privacidade"] as const) {
+    for (const route of ["/", "/analytics", "/leads", "/conversas", "/telegram", "/utilizadores", "/configuracoes", "/fluxo", editorPath, "/l", "/privacidade"] as const) {
       await open(page, route)
       const box = await overflow(page)
       assert(!box.overflow, `overflow ${viewport.name}px em ${route} (${box.scrollWidth}>${box.clientWidth})`)

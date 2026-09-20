@@ -3509,6 +3509,105 @@ const mcpAccountBody = (await mcpAccount.json()) as { result?: { content?: Array
 const mcpUser = JSON.parse(mcpAccountBody.result?.content?.[0]?.text || "{}") as { user?: { email?: string } }
 assert(mcpUser.user?.email === "carla@abilion.com", "MCP cria conta")
 
+const mcpPublic = await handleRequest(new Request("http://local.test/mcp"), teamEnv, backgroundCtx())
+const mcpPublicBody = (await mcpPublic.json()) as { ok?: boolean; name?: string }
+assert(mcpPublic.status === 200 && mcpPublicBody.ok && mcpPublicBody.name === "abilion", "GET MCP é público")
+
+const mcpImport = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "tools/call",
+      params: { name: "abilion_import_funnel", arguments: { name: "Import MCP", payload: { messages: ["Passo MCP"] } } },
+    }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const mcpImportBody = (await mcpImport.json()) as { result?: { content?: Array<{ text?: string }> } }
+const mcpImported = JSON.parse(mcpImportBody.result?.content?.[0]?.text || "{}") as { ok?: boolean; id?: string; source?: string }
+assert(mcpImport.status === 200 && mcpImported.ok && mcpImported.id && mcpImported.source === "generic", "MCP importa funil")
+
+const mcpPublish = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 5,
+      method: "tools/call",
+      params: { name: "abilion_publish_funnel", arguments: { id: mcpCreated.id } },
+    }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const mcpPublishBody = (await mcpPublish.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
+const mcpPublished = JSON.parse(mcpPublishBody.result?.content?.[0]?.text || "{}") as { ok?: boolean; funnel?: { published?: boolean } }
+assert(mcpPublish.status === 200 && mcpPublished.ok && mcpPublished.funnel?.published, "MCP publica funil")
+
+const mcpLeads = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 6,
+      method: "tools/call",
+      params: { name: "abilion_list_leads", arguments: { limit: 5 } },
+    }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const mcpLeadsBody = (await mcpLeads.json()) as { result?: { content?: Array<{ text?: string }> } }
+const mcpLeadList = JSON.parse(mcpLeadsBody.result?.content?.[0]?.text || "{}") as { ok?: boolean; leads?: unknown[] }
+assert(mcpLeads.status === 200 && mcpLeadList.ok && Array.isArray(mcpLeadList.leads), "MCP lista leads")
+
+const mcpSettings = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 7,
+      method: "tools/call",
+      params: { name: "abilion_get_settings", arguments: {} },
+    }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const mcpSettingsBody = (await mcpSettings.json()) as { result?: { content?: Array<{ text?: string }> } }
+const mcpSettingsOut = JSON.parse(mcpSettingsBody.result?.content?.[0]?.text || "{}") as {
+  ok?: boolean
+  settings?: { telegramBotToken?: string; esterTelegramChatId?: string }
+}
+assert(mcpSettings.status === 200 && mcpSettingsOut.ok, "MCP devolve settings")
+assert(mcpSettingsOut.settings?.telegramBotToken === "", "MCP settings sem token")
+assert(mcpSettingsOut.settings?.esterTelegramChatId === "", "MCP settings sem chat da Ester")
+
+const mcpToken = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 8,
+      method: "tools/call",
+      params: { name: "abilion_create_token", arguments: { name: "Agente MCP" } },
+    }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const mcpTokenBody = (await mcpToken.json()) as { result?: { content?: Array<{ text?: string }> } }
+const mcpTokenOut = JSON.parse(mcpTokenBody.result?.content?.[0]?.text || "{}") as { token?: string }
+assert(mcpToken.status === 200 && mcpTokenOut.token?.startsWith("abn_"), "MCP cria token")
+
 const importedHttp = await handleRequest(
   new Request("http://local.test/api/funnels/import", {
     method: "POST",

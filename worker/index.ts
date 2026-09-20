@@ -187,6 +187,11 @@ async function handleMcpRoute(request: Request, env: Env) {
   if (request.method === "GET") return handleMcp(request, env, null)
   if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
   const actor = await sessionUser(request, kvAuthStore(env.AUTH))
+  if (request.method === "POST" && actor) {
+    if (!(await consumeKvThrottle(env.AUTH, `mcp:${actor.id}:${clientIp(request)}`, 60, 60_000))) {
+      return json({ error: "Demasiados pedidos MCP. Espera um pouco." }, 429)
+    }
+  }
   return handleMcp(request, env, actor)
 }
 
