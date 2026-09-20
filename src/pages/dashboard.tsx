@@ -19,6 +19,8 @@ export function DashboardPage() {
   const facebookTotal = Math.max(facebook.adClicks, facebook.pageViews, facebook.buttonClicks)
   const line = seriesLast30(state.leads, () => true)
   const spark = line.slice(-12)
+  const pixelBars = (key: "facebookAds" | "facebookViews" | "facebookClicks") =>
+    summary.series.map((row) => row[key]).slice(-12)
   const waitSpark = seriesLast30(state.leads, (lead) => Boolean(lead.waitUntil)).slice(-12)
   const offerSpark = seriesLast30(state.leads, (lead) => lead.stage === "offer" || lead.events.some((item) => item.kind === "offer")).slice(-12)
 
@@ -50,9 +52,9 @@ export function DashboardPage() {
             hint={hydrating ? "a carregar" : empty ? "nenhuma iniciada" : "eventos do fluxo"}
             bars={spark}
           />
-          <Kpi href="/analytics" label="Anúncio" value={pixelFigure(status, hasData, facebook.adClicks)} hint="clique no ads" bars={spark} />
-          <Kpi href="/analytics" label="Page views" value={pixelFigure(status, hasData, facebook.pageViews)} hint="landing do Facebook" bars={spark} />
-          <Kpi href="/analytics" label="Botão TG" value={pixelFigure(status, hasData, facebook.buttonClicks)} hint="clique no Telegram" bars={spark} />
+          <Kpi href="/analytics" label="Anúncio" value={pixelFigure(status, hasData, facebook.adClicks)} hint="clique no ads" bars={pixelBars("facebookAds")} />
+          <Kpi href="/analytics" label="Page views" value={pixelFigure(status, hasData, facebook.pageViews)} hint="landing do Facebook" bars={pixelBars("facebookViews")} />
+          <Kpi href="/analytics" label="Botão TG" value={pixelFigure(status, hasData, facebook.buttonClicks)} hint="clique no Telegram" bars={pixelBars("facebookClicks")} />
           <Kpi href="/leads" label="Aguardando" value={hydrating ? "…" : ops.waiting} hint={hydrating ? "a carregar" : "espera do fluxo"} bars={waitSpark} />
           <Kpi href="/leads" label="Ofertas" value={hydrating ? "…" : ops.offered} hint={hydrating ? "a carregar" : "disparadas pelo quadro"} bars={offerSpark} />
         </section>

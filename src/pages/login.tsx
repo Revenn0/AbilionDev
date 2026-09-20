@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { safeAppPath } from "@/lib/safe-path"
+import { safeAppPath, withSafeNext } from "@/lib/safe-path"
 import { useStore } from "@/lib/store"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -105,7 +105,7 @@ export function LoginPage() {
               {loading ? "Entrando…" : "Entrar"}
             </Button>
             <p className="text-center text-[13px]">
-              <Link to="/forgot" className={AUTH_LINK}>
+              <Link to={withSafeNext("/forgot", params.get("next"))} className={AUTH_LINK}>
                 Esqueceu a senha?
               </Link>
             </p>

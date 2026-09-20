@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { resetPasswordRequest } from "@/lib/auth-api"
+import { withSafeNext } from "@/lib/safe-path"
 import { toast } from "sonner"
 
 export function ResetPage() {
@@ -30,7 +31,7 @@ export function ResetPage() {
     try {
       await resetPasswordRequest(token, password)
       toast.success("Senha actualizada. Entra com a nova senha.")
-      navigate("/login", { replace: true })
+      navigate(withSafeNext("/login", params.get("next")), { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível redefinir a senha.")
     } finally {
@@ -51,7 +52,7 @@ export function ResetPage() {
         <CardContent>
           {!token ? (
             <p className="text-center text-[13px]">
-              <Link to="/forgot" className={AUTH_LINK}>
+              <Link to={withSafeNext("/forgot", params.get("next"))} className={AUTH_LINK}>
                 Gerar outro link
               </Link>
             </p>
@@ -81,7 +82,7 @@ export function ResetPage() {
               {loading ? "A gravar…" : "Guardar senha"}
             </Button>
             <p className="text-center text-[13px]">
-              <Link to="/login" className={AUTH_LINK}>
+              <Link to={withSafeNext("/login", params.get("next"))} className={AUTH_LINK}>
                 Voltar ao login
               </Link>
             </p>

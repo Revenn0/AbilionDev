@@ -177,7 +177,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const crmFlushRef = useRef(Promise.resolve<{ ok: boolean; error?: string; queued?: boolean }>({ ok: true }))
   const hydrateLock = useRef<Promise<void> | null>(null)
 
-  const flushLeadWrites = (): Promise<boolean> => {
+  const flushLeadWrites = (opts?: { keepalive?: boolean }): Promise<boolean> => {
     window.clearTimeout(leadWriteTimer.current)
     const run = async (): Promise<boolean> => {
       for (const id of [...pendingLeadWrites.current.keys()]) {
@@ -186,7 +186,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
       const batch = [...pendingLeadWrites.current.values()]
       if (!batch.length) return true
-      const ok = await persistLeads(batch)
+      const ok = await persistLeads(batch, opts)
       const raced = batch.filter((lead) => removedLeadIds.current.has(lead.id))
       if (raced.length) await Promise.all(raced.map((lead) => removeRemoteLead(lead.id)))
       if (ok) {
@@ -235,7 +235,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setState(next)
   }
 
-  const flushCrm = (opts?: { silent?: boolean }): Promise<{ ok: boolean; error?: string; queued?: boolean }> => {
+  const flushCrm = (opts?: { silent?: boolean; keepalive?: boolean }): Promise<{ ok: boolean; error?: string; queued?: boolean }> => {
     window.clearTimeout(crmTimer.current)
     const run = async (): Promise<{ ok: boolean; error?: string; queued?: boolean }> => {
       const current = stateRef.current
@@ -243,11 +243,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!canFlushCrm(crmHydrated.current)) return { ok: true, queued: true }
       const sentRemoved = [...removedFunnelIds.current]
       const sentSettings = settingsWriteFingerprint(current.settings)
-      const result = await saveCrm({
-        funnels: current.funnels,
-        settings: { ...current.settings, telegramBotToken: "" },
-        removedFunnelIds: sentRemoved,
-      })
+      const result = await saveCrm(
+        {
+          funnels: current.funnels,
+          settings: { ...current.settings, telegramBotToken: "" },
+          removedFunnelIds: sentRemoved,
+        },
+        { keepalive: opts?.keepalive }
+      )
       if (result.ok) {
         for (const id of sentRemoved) {
           if (!stateRef.current.funnels.some((item) => item.id === id)) removedFunnelIds.current.delete(id)
@@ -527,8 +530,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const onHide = () => {
-      flushLeadWrites()
-      flushCrm()
+      window.clearTimeout(leadWriteTimer.current)
+      window.clearTimeout(crmTimer.current)
+      void flushLeadWrites({ keepalive: true })
+      void flushCrm({ silent: true, keepalive: true })
     }
     window.addEventListener("pagehide", onHide)
     return () => {

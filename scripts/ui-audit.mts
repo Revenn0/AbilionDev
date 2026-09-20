@@ -98,6 +98,11 @@ try {
   const afterEmail = await page.evaluate(() => document.activeElement?.id || document.activeElement?.getAttribute("aria-label") || "")
   assert(afterEmail === "password" || afterEmail === "Mostrar senha", "Tab do e-mail segue no campo da senha")
 
+  await open(page, "/login?next=/leads")
+  await waitAuthPage(page)
+  const forgotHref = await page.$eval('a[href*="forgot"]', (el) => el.getAttribute("href") || "")
+  assert(forgotHref.includes("next="), "login com next leva o next ao forgot")
+
   await open(page, "/forgot")
   await waitAuthPage(page)
   assert(page.url().includes("/forgot"), "forgot público sem sessão")

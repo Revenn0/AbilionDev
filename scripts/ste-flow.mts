@@ -72,8 +72,8 @@ import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
-import { FETCH_TIMEOUT_MS } from "../src/lib/http.ts"
-import { safeAppPath } from "../src/lib/safe-path.ts"
+import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
+import { safeAppPath, withSafeNext } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { contactLookups, normalizeTelegramContact, validateCapture } from "../src/lib/capture.ts"
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
@@ -1088,7 +1088,12 @@ assert(safeAppPath("/fluxo/funil/../x") === "/", "path traversal cai no inicio")
 assert(safeAppPath("/configuracoesfoo") === "/", "prefixo de configuracoes nao passa")
 assert(safeAppPath("/configuracoes/") === "/", "barra extra em configuracoes nao passa")
 assert(safeAppPath("/privacidade") === "/privacidade", "politica no next do login passa")
+assert(withSafeNext("/forgot", "/leads") === "/forgot?next=%2Fleads", "forgot conserva o next")
+assert(withSafeNext("/login", "//evil.com") === "/login", "next perigoso não entra no forgot")
+assert(withSafeNext("/reset?token=abc", "/leads") === "/reset?token=abc&next=%2Fleads", "reset junta next ao token")
+assert(withSafeNext("/login", "/login") === "/login", "next para o próprio login some")
 assert(FETCH_TIMEOUT_MS === 12_000, "timeout do painel é 12s")
+assert(KEEPALIVE_MAX_BYTES === 60_000, "keepalive do pagehide fica abaixo de 64kb")
 assert(typeof AbortSignal.timeout === "function", "AbortSignal.timeout existe neste runtime")
 
 let gated = consumeThrottle({ users: [], sessions: [], resets: {} }, "login:1:a", 2, 60_000, 1000)

@@ -1,13 +1,16 @@
 import { useRef, useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { AUTH_FIELD, AUTH_HINT, AUTH_LABEL, AUTH_LINK, AUTH_SUBMIT, AuthBrand, AuthSplit } from "@/components/brand/auth-split"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { forgotPasswordRequest } from "@/lib/auth-api"
+import { withSafeNext } from "@/lib/safe-path"
 
 export function ForgotPage() {
+  const [params] = useSearchParams()
+  const next = params.get("next")
   const [email, setEmail] = useState("")
   const [done, setDone] = useState("")
   const [error, setError] = useState("")
@@ -28,7 +31,7 @@ export function ForgotPage() {
       const data = await forgotPasswordRequest(email.trim().toLowerCase())
       setDone(
         data.resetPath
-          ? `Link gerado: ${data.resetPath}`
+          ? `Link gerado: ${withSafeNext(data.resetPath, next)}`
           : "Em produção não enviamos e-mail. Entra e troca a senha em Configurações → Conta."
       )
     } catch (err) {
@@ -80,7 +83,7 @@ export function ForgotPage() {
               {loading ? "A processar…" : "Continuar"}
             </Button>
             <p className="text-center text-[13px]">
-              <Link to="/login" className={AUTH_LINK}>
+              <Link to={withSafeNext("/login", next)} className={AUTH_LINK}>
                 Voltar ao login
               </Link>
             </p>

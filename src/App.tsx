@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react"
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom"
+import { BrowserRouter, Navigate, Route, Routes, useSearchParams } from "react-router-dom"
 import { AppShell } from "@/components/layout/app-shell"
 import { OfflineBanner } from "@/components/layout/offline-banner"
 import { RouteError } from "@/components/layout/route-error"
@@ -10,6 +10,7 @@ import { LandingPage } from "@/pages/landing"
 import { NotFoundPage } from "@/pages/not-found"
 import { PrivacyPage } from "@/pages/privacy"
 import { ResetPage } from "@/pages/reset"
+import { safeAppPath } from "@/lib/safe-path"
 import { useStore } from "@/lib/store"
 
 const FluxoPage = lazy(() => import("@/pages/fluxo").then((m) => ({ default: m.FluxoPage })))
@@ -22,8 +23,9 @@ const TelegramPage = lazy(() => import("@/pages/telegram").then((m) => ({ defaul
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { ready, state } = useStore()
+  const [params] = useSearchParams()
   if (!ready) return <PageFallback />
-  if (state.user) return <Navigate to="/" replace />
+  if (state.user) return <Navigate to={safeAppPath(params.get("next"))} replace />
   return children
 }
 

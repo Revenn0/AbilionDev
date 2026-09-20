@@ -25,3 +25,9 @@ export function safeAppPath(raw: string | null | undefined) {
   }
   return "/"
 }
+
+export function withSafeNext(path: string, raw?: string | null) {
+  const next = safeAppPath(raw)
+  if (!next || next === "/") return path
+  return `${path}${path.includes("?") ? "&" : "?"}next=${encodeURIComponent(next)}`
+}

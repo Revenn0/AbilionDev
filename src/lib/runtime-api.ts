@@ -1,5 +1,5 @@
 import { collectLeadPages, type LeadListPage } from "./crm"
-import { fetchWithTimeout } from "./http"
+import { fetchWithTimeout, fetchWrite } from "./http"
 import { noteUnauthorized } from "./session"
 import type { Lead, SalesFunnel, Settings } from "./types"
 
@@ -158,34 +158,49 @@ async function writeResult(run: () => Promise<Response>): Promise<WriteResult> {
   }
 }
 
-export async function persistLeads(leads: Lead[]) {
+export async function persistLeads(leads: Lead[], opts?: { keepalive?: boolean }) {
   if (!leads.length) return true
   return writeOk(() =>
-    fetchWithTimeout("/api/leads", {
-      method: "POST",
-      credentials: "include",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ leads: leads.slice(0, 120) }),
-    })
+    fetchWrite(
+      "/api/leads",
+      {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ leads: leads.slice(0, 120) }),
+      },
+      opts
+    )
   )
 }
 
-export async function removeRemoteLead(id: string) {
+export async function removeRemoteLead(id: string, opts?: { keepalive?: boolean }) {
   return writeOk(() =>
-    fetchWithTimeout(`/api/leads?id=${encodeURIComponent(id)}`, {
-      method: "DELETE",
-      credentials: "include",
-    })
+    fetchWrite(
+      `/api/leads?id=${encodeURIComponent(id)}`,
+      {
+        method: "DELETE",
+        credentials: "include",
+      },
+      opts
+    )
   )
 }
 
-export async function saveCrm(body: { funnels?: SalesFunnel[]; settings?: Settings; removedFunnelIds?: string[] }) {
+export async function saveCrm(
+  body: { funnels?: SalesFunnel[]; settings?: Settings; removedFunnelIds?: string[] },
+  opts?: { keepalive?: boolean }
+) {
   return writeResult(() =>
-    fetchWithTimeout("/api/crm", {
-      method: "POST",
-      credentials: "include",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    })
+    fetchWrite(
+      "/api/crm",
+      {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      },
+      opts
+    )
   )
 }
