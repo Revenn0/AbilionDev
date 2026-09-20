@@ -1,6 +1,6 @@
-import { uid } from "./format"
-import { campaignFor } from "./labels"
-import { isFlowKind, isMapKind, BANCA_FIXED, type FlowEdge, type FlowNode, type Lead, type LeadEvent, type LeadOrigin, type LeadStage, type SalesFunnel, type SalesSnapshot } from "./types"
+import { uid } from "./format.ts"
+import { campaignFor } from "./labels.ts"
+import { isFlowKind, isMapKind, BANCA_FIXED, type FlowEdge, type FlowNode, type Lead, type LeadEvent, type LeadOrigin, type LeadStage, type SalesFunnel, type SalesSnapshot } from "./types.ts"
 
 export type RuntimeEvent =
   | { type: "capture" }

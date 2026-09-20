@@ -1,4 +1,4 @@
-import { defaultSettings, isFlowKind, isMapKind, type Lead, type SalesFunnel, type SalesKind, type Settings } from "./types"
+import { defaultSettings, isFlowKind, isMapKind, type Lead, type SalesFunnel, type SalesKind, type Settings } from "./types.ts"
 
 export function migrateKind(raw: string): SalesKind {
   switch (raw) {

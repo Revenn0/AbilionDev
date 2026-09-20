@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Navigate, useLocation, useNavigate } from "react-router-dom"
 import { Menu, X } from "lucide-react"
 import { Sidebar } from "./sidebar"
@@ -31,6 +31,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false)
   const [expanded, setExpanded] = useState(true)
   const canvasEditor = isCanvasEditor(pathname)
+  const menu = useRef<HTMLDivElement>(null)
+  const menuTrigger = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     const stored = window.localStorage.getItem("abilion.sidebar")
@@ -40,8 +42,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!open) return
+    const root = menu.current
+    const focusables = () =>
+      [...(root?.querySelectorAll<HTMLElement>("a, button, [href], [tabindex]:not([tabindex='-1'])") ?? [])].filter(
+        (el) => !el.hasAttribute("disabled")
+      )
+    focusables()[0]?.focus()
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false)
+      if (event.key === "Escape") {
+        setOpen(false)
+        menuTrigger.current?.focus()
+        return
+      }
+      if (event.key !== "Tab" || !root) return
+      const items = focusables()
+      if (!items.length) return
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last?.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first?.focus()
+      }
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
@@ -80,6 +104,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             onClick={() => setOpen(false)}
           />
           <div
+            ref={menu}
             role="dialog"
             aria-modal="true"
             aria-label="Menu"
@@ -95,7 +120,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         {!canvasEditor && (
           <header className="flex items-center gap-2 border-b border-border bg-card px-3 py-2 md:hidden">
-            <Button variant="ghost" size="icon-sm" className="rounded-full" aria-label={open ? "Fechar menu" : "Abrir menu"} aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+            <Button ref={menuTrigger} variant="ghost" size="icon-sm" className="rounded-full" aria-label={open ? "Fechar menu" : "Abrir menu"} aria-expanded={open} onClick={() => setOpen((v) => !v)}>
               {open ? <X /> : <Menu />}
             </Button>
             <LogoWord compact />

@@ -23,7 +23,11 @@ export function ForgotPage() {
     setLoading(true)
     try {
       const data = await forgotPasswordRequest(email.trim().toLowerCase())
-      setDone(data.resetPath ? `Link gerado: ${data.resetPath}` : "Se o e-mail existir, enviamos o link de redefinição.")
+      setDone(
+        data.resetPath
+          ? `Link gerado: ${data.resetPath}`
+          : "Em produção não enviamos e-mail. Entra e troca a senha em Configurações → Conta."
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível gerar o link.")
     } finally {

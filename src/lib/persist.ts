@@ -1,3 +1,4 @@
+/** Schema mapper only. The browser no longer reads or writes Supabase; the Worker is the write path. */
 import { getSupabase, supabaseEnabled, WORKSPACE } from "@/lib/supabase"
 import { migrateFunnel, migrateLead, migrateSettings } from "@/lib/migrate"
 import type { AppState, Lead, LeadEvent, SalesFunnel, Settings } from "@/lib/types"

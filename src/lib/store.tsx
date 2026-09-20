@@ -4,7 +4,6 @@ import { clearSessionExpired, noteSessionExpired, subscribeSessionExpired } from
 import { toast } from "sonner"
 import { canDeleteFunnel, mergeFunnels, mergeLeads } from "@/lib/crm"
 import { migrateFunnel, migrateLead, migrateSettings } from "@/lib/migrate"
-import { pullRemote, pushRemote, supabaseEnabled } from "@/lib/persist"
 import { fetchCrm, fetchInbox, fetchLeads, fetchRuntime, persistLeads, removeRemoteLead, saveCrm } from "@/lib/runtime-api"
 import { seededOperation } from "@/lib/templates"
 import { defaultSettings, type AppState, type Lead, type PluginId, type SalesFunnel, type Settings, type User } from "@/lib/types"
@@ -83,12 +82,11 @@ const StoreContext = createContext<Store | null>(null)
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false)
-  const [remote, setRemote] = useState<Store["remote"]>(supabaseEnabled() ? "off" : "local")
+  const [remote, setRemote] = useState<Store["remote"]>("local")
   const [crmSync, setCrmSync] = useState<SyncState>("idle")
   const [inboxSync, setInboxSync] = useState<SyncState>("idle")
   const [persistSync, setPersistSync] = useState<SyncState>("idle")
   const [state, setState] = useState<AppState>(bootState)
-  const skipPush = useRef(true)
   const persistTimer = useRef(0)
   const crmTimer = useRef(0)
   const leadWriteTimer = useRef(0)
@@ -177,11 +175,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!state.user) return
     let cancelled = false
-    skipPush.current = true
     void Promise.all([fetchCrm(), fetchRuntime(), fetchLeads()]).then(([crm, runtime, remoteLeads]) => {
       if (cancelled) return
       setCrmSync(crm.ok ? "ok" : "error")
       setPersistSync(remoteLeads.ok ? "ok" : "error")
+      setRemote(runtime.persist === "supabase" ? "cloud" : runtime.ok ? "local" : "off")
       setState((prev) => ({
         ...prev,
         funnels: crm.ok && crm.funnels.length ? mergeFunnels(prev.funnels, crm.funnels.map(migrateFunnel)) : prev.funnels,
@@ -228,37 +226,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [state.user])
 
   useEffect(() => {
-    if (!supabaseEnabled()) return
-    let cancelled = false
-    pullRemote().then((bundle) => {
-      if (cancelled || !bundle) {
-        setRemote("local")
-        return
-      }
-      setRemote("cloud")
-      setState((prev) => {
-        const funnels = bundle.funnels.length ? mergeFunnels(prev.funnels, bundle.funnels.map(migrateFunnel)) : prev.funnels
-        const leads = mergeLeads(prev.leads, bundle.leads.map((lead) => migrateLead(lead)))
-        const remoteSettings = migrateSettings({ ...bundle.settings, telegramBotToken: "" })
-        return {
-          ...prev,
-          funnels,
-          leads,
-          settings: {
-            ...remoteSettings,
-            telegramBotToken: "",
-            telegramBotUsername: prev.settings.telegramBotUsername || remoteSettings.telegramBotUsername,
-            telegramGroupUrl: prev.settings.telegramGroupUrl || remoteSettings.telegramGroupUrl,
-          },
-        }
-      })
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  useEffect(() => {
     const onHide = () => flushLeadWrites()
     window.addEventListener("pagehide", onHide)
     return () => {
@@ -274,15 +241,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(KEY, JSON.stringify({ ...state, user: null, leads: recent, settings: { ...state.settings, telegramBotToken: "" } }))
       if (state.user) localStorage.setItem(SESSION, JSON.stringify(state.user))
       else localStorage.removeItem(SESSION)
-      if (skipPush.current) {
-        skipPush.current = false
-        return
-      }
-      if (!supabaseEnabled()) return
-      void pushRemote({
-        ...state,
-        settings: { ...state.settings, telegramBotToken: "" },
-      })
     }, 120)
     return () => window.clearTimeout(persistTimer.current)
   }, [state])

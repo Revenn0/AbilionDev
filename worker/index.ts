@@ -8,8 +8,8 @@ import { applyEvent, dueWaits, publishedSnapshot } from "../src/lib/runtime.ts"
 import { BANCA_FIXED, type Lead, type LeadEvent, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types.ts"
 import { compactGeo, factsFromGeo } from "../src/lib/geo.ts"
 import { parseDevice } from "../src/lib/track.ts"
-import { emptySettings, mergeLeads, publicSettings, reconcileFunnels } from "../src/lib/crm.ts"
-import { cleanBotUsername, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
+import { emptySettings, mergeFunnels, mergeLeads, publicSettings, reconcileFunnels } from "../src/lib/crm.ts"
+import { cleanBotUsername, migrateFunnel, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { resolveClientGeo } from "./geo-lookup.ts"
 import { ingestTrack, kvTrackStore, memoryTrackStore, readTrackBody, summaryFromStore, type TrackStore } from "./track-store.ts"
 import {
@@ -17,6 +17,7 @@ import {
   dueLeadsKv,
   findLeadInKv,
   listLeads,
+  CRM_SETTINGS,
   loadFunnelsKv,
   loadSettingsKv,
   saveFunnelsKv,
@@ -504,9 +505,10 @@ async function persistSettings(env: Env, settings: Settings) {
 }
 
 async function loadFunnels(env: Env): Promise<SalesFunnel[]> {
+  const kv = env.AUTH ? await loadFunnelsKv(env.AUTH) : []
   const rows = (await rest<SalesFunnelRow[]>(env, `funnels?workspace_id=eq.${WORKSPACE}`)) ?? []
-  if (rows.length) {
-    return rows.map((row) => ({
+  const remote = rows.map((row) =>
+    migrateFunnel({
       id: row.id,
       name: row.name,
       mode: row.mode,
@@ -515,14 +517,21 @@ async function loadFunnels(env: Env): Promise<SalesFunnel[]> {
       nodes: row.nodes ?? [],
       edges: row.edges ?? [],
       production: row.production,
-    })) as SalesFunnel[]
-  }
-  return env.AUTH ? loadFunnelsKv(env.AUTH) : []
+    })
+  )
+  if (!remote.length) return kv
+  if (!kv.length) return remote
+  return mergeFunnels(kv, remote)
 }
 
 async function loadSettings(env: Env): Promise<Settings> {
   const settingsRow = await rest<{ data: Settings }[]>(env, `settings?workspace_id=eq.${WORKSPACE}`)
-  if (settingsRow?.[0]?.data) return migrateSettings(settingsRow[0].data)
+  const remote = settingsRow?.[0]?.data ? migrateSettings(settingsRow[0].data) : undefined
+  if (env.AUTH) {
+    const raw = await env.AUTH.get(CRM_SETTINGS, "json")
+    if (raw && typeof raw === "object") return loadSettingsKv(env.AUTH)
+  }
+  if (remote) return remote
   if (env.AUTH) return loadSettingsKv(env.AUTH)
   return emptySettings()
 }
@@ -732,7 +741,7 @@ function securityHeaders() {
     "x-frame-options": "DENY",
     "permissions-policy": "camera=(), microphone=(), geolocation=()",
     "content-security-policy":
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://*.supabase.co; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
   }
 }
 

@@ -1,4 +1,4 @@
-import type { SteBeatKind } from "./ste"
+import type { SteBeatKind } from "./ste.ts"
 
 export type SteVoiceClipId =
   | "welcome"

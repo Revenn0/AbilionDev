@@ -1,4 +1,4 @@
-import { defaultSettings, type Lead, type SalesFunnel, type Settings } from "./types"
+import { defaultSettings, type Lead, type SalesFunnel, type Settings } from "./types.ts"
 
 const CAP = 400
 

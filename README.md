@@ -22,7 +22,7 @@ Vite + React + TypeScript + Tailwind + shadcn/ui + React Flow. Globo de visitant
 
 Worker Cloudflare (`abilion`) serve o estático e as rotas `/api/*` em [abilion.lol](https://www.abilion.lol).
 
-Dados: o Worker grava leads, funis e o token do Telegram no KV `abilion-auth`. Sem service role do Supabase a operação continua. O browser não guarda o token.
+Dados: o Worker grava leads, funis e o token do Telegram no KV `abilion-auth`. Sem service role do Supabase a operação continua. O browser não fala com o Supabase nem guarda o token — só o Worker.
 
 ## Correr
 

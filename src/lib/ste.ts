@@ -1,6 +1,6 @@
-import { uid } from "./format"
-import { llmHeaders, steLlmAttempts, type SteLlmProvider, STE_LLM_BASE_URL, STE_LLM_FALLBACK, STE_LLM_MODEL } from "./llm"
-import type { ChatMessage, FlowNode, Lead, LeadFacts, SalesSnapshot, Settings, SteLine, StePhase } from "./types"
+import { uid } from "./format.ts"
+import { llmHeaders, steLlmAttempts, type SteLlmProvider, STE_LLM_BASE_URL, STE_LLM_FALLBACK, STE_LLM_MODEL } from "./llm.ts"
+import type { ChatMessage, FlowNode, Lead, LeadFacts, SalesSnapshot, Settings, SteLine, StePhase } from "./types.ts"
 
 export { STE_LLM_BASE_URL, STE_LLM_FALLBACK, STE_LLM_MODEL }
 

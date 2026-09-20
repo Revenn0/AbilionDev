@@ -1,5 +1,5 @@
-import { cleanBotUsername } from "./migrate"
-import type { LeadOrigin } from "./types"
+import { cleanBotUsername } from "./migrate.ts"
+import type { LeadOrigin } from "./types.ts"
 
 export function parseTelegramStart(text?: string | null) {
   const raw = (text ?? "").trim()
