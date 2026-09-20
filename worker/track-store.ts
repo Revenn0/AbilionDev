@@ -109,18 +109,19 @@ export async function recordTrack(store: TrackStore, input: Parameters<typeof in
     const loaded = await store.load()
     const events = ingestTrack(loaded, payload, now)
     last = events.find((item) => item.id === id) ?? events.at(-1) ?? null
+    const incoming = last
     const next = mergeTrackEvents(loaded, events)
     await store.save(next)
     await new Promise((resolve) => setTimeout(resolve, 0))
     const latest = await store.load()
     const combined = mergeTrackEvents(next, latest)
-    const haveIncoming = !last || combined.some((item) => item.id === last.id)
+    const haveIncoming = !incoming || combined.some((item) => item.id === incoming.id)
     const latestHasAll =
       combined.length === latest.length && latest.every((item) => combined.some((other) => other.id === item.id))
     if (haveIncoming && latestHasAll) {
       await new Promise((resolve) => setTimeout(resolve, 0))
       const confirm = await store.load()
-      if (last && !confirm.some((item) => item.id === last.id)) {
+      if (incoming && !confirm.some((item) => item.id === incoming.id)) {
         await new Promise((resolve) => setTimeout(resolve, 8 * (attempt + 1)))
         continue
       }
