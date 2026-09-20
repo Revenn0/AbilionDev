@@ -46,7 +46,9 @@ import {
   canFlushCrm,
   clipRemovedIds,
   collectLeadPages,
+  LEAD_LIST_CAP,
   LEAD_LIST_PAGES,
+  LEAD_CACHE_CAP,
   commitCrmFunnels,
   hydrateFunnels,
   hydrateLeads,
@@ -68,7 +70,7 @@ import { applyEvent, canAdvanceRemoteWait, publishedFunnel, publishedSnapshot, w
 import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
-import { CRM_CRON_LOCK, CRM_FUNNELS, LEAD_INDEX_REST_CAP, aliasKey, claimCronLock, claimLeadAlias, deleteLeadKv, dueLeadsKv, findLeadInKv, isLeadPageCursor, listLeadPage, listLeads, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, releaseCronLock, renewCronLock, reserveLeadIdentity, saveFunnelsKv, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_CRON_LOCK, CRM_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, deleteLeadKv, dueLeadsKv, findLeadInKv, isLeadPageCursor, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadRemovedFunnelIds, loadRemovedLeadIds, releaseCronLock, renewCronLock, reserveLeadIdentity, saveFunnelsKv, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
@@ -779,7 +781,11 @@ assert(!collectLeadPages([{ leads: [pageA], nextCursor: "c1" }, { leads: [], sta
 assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }, { leads: [] }]).retry, "página seguinte vazia sem stale também retenta")
 assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }]).retry, "ainda há cursor, lista incompleta")
 assert(!collectLeadPages([{ leads: [pageA], nextCursor: "c1" }]).ok, "lista cortada não reconcilia")
-assert(LEAD_LIST_PAGES === 25, "hydrate lê até 25 páginas antes de recusar")
+assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }], "window").ok, "janela cheia do hydrate conta")
+assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }], "window").leads[0]?.id === "page-a", "janela cheia conserva os leads")
+assert(LEAD_LIST_PAGES === 20, "hydrate lê até 20 páginas")
+assert(LEAD_LIST_CAP === 8000, "lista hidratada cabe 8 dias a 1000 /start")
+assert(LEAD_CACHE_CAP === 2000, "localStorage só guarda os 2000 mais novos")
 assert(steWaitDelayMs(undefined) === null, "sem espera não agenda tick")
 assert(steWaitDelayMs(new Date(Date.now() + 1000).toISOString(), Date.now()) === 1050, "espera futura agenda com folga")
 assert(steWaitDelayMs(new Date(Date.now() - 1000).toISOString(), Date.now()) === 50, "espera atrasada dispara já")
@@ -1076,6 +1082,15 @@ assert(
   reconcileLeads([freshLead, liveLead], [liveLead], ["fresh"]).some((item) => item.id === "fresh"),
   "pending local sobrevive ao hydrate"
 )
+const crowd = Array.from({ length: LEAD_LIST_CAP }, (_, i) => {
+  const row = lead(`cap-${i}`, `@cap${i}`)
+  row.updatedAt = new Date(1_800_000_000_000 + i).toISOString()
+  return row
+})
+const oldPin = lead("old-pin", "@oldpin")
+oldPin.updatedAt = "2020-01-01T00:00:00.000Z"
+assert(!mergeLeads(crowd, [oldPin]).some((item) => item.id === "old-pin"), "sem pin o antigo cai do teto")
+assert(mergeLeads(crowd, [oldPin], ["old-pin"]).some((item) => item.id === "old-pin"), "pin da busca fura o teto")
 assert(!applyRemovedLeads([freshLead, liveLead], ["fresh"]).some((item) => item.id === "fresh"), "tombstone tira o lead da lista")
 assert(
   leadsStillOnRemote(["fresh", "gone"], [freshLead, liveLead]).join(",") === "fresh",
@@ -1480,6 +1495,43 @@ assert(leadWriteIds({ ok: true, saved: 3 }, writeChunk).join() === "a,b,c", "Wor
 assert(leadWriteIds({ ok: true, ids: ["a", "ghost", "a"] }, writeChunk).join() === "a", "id de outro lote e repetido não entram")
 assert(leadWriteIds({}, writeChunk).length === 0, "200 sem saved não finge que gravou")
 assert(LEAD_INDEX_REST_CAP === 2000, "simulação sem chat cabe até 2000 no índice")
+assert(LEAD_INDEX_PINNED_CAP === 8000, "chats sem espera cabem 8000 no índice")
+const clippedChats = clipCrmIndex(
+  Array.from({ length: LEAD_INDEX_PINNED_CAP + 2 }, (_, i) => ({
+    id: `c-${i}`,
+    contact: `@c${i}`,
+    chatId: String(i),
+    updatedAt: new Date(1_700_000_000_000 + i * 1000).toISOString(),
+    channel: "telegram" as const,
+  }))
+)
+assert(clippedChats.length === LEAD_INDEX_PINNED_CAP, "chat sem espera corta no teto")
+assert(!clippedChats.some((item) => item.id === "c-0"), "chat mais velho sai do índice")
+assert(
+  clippedChats.some((item) => item.id === `c-${LEAD_INDEX_PINNED_CAP + 1}`),
+  "chat novo fica no índice"
+)
+assert(
+  clipCrmIndex([
+    ...clippedChats,
+    {
+      id: "w-old",
+      contact: "@wold",
+      chatId: "w-old",
+      waitUntil: "2026-12-01T00:00:00.000Z",
+      updatedAt: "2010-01-01T00:00:00.000Z",
+      channel: "telegram" as const,
+    },
+  ]).some((item) => item.id === "w-old"),
+  "espera antiga não cai do índice"
+)
+const lookKv = memoryKv()
+const lookLead = lead("look-me", "@lookme")
+lookLead.telegramChatId = "4400"
+await upsertLeadKv(lookKv, lookLead)
+assert((await lookupLeadsByQuery(lookKv, "@lookme"))[0]?.id === "look-me", "busca pelo @user usa o alias")
+assert((await lookupLeadsByQuery(lookKv, "look-me"))[0]?.id === "look-me", "busca pelo id do lead")
+assert((await lookupLeadsByQuery(lookKv, "ab")).length === 0, "busca curta não varre o índice")
 const simKv = memoryKv()
 for (let i = 0; i < 401; i++) {
   const row = lead(`sim-${i}`, `@sim${i}`)
@@ -2565,6 +2617,37 @@ const listedAfterZombie = (await (
   await handleRequest(new Request("http://local.test/api/leads", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
 ).json()) as { leads?: Array<{ id?: string }> }
 assert(!listedAfterZombie.leads?.some((item) => item.id === "zombie"), "GET não devolve lead tombstoned")
+const lookCreate = await handleRequest(
+  new Request("http://local.test/api/leads", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: liveCookie },
+    body: JSON.stringify({ lead: lookLead }),
+  }),
+  liveEnv,
+  backgroundCtx()
+)
+assert(lookCreate.status === 200, "POST do lead da busca")
+const lookQuery = await handleRequest(
+  new Request("http://local.test/api/leads?q=@lookme", { headers: { cookie: liveCookie } }),
+  liveEnv,
+  backgroundCtx()
+)
+const lookFound = (await lookQuery.json()) as { leads?: Array<{ id?: string }> }
+assert(lookQuery.status === 200 && lookFound.leads?.some((item) => item.id === "look-me"), "GET ?q= encontra pelo @user")
+assert(
+  (
+    await handleRequest(
+      new Request(`http://local.test/api/leads?q=${"x".repeat(81)}`, { headers: { cookie: liveCookie } }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 400,
+  "GET ?q= longo é 400"
+)
+const zombieQuery = (await (
+  await handleRequest(new Request("http://local.test/api/leads?q=@zombie", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
+).json()) as { leads?: Array<{ id?: string }> }
+assert(!zombieQuery.leads?.some((item) => item.id === "zombie"), "GET ?q= não ressuscita tombstone")
 const hugeCrm = await handleRequest(
   new Request("http://local.test/api/crm", {
     method: "POST",

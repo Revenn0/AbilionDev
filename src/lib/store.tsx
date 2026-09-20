@@ -15,6 +15,7 @@ import {
   hydrateFunnels,
   hydrateLeads,
   leftoverPendingFunnelIds,
+  LEAD_CACHE_CAP,
   mergeLeads,
   overlayPendingLeads,
   revertPublishedFunnels,
@@ -147,6 +148,7 @@ type Store = {
   createLead: (lead: Lead) => Promise<boolean>
   createLeads: (leads: Lead[]) => Promise<boolean>
   saveLead: (lead: Lead) => void
+  ingestRemoteLeads: (leads: Lead[]) => void
   deleteLead: (id: string) => Promise<boolean>
   saveSettings: (patch: Partial<Settings>) => void
 }
@@ -541,7 +543,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     window.clearTimeout(persistTimer.current)
     persistTimer.current = window.setTimeout(() => {
-      const recent = [...state.leads].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 2000)
+      const recent = [...state.leads].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, LEAD_CACHE_CAP)
       localStorage.setItem(KEY, JSON.stringify({ ...state, user: null, leads: recent, settings: { ...state.settings, telegramBotToken: "" } }))
       if (state.user) localStorage.setItem(SESSION, JSON.stringify(state.user))
       else localStorage.removeItem(SESSION)
@@ -648,8 +650,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         queueLeadWrite(nextLead)
         commitState({
           ...prev,
-          leads: prev.leads.map((item) => (item.id === lead.id ? nextLead : item)),
+          leads: current
+            ? prev.leads.map((item) => (item.id === lead.id ? nextLead : item))
+            : mergeLeads(prev.leads, [nextLead], [nextLead.id]),
         })
+      },
+      ingestRemoteLeads: (incoming) => {
+        const fresh = incoming.map(migrateLead).filter((lead) => lead.id && !removedLeadIds.current.has(lead.id))
+        if (!fresh.length) return
+        const prev = stateRef.current
+        const leads = overlayPendingLeads(mergeLeads(prev.leads, fresh, fresh.map((lead) => lead.id)), pendingLeadWrites.current, removedLeadIds.current)
+        if (leads === prev.leads) return
+        commitState({ ...prev, leads })
       },
       deleteLead: (id) => {
         pendingLeadWrites.current.delete(id)

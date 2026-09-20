@@ -29,6 +29,7 @@ import { toast } from "sonner"
 import { GeoBadge } from "@/components/crm/geo-badge"
 import { factsWithTrack } from "@/lib/geo"
 import { useTrackSummary } from "@/lib/use-track-summary"
+import { useRemoteLeadSearch } from "@/lib/use-lead-query"
 
 const FILTERS = [
   { id: "all", label: "Todos" },
@@ -45,6 +46,7 @@ export function LeadsPage() {
   const { summary } = useTrackSummary(8000)
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("all")
   const [query, setQuery] = useState("")
+  useRemoteLeadSearch(query)
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
   const lead = state.leads.find((item) => item.id === selected) ?? null

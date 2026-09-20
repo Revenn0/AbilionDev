@@ -31,6 +31,7 @@ import { adsDeepLink } from "@/lib/telegram-start"
 import { cn } from "@/lib/utils"
 import type { PluginId } from "@/lib/types"
 import { toast } from "sonner"
+import { LEAD_LIST_CAP } from "@/lib/crm"
 
 const TABS = [
   { id: "bot", label: "Bot Telegram" },
@@ -687,7 +688,7 @@ function PluginsPane() {
                       onClick={() => {
                         downloadLeadsCsv(state.leads)
                         toast.success(
-                          state.leads.length >= 2000
+                          state.leads.length >= LEAD_LIST_CAP
                             ? `CSV com ${state.leads.length} leads (teto da lista hidratada).`
                             : `CSV com ${state.leads.length} leads.`
                         )

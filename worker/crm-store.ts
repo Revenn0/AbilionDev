@@ -13,6 +13,7 @@ export const CRM_CRON_LOCK = "crm:cron-lock"
 
 const REMOVED_CAP = 400
 export const LEAD_INDEX_REST_CAP = 2000
+export const LEAD_INDEX_PINNED_CAP = 8000
 
 export function aliasKey(kind: "contact" | "chat", value: string) {
   const next = value.trim().slice(0, 80)
@@ -43,18 +44,25 @@ export async function loadIndex(kv: KvLike): Promise<CrmIndex> {
   return { entries: Array.isArray(value.entries) ? value.entries : [] }
 }
 
-async function saveIndex(kv: KvLike, index: CrmIndex) {
-  const byId = new Map(index.entries.map((item) => [item.id, item]))
+export function clipCrmIndex(entries: CrmIndexEntry[]): CrmIndexEntry[] {
+  const byId = new Map(entries.map((item) => [item.id, item]))
   const all = [...byId.values()]
-  const pinned = all.filter((item) => item.waitUntil || item.chatId)
+  const waiting = all.filter((item) => item.waitUntil)
+  const chats = all
+    .filter((item) => item.chatId && !item.waitUntil)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, LEAD_INDEX_PINNED_CAP)
   const rest = all
     .filter((item) => !item.waitUntil && !item.chatId)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, LEAD_INDEX_REST_CAP)
   const keep = new Map<string, CrmIndexEntry>()
-  for (const item of [...pinned, ...rest]) keep.set(item.id, item)
-  const entries = [...keep.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-  await kv.put(CRM_INDEX, JSON.stringify({ entries }))
+  for (const item of [...waiting, ...chats, ...rest]) keep.set(item.id, item)
+  return [...keep.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+}
+
+async function saveIndex(kv: KvLike, index: CrmIndex) {
+  await kv.put(CRM_INDEX, JSON.stringify({ entries: clipCrmIndex(index.entries) }))
 }
 
 export function leadPageCursor(entry: Pick<CrmIndexEntry, "updatedAt" | "id">) {
@@ -194,6 +202,15 @@ export async function findLeadInKv(kv: KvLike, contact: string, telegramId: numb
     (item) => aliases.has(item.contact) || (item.chatId && (item.chatId === chatId || aliases.has(item.chatId)))
   )
   return hit ? loadLead(kv, hit.id) : null
+}
+
+export async function lookupLeadsByQuery(kv: KvLike, query: string): Promise<Lead[]> {
+  const needle = query.trim().slice(0, 80)
+  if (needle.length < 3) return []
+  const byId = await loadLead(kv, needle)
+  if (byId) return [byId]
+  const found = await findLeadInKv(kv, needle, 0, needle)
+  return found ? [found] : []
 }
 
 export async function loadRemovedLeadIds(kv: KvLike): Promise<string[]> {

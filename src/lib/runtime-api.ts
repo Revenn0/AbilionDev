@@ -101,12 +101,30 @@ export async function fetchLeads() {
         if (next.stale || !next.nextCursor) return collectLeadPages(pages)
         cursor = next.nextCursor
       }
-      return collectLeadPages(pages)
+      return collectLeadPages(pages, "window")
     }
     const first = await pull()
     if (first.ok || !first.retry) return { ok: first.ok as boolean, leads: first.leads }
     const second = await pull()
     return { ok: second.ok, leads: second.leads }
+  } catch {
+    return { ok: false as const, leads: [] as Lead[] }
+  }
+}
+
+export async function fetchLeadQuery(query: string) {
+  const needle = query.trim().slice(0, 80)
+  if (needle.length < 3) return { ok: true as const, leads: [] as Lead[] }
+  try {
+    const res = await fetchWithTimeout(`/api/leads?q=${encodeURIComponent(needle)}`, {
+      credentials: "include",
+      cache: "no-store",
+    })
+    noteUnauthorized(res)
+    if (!res.ok) return { ok: false as const, leads: [] as Lead[] }
+    const data = (await res.json()) as { leads?: Lead[] }
+    if (!Array.isArray(data.leads)) return { ok: false as const, leads: [] as Lead[] }
+    return { ok: true as const, leads: data.leads }
   } catch {
     return { ok: false as const, leads: [] as Lead[] }
   }

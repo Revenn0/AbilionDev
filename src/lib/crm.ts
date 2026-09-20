@@ -2,8 +2,9 @@ import { publishedFunnel } from "./runtime.ts"
 import { defaultSettings, type ChatMessage, type Lead, type LeadEvent, type LeadFacts, type SalesFunnel, type Settings } from "./types.ts"
 
 const CAP = 400
-export const LEAD_LIST_CAP = 2000
-export const LEAD_LIST_PAGES = 25
+export const LEAD_LIST_CAP = 8000
+export const LEAD_LIST_PAGES = 20
+export const LEAD_CACHE_CAP = 2000
 
 export type LeadListPage = {
   leads: Lead[]
@@ -11,8 +12,10 @@ export type LeadListPage = {
   stale?: boolean
 }
 
-/** Junta páginas do GET /api/leads. Cursor velho ou lista cortada não conta como completa. */
-export function collectLeadPages(pages: LeadListPage[]): { ok: boolean; leads: Lead[]; retry: boolean } {
+export type LeadPageFold = "strict" | "window"
+
+/** Junta páginas do GET /api/leads. Cursor velho no meio pede retry. Janela cheia (teto do hydrate) conta. */
+export function collectLeadPages(pages: LeadListPage[], fold: LeadPageFold = "strict"): { ok: boolean; leads: Lead[]; retry: boolean } {
   const leads: Lead[] = []
   for (let index = 0; index < pages.length; index++) {
     const page = pages[index]
@@ -23,6 +26,7 @@ export function collectLeadPages(pages: LeadListPage[]): { ok: boolean; leads: L
     if (!page.nextCursor) return { ok: true, leads, retry: false }
   }
   if (!pages.length) return { ok: true, leads: [], retry: false }
+  if (fold === "window") return { ok: true, leads, retry: false }
   return { ok: false, leads: [], retry: true }
 }
 
@@ -122,8 +126,9 @@ export function commitStoredLead(prev: Lead | null, incoming: Lead, latest: Lead
   return adoptStoredLead(latest, first)
 }
 
-export function mergeLeads(current: Lead[], incoming: Lead[]): Lead[] {
-  if (!incoming.length) return current
+export function mergeLeads(current: Lead[], incoming: Lead[], pinIds: Iterable<string> = []): Lead[] {
+  const pin = new Set(pinIds)
+  if (!incoming.length && !pin.size) return current
   const map = new Map(current.map((lead) => [lead.id, lead]))
   let changed = false
   for (const lead of incoming) {
@@ -139,8 +144,12 @@ export function mergeLeads(current: Lead[], incoming: Lead[]): Lead[] {
       changed = true
     }
   }
-  if (!changed) return current
-  return [...map.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, LEAD_LIST_CAP)
+  if (!changed && !pin.size) return current
+  const ranked = [...map.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  if (!pin.size) return ranked.slice(0, LEAD_LIST_CAP)
+  const pinned = ranked.filter((lead) => pin.has(lead.id))
+  const rest = ranked.filter((lead) => !pin.has(lead.id)).slice(0, Math.max(0, LEAD_LIST_CAP - pinned.length))
+  return [...pinned, ...rest].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 }
 
 export function clipRemovedIds(ids: unknown, cap = CAP): string[] {

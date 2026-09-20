@@ -16,6 +16,7 @@ import { factsWithTrack } from "@/lib/geo"
 import { publishedFunnel } from "@/lib/runtime"
 import { advanceSteIfDue, canSimulateSte, canTickSteLocally, replySteLived, splitSteMarkup, steHeardChips, steRuntimeFromFunnels, steStepLabel, steWaitDelayMs } from "@/lib/ste"
 import { useTrackSummary } from "@/lib/use-track-summary"
+import { useRemoteLeadSearch } from "@/lib/use-lead-query"
 import { timeAgo } from "@/lib/format"
 import type { Lead } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -59,6 +60,7 @@ export function ConversationsPage() {
   const runtimeKey = publishedFunnel(state.funnels)?.production?.publishedAt ?? ""
   const [filter, setFilter] = useState<FilterId>("waiting")
   const [query, setQuery] = useState("")
+  useRemoteLeadSearch(query)
   const [shown, setShown] = useState(INBOX_CAP)
   const [id, setId] = useState<string | null>(null)
   const [draft, setDraft] = useState("")
@@ -87,12 +89,11 @@ export function ConversationsPage() {
 
   const matched = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    return all.filter((lead) => matchesFilter(lead, filter)).filter((lead) => {
-      if (!needle) return true
-      return [lead.name, lead.contact, lead.campaign, lead.lastMessage].some((value) =>
-        (value ?? "").toLowerCase().includes(needle)
-      )
-    })
+    const pool = needle ? all : all.filter((lead) => matchesFilter(lead, filter))
+    if (!needle) return pool
+    return pool.filter((lead) =>
+      [lead.name, lead.contact, lead.campaign, lead.lastMessage].some((value) => (value ?? "").toLowerCase().includes(needle))
+    )
   }, [all, filter, query])
 
   const rows = useMemo(() => {

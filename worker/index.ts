@@ -31,6 +31,7 @@ import {
   deleteLeadKv,
   dueLeadsKv,
   findLeadInKv,
+  lookupLeadsByQuery,
   isLeadPageCursor,
   listLeadPage,
   loadLead,
@@ -384,6 +385,14 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
+    const query = (url.searchParams.get("q") || "").trim()
+    if (query) {
+      if (query.length > 80) return json({ error: "Busca inválida." }, 400)
+      const found = await lookupLeadsByQuery(env.AUTH, query)
+      const removed = await loadRemovedLeadIds(env.AUTH)
+      const leads = await attachLeadEvents(env, applyRemovedLeads(found, removed))
+      return json({ ok: true, leads })
+    }
     const cursor = (url.searchParams.get("cursor") || "").trim()
     if (cursor && !isLeadPageCursor(cursor)) return json({ error: "Cursor inválido." }, 400)
     const page = await loadMergedLeads(env, 400, "all", cursor)
