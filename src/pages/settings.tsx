@@ -109,7 +109,7 @@ export function SettingsPage() {
           ))}
         </div>
 
-        <div role="tabpanel" id={`settings-panel-${tab}`} aria-labelledby={`settings-tab-${tab}`}>
+        <div role="tabpanel" id={`settings-panel-${tab}`} aria-labelledby={`settings-tab-${tab}`} tabIndex={0}>
           {tab === "bot" && <BotPane />}
           {tab === "conta" && <AccountPane />}
           {tab === "plugins" && <PluginsPane />}
@@ -468,6 +468,8 @@ function BotPane() {
               className="rounded-full"
               disabled={voiceBusy || !runtime.voice}
               onClick={() => {
+                if (voiceLock.current || voiceBusy) return
+                voiceLock.current = true
                 setVoiceBusy(true)
                 void prepareVoice()
                   .then((next) => {
@@ -476,7 +478,10 @@ function BotPane() {
                     toast.success(`${ready} áudios prontos. Os próximos leads reutilizam.`)
                   })
                   .catch((error: Error) => toast.error(error.message))
-                  .finally(() => setVoiceBusy(false))
+                  .finally(() => {
+                    voiceLock.current = false
+                    setVoiceBusy(false)
+                  })
               }}
             >
               Gerar áudios do funil

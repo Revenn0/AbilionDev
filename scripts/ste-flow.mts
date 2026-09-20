@@ -791,6 +791,10 @@ const pixel = await handleRequest(
   backgroundCtx()
 )
 assert(pixel.status === 204, "pixel público grava")
+const tracker = await handleRequest(new Request("http://local.test/t.js"), liveEnv, backgroundCtx())
+assert(tracker.status === 200, "t.js público")
+assert(tracker.headers.get("x-content-type-options") === "nosniff", "t.js tem nosniff")
+assert((await tracker.text()).includes("/api/track"), "t.js aponta o pixel")
 const pixelPlain = await handleRequest(
   new Request("http://local.test/api/track", {
     method: "POST",

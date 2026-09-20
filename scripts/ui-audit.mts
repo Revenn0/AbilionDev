@@ -90,6 +90,13 @@ try {
   assert(await page.$("#email"), "campo e-mail")
   assert(await page.$('label[for="email"]'), "label do e-mail")
   assert(await page.$('a[href="/privacidade"]'), "login liga privacidade")
+  await page.keyboard.press("Tab")
+  const skipFocused = await page.evaluate(() => document.activeElement?.classList.contains("skip-link"))
+  assert(skipFocused, "primeiro Tab foca o skip-link")
+  await page.focus("#email")
+  await page.keyboard.press("Tab")
+  const afterEmail = await page.evaluate(() => document.activeElement?.id || document.activeElement?.getAttribute("aria-label") || "")
+  assert(afterEmail === "password" || afterEmail === "Mostrar senha", "Tab do e-mail segue no campo da senha")
 
   await open(page, "/forgot")
   await waitAuthPage(page)

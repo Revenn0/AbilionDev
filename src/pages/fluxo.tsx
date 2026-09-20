@@ -74,7 +74,7 @@ export function FluxoPage() {
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  <Button variant="ghost" size="sm" className="rounded-full" onClick={() => setRenaming(funnel)}>
+                  <Button type="button" variant="ghost" size="sm" className="rounded-full" onClick={() => setRenaming(funnel)}>
                     <Pencil />
                     Renomear
                   </Button>

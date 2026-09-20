@@ -60,7 +60,7 @@ export function LandingPage() {
           <a
             data-abilion-cta
             href={href}
-            className="mt-8 inline-flex h-12 items-center justify-center rounded-full bg-sky-400 px-6 text-[15px] font-semibold text-sky-950"
+            className="mt-8 inline-flex h-12 items-center justify-center rounded-full bg-sky-400 px-6 text-[15px] font-semibold text-sky-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0d12]"
           >
             Falar com a Sté no Telegram
           </a>
@@ -69,7 +69,7 @@ export function LandingPage() {
             O Telegram desta campanha ainda não está ligado. Volta daqui a pouco.
           </p>
         )}
-        <p className="mt-4 text-[12px] text-zinc-500">
+        <p className="mt-4 text-[12px] text-zinc-400">
           {href ? (
             <>
               O botão vira <code className="text-zinc-300">t.me/...?start=fb_vid</code>. Sem cadastro nesta página.
@@ -80,7 +80,10 @@ export function LandingPage() {
         </p>
         <p className="mt-auto pt-16 text-[11px] text-zinc-400">
           Abilion · landing do pixel ·{" "}
-          <Link to="/privacidade" className="underline underline-offset-2 hover:text-zinc-200">
+          <Link
+            to="/privacidade"
+            className="underline underline-offset-2 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"
+          >
             Privacidade
           </Link>
         </p>
