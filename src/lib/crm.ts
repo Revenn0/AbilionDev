@@ -1,5 +1,6 @@
 import { publishedFunnel } from "./runtime.ts"
 import { migrateSettings } from "./migrate.ts"
+import { isOperatorLockedLead } from "./ops.ts"
 import { defaultSettings, type ChatMessage, type Lead, type LeadEvent, type LeadFacts, type SalesFunnel, type Settings } from "./types.ts"
 
 const CAP = 400
@@ -104,10 +105,10 @@ export function adoptStoredLead(prev: Lead, incoming: Lead): Lead {
   }
 }
 
-/** POST do painel: em lead com chat real só actualiza nota, nome e temperatura. */
+/** POST do painel: em chat real ou lista importada só actualiza nota, nome e temperatura. */
 export function adoptOperatorLead(prev: Lead | null, incoming: Lead): Lead {
   if (!prev) return incoming
-  if (!prev.telegramChatId && !incoming.telegramChatId) return adoptStoredLead(prev, incoming)
+  if (!isOperatorLockedLead(prev) && !isOperatorLockedLead(incoming)) return adoptStoredLead(prev, incoming)
   const patched: Lead = {
     ...prev,
     name: incoming.name || prev.name,

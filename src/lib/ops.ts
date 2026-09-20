@@ -1,4 +1,4 @@
-import type { Lead } from "@/lib/types"
+import type { Lead } from "./types.ts"
 
 function startOfDay(ms: number) {
   const date = new Date(ms)
@@ -31,6 +31,11 @@ export function hasOffer(lead: Lead) {
 
 export function isImportedLead(lead: Pick<Lead, "origin" | "channel">) {
   return lead.origin === "import" || lead.channel === "whatsapp"
+}
+
+/** Chat real do Telegram ou lista importada: o painel só grava nota, nome e temperatura. */
+export function isOperatorLockedLead(lead: Pick<Lead, "origin" | "channel"> & { telegramChatId?: string }) {
+  return Boolean(lead.telegramChatId) || isImportedLead(lead)
 }
 
 export function deriveOps(leads: Lead[]) {

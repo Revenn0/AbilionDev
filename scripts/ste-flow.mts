@@ -86,7 +86,7 @@ import { adsDeepLink, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
-import { barShare, isImportedLead, leadsHydrating } from "../src/lib/ops.ts"
+import { barShare, isImportedLead, isOperatorLockedLead, leadsHydrating } from "../src/lib/ops.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
 import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, handleAuth, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeThrottles, retainUserSessions } from "../worker/auth.ts"
@@ -1027,6 +1027,30 @@ assert(
 const localWait = { ...olderLead, id: "local-flow", waitUntil: "2026-09-21T00:00:00.000Z" }
 const localAdvanced = adoptOperatorLead(localWait, { ...localWait, waitUntil: undefined, updatedAt: "2026-09-22T00:00:00.000Z" })
 assert(!localAdvanced.waitUntil, "simulação local ainda avança a espera")
+const importedWait = {
+  ...olderLead,
+  id: "imp-flow",
+  channel: "whatsapp" as const,
+  origin: "import" as const,
+  stage: "capture" as const,
+  memory: "nota import",
+  temperature: "novo" as const,
+}
+const importedAdvance = {
+  ...importedWait,
+  waitUntil: undefined,
+  stage: "offer" as const,
+  printAt: "2026-09-22T00:00:00.000Z",
+  memory: "nova import",
+  temperature: "quente" as const,
+  updatedAt: "2026-09-22T00:00:00.000Z",
+}
+const importedKept = adoptOperatorLead(importedWait, importedAdvance)
+assert(isOperatorLockedLead(importedWait), "import WhatsApp tranca o quadro no POST")
+assert(importedKept.stage === "capture", "painel não muda o passo do import")
+assert(!importedKept.printAt, "painel não marca print no import")
+assert(importedKept.memory === "nova import", "painel ainda grava a nota do import")
+assert(importedKept.temperature === "quente", "painel ainda grava a temperatura do import")
 const chatPrev = {
   ...olderLead,
   updatedAt: "2026-06-01T00:00:00.000Z",
@@ -2532,6 +2556,55 @@ assert(afterPanel?.stage === "welcome", "POST da ficha não muda o passo")
 assert(!afterPanel?.printAt, "POST da ficha não marca print")
 assert(afterPanel?.memory === "nova", "POST da ficha grava a nota")
 assert(afterPanel?.temperature === "quente", "POST da ficha grava a temperatura")
+const importedPanel = lead("imp-panel", "+5511999000222")
+importedPanel.channel = "whatsapp"
+importedPanel.origin = "import"
+importedPanel.stage = "capture"
+importedPanel.memory = "nota import"
+importedPanel.updatedAt = "2026-06-04T00:00:00.000Z"
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/leads", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: liveCookie },
+        body: JSON.stringify({ lead: importedPanel }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 200,
+  "POST lead importado"
+)
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/leads", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: liveCookie },
+        body: JSON.stringify({
+          lead: {
+            ...importedPanel,
+            waitUntil: undefined,
+            stage: "offer",
+            printAt: "2026-09-22T00:00:00.000Z",
+            memory: "nova import",
+            temperature: "quente",
+            updatedAt: "2026-09-22T00:00:00.000Z",
+          },
+        }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 200,
+  "POST da ficha no import é 200"
+)
+const afterImportPanel = await loadLead(liveEnv.AUTH, "imp-panel")
+assert(afterImportPanel?.stage === "capture", "POST da ficha não muda o passo do import")
+assert(!afterImportPanel?.printAt, "POST da ficha não marca print no import")
+assert(afterImportPanel?.memory === "nova import", "POST da ficha grava a nota do import")
+assert(afterImportPanel?.temperature === "quente", "POST da ficha grava a temperatura do import")
 const chatLead = lead("chat-1", "@chatmerge")
 chatLead.messages = [
   { id: "cm-1", at: "2026-06-01T00:00:00.000Z", role: "ste", text: "oi" },
@@ -2851,6 +2924,10 @@ assert(cronRes.status === 200 && cronBody.ok && (cronBody.advanced ?? 0) >= 2, "
 assert(canAdvanceRemoteWait(lead("sim-wait"), false), "espera simulada avança sem token")
 assert(canAdvanceRemoteWait({ ...lead("tg-wait"), telegramChatId: "8800" }, true), "espera Telegram avança com token")
 assert(!canAdvanceRemoteWait({ ...lead("tg-hold"), telegramChatId: "8800" }, false), "espera Telegram sem token não avança")
+assert(
+  !canAdvanceRemoteWait({ ...lead("imp-wait"), channel: "whatsapp", origin: "import" }, true),
+  "cron não avança import mesmo com token"
+)
 await upsertLeadKv(cronEnv.AUTH, {
   ...lead("hold-tg", "@hold"),
   telegramChatId: "8800",

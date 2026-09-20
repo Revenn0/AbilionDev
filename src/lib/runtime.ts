@@ -1,5 +1,6 @@
 import { uid } from "./format.ts"
 import { campaignFor } from "./labels.ts"
+import { isImportedLead } from "./ops.ts"
 import { isFlowKind, isMapKind, BANCA_FIXED, type FlowEdge, type FlowNode, type Lead, type LeadEvent, type LeadOrigin, type LeadStage, type SalesFunnel, type SalesSnapshot } from "./types.ts"
 
 export type RuntimeEvent =
@@ -364,8 +365,9 @@ export function dueWaits(leads: Lead[], nowMs = Date.now()) {
   return leads.filter((lead) => lead.waitUntil && new Date(lead.waitUntil).getTime() <= nowMs)
 }
 
-/** Espera com chat real só avança quando o Worker tem token — senão o cron come o follow-up sem mandar. */
+/** Espera com chat real só avança quando o Worker tem token — senão o cron come o follow-up sem mandar. Importado nunca corre no cron. */
 export function canAdvanceRemoteWait(lead: Lead, hasTelegramToken: boolean) {
+  if (isImportedLead(lead)) return false
   return !lead.telegramChatId || hasTelegramToken
 }
 

@@ -1,5 +1,6 @@
 import { uid } from "./format.ts"
 import { llmHeaders, steLlmAttempts, type SteLlmProvider, STE_LLM_BASE_URL, STE_LLM_FALLBACK, STE_LLM_MODEL } from "./llm.ts"
+import { isOperatorLockedLead } from "./ops.ts"
 import { publishedFunnel } from "./runtime.ts"
 import type { ChatMessage, FlowNode, Lead, LeadFacts, SalesFunnel, SalesSnapshot, Settings, SteLine, StePhase } from "./types.ts"
 
@@ -790,7 +791,7 @@ function splitBlocks(raw: string, max = 4) {
 }
 
 export function canTickSteLocally(lead: Lead) {
-  return lead.channel === "telegram" && !lead.telegramChatId
+  return !isOperatorLockedLead(lead)
 }
 
 /** Simular no painel só para leads sem chat real — senão o CRM e o Telegram dessincronizam. */
