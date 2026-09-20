@@ -58,7 +58,7 @@ import { adsDeepLink } from "../src/lib/telegram-start.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { barShare } from "../src/lib/ops.ts"
 import { mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
-import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, handleAuth, memoryAuthStore, retainUserSessions } from "../worker/auth.ts"
+import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, handleAuth, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, retainUserSessions } from "../worker/auth.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall } from "../worker/telegram.ts"
 import { backgroundCtx, handleRequest, type Env } from "../worker/index.ts"
@@ -670,6 +670,36 @@ assert(retained.some((item) => item.token === "other"), "outras contas mantêm s
 assert(retained.some((item) => item.token === "new"), "sessão nova entra")
 assert(!retained.some((item) => item.token === "old"), "sessão mais velha sai")
 assert(retained.filter((item) => item.userId === "u1").length === 3, "cap de 3 sessões por operador")
+const now = Date.now() + 60_000
+const victorSession = { token: "tok-v", userId: "victor", expiresAt: now, issuedAt: 1 }
+const gabrielSession = { token: "tok-g", userId: "gabriel", expiresAt: now, issuedAt: 2 }
+const victorUser = { id: "victor", email: "victor@abilion.com", name: "Victor", passwordHash: "h1", createdAt: "2026-01-01T00:00:00.000Z" }
+const gabrielUser = { id: "gabriel", email: "gabriel@abilion.com", name: "Gabriel", passwordHash: "h2", createdAt: "2026-01-01T00:00:00.000Z" }
+const mergedLogin = mergeAuthSnapshots(
+  { users: [victorUser], sessions: [victorSession], resets: {}, throttles: {} },
+  { users: [gabrielUser], sessions: [gabrielSession], resets: {}, throttles: {} }
+)
+assert(mergedLogin.sessions.some((item) => item.token === "tok-v"), "merge de login conserva a sessão do Victor")
+assert(mergedLogin.sessions.some((item) => item.token === "tok-g"), "merge de login conserva a sessão do Gabriel")
+const mergedLogout = mergeAuthSnapshots(
+  { users: [victorUser], sessions: [victorSession, gabrielSession], resets: {}, revoked: ["tok-v"] },
+  { users: [victorUser], sessions: [victorSession, gabrielSession], resets: {}, revoked: [] }
+)
+assert(!mergedLogout.sessions.some((item) => item.token === "tok-v"), "tombstone de logout ganha do snapshot velho")
+assert(mergedLogout.sessions.some((item) => item.token === "tok-g"), "logout de um não derruba o outro")
+const mergedReset = mergeAuthSnapshots(
+  { users: [victorUser], sessions: [], resets: { old: { userId: "victor", expiresAt: now } }, spentResets: [] },
+  { users: [victorUser], sessions: [], resets: {}, spentResets: ["old"] }
+)
+assert(!mergedReset.resets.old, "reset gasto não volta no merge")
+const raceKv = memoryKv()
+const raceStore = kvAuthStore(raceKv)
+await raceStore.save({ users: [victorUser], sessions: [victorSession], resets: {}, throttles: {} })
+const stale = await raceStore.load()
+await raceStore.save({ users: [gabrielUser, ...stale.users], sessions: [gabrielSession, ...stale.sessions], resets: {}, throttles: {} })
+await raceStore.save({ users: [victorUser], sessions: [victorSession], resets: {}, throttles: {} })
+const raced = await raceStore.load()
+assert(raced.sessions.some((item) => item.token === "tok-v") && raced.sessions.some((item) => item.token === "tok-g"), "KV não perde a sessão da escrita concorrente")
 
 const authStore = memoryAuthStore()
 const loginAttempt = (password: string) =>
