@@ -479,8 +479,15 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
-    const page = await loadMergedLeads(env, 80, "telegram")
-    return json({ ok: true, leads: page.leads })
+    const cursor = (url.searchParams.get("cursor") || "").trim()
+    if (cursor && !isLeadPageCursor(cursor)) return json({ error: "Cursor inválido." }, 400)
+    const page = await loadMergedLeads(env, 400, "telegram", cursor)
+    return json({
+      ok: true,
+      leads: page.leads,
+      nextCursor: page.stale ? undefined : page.nextCursor,
+      stale: page.stale || undefined,
+    })
   }
 
   if (url.pathname === "/api/telegram" && request.method === "POST") {
@@ -1057,7 +1064,7 @@ function securityHeaders() {
     "x-frame-options": "DENY",
     "permissions-policy": "camera=(), microphone=(), geolocation=()",
     "content-security-policy":
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
     "strict-transport-security": "max-age=31536000; includeSubDomains",
   }
 }

@@ -23,7 +23,7 @@ import { isImportedLead, needsEster } from "@/lib/ops"
 import { applyEvent, nodeTitle, publishedSnapshot, type RuntimeEvent } from "@/lib/runtime"
 import { canTickSteLocally } from "@/lib/ste"
 import { timeAgo } from "@/lib/format"
-import { displayContact, isPhoneLikeName, resolvePersonName } from "@/lib/lead-name"
+import { displayContact, isPhoneLikeName, leadMatchesQuery, resolvePersonName } from "@/lib/lead-name"
 import type { Lead, LeadOrigin, LeadTemp, SalesFunnel } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -56,7 +56,7 @@ export function LeadsPage() {
   const snapshot = publishedSnapshot(state.funnels)
 
   const rows = useMemo(() => {
-    const needle = query.trim().toLowerCase()
+    const needle = query.trim()
     return state.leads.filter((item) => {
       if (filter === "telegram" && item.channel !== "telegram") return false
       if (filter === "whatsapp" && item.channel !== "whatsapp") return false
@@ -65,11 +65,7 @@ export function LeadsPage() {
       if (filter === "ester" && !needsEster(item)) return false
       if (filter === "facebook" && item.origin !== "facebook") return false
       if (!needle) return true
-      const contact = displayContact(item.contact)
-      const digits = item.contact.replace(/\D/g, "")
-      return [item.name, item.contact, contact, digits, item.campaign].some((value) =>
-        (value ?? "").toLowerCase().includes(needle)
-      )
+      return leadMatchesQuery(item, needle, 1)
     })
   }, [filter, query, state.leads])
 

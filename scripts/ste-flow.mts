@@ -1652,6 +1652,10 @@ assert((await lookupLeadsByQuery(lookKv, "Paulo Sergio"))[0]?.id === "look-me", 
 assert((await lookupLeadsByQuery(lookKv, "sergio"))[0]?.id === "look-me", "busca pelo nome sem acento/caixa")
 assert((await lookupLeadsByQuery(lookKv, "ab")).length === 0, "busca curta não varre o índice")
 assert(leadMatchesQuery({ id: "x", name: "Maria Silva", contact: "+5511987654321" }, "maria"), "nome dobra na busca")
+assert(leadMatchesQuery({ id: "x", name: "José Silva", contact: "@jose" }, "jose"), "acento dobra na busca")
+assert(leadMatchesQuery({ id: "x", name: "Ana", contact: "@ana", campaign: "Black Friday" }, "black"), "campanha entra na busca")
+assert(leadMatchesQuery({ id: "x", name: "Ana", contact: "@ana", lastMessage: "quero o link" }, "link"), "última fala entra na busca")
+assert(leadMatchesQuery({ id: "x", name: "José", contact: "@j" }, "jo", 1), "busca local curta com acento")
 assert(!leadMatchesQuery({ id: "x", name: "Maria Silva", contact: "@maria" }, "ab"), "busca curta não casa")
 const silentChat = lead("silent-fb", "@silent")
 assert(!hasConversation(silentChat), "origem facebook sem fala não é conversa")
@@ -1694,6 +1698,10 @@ const firstLeadPage = await listLeadPage(capKv, 400, "all")
 assert(firstLeadPage.nextCursor && isLeadPageCursor(firstLeadPage.nextCursor), "primeira página de 401 leads tem cursor")
 const secondLeadPage = await listLeadPage(capKv, 400, "all", firstLeadPage.nextCursor)
 assert(secondLeadPage.leads.some((item) => item.id === "id-0"), "página seguinte traz o lead antigo com chat")
+const firstInboxPage = await listLeadPage(capKv, 400, "telegram")
+assert(firstInboxPage.nextCursor && isLeadPageCursor(firstInboxPage.nextCursor), "primeira página da inbox tem cursor")
+const secondInboxPage = await listLeadPage(capKv, 400, "telegram", firstInboxPage.nextCursor)
+assert(secondInboxPage.leads.some((item) => item.id === "id-0"), "página seguinte da inbox traz o chat antigo")
 assert(
   (await listLeadPage(capKv, 400, "all", "1999-01-01T00:00:00.000Z|missing")).leads.length === 0,
   "cursor desconhecido não rebobina a lista"
@@ -2810,6 +2818,29 @@ assert(
   ).status === 400,
   "GET leads com cursor inválido é 400"
 )
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/inbox?cursor=broken", { headers: { cookie: liveCookie } }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 400,
+  "GET inbox com cursor inválido é 400"
+)
+const inboxHome = await handleRequest(
+  new Request("http://local.test/"),
+  {
+    ...liveEnv,
+    ASSETS: {
+      fetch: async () => new Response("<!doctype html>", { headers: { "content-type": "text/html; charset=utf-8" } }),
+    },
+  } as Env,
+  backgroundCtx()
+)
+const homeCsp = inboxHome.headers.get("content-security-policy") || ""
+assert(/script-src 'self'(?:;|$)/.test(homeCsp), "CSP do HTML só permite script do próprio origin")
+assert(homeCsp.includes("style-src 'self' 'unsafe-inline'"), "CSP ainda precisa de style inline")
 const zombieBack = await handleRequest(
   new Request("http://local.test/api/leads", {
     method: "POST",

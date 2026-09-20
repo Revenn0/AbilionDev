@@ -111,16 +111,33 @@ export function foldSearch(value: string) {
     .trim()
 }
 
-export function leadMatchesQuery(
-  lead: { id: string; name: string; contact: string; telegramChatId?: string },
-  query: string
-) {
+export type LeadSearchFields = {
+  id: string
+  name: string
+  contact: string
+  telegramChatId?: string
+  campaign?: string
+  lastMessage?: string
+}
+
+/** Worker exige 3+ caracteres. O painel passa 1 para a lista já hidratada. */
+export function leadMatchesQuery(lead: LeadSearchFields, query: string, minLength = 3) {
   const raw = query.trim()
-  if (raw.length < 3) return false
+  if (raw.length < minLength) return false
   if (lead.id === raw) return true
   const needle = foldSearch(raw)
   if (!needle) return false
-  const hay = foldSearch([lead.name, lead.contact, lead.telegramChatId ?? "", displayContact(lead.contact), displayContact(lead.name)].join(" "))
+  const hay = foldSearch(
+    [
+      lead.name,
+      lead.contact,
+      lead.telegramChatId ?? "",
+      displayContact(lead.contact),
+      displayContact(lead.name),
+      lead.campaign ?? "",
+      lead.lastMessage ?? "",
+    ].join(" ")
+  )
   if (hay.includes(needle)) return true
   const digits = raw.replace(/\D/g, "")
   if (digits.length < 8) return false
