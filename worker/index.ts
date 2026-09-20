@@ -41,6 +41,7 @@ import {
   loadSettingsKv,
   rememberRemovedFunnels,
   releaseCronLock,
+  reserveLeadIdentity,
   saveFunnelsKv,
   saveSettingsKv,
   upsertLeadKv,
@@ -484,7 +485,8 @@ async function deliverTelegram(env: Env, update: TelegramUpdate, token: string) 
   const campaign = joinUser ? campaignFor("telegram") : start.isStart ? campaignFromStart(start.payload) : campaignFor("telegram", origin)
   const now = new Date().toISOString()
 
-  const existing = await findLead(env, contact, from.id, chatId)
+  const reservedId = env.AUTH ? await reserveLeadIdentity(env.AUTH, contact, chatId, crypto.randomUUID()) : crypto.randomUUID()
+  const existing = (await findLead(env, contact, from.id, chatId)) ?? (env.AUTH ? await loadLead(env.AUTH, reservedId) : null)
   const visitorId = start.isStart ? visitorIdFromStart(start.payload) : undefined
   let lead: Lead
   if (existing) {
@@ -497,7 +499,7 @@ async function deliverTelegram(env: Env, update: TelegramUpdate, token: string) 
     }
   } else {
     lead = {
-      id: crypto.randomUUID(),
+      id: reservedId,
       name,
       contact,
       channel: "telegram",

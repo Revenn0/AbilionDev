@@ -78,6 +78,35 @@ async function loadAlias(kv: KvLike, kind: "contact" | "chat", value: string): P
   return typeof id === "string" && id ? id : null
 }
 
+export async function claimLeadAlias(
+  kv: KvLike,
+  kind: "contact" | "chat",
+  value: string,
+  id: string
+): Promise<string> {
+  const key = aliasKey(kind, value)
+  if (!key || !id) return id
+  const current = await loadAlias(kv, kind, value)
+  if (current) return current
+  await kv.put(key, JSON.stringify({ id }))
+  return (await loadAlias(kv, kind, value)) || id
+}
+
+export async function reserveLeadIdentity(
+  kv: KvLike,
+  contact: string,
+  chatId: string,
+  proposedId: string
+): Promise<string> {
+  if (chatId) {
+    const id = await claimLeadAlias(kv, "chat", chatId, proposedId)
+    if (contact) await claimLeadAlias(kv, "contact", contact, id)
+    return id
+  }
+  if (contact) return claimLeadAlias(kv, "contact", contact, proposedId)
+  return proposedId
+}
+
 export async function loadLead(kv: KvLike, id: string): Promise<Lead | null> {
   const raw = await kv.get(leadKey(id), "json")
   if (!raw || typeof raw !== "object") return null

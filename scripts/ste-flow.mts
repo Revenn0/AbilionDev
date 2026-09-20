@@ -54,7 +54,7 @@ import { applyEvent, canAdvanceRemoteWait, publishedFunnel, publishedSnapshot, w
 import { isTelegramAdsHref, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
-import { CRM_CRON_LOCK, CRM_FUNNELS, aliasKey, claimCronLock, deleteLeadKv, dueLeadsKv, findLeadInKv, listLeads, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, releaseCronLock, renewCronLock, saveFunnelsKv, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_CRON_LOCK, CRM_FUNNELS, aliasKey, claimCronLock, claimLeadAlias, deleteLeadKv, dueLeadsKv, findLeadInKv, listLeads, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, releaseCronLock, renewCronLock, reserveLeadIdentity, saveFunnelsKv, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
@@ -370,6 +370,14 @@ const kv = memoryKv()
 await upsertLeadKv(kv, first)
 const found = await findLeadInKv(kv, "@ana", 41, "41")
 assert(found?.id === "crm-1", "lead no KV por contacto")
+assert((await claimLeadAlias(kv, "chat", "41", "outro")) === "crm-1", "alias ocupado não cria outro id")
+const chatRaceKv = memoryKv()
+const [raceA, raceB] = await Promise.all([
+  reserveLeadIdentity(chatRaceKv, "@dup", "77", "lead-a"),
+  reserveLeadIdentity(chatRaceKv, "@dup", "77", "lead-b"),
+])
+assert(raceA === raceB, "dois /start no mesmo chat ficam com o mesmo id")
+assert((await reserveLeadIdentity(chatRaceKv, "@dup", "77", "lead-c")) === raceA, "terceiro /start reusa o mesmo lead")
 assert((await listLeads(kv, 400, "all")).some((item) => item.id === "crm-1"), "lista completa inclui o lead")
 const newer = { ...first, lastMessage: "oi", updatedAt: new Date(Date.now() + 1000).toISOString() }
 assert(mergeLeads([first], [newer])[0]?.lastMessage === "oi", "merge fica com o mais novo")
