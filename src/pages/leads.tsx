@@ -23,7 +23,7 @@ import { isImportedLead, needsEster } from "@/lib/ops"
 import { applyEvent, nodeTitle, publishedSnapshot, type RuntimeEvent } from "@/lib/runtime"
 import { canTickSteLocally } from "@/lib/ste"
 import { timeAgo } from "@/lib/format"
-import { resolvePersonName } from "@/lib/lead-name"
+import { displayContact, resolvePersonName } from "@/lib/lead-name"
 import type { Lead, LeadOrigin, LeadTemp, SalesFunnel } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -65,7 +65,11 @@ export function LeadsPage() {
       if (filter === "ester" && !needsEster(item)) return false
       if (filter === "facebook" && item.origin !== "facebook") return false
       if (!needle) return true
-      return [item.name, item.contact, item.campaign].some((value) => (value ?? "").toLowerCase().includes(needle))
+      const contact = displayContact(item.contact)
+      const digits = item.contact.replace(/\D/g, "")
+      return [item.name, item.contact, contact, digits, item.campaign].some((value) =>
+        (value ?? "").toLowerCase().includes(needle)
+      )
     })
   }, [filter, query, state.leads])
 
@@ -166,7 +170,7 @@ export function LeadsPage() {
                   >
                     <div className="min-w-0">
                       <p className="truncate text-[13.5px] font-medium">{item.name}</p>
-                      <p className="truncate text-[12px] text-muted-foreground">{item.contact}</p>
+                      <p className="truncate text-[12px] text-muted-foreground">{displayContact(item.contact)}</p>
                     </div>
                     <GeoBadge facts={factsWithTrack(item, summary.geos)} className="text-[12.5px]" />
                     <p className="text-[12.5px] text-muted-foreground">{item.channel === "whatsapp" ? "WhatsApp" : "Telegram"}</p>
@@ -501,7 +505,7 @@ function LeadDrawer({
         <h2 id="lead-drawer-title" className="mt-1 text-[20px] font-medium tracking-tight">
           {name || lead.name}
         </h2>
-        <p className="mt-1 text-[13px] text-muted-foreground">{lead.contact}</p>
+        <p className="mt-1 text-[13px] text-muted-foreground">{displayContact(lead.contact)}</p>
         <Label htmlFor="lead-display-name" className="mt-4">
           Nome
         </Label>

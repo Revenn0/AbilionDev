@@ -81,7 +81,7 @@ import { LEAD_WRITE_BATCH, leadWriteChunks, leadWriteIds } from "../src/lib/runt
 import { safeAppPath, withSafeNext } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { contactLookups, normalizeTelegramContact, validateCapture } from "../src/lib/capture.ts"
-import { formatPhoneContact, isPhoneLikeName, resolveLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
+import { displayContact, formatPhoneContact, isPhoneLikeName, resolveLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, migrateLeadOrigin, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
@@ -524,6 +524,8 @@ assert(contactLookups("+55 11 98765-4321").includes("5511987654321"), "lookup do
 assert(isPhoneLikeName("5511987654321"), "telefone cru conta como nome-telefone")
 assert(!isPhoneLikeName("Ana Souza"), "nome de pessoa não é telefone")
 assert(formatPhoneContact("5511987654321") === "+55 11 98765-4321", "formata telemóvel BR")
+assert(displayContact("5511987654321") === "+55 11 98765-4321", "contacto na lista mostra o telefone formatado")
+assert(displayContact("@ana") === "@ana", "contacto Telegram não se formata")
 assert(formatPhoneContact("551139325678") === "+55 11 3932-5678", "formata fixo BR")
 assert(resolvePersonName("PAULO SERGIO FRANCISCO") === "Paulo Sergio Francisco", "MAIÚSCULAS viram nome")
 assert(resolvePersonName("lucas mota de araujo") === "Lucas Mota de Araujo", "partícula de fica minúscula")
@@ -1251,6 +1253,13 @@ await Promise.all([
 ])
 const racedThrottles = (await throttleRaceKv.get("track:throttles", "json")) as Record<string, { count: number }> | null
 assert(racedThrottles?.["race-a"] && racedThrottles?.["race-b"], "throttle concorrente não apaga a outra chave")
+const sameKeyKv = memoryKv()
+const sameKeyHits = await Promise.all([
+  consumeKvThrottle(sameKeyKv, "same", 1, 60_000, 5000),
+  consumeKvThrottle(sameKeyKv, "same", 1, 60_000, 5000),
+  consumeKvThrottle(sameKeyKv, "same", 1, 60_000, 5000),
+])
+assert(sameKeyHits.filter(Boolean).length === 1, "throttle da mesma chave só deixa passar o limite")
 const retained = retainUserSessions(
   [
     { token: "old", userId: "u1", expiresAt: 9, issuedAt: 1 },

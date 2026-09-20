@@ -39,6 +39,7 @@ export type ResetRecord = {
 export type AuthThrottle = {
   count: number
   resetAt: number
+  hits?: string[]
 }
 
 export type AuthSnapshot = {
@@ -135,6 +136,18 @@ export function clipAuthTokens(ids: unknown, cap = AUTH_REVOKED_CAP): string[] {
   return out
 }
 
+function uniqueHits(hits: string[], cap = 256) {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const hit of hits) {
+    if (!hit || seen.has(hit)) continue
+    seen.add(hit)
+    out.push(hit)
+    if (out.length >= cap) break
+  }
+  return out
+}
+
 export function mergeThrottles(
   left: Record<string, AuthThrottle>,
   right: Record<string, AuthThrottle>
@@ -147,7 +160,12 @@ export function mergeThrottles(
       continue
     }
     if (item.resetAt === prev.resetAt) {
-      out[key] = { count: Math.max(prev.count, item.count), resetAt: prev.resetAt }
+      const hits = uniqueHits([...(prev.hits ?? []), ...(item.hits ?? [])])
+      out[key] = {
+        count: Math.max(prev.count, item.count, hits.length),
+        resetAt: prev.resetAt,
+        hits: hits.length ? hits : undefined,
+      }
       continue
     }
     out[key] = item.resetAt > prev.resetAt ? item : prev
@@ -273,13 +291,23 @@ export function consumeThrottle(
   key: string,
   limit: number,
   windowMs: number,
-  now = Date.now()
+  now = Date.now(),
+  hit?: string
 ) {
   const throttles = { ...(snapshot.throttles ?? {}) }
   const current = throttles[key]
   if (!current || current.resetAt <= now) {
-    throttles[key] = { count: 1, resetAt: now + windowMs }
+    throttles[key] = { count: 1, resetAt: now + windowMs, hits: hit ? [hit] : undefined }
     return { ok: true as const, snapshot: { ...snapshot, throttles } }
+  }
+  if (hit) {
+    const hits = current.hits ?? []
+    const existing = hits.indexOf(hit)
+    if (existing >= 0) return { ok: existing < limit, snapshot }
+    if (hits.length >= limit || current.count >= limit) return { ok: false as const, snapshot }
+    const nextHits = uniqueHits([...hits, hit], Math.max(256, limit + 8))
+    throttles[key] = { count: Math.max(current.count + 1, nextHits.length), resetAt: current.resetAt, hits: nextHits }
+    return { ok: nextHits.indexOf(hit) >= 0 && nextHits.indexOf(hit) < limit, snapshot: { ...snapshot, throttles } }
   }
   if (current.count >= limit) return { ok: false as const, snapshot }
   throttles[key] = { ...current, count: current.count + 1 }
@@ -306,18 +334,28 @@ export async function consumeKvThrottle(
   }
   const live = (map: Record<string, AuthThrottle>) =>
     Object.fromEntries(Object.entries(map).filter(([, item]) => item.resetAt > now))
-  const throttles = await read()
-  const gated = consumeThrottle({ users: [], sessions: [], resets: {}, throttles }, key, limit, windowMs, now)
-  const next = live(gated.snapshot.throttles ?? {})
-  const latest = await read()
-  const merged = live(mergeThrottles(latest, next))
-  await kv.put(bucket, JSON.stringify(merged))
-  const verify = await read()
-  const settled = live(mergeThrottles(verify, merged))
-  if (JSON.stringify(settled) !== JSON.stringify(verify)) {
-    await kv.put(bucket, JSON.stringify(settled))
+  const hit = crypto.randomUUID()
+  for (let attempt = 0; attempt < 16; attempt++) {
+    const throttles = live(await read())
+    const gated = consumeThrottle({ users: [], sessions: [], resets: {}, throttles }, key, limit, windowMs, now, hit)
+    if (!gated.ok) return false
+    const next = live(gated.snapshot.throttles ?? {})
+    const latest = live(await read())
+    const merged = live(mergeThrottles(latest, next))
+    await kv.put(bucket, JSON.stringify(merged))
+    const verify = live(await read())
+    const settled = live(mergeThrottles(verify, merged))
+    if (JSON.stringify(settled) !== JSON.stringify(verify)) {
+      await kv.put(bucket, JSON.stringify(settled))
+    }
+    const stored = settled[key]
+    if (!stored) continue
+    const hits = stored.hits ?? []
+    const index = hits.indexOf(hit)
+    if (index >= 0) return index < limit
+    if (!hits.length && stored.count <= limit) return true
   }
-  return gated.ok
+  return false
 }
 
 export function clientIp(request: Request) {

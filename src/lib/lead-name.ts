@@ -49,6 +49,11 @@ export function resolvePersonName(value: string) {
     .join(" ")
 }
 
+export function displayContact(value: string) {
+  const trimmed = value.trim()
+  return isPhoneLikeName(trimmed) ? formatPhoneContact(trimmed) : trimmed
+}
+
 /** Nome apresentável. Contacto (telefone / @user) não se inventa nem se substitui. */
 export function resolveLeadName(name?: string, contact?: string) {
   const rawName = (name ?? "").trim()

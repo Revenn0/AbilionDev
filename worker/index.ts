@@ -596,6 +596,7 @@ async function deliverTelegram(env: Env, update: TelegramUpdate, token: string) 
 async function processWaits(env: Env) {
   const lockOwner = env.AUTH ? await claimCronLock(env.AUTH) : "local"
   if (!lockOwner) return 0
+  if (env.AUTH && lockOwner !== "local" && !(await renewCronLock(env.AUTH, lockOwner))) return 0
   try {
     const now = new Date().toISOString()
     const restRows = (await rest<LeadRow[]>(env, `leads?workspace_id=eq.${WORKSPACE}&wait_until=lte.${now}&select=*`)) ?? []
