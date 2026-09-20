@@ -87,6 +87,7 @@ try {
   assert(await page.$("#conteudo"), "landmark #conteudo no login")
   assert(await page.$("#email"), "campo e-mail")
   assert(await page.$('label[for="email"]'), "label do e-mail")
+  assert(await page.$('a[href="/privacidade"]'), "login liga privacidade")
 
   await open(page, "/forgot")
   await waitAuthPage(page)
@@ -110,6 +111,7 @@ try {
   assert((await page.evaluate(() => document.body.innerText)).includes("privacidade"), "página de privacidade")
 
   await open(page, "/l")
+  assert(await page.$('a[href="/privacidade"]'), "landing liga privacidade")
   const landingCopy = await page.evaluate(() => document.body.innerText)
   assert(
     Boolean(await page.$("[data-abilion-cta]")) ||

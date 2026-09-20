@@ -44,7 +44,6 @@
   --color-success: var(--success);
   --color-leak: var(--leak);
   --color-canvas: var(--canvas);
-  --color-whatsapp: var(--whatsapp);
   --color-line: var(--line);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
@@ -94,7 +93,6 @@
   --success: #16a34a;
   --leak: oklch(0.55 0.18 18);
   --canvas: #f4f5f7;
-  --whatsapp: #25d366;
   --line: #2f6bff;
   --raise: rgb(15 23 42 / 0.04);
   --node: #ffffff;
@@ -138,7 +136,6 @@
   --success: #22c55e;
   --leak: oklch(0.7 0.18 18);
   --canvas: #18181b;
-  --whatsapp: #25d366;
   --line: #5b8cff;
   --raise: rgb(255 255 255 / 0.06);
   --node: #252529;

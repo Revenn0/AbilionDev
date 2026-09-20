@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { Link } from "react-router-dom"
 import { adsDeepLink } from "@/lib/telegram-start"
 import { fetchHealth } from "@/lib/channel"
 
@@ -77,7 +78,12 @@ export function LandingPage() {
             <>Sem cadastro nesta página. O clique só abre quando o bot estiver ligado.</>
           )}
         </p>
-        <p className="mt-auto pt-16 text-[11px] text-zinc-400">Abilion · landing do pixel</p>
+        <p className="mt-auto pt-16 text-[11px] text-zinc-400">
+          Abilion · landing do pixel ·{" "}
+          <Link to="/privacidade" className="underline underline-offset-2 hover:text-zinc-200">
+            Privacidade
+          </Link>
+        </p>
       </div>
     </main>
   )

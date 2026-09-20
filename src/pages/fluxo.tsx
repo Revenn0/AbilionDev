@@ -39,7 +39,7 @@ export function FluxoPage() {
           items={[{ ok: crmSync !== "error", message: "Não consegui ler os funis do Worker. O quadro local pode estar desactualizado." }]}
         />
         <PageChrome icon={Workflow} title="Funil">
-          <Button className="h-8 rounded-full px-3.5" onClick={createSales}>
+          <Button type="button" className="h-8 rounded-full px-3.5" onClick={createSales}>
             <Plus /> Novo funil
           </Button>
         </PageChrome>
@@ -51,7 +51,7 @@ export function FluxoPage() {
               <p className="mx-auto mt-1 max-w-md text-[13.5px] text-muted-foreground">
                 O quadro publicado é o que a Sté fala. Boas-vindas, minicurso, Superbet e remarketing editam-se aqui. O rascunho grava sozinho.
               </p>
-              <Button className="mt-5 rounded-full" onClick={createSales}>
+              <Button type="button" className="mt-5 rounded-full" onClick={createSales}>
                 <Plus /> Novo funil
               </Button>
             </div>

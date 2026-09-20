@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom"
 import { LogoMark } from "@/components/brand/logo"
 import { ThemeToggle } from "@/components/theme/toggle"
 import { cn } from "@/lib/utils"
@@ -28,7 +29,14 @@ export function AuthSplit({
         <div className="absolute right-4 top-4 z-10 sm:right-6 sm:top-6">
           <ThemeToggle expanded className="border border-border bg-card text-foreground hover:bg-accent" />
         </div>
-        <div className="w-full max-w-sm">{children}</div>
+        <div className="w-full max-w-sm">
+          {children}
+          <p className="mt-6 text-center text-[12px]">
+            <Link to="/privacidade" className={AUTH_LINK}>
+              Privacidade
+            </Link>
+          </p>
+        </div>
       </main>
     </div>
   )
