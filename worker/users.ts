@@ -13,22 +13,15 @@ import {
   publicApiToken,
   publicManagedUser,
   randomToken,
+  dropUserApiTokens,
   rememberRevokedApi,
   TOKEN_CAP,
   USER_CAP,
   type AuthStore,
-  type AuthSnapshot,
   type PublicUser,
   type StoredUser,
   type UserRole,
 } from "./auth.ts"
-
-function dropUserApiTokens(snapshot: AuthSnapshot, user: StoredUser) {
-  const ids = (user.tokens ?? []).map((item) => item.id)
-  const next = rememberRevokedApi(snapshot, ids)
-  snapshot.revokedApi = next.revokedApi
-  user.tokens = []
-}
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {

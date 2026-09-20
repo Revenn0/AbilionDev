@@ -4581,6 +4581,108 @@ const mcpAnonHit = () =>
 for (let i = 0; i < 20; i++) assert((await mcpAnonHit()).status === 401, `mcp anon ${i + 1} ainda é 401`)
 assert((await mcpAnonHit()).status === 429, "21º MCP sem token bloqueia")
 
+const rotateEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://example.supabase.co",
+  AUTH: memoryKv(),
+  ABILION_ENV: "development",
+} as Env
+const rotateLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.93" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  rotateEnv,
+  backgroundCtx()
+)
+assert(rotateLogin.status === 200, "login para rodar a senha")
+const rotateCookie = rotateLogin.headers.get("set-cookie") || ""
+const rotateMint = await handleRequest(
+  new Request("http://local.test/api/tokens", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: rotateCookie, "x-forwarded-for": "198.51.100.93" },
+    body: JSON.stringify({ name: "Antes da troca" }),
+  }),
+  rotateEnv,
+  backgroundCtx()
+)
+const rotateMinted = (await rotateMint.json()) as { token?: string; item?: { id?: string } }
+assert(rotateMint.status === 201 && rotateMinted.token?.startsWith("abn_"), "token antes da troca")
+assert(
+  (await sessionUser(
+    new Request("http://local.test/api/crm", { headers: { authorization: `Bearer ${rotateMinted.token}` } }),
+    kvAuthStore(rotateEnv.AUTH!)
+  ))?.email === "victor@abilion.com",
+  "Bearer vive antes da troca"
+)
+const rotatePwd = await handleRequest(
+  new Request("http://local.test/api/auth/password", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: rotateCookie, "x-forwarded-for": "198.51.100.93" },
+    body: JSON.stringify({ currentPassword: "senhaok", password: "giro1ok" }),
+  }),
+  rotateEnv,
+  backgroundCtx()
+)
+assert(rotatePwd.status === 200, "troca de senha com sessão viva")
+assert(
+  (await sessionUser(
+    new Request("http://local.test/api/crm", { headers: { authorization: `Bearer ${rotateMinted.token}` } }),
+    kvAuthStore(rotateEnv.AUTH!)
+  )) === null,
+  "troca de senha mata o token MCP"
+)
+const rotateAfterPwd = await kvAuthStore(rotateEnv.AUTH!).load()
+assert(rotateAfterPwd.revokedApi?.includes(rotateMinted.item?.id || ""), "troca grava o id em revokedApi")
+assert(
+  !(rotateAfterPwd.users.find((item) => item.email === "victor@abilion.com")?.tokens ?? []).some((item) => item.id === rotateMinted.item?.id),
+  "troca esvazia o token da conta"
+)
+const rotateMint2 = await handleRequest(
+  new Request("http://local.test/api/tokens", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: rotateCookie, "x-forwarded-for": "198.51.100.93" },
+    body: JSON.stringify({ name: "Antes do reset" }),
+  }),
+  rotateEnv,
+  backgroundCtx()
+)
+const rotateMinted2 = (await rotateMint2.json()) as { token?: string; item?: { id?: string } }
+assert(rotateMint2.status === 201 && rotateMinted2.token?.startsWith("abn_"), "token novo depois da troca")
+const rotateForgot = (await (
+  await handleRequest(
+    new Request("http://local.test/api/auth/forgot", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.94" },
+      body: JSON.stringify({ email: "victor@abilion.com" }),
+    }),
+    rotateEnv,
+    backgroundCtx()
+  )
+).json()) as { resetPath?: string }
+const rotateResetToken = rotateForgot.resetPath?.split("token=")[1] || ""
+assert(rotateResetToken, "forgot depois da troca devolve link")
+const rotateReset = await handleRequest(
+  new Request("http://local.test/api/auth/reset", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.94" },
+    body: JSON.stringify({ token: rotateResetToken, password: "giro2ok" }),
+  }),
+  rotateEnv,
+  backgroundCtx()
+)
+assert(rotateReset.status === 200, "reset troca a senha")
+assert(
+  (await sessionUser(
+    new Request("http://local.test/api/crm", { headers: { authorization: `Bearer ${rotateMinted2.token}` } }),
+    kvAuthStore(rotateEnv.AUTH!)
+  )) === null,
+  "reset mata o token MCP"
+)
+const rotateAfterReset = await kvAuthStore(rotateEnv.AUTH!).load()
+assert(rotateAfterReset.revokedApi?.includes(rotateMinted2.item?.id || ""), "reset grava o id em revokedApi")
+
 const importedHttp = await handleRequest(
   new Request("http://local.test/api/funnels/import", {
     method: "POST",

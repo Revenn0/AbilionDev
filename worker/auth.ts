@@ -643,6 +643,13 @@ export function rememberRevokedApi(snapshot: AuthSnapshot, ids: Iterable<string>
   }
 }
 
+export function dropUserApiTokens(snapshot: AuthSnapshot, user: StoredUser) {
+  const ids = (user.tokens ?? []).map((item) => item.id)
+  const next = rememberRevokedApi(snapshot, ids)
+  snapshot.revokedApi = next.revokedApi
+  user.tokens = []
+}
+
 export async function findUserByApiToken(snapshot: AuthSnapshot, token: string) {
   if (!token.startsWith("abn_") || token.length > 200) return null
   const hash = await hashApiToken(token)
@@ -811,6 +818,7 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     const dropped = snapshot.sessions.filter((item) => item.userId === user.id && item.token !== token)
     snapshot.revoked = clipAuthTokens([...dropped.map((item) => item.token), ...(snapshot.revoked ?? [])], AUTH_REVOKED_CAP)
     snapshot.sessions = snapshot.sessions.filter((item) => item.userId !== user.id || item.token === token)
+    dropUserApiTokens(snapshot, user)
     await store.save(snapshot)
     return json({ ok: true })
   }
@@ -847,6 +855,7 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     snapshot.revoked = clipAuthTokens([...dropped.map((item) => item.token), ...(snapshot.revoked ?? [])], AUTH_REVOKED_CAP)
     snapshot.spentResets = clipAuthTokens([token, ...(snapshot.spentResets ?? [])], AUTH_SPENT_RESET_CAP)
     snapshot.sessions = snapshot.sessions.filter((item) => item.userId !== user.id)
+    dropUserApiTokens(snapshot, user)
     delete snapshot.resets[token]
     await store.save(snapshot)
     return json({ ok: true })
