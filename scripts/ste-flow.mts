@@ -45,14 +45,14 @@ import {
 import { publishedFunnel } from "../src/lib/runtime.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import type { Lead } from "../src/lib/types.ts"
-import { CRM_FUNNELS, claimCronLock, deleteLeadKv, dueLeadsKv, findLeadInKv, listLeads, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_FUNNELS, aliasKey, claimCronLock, deleteLeadKv, dueLeadsKv, findLeadInKv, listLeads, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { safeAppPath } from "../src/lib/safe-path.ts"
 import { validateCapture } from "../src/lib/capture.ts"
-import { cleanBotUsername, cleanTelegramGroupUrl, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
+import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink } from "../src/lib/telegram-start.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { barShare } from "../src/lib/ops.ts"
@@ -416,6 +416,24 @@ assert(cleanTelegramGroupUrl("javascript:alert(1)") === "", "javascript: cai")
 assert(sanitizeIncomingLead({ id: " lead-1 ", name: " Ana ", contact: "@ana" })?.name === "Ana", "lead incoming corta espaços")
 assert(sanitizeIncomingLead({ id: "" }) === null, "lead sem id cai")
 assert(sanitizeIncomingLead({ id: "x".repeat(81) }) === null, "lead com id longo cai")
+assert(
+  (sanitizeIncomingLead({ id: "lead-2", telegramChatId: "9".repeat(80) })?.telegramChatId ?? "").length === 32,
+  "chat id longo é cortado"
+)
+assert(sanitizeIncomingLead({ id: "lead-3", lastMessage: "z".repeat(800) })?.lastMessage?.length === 400, "lastMessage longo é cortado")
+assert(cleanHttpUrl("javascript:alert(1)") === "", "javascript: no funil cai")
+assert(cleanHttpUrl("https://mundoaviator.com.br/premium") === "https://mundoaviator.com.br/premium", "https do funil fica")
+assert(cleanHttpUrl("https://user:pass@evil.test/") === "", "URL com userinfo cai")
+assert(
+  !sanitizeIncomingFunnel({
+    id: "funil-url",
+    name: "Quadro",
+    nodes: [{ id: "n1", type: "offer", position: { x: 0, y: 0 }, data: { title: "Oferta", url: "javascript:alert(1)" } }],
+    edges: [],
+  })?.nodes[0]?.data.url,
+  "sanitize do funil tira javascript:"
+)
+assert(aliasKey("chat", "9".repeat(200)).length <= "crm:alias:chat:".length + 80, "alias não rebenta a chave do KV")
 assert(sanitizeIncomingFunnel({ id: "funil-1", name: "Quadro", nodes: [], edges: [] })?.id === "funil-1", "funil válido passa")
 assert(sanitizeIncomingFunnel({ id: "" }) === null, "funil sem id cai")
 assert(sanitizeIncomingFunnel({ id: "funil-1", nodes: "nope" }) === null, "funil com nodes inválidos cai")
@@ -1387,6 +1405,14 @@ const badLogin = await handleRequest(
   backgroundCtx()
 )
 assert(badLogin.status === 400, "login recusa JSON inválido")
+const voiceReq = () =>
+  handleRequest(
+    new Request("http://local.test/api/runtime/voice", { method: "POST", headers: { cookie: liveCookie } }),
+    liveEnv,
+    backgroundCtx()
+  )
+for (let i = 0; i < 5; i++) assert((await voiceReq()).status === 400, `voz ${i + 1} ainda entra no throttle`)
+assert((await voiceReq()).status === 429, "sexta geração de voz bloqueia")
 const pixel = await handleRequest(
   new Request("http://local.test/api/track", {
     method: "POST",

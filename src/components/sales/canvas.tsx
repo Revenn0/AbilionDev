@@ -2,8 +2,10 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import {
   Background,
   BackgroundVariant,
+  ControlButton,
   Controls,
   ReactFlow,
+  useReactFlow,
   addEdge,
   useEdgesState,
   useNodesState,
@@ -12,7 +14,7 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
-import { AlignHorizontalSpaceAround, ArrowLeft, PanelsTopLeft, Pencil, SlidersHorizontal } from "lucide-react"
+import { AlignHorizontalSpaceAround, ArrowLeft, Maximize2, Minus, PanelsTopLeft, Pencil, Plus, SlidersHorizontal } from "lucide-react"
 import { Link } from "react-router-dom"
 import { toast } from "sonner"
 import { LogoMark } from "@/components/brand/logo"
@@ -29,6 +31,23 @@ import { SalesPalette } from "./palette"
 import { FlowSimulator } from "./simulator"
 
 const SALES_BOX = { w: 300, h: 220 }
+
+function BoardControls() {
+  const { zoomIn, zoomOut, fitView } = useReactFlow()
+  return (
+    <Controls showZoom={false} showFitView={false} showInteractive={false} aria-label="Controlos do quadro">
+      <ControlButton type="button" onClick={() => zoomIn()} title="Aproximar" aria-label="Aproximar">
+        <Plus />
+      </ControlButton>
+      <ControlButton type="button" onClick={() => zoomOut()} title="Afastar" aria-label="Afastar">
+        <Minus />
+      </ControlButton>
+      <ControlButton type="button" onClick={() => fitView({ padding: 0.2 })} title="Ajustar ao quadro" aria-label="Ajustar ao quadro">
+        <Maximize2 />
+      </ControlButton>
+    </Controls>
+  )
+}
 
 function toRf(funnel: Pick<SalesFunnel, "nodes" | "edges">, cursor?: string): { nodes: SalesCanvasNode[]; edges: Edge[] } {
   return {
@@ -398,7 +417,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
             defaultEdgeOptions={{ style: { stroke: "#93c5fd", strokeWidth: 1.6 }, type: "default" }}
           >
             <Background id="sales-dots" variant={BackgroundVariant.Dots} gap={22} size={1.1} color="#d4d7de" />
-            <Controls showInteractive={false} aria-label="Controlos do quadro" />
+            <BoardControls />
           </ReactFlow>
           <FlowSimulator
             funnel={{

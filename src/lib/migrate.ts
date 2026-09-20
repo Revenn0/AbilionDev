@@ -113,6 +113,19 @@ function clipText(value: unknown, max: number) {
   return typeof value === "string" ? value.slice(0, max) : undefined
 }
 
+export function cleanHttpUrl(value?: string) {
+  const next = (value ?? "").trim()
+  if (!next) return ""
+  try {
+    const url = new URL(next)
+    if (url.protocol !== "http:" && url.protocol !== "https:") return ""
+    if (url.username || url.password) return ""
+    return url.toString().slice(0, 500)
+  } catch {
+    return ""
+  }
+}
+
 function sanitizeGraph(nodes: unknown, edges: unknown) {
   return {
     nodes: Array.isArray(nodes) ? nodes.slice(0, 200) : [],
@@ -129,7 +142,7 @@ function clipFunnel(funnel: SalesFunnel): SalesFunnel {
         ...node.data,
         title: (node.data.title || "Bloco").slice(0, 80),
         tag: clipText(node.data.tag, 40),
-        url: clipText(node.data.url, 500),
+        url: cleanHttpUrl(node.data.url) || undefined,
         body: clipText(node.data.body, 4000),
         cta: clipText(node.data.cta, 80),
         conditionValue: clipText(node.data.conditionValue, 80),
@@ -197,6 +210,25 @@ export function sanitizeIncomingLead(raw: unknown): Lead | null {
   lead.contact = lead.contact.trim().slice(0, 80)
   lead.campaign = lead.campaign.trim().slice(0, 120)
   lead.memory = lead.memory.slice(0, 4000)
+  lead.lastMessage = lead.lastMessage ? lead.lastMessage.slice(0, 400) : undefined
+  lead.startPayload = lead.startPayload ? lead.startPayload.trim().slice(0, 80) : undefined
+  lead.visitorId = lead.visitorId ? lead.visitorId.trim().slice(0, 32) : undefined
+  lead.telegramChatId = lead.telegramChatId ? String(lead.telegramChatId).trim().slice(0, 32) : undefined
+  lead.funnelId = lead.funnelId ? lead.funnelId.trim().slice(0, 80) : undefined
+  lead.nodeId = lead.nodeId ? lead.nodeId.trim().slice(0, 80) : undefined
+  if (lead.facts) {
+    lead.facts = {
+      ...lead.facts,
+      heard: lead.facts.heard?.slice(0, 200),
+      country: lead.facts.country?.slice(0, 64),
+      countryCode: lead.facts.countryCode?.slice(0, 8),
+      city: lead.facts.city?.slice(0, 64),
+      region: lead.facts.region?.slice(0, 64),
+      regionCode: lead.facts.regionCode?.slice(0, 8),
+      device: lead.facts.device?.slice(0, 40),
+      language: lead.facts.language?.slice(0, 16),
+    }
+  }
   if (lead.messages.length > 80) lead.messages = lead.messages.slice(-80)
   if (lead.events.length > 80) lead.events = lead.events.slice(-80)
   return lead

@@ -13,7 +13,7 @@ export const CRM_CRON_LOCK = "crm:cron-lock"
 const CAP = 400
 
 export function aliasKey(kind: "contact" | "chat", value: string) {
-  const next = value.trim()
+  const next = value.trim().slice(0, 80)
   return next ? `crm:alias:${kind}:${next}` : ""
 }
 

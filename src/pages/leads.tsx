@@ -127,11 +127,15 @@ export function LeadsPage() {
 
           {rows.length === 0 ? (
             <div className="grid place-items-center px-6 py-16 text-center">
-              <p className="text-[14px] font-medium">{query.trim() ? "Nada nesta busca" : "Nenhum lead"}</p>
+              <p className="text-[14px] font-medium">
+                {query.trim() ? "Nada nesta busca" : filter !== "all" ? "Nada neste recorte" : "Nenhum lead"}
+              </p>
               <p className="mt-1 max-w-md text-[13px] text-muted-foreground">
                 {query.trim()
                   ? "Nenhum nome, @user ou campanha bate com o recorte."
-                  : "Popup, join ou /start entram no fluxo publicado. Só Telegram."}
+                  : filter !== "all"
+                    ? "Este filtro está vazio. Escolhe Todos ou limpa a busca."
+                    : "Popup, join ou /start entram no fluxo publicado. Só Telegram."}
               </p>
             </div>
           ) : (

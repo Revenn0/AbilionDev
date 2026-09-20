@@ -283,6 +283,8 @@ try {
     return Boolean(node)
   })
   assert(persistedLanding, "bloco Landing persistiu depois de Voltar")
+  const zoomLabel = await page.evaluate(() => Boolean(document.querySelector("[aria-label='Aproximar']")))
+  assert(zoomLabel, "controlos do quadro têm nome acessível")
   await page.waitForFunction(
     () => [...document.querySelectorAll("input")].some((el) => (el as HTMLInputElement).value === "Landing"),
     { timeout: 5_000 }

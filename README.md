@@ -201,6 +201,7 @@ Estes itens dependem de credenciais ou de uma decisão humana. O código não in
 - Apagar um lead grava um tombstone no KV (`crm:removed`). O webhook e o cron não voltam a puxar essa linha do Supabase. Sem `SUPABASE_SERVICE_ROLE` isto não muda nada.
 - O índice do CRM lista 400 leads; o contacto/chat fica num alias permanente e as esperas não saem do índice. O Telegram não cria um lead novo só porque o recorte da lista encheu.
 - JSON inválido em `/api/crm`, `/api/leads`, `/api/runtime` e login devolve 400 — não grava objeto vazio.
+- Vincular runtime (10 / 15 min) e gerar voz (5 / 15 min) têm limite por operador+IP. URLs do funil só aceitam http(s). Chat id e aliases do KV são cortados para não rebentar a chave.
 - O Worker impõe um só funil `active`+`production` ao gravar. Tombstone de funil também fica no KV.
 - Dashboard, Analytics e Conversas mostram "—" / "…" no pixel quando a leitura ainda não veio ou falhou. Não tratam zero como dado real.
 
