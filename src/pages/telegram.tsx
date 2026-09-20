@@ -46,6 +46,12 @@ export function TelegramPage() {
       window.clearInterval(timer)
     }
   }, [])
+  const refreshStatus = () => {
+    void Promise.all([fetchHealth(), fetchRuntime()]).then(([nextHealth, nextRuntime]) => {
+      setHealth(nextHealth)
+      setRuntime(nextRuntime)
+    })
+  }
   const healthReady = health !== null && runtime !== null
 
   return (
@@ -58,6 +64,7 @@ export function TelegramPage() {
               message: "O Worker não respondeu. Confere se o painel está a falar com /api/health.",
             },
           ]}
+          onRetry={refreshStatus}
         />
         <PageChrome icon={Send} title="Telegram">
           <Button

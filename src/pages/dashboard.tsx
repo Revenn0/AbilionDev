@@ -11,7 +11,7 @@ import { useTrackSummary } from "@/lib/use-track-summary"
 
 export function DashboardPage() {
   const { state, crmSync, inboxSync, persistSync } = useStore()
-  const { summary, status, hasData } = useTrackSummary(8000)
+  const { summary, status, hasData, retry } = useTrackSummary(8000)
   const facebook = facebookOf(summary)
   const ops = deriveOps(state.leads)
   const hydrating = leadsHydrating(persistSync, state.leads.length)
@@ -32,6 +32,7 @@ export function DashboardPage() {
             { ok: persistSync !== "error", message: "Não consegui ler ou gravar leads no Worker. A lista local pode divergir." },
             { ok: status !== "error", message: "Não consegui ler o pixel. Os números de tráfego abaixo podem estar vazios." },
           ]}
+          onRetry={retry}
         />
         <PageChrome icon={LayoutDashboard} title="Dashboard">
           <StatusPill>Últimos 30 dias</StatusPill>

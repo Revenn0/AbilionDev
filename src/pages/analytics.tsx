@@ -15,7 +15,7 @@ import { useTrackSummary } from "@/lib/use-track-summary"
 
 export function AnalyticsPage() {
   const { state, persistSync } = useStore()
-  const { summary, status, hasData } = useTrackSummary(4000)
+  const { summary, status, hasData, retry } = useTrackSummary(4000)
   const facebook = facebookOf(summary)
   const pixelReady = status === "ok" || hasData
   const leadsReady = !(persistSync === "idle" && state.leads.length === 0)
@@ -47,6 +47,7 @@ export function AnalyticsPage() {
               message: "Não consegui ler o pixel. Recarrega ou confere a sessão — os números abaixo podem estar vazios.",
             },
           ]}
+          onRetry={retry}
         />
         <PageChrome icon={ChartNoAxesCombined} title="Analytics">
           <span className="inline-flex h-8 items-center rounded-full border border-border bg-card px-3 text-[12px] font-medium shadow-sm">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { emptySummary, type TrackSummary } from "@/lib/track"
 import { fetchTrackSummary } from "@/lib/track-api"
 
@@ -6,6 +6,7 @@ export function useTrackSummary(ms = 5000) {
   const [summary, setSummary] = useState<TrackSummary>(emptySummary)
   const [status, setStatus] = useState<"loading" | "ok" | "error">("loading")
   const [hasData, setHasData] = useState(false)
+  const pullRef = useRef(() => {})
 
   useEffect(() => {
     let cancelled = false
@@ -21,6 +22,7 @@ export function useTrackSummary(ms = 5000) {
           if (!cancelled) setStatus("error")
         })
     }
+    pullRef.current = pull
     pull()
     const timer = window.setInterval(pull, ms)
     return () => {
@@ -29,5 +31,5 @@ export function useTrackSummary(ms = 5000) {
     }
   }, [ms])
 
-  return { summary, status, hasData }
+  return { summary, status, hasData, retry: () => pullRef.current() }
 }

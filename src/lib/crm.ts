@@ -209,6 +209,25 @@ export function leadsStillOnRemote(removedIds: Iterable<string>, remote: Array<{
   return remote.filter((item) => drop.has(item.id)).map((item) => item.id)
 }
 
+/** GET de leads + inbox no hydrate: lista vazia limpa o local; inbox vazia não. */
+export function hydrateLeads(
+  local: Lead[],
+  remote: { ok: boolean; leads: Lead[] },
+  inbox: { ok: boolean; leads: Lead[] },
+  pending: Map<string, Lead>,
+  removed: Iterable<string>
+): Lead[] {
+  let next = local
+  if (remote.ok) {
+    const incoming = applyRemovedLeads(remote.leads, removed)
+    next = remote.leads.length ? reconcileLeads(local, incoming, pending.keys()) : local.filter((lead) => pending.has(lead.id))
+  }
+  if (inbox.ok && inbox.leads.length) {
+    next = mergeLeads(next, applyRemovedLeads(inbox.leads, removed))
+  }
+  return overlayPendingLeads(next, pending, removed)
+}
+
 /** GET do CRM não pisa username/grupo/plugins ainda por gravar nesta sessão. */
 export function adoptHydrateSettings(
   local: Settings,

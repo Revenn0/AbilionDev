@@ -46,6 +46,7 @@ import {
   clipRemovedIds,
   commitCrmFunnels,
   hydrateFunnels,
+  hydrateLeads,
   leftoverPendingFunnelIds,
   pendingSeedFunnelIds,
   recoverPendingFunnelIds,
@@ -692,6 +693,35 @@ assert(
 assert(
   leftoverPendingFunnelIds([publishedC.id], [publishedA], [publishedA, publishedC]).includes(publishedC.id),
   "funil criado a meio do POST fica na fila"
+)
+const inboxOnly = lead("inbox-1")
+assert(
+  hydrateLeads([lead("local-1")], { ok: false, leads: [] }, { ok: true, leads: [inboxOnly] }, new Map(), []).some(
+    (item) => item.id === "inbox-1"
+  ),
+  "inbox do retry une sem wipe"
+)
+assert(
+  hydrateLeads([lead("local-1")], { ok: false, leads: [] }, { ok: true, leads: [inboxOnly] }, new Map(), []).some(
+    (item) => item.id === "local-1"
+  ),
+  "inbox do retry conserva o local quando o GET dos leads falhou"
+)
+assert(
+  !hydrateLeads([lead("local-1")], { ok: true, leads: [] }, { ok: true, leads: [] }, new Map(), []).some((item) => item.id === "local-1"),
+  "GET leads ok+[] continua a limpar o local"
+)
+assert(
+  hydrateLeads([lead("local-1")], { ok: true, leads: [] }, { ok: true, leads: [inboxOnly] }, new Map(), []).some(
+    (item) => item.id === "inbox-1"
+  ),
+  "inbox entra depois do wipe ok+[]"
+)
+assert(
+  !hydrateLeads([inboxOnly], { ok: false, leads: [] }, { ok: true, leads: [inboxOnly] }, new Map(), ["inbox-1"]).some(
+    (item) => item.id === "inbox-1"
+  ),
+  "inbox do retry respeita tombstone"
 )
 assert(
   settingsWriteFingerprint({ ...defaultSettings, telegramBotToken: "secret" }) ===

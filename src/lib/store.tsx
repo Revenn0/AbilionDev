@@ -13,6 +13,7 @@ import {
   canFlushCrm,
   clipRemovedIds,
   hydrateFunnels,
+  hydrateLeads,
   leftoverPendingFunnelIds,
   mergeLeads,
   overlayPendingLeads,
@@ -289,8 +290,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     crmTimer.current = window.setTimeout(flushCrm, 400)
   }
 
+  const applyInbox = (inbox: { ok: boolean; leads: Lead[] }) => {
+    setInboxSync(inbox.ok ? "ok" : "error")
+    if (!inbox.ok) return
+    setState((prev) => {
+      const leads = hydrateLeads(
+        prev.leads,
+        { ok: false, leads: [] },
+        { ok: true, leads: inbox.leads.map(migrateLead) },
+        pendingLeadWrites.current,
+        removedLeadIds.current
+      )
+      if (leads === prev.leads) return prev
+      const next = { ...prev, leads }
+      stateRef.current = next
+      return next
+    })
+  }
+
   const runHydrate = (force = false) => {
     if (!force && crmHydrated.current) return Promise.resolve()
+    void fetchInbox().then(applyInbox)
     if (hydrateLock.current) return hydrateLock.current
     const pending = Promise.all([fetchCrm(), fetchRuntime(), fetchLeads()]).then(([crm, runtime, remoteLeads]) => {
       setCrmSync(crm.ok ? "ok" : "error")
@@ -310,16 +330,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const next = {
           ...prev,
           funnels,
-          leads: overlayPendingLeads(
-            remoteLeads.ok
-              ? remoteLeads.leads.length
-                ? reconcileLeads(
-                    prev.leads,
-                    applyRemovedLeads(remoteLeads.leads.map(migrateLead), removedLeadIds.current),
-                    pendingLeadWrites.current.keys()
-                  )
-                : prev.leads.filter((lead) => pendingLeadWrites.current.has(lead.id))
-              : prev.leads,
+          leads: hydrateLeads(
+            prev.leads,
+            {
+              ok: remoteLeads.ok,
+              leads: remoteLeads.leads.map(migrateLead),
+            },
+            { ok: false, leads: [] },
             pendingLeadWrites.current,
             removedLeadIds.current
           ),

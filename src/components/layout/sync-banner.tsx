@@ -2,8 +2,10 @@ import { useStore } from "@/lib/store"
 
 export function SyncBanner({
   items,
+  onRetry,
 }: {
   items: Array<{ ok: boolean; message: string }>
+  onRetry?: () => void
 }) {
   const { retryHydrate } = useStore()
   const failed = items.filter((item) => !item.ok)
@@ -21,7 +23,10 @@ export function SyncBanner({
       <button
         type="button"
         className="rounded-full px-3 py-1.5 text-[12.5px] font-medium text-destructive underline-offset-2 hover:underline"
-        onClick={() => void retryHydrate()}
+        onClick={() => {
+          void retryHydrate()
+          onRetry?.()
+        }}
       >
         Tentar outra vez
       </button>
