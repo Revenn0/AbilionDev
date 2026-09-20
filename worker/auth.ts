@@ -257,6 +257,10 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     }
     let user = snapshot.users.find((item) => item.email === email)
     if (!user) {
+      if (env?.ABILION_ENV === "production" && !env.ABILION_OPERATOR_PASSWORD) {
+        await store.save(snapshot)
+        return json({ error: "Primeiro acesso em produção precisa de ABILION_OPERATOR_PASSWORD no Worker." }, 403)
+      }
       user = {
         id: randomToken(8),
         email,
@@ -340,11 +344,23 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     const token = body.token || ""
     const password = body.password || ""
     if (!token || password.length < 6) return json({ error: "Token ou senha inválidos." }, 400)
-    const snapshot = prune(await store.load())
+    let snapshot = prune(await store.load())
+    const guard = consumeThrottle(snapshot, `reset:${clientIp(request)}`, 5, 15 * 60 * 1000)
+    snapshot = guard.snapshot
+    if (!guard.ok) {
+      await store.save(snapshot)
+      return json({ error: "Muitas tentativas. Espera uns minutos e tenta de novo." }, 429)
+    }
     const rec = snapshot.resets[token]
-    if (!rec) return json({ error: "Link expirado ou inválido." }, 400)
+    if (!rec) {
+      await store.save(snapshot)
+      return json({ error: "Link expirado ou inválido." }, 400)
+    }
     const user = snapshot.users.find((item) => item.id === rec.userId)
-    if (!user) return json({ error: "Link expirado ou inválido." }, 400)
+    if (!user) {
+      await store.save(snapshot)
+      return json({ error: "Link expirado ou inválido." }, 400)
+    }
     user.passwordHash = await hashPassword(password)
     snapshot.sessions = snapshot.sessions.filter((item) => item.userId !== user.id)
     delete snapshot.resets[token]

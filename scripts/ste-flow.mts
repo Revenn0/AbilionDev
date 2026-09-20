@@ -23,7 +23,7 @@ import {
   toTelegramHtml,
 } from "../src/lib/ste.ts"
 import { emptySalesFunnel } from "../src/lib/templates.ts"
-import { canDeleteFunnel, mergeFunnels, mergeLeads } from "../src/lib/crm.ts"
+import { canDeleteFunnel, mergeFunnels, mergeLeads, reconcileFunnels } from "../src/lib/crm.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import type { Lead } from "../src/lib/types.ts"
 import { deleteLeadKv, findLeadInKv, listLeads, loadLead, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
@@ -409,6 +409,17 @@ const older = { ...publishedA, name: "servidor", updatedAt: "2020-01-01T00:00:00
 const newerLocal = { ...publishedA, name: "local-novo", updatedAt: "2026-01-01T00:00:00.000Z" }
 assert(mergeFunnels([localNew, newerLocal], [older]).some((item) => item.id === localNew.id), "hydrate conserva funil local")
 assert(mergeFunnels([newerLocal], [older])[0]?.name === "local-novo", "hydrate não pisa rascunho mais novo")
+const keptNewer = reconcileFunnels(
+  [{ ...publishedA, updatedAt: "2026-02-01T00:00:00.000Z" }, { ...publishedC, updatedAt: "2026-03-01T00:00:00.000Z" }],
+  [{ ...publishedA, name: "cliente", updatedAt: "2026-02-15T00:00:00.000Z" }]
+)
+assert(keptNewer.some((item) => item.id === publishedC.id), "reconcile conserva funil mais novo no servidor")
+assert(keptNewer.find((item) => item.id === publishedA.id)?.name === "cliente", "reconcile aceita o cliente mais novo")
+const deletedOld = reconcileFunnels(
+  [{ ...publishedA, updatedAt: "2026-01-01T00:00:00.000Z" }, { ...publishedC, updatedAt: "2026-01-02T00:00:00.000Z" }],
+  [{ ...publishedA, updatedAt: "2026-04-01T00:00:00.000Z" }]
+)
+assert(!deletedOld.some((item) => item.id === publishedC.id), "reconcile deixa apagar funil mais velho")
 assert(csvCell("a,b") === '"a,b"', "csv cita vírgula")
 assert(csvCell('diz "oi"') === '"diz ""oi"""', "csv escapa aspas")
 assert(leadsToCsv([lead()]).includes("lead-1"), "csv inclui o id")
@@ -444,6 +455,20 @@ const loginAttempt = (password: string) =>
     authStore,
     { ABILION_ENV: "development" }
   )
+assert(
+  (
+    await handleAuth(
+      new Request("http://local.test/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+      }),
+      memoryAuthStore(),
+      { ABILION_ENV: "production" }
+    )
+  ).status === 403,
+  "produção sem senha de operador recusa o primeiro acesso"
+)
 assert((await loginAttempt("senhaok")).status === 200, "primeiro acesso define a senha")
 for (let i = 0; i < 8; i++) {
   assert((await loginAttempt("errada1")).status === 401, `falha ${i + 1} ainda entra no throttle`)
@@ -462,6 +487,20 @@ const forgotAttempt = () =>
   )
 for (let i = 0; i < 5; i++) assert((await forgotAttempt()).status === 200, `forgot ${i + 1} passa`)
 assert((await forgotAttempt()).status === 429, "forgot bloqueia na sexta")
+
+const resetStore = memoryAuthStore()
+const resetAttempt = () =>
+  handleAuth(
+    new Request("http://local.test/api/auth/reset", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.8" },
+      body: JSON.stringify({ token: "nope", password: "novasenha" }),
+    }),
+    resetStore,
+    { ABILION_ENV: "development" }
+  )
+for (let i = 0; i < 5; i++) assert((await resetAttempt()).status === 400, `reset ${i + 1} passa no throttle`)
+assert((await resetAttempt()).status === 429, "reset bloqueia na sexta")
 
 const gone = lead("gone", "@gone")
 gone.telegramChatId = "9"
@@ -514,15 +553,36 @@ const namedHealth = (await (await handleRequest(new Request("http://local.test/a
   telegramBotUsername?: string
 }
 assert(namedHealth.telegramBotUsername === "@good_bot", "health usa o username das settings")
-const badHook = await handleRequest(
+const unsignedHook = await handleRequest(
   new Request("http://local.test/api/telegram", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: "{",
+    body: "{}",
   }),
   apiEnv,
   backgroundCtx()
 )
+assert(unsignedHook.status === 401, "webhook sem secret é 401")
+const signedEnv = { ...apiEnv, TELEGRAM_WEBHOOK_SECRET: "hook-secret" }
+const badHook = await handleRequest(
+  new Request("http://local.test/api/telegram", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+    body: "{",
+  }),
+  signedEnv,
+  backgroundCtx()
+)
 assert(badHook.status === 400, "webhook recusa JSON inválido")
+const wrongSecret = await handleRequest(
+  new Request("http://local.test/api/telegram", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "nope" },
+    body: "{}",
+  }),
+  signedEnv,
+  backgroundCtx()
+)
+assert(wrongSecret.status === 401, "webhook com secret errado é 401")
 
 console.log("ste-flow ok")

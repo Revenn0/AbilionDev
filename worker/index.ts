@@ -8,7 +8,7 @@ import { applyEvent, dueWaits, publishedSnapshot } from "../src/lib/runtime.ts"
 import { BANCA_FIXED, type Lead, type LeadEvent, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types.ts"
 import { compactGeo, factsFromGeo } from "../src/lib/geo.ts"
 import { parseDevice } from "../src/lib/track.ts"
-import { emptySettings, publicSettings } from "../src/lib/crm.ts"
+import { emptySettings, mergeLeads, publicSettings, reconcileFunnels } from "../src/lib/crm.ts"
 import { cleanBotUsername, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { resolveClientGeo } from "./geo-lookup.ts"
 import { ingestTrack, kvTrackStore, memoryTrackStore, readTrackBody, summaryFromStore, type TrackStore } from "./track-store.ts"
@@ -285,7 +285,8 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!user) return json({ error: "Sessão expirada." }, 401)
     const body = (await request.json().catch(() => ({}))) as { funnels?: SalesFunnel[]; settings?: Settings }
     if (Array.isArray(body.funnels)) {
-      const funnels = body.funnels.map(sanitizeIncomingFunnel).filter((item): item is NonNullable<typeof item> => Boolean(item)).slice(0, 20)
+      const incoming = body.funnels.map(sanitizeIncomingFunnel).filter((item): item is NonNullable<typeof item> => Boolean(item))
+      const funnels = reconcileFunnels(await loadFunnels(env), incoming)
       await persistFunnels(env, funnels)
     }
     if (body.settings) await persistSettings(env, migrateSettings(body.settings))
@@ -296,7 +297,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
-    return json({ ok: true, leads: await listLeads(env.AUTH, 400, "all") })
+    return json({ ok: true, leads: await loadMergedLeads(env, 400, "all") })
   }
 
   if (url.pathname === "/api/leads" && request.method === "POST") {
@@ -309,7 +310,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     for (const row of rows) {
       const lead = sanitizeIncomingLead(row)
       if (!lead) continue
-      await upsertLeadKv(env.AUTH, lead)
+      await saveLead(env, lead)
       saved += 1
     }
     return json({ ok: true, saved })
@@ -321,7 +322,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!user) return json({ error: "Sessão expirada." }, 401)
     const id = url.searchParams.get("id") || ""
     if (!id) return json({ error: "Falta o id do lead." }, 400)
-    await deleteLeadKv(env.AUTH, id)
+    await removeLead(env, id)
     return json({ ok: true })
   }
 
@@ -329,24 +330,14 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
-    const rows =
-      (await rest<LeadRow[]>(
-        env,
-        `leads?workspace_id=eq.${WORKSPACE}&channel=eq.telegram&select=*&order=updated_at.desc&limit=80`
-      )) ?? []
-    const leads = (rows.length ? rows.map(rowToLead) : env.AUTH ? await listLeads(env.AUTH) : []).filter(
-      (item) => item.channel === "telegram"
-    )
-    return json({ ok: true, leads })
+    return json({ ok: true, leads: await loadMergedLeads(env, 80, "telegram") })
   }
 
   if (url.pathname === "/api/telegram" && request.method === "POST") {
     const { secrets } = await runtimeOf(env)
     const expected = (env.TELEGRAM_WEBHOOK_SECRET || secrets.telegramWebhookSecret || "").trim()
-    if (expected) {
-      const header = request.headers.get("x-telegram-bot-api-secret-token")
-      if (header !== expected) return json({ ok: false }, 401)
-    }
+    const header = request.headers.get("x-telegram-bot-api-secret-token") || ""
+    if (!expected || header !== expected) return json({ ok: false }, 401)
     const update = (await request.json().catch(() => null)) as TelegramUpdate | null
     if (!update || typeof update !== "object") return json({ ok: false }, 400)
     ctx.waitUntil(handleTelegram(env, update))
@@ -581,6 +572,22 @@ function rowToLead(row: LeadRow): Lead {
     updatedAt: row.updated_at,
     createdAt: row.created_at,
   }
+}
+
+async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "all") {
+  const kv = env.AUTH ? await listLeads(env.AUTH, limit, channel) : []
+  const filter = channel === "telegram" ? "&channel=eq.telegram" : ""
+  const rows =
+    (await rest<LeadRow[]>(
+      env,
+      `leads?workspace_id=eq.${WORKSPACE}${filter}&select=*&order=updated_at.desc&limit=${limit}`
+    )) ?? []
+  return mergeLeads(kv, rows.map(rowToLead)).slice(0, limit)
+}
+
+async function removeLead(env: Env, id: string) {
+  if (env.AUTH) await deleteLeadKv(env.AUTH, id)
+  await rest(env, `leads?id=eq.${encodeURIComponent(id)}&workspace_id=eq.${WORKSPACE}`, { method: "DELETE" })
 }
 
 async function saveLead(env: Env, lead: Lead) {

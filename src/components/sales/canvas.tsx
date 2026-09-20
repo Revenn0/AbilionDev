@@ -69,6 +69,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
   const persistRef = useRef<() => void>(() => undefined)
   const readOnlyRef = useRef(false)
   const draftRef = useRef({ nodes, edges, name, production, funnel })
+  const appliedAt = useRef(funnel.updatedAt)
 
   useEffect(() => {
     if (!rf || didFit.current) return
@@ -117,9 +118,22 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
       edges: draft.edges.map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle ?? undefined })),
     }
     dirty.current = false
+    appliedAt.current = next.updatedAt
     onSave(next)
     return next
   }
+
+  useLayoutEffect(() => {
+    if (dirty.current) return
+    if (funnel.updatedAt <= appliedAt.current) return
+    const next = toRf(funnel)
+    setNodes(next.nodes)
+    setEdges(next.edges)
+    setName(funnel.name)
+    setProduction(funnel.production)
+    appliedAt.current = funnel.updatedAt
+    skipAutoSave.current = true
+  }, [funnel, setEdges, setNodes])
 
   useLayoutEffect(() => {
     draftRef.current = { nodes, edges, name, production, funnel }

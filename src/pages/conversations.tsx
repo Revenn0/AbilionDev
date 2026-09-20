@@ -47,7 +47,7 @@ function matchesFilter(lead: Lead, filter: FilterId) {
 }
 
 export function ConversationsPage() {
-  const { state, saveLead, inboxSync } = useStore()
+  const { state, saveLead, inboxSync, persistSync } = useStore()
   const { summary } = useTrackSummary(4000)
   const runtime = steRuntimeFromFunnels(state.funnels, state.settings)
   const [filter, setFilter] = useState<FilterId>("waiting")
@@ -87,7 +87,8 @@ export function ConversationsPage() {
       .slice(0, INBOX_CAP)
   }, [all, filter, query])
 
-  const lead = rows.find((item) => item.id === id) ?? rows[0] ?? null
+  const selected = id ? all.find((item) => item.id === id) ?? null : null
+  const lead = selected ?? rows[0] ?? null
 
   useEffect(() => {
     if (!lead) return
@@ -113,7 +114,10 @@ export function ConversationsPage() {
     <div className="h-full overflow-hidden">
       <div className="page-shell h-full !space-y-4">
         <SyncBanner
-          items={[{ ok: inboxSync !== "error", message: "A inbox do Telegram não sincronizou. Conversas novas podem faltar." }]}
+          items={[
+            { ok: inboxSync !== "error", message: "A inbox do Telegram não sincronizou. Conversas novas podem faltar." },
+            { ok: persistSync !== "error", message: "Não consegui gravar a simulação no Worker." },
+          ]}
         />
         <PageChrome icon={MessagesSquare} title="Conversas">
           {FILTERS.map((item) => (
@@ -208,7 +212,7 @@ export function ConversationsPage() {
                     {lead.steQuiet ? "Quieto" : lead.steBlocked ? "Encerrado" : TEMP_LABEL[lead.temperature]}
                   </StatusPill>
                 </div>
-                <div className="flex-1 space-y-2 overflow-y-auto px-5 py-4">
+                <div className="flex-1 space-y-2 overflow-y-auto px-5 py-4" aria-live="polite">
                   {(lead.messages ?? []).map((item) => (
                     <div
                       key={item.id}
@@ -247,12 +251,12 @@ export function ConversationsPage() {
                     placeholder={
                       lead.steQuiet || lead.steBlocked
                         ? "Esta instância já silenciou."
-                        : "Fale como o lead. A Sté ouve e segue o passo do funil."
+                        : "Escreve como o lead. Isto não manda Telegram — só simula a Sté."
                     }
                     disabled={lead.steBlocked || lead.steQuiet}
                   />
                   <Button type="submit" className="rounded-full" disabled={lead.steBlocked || lead.steQuiet || !draft.trim()}>
-                    Enviar
+                    Simular lead
                   </Button>
                 </form>
               </div>

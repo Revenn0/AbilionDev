@@ -41,6 +41,23 @@ export function mergeFunnels(current: SalesFunnel[], incoming: SalesFunnel[]): S
   return [...localOnly, ...merged]
 }
 
+export function reconcileFunnels(server: SalesFunnel[], incoming: SalesFunnel[]): SalesFunnel[] {
+  if (!incoming.length) return server
+  const newestIncoming = incoming.reduce((max, item) => (item.updatedAt > max ? item.updatedAt : max), "")
+  const seen = new Set<string>()
+  const next: SalesFunnel[] = []
+  for (const funnel of incoming) {
+    const prev = server.find((item) => item.id === funnel.id)
+    next.push(prev && prev.updatedAt > funnel.updatedAt ? prev : funnel)
+    seen.add(funnel.id)
+  }
+  for (const funnel of server) {
+    if (seen.has(funnel.id)) continue
+    if (funnel.updatedAt > newestIncoming) next.push(funnel)
+  }
+  return next.slice(0, 20)
+}
+
 export function canDeleteFunnel(
   funnels: SalesFunnel[],
   id: string

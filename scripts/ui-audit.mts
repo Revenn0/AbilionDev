@@ -107,7 +107,10 @@ try {
   await open(page, "/l")
   const landingCopy = await page.evaluate(() => document.body.innerText)
   assert(
-    Boolean(await page.$("[data-abilion-cta]")) || landingCopy.includes("ainda não está ligado") || landingCopy.includes("A carregar o botão"),
+    Boolean(await page.$("[data-abilion-cta]")) ||
+      landingCopy.includes("ainda não está ligado") ||
+      landingCopy.includes("A carregar o botão") ||
+      landingCopy.includes("Não consegui falar"),
     "landing tem CTA ou empty state"
   )
 
@@ -249,6 +252,18 @@ try {
   const pluginsCopy = await page.evaluate(() => document.body.innerText)
   assert(pluginsCopy.includes("Exportar CSV"), "plugins exporta CSV")
   assert(!pluginsCopy.includes("Ligar Relatórios") && !pluginsCopy.includes("Ligar Webhooks"), "plugins sem interruptor morto")
+
+  await open(page, "/configuracoes?tab=notificacoes")
+  const notifyCopy = await page.evaluate(() => document.body.innerText)
+  assert(notifyCopy.includes("Ainda não disparam"), "notificações sem interruptor morto")
+  assert(notifyCopy.includes("Em breve"), "notificações em breve")
+
+  await open(page, "/conversas")
+  const inboxCopy = await page.evaluate(() => document.body.innerText)
+  assert(
+    inboxCopy.includes("Nenhuma conversa") || inboxCopy.includes("Simular lead"),
+    "conversas vazias ou simulação explícita"
+  )
 
   for (const viewport of VIEWPORTS) {
     await page.setViewport({ width: viewport.width, height: viewport.height })

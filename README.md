@@ -8,7 +8,7 @@ Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / M
 - Dashboard: leads, conversas, página / cliques, Facebook, espera, ofertas
 - Analytics: funil Ads → landing → Telegram → chat, globo de visitantes, gráficos de 30 dias, geo e device — no mesmo estúdio claro do funil
 - Leads no passo do fluxo (print, banca, espera, oferta só se o grafo deixar)
-- Conversas Telegram: a Sté segue o funil publicado (boas-vindas, minicurso, Superbet, App/Premium, remarketing). A voz muda conforme o que o lead falou; o passo, os links e a próxima fase não mudam. A IA começa no OpenCode (DeepSeek V4.1 Flash). Se falhar, cai no OpenRouter: Gemma 4 31B e depois DeepSeek V4 Flash. Sem chave, a voz local ainda reconhece o lead.
+- Conversas Telegram: a Sté segue o funil publicado (boas-vindas, minicurso, Superbet, App/Premium, remarketing). A voz muda conforme o que o lead falou; o passo, os links e a próxima fase não mudam. A caixa “Simular lead” corre o motor no painel — não envia Telegram. A IA começa no OpenCode (DeepSeek V4.1 Flash). Se falhar, cai no OpenRouter: Gemma 4 31B e depois DeepSeek V4 Flash. Sem chave, a voz local ainda reconhece o lead.
 - Áudio: mensagens grandes do funil saem como áudio da ElevenLabs. Cada clip é gerado uma vez, guardado e reutilizado. Os links continuam no texto.
 - Funil com mapa e fluxo executável, no estúdio visual claro (catálogo, quadro e propriedades). O rascunho grava sozinho e também ao sair (Voltar / fechar o separador). No telemóvel, toca num bloco da paleta para o adicionar. O último funil publicado não se apaga.
 - Telegram: webhook no Worker (`/api/telegram`) — /start abre a Sté
@@ -81,7 +81,7 @@ npm run deploy
 
 Domínio **abilion.lol** já aponta para o Worker (`coco.ns.cloudflare.com` / `etienne.ns.cloudflare.com`). Apex, `www` e `abilion.vsanches1060.workers.dev` servem o mesmo painel.
 
-Ao vincular o Telegram, o Worker gera um `secret_token` do webhook e guarda-o no KV. `GET /api/cron` só corre com `CRON_SECRET`. Sem cookie, `/api/crm`, `/api/inbox`, `/api/leads` e `/api/track/summary` respondem 401. O painel trata isso como sessão expirada e volta ao login. Sem rede, um aviso no topo deixa claro que a sincronização espera.
+Ao vincular o Telegram, o Worker gera um `secret_token` do webhook e guarda-o no KV. `POST /api/telegram` sem esse secret (ou com o header errado) responde 401 — não aceita updates assinados. `GET /api/cron` só corre com `CRON_SECRET`. Sem cookie, `/api/crm`, `/api/inbox`, `/api/leads` e `/api/track/summary` respondem 401. O painel trata isso como sessão expirada e volta ao login. Analytics com 401 mostra “Sem leitura”, não um gráfico vazio verde. Sem rede, um aviso no topo deixa claro que a sincronização espera. Em produção, o primeiro login só cria a senha se existir `ABILION_OPERATOR_PASSWORD`.
 
 Secrets (nunca no git):
 
@@ -195,6 +195,8 @@ Estes itens dependem de credenciais ou de uma decisão humana. O código não in
 - **Supabase** só entra com `SUPABASE_SERVICE_ROLE`. Sem isso a operação corre no KV `abilion-auth`.
 - **Senhas dos operadores** em produção já estão no KV. Não estão neste repositório. Primeiro acesso local define a senha (6+).
 - Plugin **Agenda** e **webhooks de saída** são “Em breve” de propósito. Relatórios exporta CSV da base de leads. Captura abre Leads. Telegram mostra o estado do Worker — sem interruptores que não fazem nada.
+- **Notificações** na conta também são “Em breve”. O aviso da Ester no print continua a sair pelo funil quando há `ESTER_CHAT_ID`.
+- **Primeiro login em produção** recusa criar senha se o Worker não tiver `ABILION_OPERATOR_PASSWORD`. Localmente o primeiro acesso ainda define a senha (6+).
 - `ESTER_CHAT_ID` só é preciso se a Ester receber aviso no Telegram.
 
 ## Auditoria

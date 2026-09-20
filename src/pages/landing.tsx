@@ -5,6 +5,7 @@ import { fetchHealth } from "@/lib/channel"
 export function LandingPage() {
   const [username, setUsername] = useState("")
   const [ready, setReady] = useState(false)
+  const [unreachable, setUnreachable] = useState(false)
   const href = adsDeepLink(username, "fb")
 
   useEffect(() => {
@@ -21,6 +22,7 @@ export function LandingPage() {
     let cancelled = false
     void fetchHealth().then((health) => {
       if (cancelled) return
+      setUnreachable(Boolean(health.unreachable))
       setUsername(health.telegramBotUsername || "")
       setReady(true)
     })
@@ -48,6 +50,10 @@ export function LandingPage() {
         {!ready ? (
           <p role="status" className="mt-8 text-[14px] text-zinc-400">
             A carregar o botão do Telegram…
+          </p>
+        ) : unreachable ? (
+          <p role="alert" className="mt-8 text-[14px] text-zinc-400">
+            Não consegui falar com o Worker. Recarrega a página.
           </p>
         ) : href ? (
           <a

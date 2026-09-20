@@ -18,7 +18,6 @@ import { PageChrome, StatusPill } from "@/components/layout/chrome"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
 import { downloadLeadsCsv } from "@/lib/leads-export"
 import { cleanBotUsername, cleanTelegramGroupUrl } from "@/lib/migrate"
 import { useStore } from "@/lib/store"
@@ -655,7 +654,6 @@ function PluginsPane() {
 }
 
 function NotifyPane() {
-  const { state, saveSettings } = useStore()
   const rows = [
     { key: "notifyNewLead" as const, title: "Novo lead", hint: "Facebook, popup, join ou /start a entrar no CRM." },
     { key: "notifyConversation" as const, title: "Conversa iniciada", hint: "Sté no Telegram 1:1." },
@@ -664,23 +662,24 @@ function NotifyPane() {
   ]
 
   return (
-    <section className="surface divide-y divide-border overflow-hidden">
-      {rows.map((row) => (
-        <label key={row.key} className="flex cursor-pointer items-center justify-between gap-4 px-5 py-4">
-          <span>
-            <span className="flex items-center gap-2 text-[14px] font-medium">
-              <Bell className="size-3.5 text-muted-foreground" />
-              {row.title}
+    <section>
+      <p className="mb-3 text-[12.5px] text-muted-foreground">
+        Ainda não disparam e-mail nem Telegram. O aviso da Ester no print continua a sair pelo funil quando há ESTER_CHAT_ID.
+      </p>
+      <div className="surface divide-y divide-border overflow-hidden">
+        {rows.map((row) => (
+          <div key={row.key} className="flex items-center justify-between gap-4 px-5 py-4">
+            <span>
+              <span className="flex items-center gap-2 text-[14px] font-medium">
+                <Bell className="size-3.5 text-muted-foreground" />
+                {row.title}
+              </span>
+              <span className="mt-1 block text-[12.5px] text-muted-foreground">{row.hint}</span>
             </span>
-            <span className="mt-1 block text-[12.5px] text-muted-foreground">{row.hint}</span>
-          </span>
-          <Switch
-            checked={state.settings[row.key]}
-            onCheckedChange={(checked) => saveSettings({ [row.key]: checked })}
-            aria-label={row.title}
-          />
-        </label>
-      ))}
+            <StatusPill>Em breve</StatusPill>
+          </div>
+        ))}
+      </div>
     </section>
   )
 }
