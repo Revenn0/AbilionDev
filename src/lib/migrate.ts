@@ -1,5 +1,15 @@
 import { normalizeTelegramContact } from "./capture.ts"
-import { defaultSettings, isFlowKind, isMapKind, type Lead, type SalesFunnel, type SalesKind, type SalesSnapshot, type Settings } from "./types.ts"
+import { defaultSettings, isFlowKind, isMapKind, type Lead, type LeadOrigin, type SalesFunnel, type SalesKind, type SalesSnapshot, type Settings } from "./types.ts"
+
+export function migrateLeadOrigin(value?: string): LeadOrigin {
+  if (value === "facebook") return "facebook"
+  if (value === "group_join") return "group_join"
+  if (value === "private") return "private"
+  if (value === "closing") return "closing"
+  if (value === "import") return "import"
+  if (value === "pagina" || value === "popup") return "popup"
+  return "popup"
+}
 
 export function migrateKind(raw: string): SalesKind {
   switch (raw) {
@@ -59,7 +69,7 @@ export function migrateLead(raw: Partial<Lead> & { id: string }): Lead {
     contact: normalizeTelegramContact(raw.contact ?? "") || (raw.contact ?? ""),
     channel: raw.channel === "whatsapp" ? "whatsapp" : "telegram",
     campaign: raw.campaign ?? "",
-    origin: raw.origin === "facebook" ? "facebook" : (raw.origin ?? "popup"),
+    origin: migrateLeadOrigin(raw.origin),
     startPayload: raw.startPayload,
     visitorId: raw.visitorId,
     temperature: raw.temperature ?? "novo",

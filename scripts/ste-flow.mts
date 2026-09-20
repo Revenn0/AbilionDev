@@ -67,7 +67,7 @@ import {
   resolveLeadLookup,
   settingsWriteFingerprint,
 } from "../src/lib/crm.ts"
-import { applyEvent, canAdvanceRemoteWait, publishedFunnel, publishedSnapshot, waitHours } from "../src/lib/runtime.ts"
+import { applyEvent, canAdvanceRemoteWait, eventFromOrigin, publishedFunnel, publishedSnapshot, waitHours } from "../src/lib/runtime.ts"
 import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
@@ -81,11 +81,12 @@ import { LEAD_WRITE_BATCH, leadWriteChunks, leadWriteIds } from "../src/lib/runt
 import { safeAppPath, withSafeNext } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { contactLookups, normalizeTelegramContact, validateCapture } from "../src/lib/capture.ts"
-import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
+import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, migrateLeadOrigin, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
-import { barShare, leadsHydrating } from "../src/lib/ops.ts"
+import { campaignFor } from "../src/lib/labels.ts"
+import { barShare, isImportedLead, leadsHydrating } from "../src/lib/ops.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
 import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, handleAuth, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeThrottles, retainUserSessions } from "../worker/auth.ts"
@@ -2951,6 +2952,15 @@ assert(!inboxLead.telegramChatId, "simular conversa não inventa chat id")
 assert(canTickSteLocally(inboxLead), "simulação avança no painel")
 assert(canSimulateSte(inboxLead), "simulação no painel só para lead sem chat")
 assert(!canTickSteLocally({ ...inboxLead, telegramChatId: "9001" }), "lead real do Telegram não avança no painel")
+assert(!canTickSteLocally({ ...inboxLead, channel: "whatsapp" }), "import WhatsApp não avança o quadro no painel")
+assert(!canSimulateSte({ ...inboxLead, channel: "whatsapp" }), "import WhatsApp não simula a Sté")
+assert(isImportedLead({ origin: "import", channel: "whatsapp" }), "WhatsApp importado conta como lista antiga")
+assert(migrateLeadOrigin("import") === "import", "origem import sobrevive")
+assert(migrateLeadOrigin("pagina") === "popup", "pagina da lista antiga vira popup")
+assert(migrateLeadOrigin("private") === "private", "privado /start fica")
+assert(migrateLead({ id: "imp", origin: "import" }).origin === "import", "migrateLead conserva import")
+assert(eventFromOrigin("import").type === "capture", "import entra como captura, não /start")
+assert(campaignFor("whatsapp", "import") === "Importado", "campanha da lista antiga é Importado")
 assert(!canSimulateSte({ ...inboxLead, telegramChatId: "9001" }), "lead real do Telegram não simula no painel")
 assert(!canSimulateSte({ ...inboxLead, steBlocked: true }), "lead encerrado não simula")
 assert(!canSimulateSte({ ...inboxLead, steQuiet: true }), "lead quieto não simula")

@@ -790,7 +790,7 @@ function splitBlocks(raw: string, max = 4) {
 }
 
 export function canTickSteLocally(lead: Lead) {
-  return !lead.telegramChatId
+  return lead.channel === "telegram" && !lead.telegramChatId
 }
 
 /** Simular no painel só para leads sem chat real — senão o CRM e o Telegram dessincronizam. */

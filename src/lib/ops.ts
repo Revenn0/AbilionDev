@@ -29,11 +29,17 @@ export function hasOffer(lead: Lead) {
   return lead.stage === "offer" || lead.events.some((item) => item.kind === "offer")
 }
 
+export function isImportedLead(lead: Pick<Lead, "origin" | "channel">) {
+  return lead.origin === "import" || lead.channel === "whatsapp"
+}
+
 export function deriveOps(leads: Lead[]) {
   return {
     leads: leads.length,
     conversations: leads.filter(hasConversation).length,
     telegram: leads.filter((lead) => lead.channel === "telegram").length,
+    whatsapp: leads.filter((lead) => lead.channel === "whatsapp").length,
+    imported: leads.filter((lead) => lead.origin === "import").length,
     novo: leads.filter((lead) => lead.temperature === "novo").length,
     morno: leads.filter((lead) => lead.temperature === "morno").length,
     quente: leads.filter((lead) => lead.temperature === "quente").length,

@@ -19,7 +19,7 @@ import {
 import { useStore } from "@/lib/store"
 import { captureAgainstFunnels } from "@/lib/templates"
 import { ORIGIN_LABEL, STAGE_LABEL, TEMP_LABEL } from "@/lib/labels"
-import { needsEster } from "@/lib/ops"
+import { isImportedLead, needsEster } from "@/lib/ops"
 import { applyEvent, nodeTitle, publishedSnapshot, type RuntimeEvent } from "@/lib/runtime"
 import { canTickSteLocally } from "@/lib/ste"
 import { timeAgo } from "@/lib/format"
@@ -34,6 +34,8 @@ import { useRemoteLeadSearch } from "@/lib/use-lead-query"
 const FILTERS = [
   { id: "all", label: "Todos" },
   { id: "telegram", label: "Telegram" },
+  { id: "whatsapp", label: "WhatsApp" },
+  { id: "import", label: "Importados" },
   { id: "novo", label: "Novos" },
   { id: "morno", label: "Mornos" },
   { id: "quente", label: "Quentes" },
@@ -56,6 +58,8 @@ export function LeadsPage() {
     const needle = query.trim().toLowerCase()
     return state.leads.filter((item) => {
       if (filter === "telegram" && item.channel !== "telegram") return false
+      if (filter === "whatsapp" && item.channel !== "whatsapp") return false
+      if (filter === "import" && item.origin !== "import") return false
       if ((filter === "novo" || filter === "morno" || filter === "quente") && item.temperature !== filter) return false
       if (filter === "ester" && !needsEster(item)) return false
       if (filter === "facebook" && item.origin !== "facebook") return false
@@ -114,9 +118,13 @@ export function LeadsPage() {
                         ? state.leads.filter(needsEster).length
                         : item.id === "facebook"
                           ? state.leads.filter((row) => row.origin === "facebook").length
-                          : item.id === "telegram"
-                            ? state.leads.filter((row) => row.channel === "telegram").length
-                            : state.leads.filter((row) => row.temperature === item.id).length}
+                          : item.id === "import"
+                            ? state.leads.filter((row) => row.origin === "import").length
+                            : item.id === "telegram"
+                              ? state.leads.filter((row) => row.channel === "telegram").length
+                              : item.id === "whatsapp"
+                                ? state.leads.filter((row) => row.channel === "whatsapp").length
+                                : state.leads.filter((row) => row.temperature === item.id).length}
                 </span>
               </button>
             ))}
@@ -143,7 +151,7 @@ export function LeadsPage() {
                   ? "Nenhum nome, @user ou campanha bate com o recorte."
                   : filter !== "all"
                     ? "Este filtro está vazio. Escolhe Todos ou limpa a busca."
-                    : "Popup, join ou /start entram no fluxo publicado. Só Telegram."}
+                    : "Popup, join ou /start entram no fluxo publicado. Importados da lista antiga ficam em WhatsApp."}
               </p>
             </div>
           ) : (
@@ -160,7 +168,7 @@ export function LeadsPage() {
                       <p className="truncate text-[12px] text-muted-foreground">{item.contact}</p>
                     </div>
                     <GeoBadge facts={factsWithTrack(item, summary.geos)} className="text-[12.5px]" />
-                    <p className="text-[12.5px] text-muted-foreground">Telegram</p>
+                    <p className="text-[12.5px] text-muted-foreground">{item.channel === "whatsapp" ? "WhatsApp" : "Telegram"}</p>
                     <StatusPill tone={item.temperature === "quente" ? "danger" : item.temperature === "morno" ? "warn" : "muted"}>
                       {TEMP_LABEL[item.temperature]}
                     </StatusPill>
@@ -432,7 +440,11 @@ function LeadDrawer({
   ) => {
     const current = leadRef.current ?? lead
     if (!canTickSteLocally(current)) {
-      toast.error("Este chat corre no Telegram. A ficha não avança o quadro.")
+      toast.error(
+        isImportedLead(current)
+          ? "Lista importada. A Sté não fala aqui — só nota e temperatura."
+          : "Este chat corre no Telegram. A ficha não avança o quadro."
+      )
       return
     }
     const result = applyEvent(snapshot, { ...current, memory: memoryRef.current }, event, when)
@@ -549,7 +561,9 @@ function LeadDrawer({
         </div>
         {!localFlow ? (
           <p className="mt-3 text-[12.5px] text-muted-foreground">
-            Este chat corre no Telegram. Print, espera e oferta ficam no bot — a ficha só guarda nota e temperatura.
+            {isImportedLead(lead)
+              ? "Lista importada. A Sté não fala aqui — só nota e temperatura."
+              : "Este chat corre no Telegram. Print, espera e oferta ficam no bot — a ficha só guarda nota e temperatura."}
           </p>
         ) : null}
 

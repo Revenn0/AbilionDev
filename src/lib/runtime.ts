@@ -27,7 +27,7 @@ export type RuntimeResult = {
 }
 
 export function eventFromOrigin(origin: LeadOrigin): RuntimeEvent {
-  if (origin === "popup") return { type: "capture" }
+  if (origin === "popup" || origin === "import") return { type: "capture" }
   if (origin === "group_join") return { type: "join" }
   return { type: "start" }
 }
@@ -106,7 +106,7 @@ function evalCondition(node: FlowNode, lead: Lead) {
 
 function stageFrom(type: FlowNode["type"], lead: Lead): LeadStage {
   if (type === "entry") {
-    if (lead.origin === "popup") return "capture"
+    if (lead.origin === "popup" || lead.origin === "import") return "capture"
     if (lead.origin === "group_join") return "group"
     return "welcome"
   }

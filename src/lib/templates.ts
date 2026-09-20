@@ -198,7 +198,7 @@ export function leadFromCapture(
     campaign: campaignFor(input.channel, input.origin),
     origin: input.origin,
     temperature: "novo",
-    stage: input.origin === "popup" ? "capture" : input.origin === "group_join" ? "group" : "welcome",
+    stage: input.origin === "popup" || input.origin === "import" ? "capture" : input.origin === "group_join" ? "group" : "welcome",
     memory: "",
     facts: {},
     events: [],

@@ -99,7 +99,7 @@ export type SalesFunnel = {
 
 export type LeadTemp = "novo" | "morno" | "quente"
 export type LeadChannel = "whatsapp" | "telegram"
-export type LeadOrigin = "popup" | "group_join" | "private" | "closing" | "facebook"
+export type LeadOrigin = "popup" | "group_join" | "private" | "closing" | "facebook" | "import"
 export type LeadStage = "capture" | "group" | "welcome" | "attendance" | "print" | "banca" | "offer"
 
 export type LeadEventKind =

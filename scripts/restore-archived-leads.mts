@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs"
 import { contactLookups } from "../src/lib/capture.ts"
-import { sanitizeIncomingLead } from "../src/lib/migrate.ts"
-import type { ChatMessage, Lead, LeadOrigin, LeadTemp } from "../src/lib/types.ts"
+import { migrateLeadOrigin, sanitizeIncomingLead } from "../src/lib/migrate.ts"
+import type { ChatMessage, Lead, LeadTemp } from "../src/lib/types.ts"
 import { aliasKey, clipCrmIndex, CRM_INDEX, leadKey, type CrmIndexEntry } from "../worker/crm-store.ts"
 
 type Archived = {
@@ -47,10 +47,8 @@ function temperatureOf(value?: string): LeadTemp {
   return "novo"
 }
 
-function originOf(value?: string): LeadOrigin {
-  if (value === "facebook") return "facebook"
-  if (value === "group_join") return "group_join"
-  return "private"
+function originOf(value?: string) {
+  return migrateLeadOrigin(value)
 }
 
 function isQa(item: Archived) {
@@ -151,6 +149,8 @@ console.log(
     leads: unique.length,
     telegram: unique.filter((lead) => lead.channel === "telegram").length,
     whatsapp: unique.filter((lead) => lead.channel === "whatsapp").length,
+    imported: unique.filter((lead) => lead.origin === "import").length,
+    popup: unique.filter((lead) => lead.origin === "popup").length,
     keys: rows.length,
     index: clipCrmIndex(entries).length,
     output,

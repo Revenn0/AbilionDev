@@ -22,9 +22,11 @@ export const ORIGIN_LABEL: Record<LeadOrigin, string> = {
   private: "Privado /start",
   closing: "Fechamento",
   facebook: "Facebook → Telegram",
+  import: "Importado",
 }
 
 export function campaignFor(channel: "whatsapp" | "telegram", origin?: LeadOrigin) {
+  if (origin === "import") return "Importado"
   if (origin === "facebook") return "Facebook · ads"
   return channel === "telegram" ? "Telegram · grupo" : "WhatsApp · grupo"
 }

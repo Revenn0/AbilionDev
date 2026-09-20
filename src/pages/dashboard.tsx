@@ -99,6 +99,7 @@ export function DashboardPage() {
             <div className="mt-5 space-y-5">
               <ChannelRow label="Telegram · convite" value={hydrating ? "…" : ops.telegram} total={ops.leads} />
               <ChannelRow label="Facebook → Telegram" value={hydrating ? "…" : ops.facebook} total={ops.leads} />
+              <ChannelRow label="WhatsApp · importado" value={hydrating ? "…" : ops.imported} total={ops.leads} />
               <ChannelRow label="Clique no anúncio" value={pixelFigure(status, hasData, facebook.adClicks)} total={facebookTotal} />
               <ChannelRow label="Page views Facebook" value={pixelFigure(status, hasData, facebook.pageViews)} total={facebookTotal} />
               <ChannelRow label="Clique no botão" value={pixelFigure(status, hasData, facebook.buttonClicks)} total={facebookTotal} />
