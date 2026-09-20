@@ -23,6 +23,7 @@ import { isImportedLead, needsEster } from "@/lib/ops"
 import { applyEvent, nodeTitle, publishedSnapshot, type RuntimeEvent } from "@/lib/runtime"
 import { canTickSteLocally } from "@/lib/ste"
 import { timeAgo } from "@/lib/format"
+import { resolvePersonName } from "@/lib/lead-name"
 import type { Lead, LeadOrigin, LeadTemp, SalesFunnel } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -358,34 +359,49 @@ function LeadDrawer({
   const panel = useRef<HTMLElement>(null)
   const snapshot = publishedSnapshot(funnels)
   const [memory, setMemory] = useState(lead?.memory ?? "")
+  const [name, setName] = useState(lead?.name ?? "")
   const memoryRef = useRef(memory)
+  const nameRef = useRef(name)
   const dirtyMemory = useRef(false)
+  const dirtyName = useRef(false)
   const leadRef = useRef(lead)
 
   useEffect(() => {
     memoryRef.current = memory
   }, [memory])
 
-  const flushMemory = () => {
+  useEffect(() => {
+    nameRef.current = name
+  }, [name])
+
+  const flushEdits = () => {
     const current = leadRef.current
-    if (!current || !dirtyMemory.current) return
+    if (!current) return
+    const nextName = dirtyName.current ? resolvePersonName(nameRef.current) || current.name : current.name
+    const nextMemory = dirtyMemory.current ? memoryRef.current : current.memory
+    if (!dirtyName.current && !dirtyMemory.current) return
+    dirtyName.current = false
     dirtyMemory.current = false
-    onSave({ ...current, memory: memoryRef.current, updatedAt: new Date().toISOString() })
+    onSave({ ...current, name: nextName, memory: nextMemory, updatedAt: new Date().toISOString() })
   }
 
   const commit = (next: Lead) => {
-    onSave({ ...next, memory: memoryRef.current })
+    onSave({
+      ...next,
+      name: dirtyName.current ? resolvePersonName(nameRef.current) || next.name : next.name,
+      memory: memoryRef.current,
+    })
   }
 
   const close = () => {
-    flushMemory()
+    flushEdits()
     void onFlush?.()
     onClose()
   }
 
   useEffect(() => {
     return () => {
-      flushMemory()
+      flushEdits()
       void onFlush?.()
     }
   }, [lead?.id])
@@ -396,7 +412,9 @@ function LeadDrawer({
 
   useEffect(() => {
     dirtyMemory.current = false
+    dirtyName.current = false
     setMemory(lead?.memory ?? "")
+    setName(lead?.name ?? "")
   }, [lead?.id])
 
   useEffect(() => {
@@ -481,9 +499,29 @@ function LeadDrawer({
           {ORIGIN_LABEL[lead.origin]} · {lead.campaign}
         </p>
         <h2 id="lead-drawer-title" className="mt-1 text-[20px] font-medium tracking-tight">
-          {lead.name}
+          {name || lead.name}
         </h2>
         <p className="mt-1 text-[13px] text-muted-foreground">{lead.contact}</p>
+        <Label htmlFor="lead-display-name" className="mt-4">
+          Nome
+        </Label>
+        <Input
+          id="lead-display-name"
+          className="mt-1.5"
+          value={name}
+          onChange={(event) => {
+            dirtyName.current = true
+            setName(event.target.value)
+          }}
+          onBlur={() => {
+            if (!dirtyName.current) return
+            const resolved = resolvePersonName(nameRef.current) || lead.name
+            nameRef.current = resolved
+            setName(resolved)
+            flushEdits()
+          }}
+          placeholder="Nome da pessoa"
+        />
         <p className="mt-2 text-[13.5px] font-medium">
           <GeoBadge facts={factsWithTrack(lead, geos)} empty="Estado ainda sem rastreio" />
         </p>

@@ -81,6 +81,7 @@ import { LEAD_WRITE_BATCH, leadWriteChunks, leadWriteIds } from "../src/lib/runt
 import { safeAppPath, withSafeNext } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { contactLookups, normalizeTelegramContact, validateCapture } from "../src/lib/capture.ts"
+import { formatPhoneContact, isPhoneLikeName, resolveLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, migrateLeadOrigin, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
@@ -517,7 +518,21 @@ assert(validateCapture("Ana", "tg:9001").ok, "captura aceita tg:id")
 assert(!validateCapture("Ana", "???").ok, "captura recusa contacto inválido")
 assert(normalizeTelegramContact("ana") === "@ana", "contacto sem @ ganha @")
 assert(normalizeTelegramContact("tg:9") === "tg:9", "tg:id não ganha @")
+assert(normalizeTelegramContact("5511987654321") === "5511987654321", "telefone não vira @user")
 assert(contactLookups("ana").includes("@ana") && contactLookups("@ana").includes("ana"), "lookup cobre as duas formas")
+assert(contactLookups("+55 11 98765-4321").includes("5511987654321"), "lookup do telefone também tem os dígitos")
+assert(isPhoneLikeName("5511987654321"), "telefone cru conta como nome-telefone")
+assert(!isPhoneLikeName("Ana Souza"), "nome de pessoa não é telefone")
+assert(formatPhoneContact("5511987654321") === "+55 11 98765-4321", "formata telemóvel BR")
+assert(formatPhoneContact("551139325678") === "+55 11 3932-5678", "formata fixo BR")
+assert(resolvePersonName("PAULO SERGIO FRANCISCO") === "Paulo Sergio Francisco", "MAIÚSCULAS viram nome")
+assert(resolvePersonName("lucas mota de araujo") === "Lucas Mota de Araujo", "partícula de fica minúscula")
+assert(resolvePersonName("JARSON DOS SANTOS") === "Jarson dos Santos", "dos fica minúsculo")
+assert(resolveLeadName("5511987654321", "5511987654321") === "+55 11 98765-4321", "nome-telefone fica legível")
+assert(resolveLeadName("ana.souza@exemplo.com", "5511987654321") === "Ana Souza", "e-mail no nome vira pessoa")
+assert(migrateLead({ id: "n1", name: "PAULO SERGIO DE SOUZA", contact: "5511987654321" }).name === "Paulo Sergio de Souza", "migrateLead resolve o nome")
+assert(migrateLead({ id: "n2", name: "5511987654321", contact: "5511987654321" }).name === "+55 11 98765-4321", "migrateLead formata nome-telefone")
+assert(migrateLead({ id: "n2", name: "5511987654321", contact: "5511987654321" }).contact === "5511987654321", "migrateLead não pisa o contacto")
 assert(leadFromCapture({ name: "Ana", contact: "ana", channel: "telegram", origin: "popup" }).contact === "@ana", "lead capturado grava @user")
 
 assert(cleanBotUsername("@ste_bot") === "@ste_bot", "username válido fica")

@@ -78,7 +78,7 @@ function toLead(item: Archived, messages: ArchivedMessage[] = []): Lead | null {
     .slice(-80)
   return sanitizeIncomingLead({
     id: item.id,
-    name: (item.name || contact).trim(),
+    name: item.name || contact,
     contact,
     channel: telegram ? "telegram" : "whatsapp",
     campaign: (item.campaign || (item.origin === "import" ? "Importado" : telegram ? "Telegram" : "WhatsApp")).trim(),
