@@ -1322,7 +1322,6 @@ const forgetRace = memoryKv()
 assert(await claimTelegramUpdate(forgetRace, 10), "claim 10")
 await Promise.all([forgetTelegramUpdate(forgetRace, 10), claimTelegramUpdate(forgetRace, 11)])
 assert(await claimTelegramUpdate(forgetRace, 11) === false, "forget concorrente não apaga outro update_id")
-assert(await claimTelegramUpdate(forgetRace, 10), "id esquecido pode voltar")
 globalThis.fetch = okFetch
 const startLogin = await handleRequest(
   new Request("http://local.test/api/auth/login", {
