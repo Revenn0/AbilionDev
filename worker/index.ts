@@ -16,6 +16,7 @@ import {
   adoptDueLeads,
   adoptLeadStores,
   adoptOperatorLead,
+  adoptSettingsStores,
   commitStoredLead,
   applyRemovedFunnels,
   applyRemovedLeads,
@@ -40,7 +41,6 @@ import {
   isLeadPageCursor,
   listLeadPage,
   loadLead,
-  CRM_SETTINGS,
   claimCronLock,
   renewCronLock,
   loadFunnelsKv,
@@ -845,13 +845,8 @@ async function loadFunnels(env: Env): Promise<SalesFunnel[]> {
 async function loadSettings(env: Env): Promise<Settings> {
   const settingsRow = await rest<{ data: Settings }[]>(env, `settings?workspace_id=eq.${WORKSPACE}`)
   const remote = settingsRow?.[0]?.data ? migrateSettings(settingsRow[0].data) : undefined
-  if (env.AUTH) {
-    const raw = await env.AUTH.get(CRM_SETTINGS, "json")
-    if (raw && typeof raw === "object") return loadSettingsKv(env.AUTH)
-  }
-  if (remote) return remote
-  if (env.AUTH) return loadSettingsKv(env.AUTH)
-  return emptySettings()
+  if (env.AUTH) return adoptSettingsStores(await loadSettingsKv(env.AUTH), remote)
+  return remote ?? emptySettings()
 }
 
 async function findLead(env: Env, contact: string, telegramId: number, chatId: string): Promise<Lead | null> {

@@ -43,6 +43,7 @@ import {
   applyRemovedLeads,
   leadsStillOnRemote,
   adoptHydrateSettings,
+  adoptSettingsStores,
   canCreateFunnel,
   canDeleteFunnel,
   cacheLeadsForStorage,
@@ -1038,6 +1039,17 @@ const settingsDeleted = commitStoredSettings(
   settingsWithScript
 )
 assert(settingsDeleted.pageScripts.length === 0, "tombstone remove o último script")
+const settingsKvEmpty = migrateSettings({ workspaceName: "Abilion" })
+const settingsPg = migrateSettings({
+  telegramBotUsername: "@ste_bot",
+  pageScripts: scriptKept.scripts,
+  leadCategories: ["VIP"],
+})
+const settingsAdopted = adoptSettingsStores(settingsKvEmpty, settingsPg)
+assert(settingsAdopted.telegramBotUsername === "@ste_bot", "KV vazio recupera o username do Postgres")
+assert(settingsAdopted.pageScripts[0]?.id === scriptKept.script.id, "KV vazio recupera os scripts do Postgres")
+assert(settingsAdopted.leadCategories.includes("VIP"), "KV vazio recupera as categorias do Postgres")
+assert(adoptSettingsStores(settingsLive, settingsKvEmpty).telegramBotUsername === "@ste_bot", "KV vivo ganha a um Postgres vazio")
 assert(
   !settingsPersistSettled(
     migrateSettings({ telegramBotUsername: "@a", leadCategories: ["VIP"] }),

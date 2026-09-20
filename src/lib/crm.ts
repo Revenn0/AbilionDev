@@ -349,6 +349,13 @@ export function hydrateLeads(
   return overlayPendingLeads(next, pending, removed)
 }
 
+/** GET: objecto vazio no KV não esconde username, scripts e categorias que ainda estão no Postgres. */
+export function adoptSettingsStores(kv: Settings, remote?: Settings | null): Settings {
+  const local = migrateSettings(kv)
+  if (!remote) return local
+  return commitStoredSettings(remote, local, local)
+}
+
 /** POST do CRM: username/grupo do Vincular não somem se o autosave vier vazio. */
 export function commitStoredSettings(stored: Settings, incoming: Settings, latest: Settings = stored): Settings {
   const live = migrateSettings(latest)
