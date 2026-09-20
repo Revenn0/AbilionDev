@@ -1,3 +1,4 @@
+import { normalizeTelegramContact } from "./capture.ts"
 import { defaultSettings, isFlowKind, isMapKind, type Lead, type SalesFunnel, type SalesKind, type SalesSnapshot, type Settings } from "./types.ts"
 
 export function migrateKind(raw: string): SalesKind {
@@ -55,7 +56,7 @@ export function migrateLead(raw: Partial<Lead> & { id: string }): Lead {
   return {
     id: raw.id,
     name: raw.name ?? "Lead",
-    contact: raw.contact ?? "",
+    contact: normalizeTelegramContact(raw.contact ?? "") || (raw.contact ?? ""),
     channel: raw.channel === "whatsapp" ? "whatsapp" : "telegram",
     campaign: raw.campaign ?? "",
     origin: raw.origin === "facebook" ? "facebook" : (raw.origin ?? "popup"),
@@ -222,7 +223,7 @@ export function sanitizeIncomingLead(raw: unknown): Lead | null {
   if (!id || id.length > 80) return null
   const lead = migrateLead({ ...row, id })
   lead.name = lead.name.trim().slice(0, 80) || "Lead"
-  lead.contact = lead.contact.trim().slice(0, 80)
+  lead.contact = (normalizeTelegramContact(lead.contact) || lead.contact.trim()).slice(0, 80)
   lead.campaign = lead.campaign.trim().slice(0, 120)
   lead.memory = lead.memory.slice(0, 4000)
   lead.lastMessage = lead.lastMessage ? lead.lastMessage.slice(0, 400) : undefined

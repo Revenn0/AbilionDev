@@ -65,6 +65,7 @@ export function ConversationsPage() {
   const end = useRef<HTMLDivElement>(null)
   const sending = useRef(false)
   const simulating = useRef(false)
+  const leadRef = useRef<Lead | null>(null)
 
   const all = useMemo(
     () =>
@@ -112,9 +113,15 @@ export function ConversationsPage() {
   }, [filter, query])
 
   useEffect(() => {
+    leadRef.current = lead
+  }, [lead])
+
+  useEffect(() => {
     if (!lead || !canTickSteLocally(lead)) return
     const tick = () => {
-      const result = advanceSteIfDue(lead, Date.now(), runtime)
+      const current = leadRef.current
+      if (!current || !canTickSteLocally(current)) return
+      const result = advanceSteIfDue(current, Date.now(), runtime)
       if (result.replies.length) {
         saveLead(result.lead)
         void flushLeadNow()

@@ -1,3 +1,4 @@
+import { normalizeTelegramContact } from "@/lib/capture"
 import { uid } from "@/lib/format"
 import { campaignFor } from "@/lib/labels"
 import { applyEvent, eventFromOrigin, publishedSnapshot } from "@/lib/runtime"
@@ -192,7 +193,7 @@ export function leadFromCapture(
   const base: Lead = {
     id: uid(),
     name: input.name.trim(),
-    contact: input.contact.trim(),
+    contact: normalizeTelegramContact(input.contact) || input.contact.trim(),
     channel: input.channel,
     campaign: campaignFor(input.channel, input.origin),
     origin: input.origin,

@@ -182,7 +182,7 @@ export function LeadsPage() {
         onFlush={flushLeadNow}
         onDelete={async (id) => {
           const ok = await deleteLead(id)
-          setSelected(null)
+          if (ok) setSelected(null)
           return ok
         }}
       />
@@ -381,9 +381,12 @@ function LeadDrawer({
   }, [lead?.id])
 
   useEffect(() => {
+    leadRef.current = lead
+  }, [lead])
+
+  useEffect(() => {
     dirtyMemory.current = false
     setMemory(lead?.memory ?? "")
-    leadRef.current = lead
   }, [lead?.id])
 
   useEffect(() => {
@@ -425,11 +428,12 @@ function LeadDrawer({
     blocked?: string,
     when?: number
   ) => {
-    if (!canTickSteLocally(lead)) {
+    const current = leadRef.current ?? lead
+    if (!canTickSteLocally(current)) {
       toast.error("Este chat corre no Telegram. A ficha não avança o quadro.")
       return
     }
-    const result = applyEvent(snapshot, { ...lead, memory: memoryRef.current }, event, when)
+    const result = applyEvent(snapshot, { ...current, memory: memoryRef.current }, event, when)
     commit(result.lead)
     const stop = result.effects.find((item) => item.kind === "blocked")
     if (stop) {

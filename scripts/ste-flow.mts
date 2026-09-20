@@ -75,10 +75,11 @@ import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS
 import { FETCH_TIMEOUT_MS } from "../src/lib/http.ts"
 import { safeAppPath } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
-import { validateCapture } from "../src/lib/capture.ts"
+import { contactLookups, normalizeTelegramContact, validateCapture } from "../src/lib/capture.ts"
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
+import { leadFromCapture } from "../src/lib/templates.ts"
 import { barShare, leadsHydrating } from "../src/lib/ops.ts"
 import { loadSecrets, mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
 import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, handleAuth, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeThrottles, retainUserSessions } from "../worker/auth.ts"
@@ -394,6 +395,10 @@ const [raceA, raceB] = await Promise.all([
 ])
 assert(raceA === raceB, "dois /start no mesmo chat ficam com o mesmo id")
 assert((await reserveLeadIdentity(chatRaceKv, "@dup", "77", "lead-c")) === raceA, "terceiro /start reusa o mesmo lead")
+const aliasKv = memoryKv()
+await upsertLeadKv(aliasKv, lead("named", "@ana"))
+assert((await findLeadInKv(aliasKv, "ana", 0, ""))?.id === "named", "findLead sem @ reusa o @user")
+assert((await reserveLeadIdentity(aliasKv, "ana", "", "other")) === "named", "reserva sem @ reusa o @user")
 assert((await listLeads(kv, 400, "all")).some((item) => item.id === "crm-1"), "lista completa inclui o lead")
 const newer = { ...first, lastMessage: "oi", updatedAt: new Date(Date.now() + 1000).toISOString() }
 assert(mergeLeads([first], [newer])[0]?.lastMessage === "oi", "merge fica com o mais novo")
@@ -463,8 +468,13 @@ try {
 const emptyCapture = validateCapture("  ", "")
 assert(!emptyCapture.ok && emptyCapture.errors.name && emptyCapture.errors.contact, "captura vazia falha com os dois campos")
 assert(validateCapture("Ana", "@ana").ok, "captura valida passa")
+assert(validateCapture("Ana", "ana").ok && validateCapture("Ana", "ana").contact === "@ana", "captura sem @ normaliza")
 assert(validateCapture("Ana", "tg:9001").ok, "captura aceita tg:id")
 assert(!validateCapture("Ana", "???").ok, "captura recusa contacto inválido")
+assert(normalizeTelegramContact("ana") === "@ana", "contacto sem @ ganha @")
+assert(normalizeTelegramContact("tg:9") === "tg:9", "tg:id não ganha @")
+assert(contactLookups("ana").includes("@ana") && contactLookups("@ana").includes("ana"), "lookup cobre as duas formas")
+assert(leadFromCapture({ name: "Ana", contact: "ana", channel: "telegram", origin: "popup" }).contact === "@ana", "lead capturado grava @user")
 
 assert(cleanBotUsername("@ste_bot") === "@ste_bot", "username válido fica")
 assert(cleanBotUsername("steaviator") === "@steaviator", "username sem @ ganha @")
@@ -484,6 +494,7 @@ assert(cleanTelegramGroupUrl("https://t.me/+abc123").includes("t.me"), "convite 
 assert(cleanTelegramGroupUrl("https://evil.com/x") === "", "url alheia cai")
 assert(cleanTelegramGroupUrl("javascript:alert(1)") === "", "javascript: cai")
 assert(sanitizeIncomingLead({ id: " lead-1 ", name: " Ana ", contact: "@ana" })?.name === "Ana", "lead incoming corta espaços")
+assert(sanitizeIncomingLead({ id: "lead-ana", contact: "ana" })?.contact === "@ana", "lead incoming normaliza o @")
 assert(sanitizeIncomingLead({ id: "" }) === null, "lead sem id cai")
 assert(sanitizeIncomingLead({ id: "x".repeat(81) }) === null, "lead com id longo cai")
 assert(
