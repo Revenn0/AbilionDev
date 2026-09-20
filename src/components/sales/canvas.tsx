@@ -64,6 +64,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
   const [publishError, setPublishError] = useState("")
   const keepDropSelection = useRef(false)
   const didFit = useRef(false)
+  const skipAutoSave = useRef(true)
 
   useEffect(() => {
     if (!rf || didFit.current) return
@@ -122,22 +123,18 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
     [readOnly, setEdges]
   )
 
-  const onDrop = (e: React.DragEvent) => {
-    e.preventDefault()
+  const addCatalogItem = (item: SalesCatalogItem, client?: { x: number; y: number }) => {
     if (readOnly) {
       toast.message("Troque para Rascunho para editar.")
       return
     }
-    if (!rf) return
-    const raw = e.dataTransfer.getData("application/abilion-sales")
-    if (!raw) return
-    const item = JSON.parse(raw) as SalesCatalogItem
-    const preferred = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY })
-    const position = positionFromPointer(preferred)
+    const preferred = rf
+      ? rf.screenToFlowPosition(client ?? { x: window.innerWidth / 2, y: window.innerHeight / 2 })
+      : { x: 480, y: 220 }
     const node: SalesCanvasNode = {
       id: crypto.randomUUID(),
       type: item.kind,
-      position,
+      position: positionFromPointer(preferred),
       selected: true,
       data: { ...defaultSalesData(item.kind), ...item.defaults },
     }
@@ -145,6 +142,27 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
     setNodes((nds) => [...nds.map((n) => ({ ...n, selected: false })), node])
     setSelected(node)
     if (window.innerWidth < 768) setMobilePanel("props")
+  }
+
+  useEffect(() => {
+    if (readOnly) return
+    if (skipAutoSave.current) {
+      skipAutoSave.current = false
+      return
+    }
+    const timer = window.setTimeout(() => persist(), 500)
+    return () => window.clearTimeout(timer)
+  }, [nodes, edges, readOnly])
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    const raw = e.dataTransfer.getData("application/abilion-sales")
+    if (!raw) return
+    try {
+      addCatalogItem(JSON.parse(raw) as SalesCatalogItem, { x: e.clientX, y: e.clientY })
+    } catch {
+      toast.error("Não consegui largar este bloco.")
+    }
   }
 
   return (
@@ -300,6 +318,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
             "max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:shadow-xl",
             mobilePanel !== "blocks" && "max-md:hidden"
           )}
+          onAdd={addCatalogItem}
         />
         <div className="relative min-w-0 flex-1">
           <ReactFlow
@@ -356,6 +375,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
                 sourceHandle: e.sourceHandle ?? undefined,
               })),
             }}
+            preferDraft={version === "draft"}
             onCursor={setCursor}
           />
           {!selected && version === "draft" && (

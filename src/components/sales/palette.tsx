@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { Bell, ChevronDown, Clock3, GitBranch, GitFork, Handshake, MessageSquare, Play, Search, Tag, Zap } from "lucide-react"
 import { MetaGlyph, YouTubeGlyph } from "@/components/canvas/icons"
-import { SALES_CATALOG, SALES_GROUPS } from "./catalog"
+import { SALES_CATALOG, SALES_GROUPS, type SalesCatalogItem } from "./catalog"
 import type { SalesKind } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -21,7 +21,13 @@ function ItemIcon({ id, kind }: { id: string; kind: SalesKind }) {
   return <GitFork className="size-3.5 text-sky-500" />
 }
 
-export function SalesPalette({ className }: { className?: string }) {
+export function SalesPalette({
+  className,
+  onAdd,
+}: {
+  className?: string
+  onAdd?: (item: SalesCatalogItem) => void
+}) {
   const [query, setQuery] = useState("")
   const [open, setOpen] = useState<Record<string, boolean>>({ map: true, flow: true })
   const needle = query.trim().toLowerCase()
@@ -43,6 +49,7 @@ export function SalesPalette({ className }: { className?: string }) {
         <p className="text-[13px] font-medium text-slate-800">Componentes</p>
         <label className="mt-2 flex items-center gap-2 rounded-lg border border-slate-200 bg-[#fbfcfd] px-2.5 py-1.5">
           <Search className="size-3.5 text-slate-400" />
+          <span className="sr-only">Buscar bloco</span>
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -67,7 +74,17 @@ export function SalesPalette({ className }: { className?: string }) {
                 {group.items.map((item) => (
                   <div
                     key={item.id}
+                    role="button"
+                    tabIndex={0}
                     draggable
+                    aria-label={`Adicionar ${item.label}`}
+                    onClick={() => onAdd?.(item)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault()
+                        onAdd?.(item)
+                      }
+                    }}
                     onDragStart={(event) => {
                       event.dataTransfer.setData("application/abilion-sales", JSON.stringify(item))
                       event.dataTransfer.effectAllowed = "copy"

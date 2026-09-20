@@ -26,6 +26,9 @@ export function FluxoPage() {
     createFunnel(funnel)
     toast.success("Funil criado.")
     navigate(`/fluxo/funil/${funnel.id}`)
+    window.setTimeout(() => {
+      creating.current = false
+    }, 800)
   }
 
   return (
@@ -45,7 +48,7 @@ export function FluxoPage() {
             <div className="surface px-6 py-16 text-center md:col-span-2">
               <p className="text-[14px] font-medium">Nenhum funil</p>
               <p className="mx-auto mt-1 max-w-md text-[13.5px] text-muted-foreground">
-                O quadro publicado é o que a Sté fala. Boas-vindas, minicurso, Superbet e remarketing editam-se aqui.
+                O quadro publicado é o que a Sté fala. Boas-vindas, minicurso, Superbet e remarketing editam-se aqui. O rascunho grava sozinho.
               </p>
               <Button className="mt-5 rounded-full" onClick={createSales}>
                 <Plus /> Novo funil

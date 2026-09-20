@@ -56,7 +56,7 @@ export const SALES_CATALOG: SalesCatalogItem[] = [
     hint: "Mini curso / página",
     defaults: { title: "Landing", cta: "Quero o mini curso" },
   },
-  { id: "split", kind: "split", group: "map", label: "Divisor", hint: "WA e TG não se misturam" },
+  { id: "split", kind: "split", group: "map", label: "Divisor", hint: "Divide o mapa por campanha" },
   {
     id: "entry-popup",
     kind: "entry",

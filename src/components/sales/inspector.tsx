@@ -216,7 +216,7 @@ export function SalesInspector({
                     ["campaign", "Campanha"],
                   ] as const
                 ).map(([id, label]) => (
-                  <Chip key={id} active={(d.tagKind || "temperature") === id} disabled={readOnly} onClick={() => set({ tagKind: id })}>
+                  <Chip key={id} active={(d.tagKind || "temperature") === id} disabled={readOnly} onClick={() => set({ tagKind: id, campaignLock: id === "campaign" ? "telegram" : d.campaignLock })}>
                     {label}
                   </Chip>
                 ))}
@@ -234,14 +234,8 @@ export function SalesInspector({
               </Field>
             )}
             {d.tagKind === "campaign" && (
-              <Field label="Travar canal">
-                <Chips>
-                  {(["whatsapp", "telegram"] as const).map((ch) => (
-                    <Chip key={ch} active={d.campaignLock === ch} disabled={readOnly} onClick={() => set({ campaignLock: ch })}>
-                      {ch}
-                    </Chip>
-                  ))}
-                </Chips>
+              <Field label="Canal">
+                <p className="text-[12.5px] text-slate-600">Telegram</p>
               </Field>
             )}
           </>
@@ -345,6 +339,7 @@ function Chip({
     <button
       type="button"
       disabled={disabled}
+      aria-pressed={Boolean(active)}
       onClick={onClick}
       className={cn(
         "rounded-full border px-2.5 py-1 text-[11px] transition-colors disabled:opacity-50",

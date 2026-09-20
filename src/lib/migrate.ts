@@ -40,7 +40,7 @@ export function migrateFunnel(raw: SalesFunnel): SalesFunnel {
   const production = raw.production
     ? {
         ...raw.production,
-        nodes: raw.production.nodes.map((node) => ({
+        nodes: (raw.production.nodes ?? []).map((node) => ({
           ...node,
           type: kindForNode(node.type, node.data?.title),
           data: migrateNodeData(node.data?.title, node.data),
@@ -107,6 +107,26 @@ export function cleanTelegramGroupUrl(value?: string) {
   } catch {
     return ""
   }
+}
+
+export function sanitizeIncomingFunnel(raw: unknown): SalesFunnel | null {
+  if (!raw || typeof raw !== "object") return null
+  const row = raw as Partial<SalesFunnel>
+  if (typeof row.id !== "string") return null
+  const id = row.id.trim()
+  if (!id || id.length > 80) return null
+  if (row.nodes !== undefined && !Array.isArray(row.nodes)) return null
+  if (row.edges !== undefined && !Array.isArray(row.edges)) return null
+  return migrateFunnel({
+    id,
+    name: String(row.name || "Funil").slice(0, 80) || "Funil",
+    mode: row.mode === "messages" ? "messages" : "sales",
+    status: row.status === "active" ? "active" : "draft",
+    updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : new Date().toISOString(),
+    nodes: Array.isArray(row.nodes) ? row.nodes.slice(0, 200) : [],
+    edges: Array.isArray(row.edges) ? row.edges.slice(0, 400) : [],
+    production: row.production && typeof row.production === "object" ? row.production : null,
+  })
 }
 
 export function sanitizeIncomingLead(raw: unknown): Lead | null {

@@ -9,7 +9,7 @@ import { BANCA_FIXED, type Lead, type LeadEvent, type LeadOrigin, type SalesFunn
 import { compactGeo, factsFromGeo } from "../src/lib/geo.ts"
 import { parseDevice } from "../src/lib/track.ts"
 import { emptySettings, publicSettings } from "../src/lib/crm.ts"
-import { cleanBotUsername, migrateSettings, sanitizeIncomingLead } from "../src/lib/migrate.ts"
+import { cleanBotUsername, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { resolveClientGeo } from "./geo-lookup.ts"
 import { ingestTrack, kvTrackStore, memoryTrackStore, readTrackBody, summaryFromStore, type TrackStore } from "./track-store.ts"
 import {
@@ -284,7 +284,10 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
     const body = (await request.json().catch(() => ({}))) as { funnels?: SalesFunnel[]; settings?: Settings }
-    if (Array.isArray(body.funnels)) await persistFunnels(env, body.funnels)
+    if (Array.isArray(body.funnels)) {
+      const funnels = body.funnels.map(sanitizeIncomingFunnel).filter((item): item is NonNullable<typeof item> => Boolean(item)).slice(0, 20)
+      await persistFunnels(env, funnels)
+    }
     if (body.settings) await persistSettings(env, migrateSettings(body.settings))
     return json({ ok: true })
   }

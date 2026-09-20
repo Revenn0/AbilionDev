@@ -197,6 +197,16 @@ try {
     () => [...document.querySelectorAll("button")].some((el) => (el.textContent || "").includes("Publicar")),
     { timeout: 8_000 }
   )
+  const landingBlock = await page.evaluateHandle(() =>
+    [...document.querySelectorAll("[role='button']")].find((el) => (el.textContent || "").includes("Landing"))
+  )
+  const landingEl = landingBlock.asElement()
+  assert(landingEl, "paleta tem Landing clicável")
+  await landingEl!.click()
+  await page.waitForFunction(
+    () => [...document.querySelectorAll("input")].some((el) => (el as HTMLInputElement).value === "Landing"),
+    { timeout: 5_000 }
+  )
   const editorPath = new URL(page.url()).pathname
 
   for (const viewport of VIEWPORTS) {

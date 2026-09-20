@@ -49,11 +49,16 @@ function effectLine(effect: RuntimeEffect) {
 export function FlowSimulator({
   funnel,
   onCursor,
+  preferDraft = false,
 }: {
   funnel: SalesFunnel
   onCursor: (nodeId?: string) => void
+  preferDraft?: boolean
 }) {
-  const snapshot = useMemo(() => funnel.production ?? snapshotOf(funnel), [funnel])
+  const snapshot = useMemo(
+    () => (!preferDraft && funnel.production ? funnel.production : snapshotOf(funnel)),
+    [funnel, preferDraft]
+  )
   const [lead, setLead] = useState<Lead>(blankLead)
   const [log, setLog] = useState<string[]>([])
   const [open, setOpen] = useState(false)

@@ -31,7 +31,7 @@ import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, st
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { safeAppPath } from "../src/lib/safe-path.ts"
 import { validateCapture } from "../src/lib/capture.ts"
-import { cleanBotUsername, cleanTelegramGroupUrl, migrateSettings, sanitizeIncomingLead } from "../src/lib/migrate.ts"
+import { cleanBotUsername, cleanTelegramGroupUrl, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink } from "../src/lib/telegram-start.ts"
 import { mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
 import { consumeThrottle, consumeMemoryThrottle, clearThrottle, handleAuth, memoryAuthStore } from "../worker/auth.ts"
@@ -387,6 +387,9 @@ assert(cleanTelegramGroupUrl("javascript:alert(1)") === "", "javascript: cai")
 assert(sanitizeIncomingLead({ id: " lead-1 ", name: " Ana ", contact: "@ana" })?.name === "Ana", "lead incoming corta espaços")
 assert(sanitizeIncomingLead({ id: "" }) === null, "lead sem id cai")
 assert(sanitizeIncomingLead({ id: "x".repeat(81) }) === null, "lead com id longo cai")
+assert(sanitizeIncomingFunnel({ id: "funil-1", name: "Quadro", nodes: [], edges: [] })?.id === "funil-1", "funil válido passa")
+assert(sanitizeIncomingFunnel({ id: "" }) === null, "funil sem id cai")
+assert(sanitizeIncomingFunnel({ id: "funil-1", nodes: "nope" }) === null, "funil com nodes inválidos cai")
 
 assert(safeAppPath("/leads") === "/leads", "rota interna passa")
 assert(safeAppPath("/configuracoes?tab=conta") === "/configuracoes?tab=conta", "query da conta passa")
