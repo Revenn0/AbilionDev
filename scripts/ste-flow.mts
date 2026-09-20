@@ -1767,8 +1767,9 @@ const htmlDue = {
 const htmlFired = applyEvent(htmlSnap, htmlDue, { type: "timer" }, Date.now())
 assert(htmlFired.effects.some((item) => item.kind === "send_message"), "espera do quadro gera send_message")
 assert(htmlFired.effects.some((item) => item.kind === "offer"), "espera do quadro gera oferta")
-await saveFunnelsKv(cronEnv.AUTH, [htmlBoard])
-await upsertLeadKv(cronEnv.AUTH, htmlDue)
+const htmlCronEnv = { ...cronEnv, TELEGRAM_BOT_TOKEN: "000:html" } as Env
+await saveFunnelsKv(htmlCronEnv.AUTH, [htmlBoard])
+await upsertLeadKv(htmlCronEnv.AUTH, htmlDue)
 const telegramBodies: string[] = []
 const prevCronFetch = globalThis.fetch
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -1778,7 +1779,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   }
   return prevCronFetch(input, init)
 }) as typeof fetch
-const htmlCron = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), cronEnv, backgroundCtx())
+const htmlCron = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), htmlCronEnv, backgroundCtx())
 assert(htmlCron.status === 200, "cron da oferta do quadro corre")
 const sentHtml = telegramBodies.filter((body) => body.includes("parse_mode") && body.includes("<a href="))
 assert(sentHtml.length >= 2, "cron manda mensagem e oferta em HTML")
