@@ -21,6 +21,7 @@ import {
   LEAD_REMOVED_CAP,
   hydrateLeads,
   leftoverPendingFunnelIds,
+  leadPersistSync,
   mergeLeads,
   overlayPendingLeads,
   remapAdoptedLeads,
@@ -178,12 +179,38 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const removedFunnelIds = useRef(loadIdSet(REMOVED_FUNNELS))
   const removedLeadIds = useRef(loadIdSet(REMOVED_LEADS, LEAD_REMOVED_CAP))
   const crmHydrated = useRef(false)
+  const leadReadKnown = useRef(false)
+  const lastLeadReadOk = useRef(false)
+  const lastLeadWriteOk = useRef(true)
   const settingsDirty = useRef(loadFlag(PENDING_SETTINGS))
   const lastGoodFunnels = useRef<SalesFunnel[]>([])
   const stateRef = useRef(state)
   const leadFlushRef = useRef(Promise.resolve(true))
   const crmFlushRef = useRef(Promise.resolve<{ ok: boolean; error?: string; queued?: boolean }>({ ok: true }))
   const hydrateLock = useRef<Promise<void> | null>(null)
+
+  const resetLeadPersist = () => {
+    leadReadKnown.current = false
+    lastLeadReadOk.current = false
+    lastLeadWriteOk.current = true
+    setPersistSync("idle")
+  }
+
+  const settleLeadPersist = () => {
+    setPersistSync(
+      leadPersistSync({
+        readKnown: leadReadKnown.current,
+        readOk: lastLeadReadOk.current,
+        pendingWrites: pendingLeadWrites.current.size,
+        writeOk: lastLeadWriteOk.current,
+      })
+    )
+  }
+
+  const markLeadRead = (ok: boolean) => {
+    leadReadKnown.current = true
+    lastLeadReadOk.current = ok
+  }
 
   const flushLeadWrites = (opts?: { keepalive?: boolean }): Promise<boolean> => {
     window.clearTimeout(leadWriteTimer.current)
@@ -193,7 +220,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
       const batch = [...pendingLeadWrites.current.values()]
-      if (!batch.length) return true
+      if (!batch.length) {
+        lastLeadWriteOk.current = true
+        settleLeadPersist()
+        return true
+      }
       const result = await persistLeads(batch, opts)
       const savedIds = new Set(result.ids)
       const adopted = result.adopted ?? {}
@@ -221,7 +252,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
       persistIdSet(REMOVED_LEADS, removedLeadIds.current, LEAD_REMOVED_CAP)
       const complete = batch.every((lead) => savedIds.has(lead.id) || removedLeadIds.current.has(lead.id))
-      setPersistSync(result.ok && complete ? "ok" : "error")
+      lastLeadWriteOk.current = result.ok && complete
+      settleLeadPersist()
       return result.ok && complete
     }
     const pending = leadFlushRef.current.then(run, run)
@@ -237,7 +269,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!batch.length) return Promise.resolve(true)
     return Promise.all(batch.map((id) => removeRemoteLead(id))).then((results) => {
       const ok = results.every(Boolean)
-      setPersistSync(ok ? "ok" : "error")
+      lastLeadWriteOk.current = ok
+      settleLeadPersist()
       return ok
     })
   }
@@ -323,7 +356,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const pending = Promise.all([fetchCrm(), fetchRuntime(), fetchLeads(), fetchInbox(INBOX_LIST_PAGES)]).then(
       ([crm, runtime, remoteLeads, inbox]) => {
       setCrmSync(crm.ok ? "ok" : "error")
-      setPersistSync(remoteLeads.ok ? "ok" : "error")
+      markLeadRead(remoteLeads.ok)
       setInboxSync(inbox.ok ? "ok" : "error")
       setRemote(runtime.persist === "supabase" ? "cloud" : runtime.ok ? "local" : "off")
       setState((prev) => {
@@ -364,8 +397,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         persistIdSet(PENDING_FUNNELS, pendingFunnelIds.current)
         crmHydrated.current = true
         if (pendingFunnelIds.current.size || removedFunnelIds.current.size || settingsDirty.current) pushWorker()
-        if (pendingLeadWrites.current.size) void flushLeadWrites()
       }
+      if (pendingLeadWrites.current.size) void flushLeadWrites()
+      else settleLeadPersist()
       if (remoteLeads.ok) {
         const retry = leadsStillOnRemote(removedLeadIds.current, remoteLeads.leads)
         if (retry.length) void flushRemovedLeads(retry)
@@ -400,7 +434,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       lastGoodFunnels.current = []
       setCrmSync("idle")
       setInboxSync("idle")
-      setPersistSync("idle")
+      resetLeadPersist()
       setState((prev) => {
         if (!prev.user) return prev
         toast.error("Sessão expirada. Entra outra vez.")
@@ -476,14 +510,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const reconcile = async () => {
       const [remoteLeads, inbox] = await Promise.all([fetchLeads(), fetchInbox(INBOX_LIST_PAGES)])
       if (cancelled) return
+      markLeadRead(remoteLeads.ok)
+      setInboxSync(inbox.ok ? "ok" : "error")
       if (!remoteLeads.ok) {
-        setPersistSync("error")
-        if (inbox.ok) setInboxSync("ok")
-        else setInboxSync("error")
+        if (pendingLeadWrites.current.size) void flushLeadWrites()
+        else settleLeadPersist()
         return
       }
-      setPersistSync("ok")
-      setInboxSync(inbox.ok ? "ok" : "error")
       setState((prev) => {
         const leads = hydrateLeads(
           prev.leads,
@@ -504,6 +537,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         stateRef.current = next
         return next
       })
+      if (pendingLeadWrites.current.size) void flushLeadWrites()
+      else settleLeadPersist()
       const retry = leadsStillOnRemote(removedLeadIds.current, remoteLeads.leads)
       if (retry.length) void flushRemovedLeads(retry)
     }
@@ -596,7 +631,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         await logoutRequest().catch(() => undefined)
         setCrmSync("idle")
         setInboxSync("idle")
-        setPersistSync("idle")
+        resetLeadPersist()
         commitState({ ...stateRef.current, user: null })
       },
       createFunnel: (funnel) => {
@@ -725,7 +760,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const prev = stateRef.current
         commitState({ ...prev, leads: prev.leads.filter((item) => item.id !== id) })
         return leadFlushRef.current.then(() => removeRemoteLead(id)).then((ok) => {
-          setPersistSync(ok ? "ok" : "error")
+          lastLeadWriteOk.current = ok
+          settleLeadPersist()
           return ok
         })
       },

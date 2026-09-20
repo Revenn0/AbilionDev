@@ -73,6 +73,7 @@ import {
   reconcileLeads,
   resolveLeadLookup,
   settingsWriteFingerprint,
+  leadPersistSync,
 } from "../src/lib/crm.ts"
 import { applyEvent, canAdvanceRemoteWait, eventFromOrigin, pickLiveDueLead, publishedFunnel, publishedSnapshot, snapshotForLead, waitHours } from "../src/lib/runtime.ts"
 import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
@@ -977,7 +978,18 @@ assert(
 )
 assert(
   settingsWriteFingerprint({ ...defaultSettings, telegramBotUsername: "novo" }) !== settingsWriteFingerprint(defaultSettings),
-  "fingerprint muda quando o username muda"
+  "fingerprint muda com a fala da Sté"
+)
+assert(leadPersistSync({ readKnown: false, readOk: false, pendingWrites: 0 }) === "idle", "ainda sem GET dos leads")
+assert(leadPersistSync({ readKnown: true, readOk: true, pendingWrites: 0 }) === "ok", "GET ok sem fila")
+assert(leadPersistSync({ readKnown: true, readOk: true, pendingWrites: 1 }) === "error", "GET ok não esconde POST pendente")
+assert(
+  leadPersistSync({ readKnown: true, readOk: false, pendingWrites: 0, writeOk: true }) === "error",
+  "POST ok não esconde GET falhado"
+)
+assert(
+  leadPersistSync({ readKnown: true, readOk: true, pendingWrites: 0, writeOk: false }) === "error",
+  "DELETE falhou continua erro"
 )
 const settingsLive = migrateSettings({ telegramBotUsername: "@ste_bot", plugins: { telegram: true } })
 const settingsStale = migrateSettings({ telegramBotUsername: "", workspaceName: "Abilion" })
@@ -1913,12 +1925,18 @@ const sentOnly = memoryKv()
 const sentNewer = {
   ...lead("sent-1", "@sent"),
   updatedAt: "2026-01-02T00:00:00.000Z",
+  waitUntil: "2026-01-01T12:00:00.000Z",
   memory: "ste:welcome",
   telegramChatId: "9301",
   messages: [{ id: "m-ste", at: "2026-01-02T00:00:00.000Z", role: "ste" as const, text: "oi" }],
 }
 await rememberSentLead(sentOnly, sentNewer)
 assert((await loadLead(sentOnly, "sent-1"))?.messages?.some((item) => item.id === "m-ste"), "loadLead lê crm:sent sem crm:lead")
+assert((await listLeads(sentOnly, 20, "all")).some((item) => item.id === "sent-1"), "crm:sent entra no GET")
+assert(
+  (await dueLeadsKv(sentOnly, "2026-01-02T00:00:00.000Z")).some((item) => item.id === "sent-1"),
+  "crm:sent com espera entra no cron"
+)
 await sentOnly.put(
   leadKey("sent-1"),
   JSON.stringify({ ...lead("sent-1", "@sent"), updatedAt: "2026-01-01T00:00:00.000Z", messages: [] })
@@ -2523,6 +2541,13 @@ const sentLia = await findLeadInKv(saveFailKv, "@savefail", 9301, "9301")
 assert((sentLia?.messages ?? []).some((item) => item.role === "ste"), "crm:sent guarda as boas-vindas se crm:lead falhar")
 assert(sentLia?.stePhase === "listen", "crm:sent guarda a fase listen")
 assert(sentLia?.memory?.includes("ste:remarketing"), "crm:sent guarda o token da espera")
+assert((await listLeads(saveFailKv, 20, "all")).some((item) => item.contact === "@savefail"), "GET vê o lead só com crm:sent")
+const sentWait = sentLia?.waitUntil ?? ""
+assert(sentWait, "crm:sent guarda a espera")
+assert(
+  (await dueLeadsKv(saveFailKv, sentWait)).some((item) => item.id === sentLia?.id),
+  "índice do crm:sent entra no cron"
+)
 const welcomeSaved = (sentLia?.messages ?? []).filter((item) => item.role === "ste").length
 const saveFailStart2 = backgroundCtx()
 await handleRequest(

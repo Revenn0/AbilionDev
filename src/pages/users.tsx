@@ -89,7 +89,7 @@ export function UsersPage() {
           Contas do estúdio e tokens para o Claude Code ou outros agentes. Um e-mail novo só entra depois de o criares aqui — o login não inventa contas.
         </p>
         {error ? (
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3" data-users-error>
             <p role="alert" className="text-[13px] text-destructive">
               {error}
             </p>
@@ -104,9 +104,13 @@ export function UsersPage() {
             <p className="text-[14px] font-medium">Equipa</p>
             <p className="mt-1 text-[12.5px] text-muted-foreground">Victor e Gabriel são donos iniciais e não desligam.</p>
           </div>
-          {!users ? (
+          {!users && !error ? (
             <p className="px-5 py-8 text-[13px] text-muted-foreground">A carregar as contas…</p>
-          ) : users.length === 0 ? (
+          ) : error && !users ? (
+            <p className="px-5 py-8 text-[13px] text-muted-foreground" role="status">
+              Não li as contas.
+            </p>
+          ) : !users || users.length === 0 ? (
             <p className="px-5 py-8 text-[13px] text-muted-foreground">Ainda não há contas no KV.</p>
           ) : (
             <ul className="divide-y">
@@ -312,9 +316,13 @@ export function UsersPage() {
               </div>
             </div>
           ) : null}
-          {!tokens ? (
+          {!tokens && !error ? (
             <p className="mt-4 text-[13px] text-muted-foreground">A carregar tokens…</p>
-          ) : tokens.length === 0 ? (
+          ) : error && !tokens ? (
+            <p className="mt-4 text-[13px] text-muted-foreground" role="status">
+              Não li os tokens.
+            </p>
+          ) : !tokens || tokens.length === 0 ? (
             <p className="mt-4 text-[13px] text-muted-foreground">Ainda não há tokens nesta conta.</p>
           ) : (
             <ul className="mt-4 divide-y rounded-xl border">

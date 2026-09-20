@@ -322,10 +322,30 @@ export async function persistFunnelsMerge(kv: KvLike, incoming: SalesFunnel[], i
   return clean
 }
 
+function indexEntryFromLead(lead: Lead): CrmIndexEntry {
+  return {
+    id: lead.id,
+    contact: lead.contact,
+    name: lead.name,
+    category: lead.category,
+    chatId: lead.telegramChatId,
+    waitUntil: lead.waitUntil,
+    updatedAt: lead.updatedAt,
+    channel: lead.channel,
+  }
+}
+
 export async function rememberSentLead(kv: KvLike, lead: Lead) {
   const key = sentLeadKey(lead.id)
   if (!key || (await isLeadRemoved(kv, lead.id))) return
   await kv.put(key, JSON.stringify(lead))
+  if (await isLeadRemoved(kv, lead.id)) {
+    await forgetSentLead(kv, lead.id)
+    return
+  }
+  await writeAliases(kv, lead)
+  await rememberLeadNames(kv, [lead])
+  await commitIndex(kv, [indexEntryFromLead(lead)])
 }
 
 export async function forgetSentLead(kv: KvLike, id: string) {
@@ -492,20 +512,10 @@ export async function forgetRemovedLead(kv: KvLike, id: string) {
 
 export async function upsertLeadKv(kv: KvLike, lead: Lead) {
   await forgetRemovedLead(kv, lead.id)
-  const entry: CrmIndexEntry = {
-    id: lead.id,
-    contact: lead.contact,
-    name: lead.name,
-    category: lead.category,
-    chatId: lead.telegramChatId,
-    waitUntil: lead.waitUntil,
-    updatedAt: lead.updatedAt,
-    channel: lead.channel,
-  }
   await kv.put(leadKey(lead.id), JSON.stringify(lead))
   await writeAliases(kv, lead)
   await rememberLeadNames(kv, [lead])
-  await commitIndex(kv, [entry])
+  await commitIndex(kv, [indexEntryFromLead(lead)])
   await forgetSentLead(kv, lead.id)
   return true
 }

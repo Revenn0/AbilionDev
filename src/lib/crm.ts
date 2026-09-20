@@ -523,6 +523,18 @@ export function settingsWriteFingerprint(settings: Settings): string {
   return JSON.stringify(rest)
 }
 
+/** GET ok não esconde POST pendente; POST ok não esconde GET falhado. */
+export function leadPersistSync(opts: {
+  readKnown: boolean
+  readOk: boolean
+  pendingWrites: number
+  writeOk?: boolean
+}): "idle" | "ok" | "error" {
+  if (opts.pendingWrites > 0 || opts.writeOk === false) return "error"
+  if (!opts.readKnown) return "idle"
+  return opts.readOk ? "ok" : "error"
+}
+
 /** Sem hydrate, um POST do seed local criava um quadro a mais ou, no reconcile antigo, apagava os outros. */
 export function canFlushCrm(hydrated: boolean) {
   return hydrated

@@ -276,6 +276,11 @@ try {
 
   await open(page, "/utilizadores")
   await page.waitForSelector("#user-password", { timeout: 8_000 })
+  await page.waitForFunction(
+    () =>
+      !document.body.innerText.includes("A carregar as contas") && !document.body.innerText.includes("A carregar tokens"),
+    { timeout: 8_000 }
+  )
   const showInitial = await page.$("[aria-label='Mostrar senha inicial']")
   assert(showInitial, "criar conta mostra a senha")
   await showInitial!.click()
