@@ -466,10 +466,8 @@ try {
 
   await page.setViewport({ width: 1440, height: 900 })
   await open(page, "/")
-  const logout = await page.evaluateHandle(() => document.querySelector('button[aria-label="Sair"]'))
-  const logoutEl = logout.asElement()
-  assert(logoutEl, "botão Sair")
-  await logoutEl!.click()
+  await page.waitForSelector('button[aria-label="Sair"]', { timeout: 10_000, visible: true })
+  await page.click('button[aria-label="Sair"]')
   await page.waitForFunction(() => location.pathname.includes("/login"), { timeout: 10_000 })
 
   await open(page, "/forgot")

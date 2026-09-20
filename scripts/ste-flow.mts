@@ -1020,6 +1020,10 @@ assert(
   ),
   "falas da Sté diferentes não fecham o persist"
 )
+assert(
+  !settingsPersistSettled(migrateSettings({ workspaceName: "A" }), migrateSettings({ workspaceName: "B" })),
+  "nome do workspace diferente não fecha o persist"
+)
 const setKv = memoryKv()
 await saveSettingsKv(setKv, migrateSettings({ telegramBotUsername: "@ste_bot", leadCategories: ["VIP"] }))
 await persistSettingsMerge(setKv, migrateSettings({ pageScripts: scriptKept.scripts, leadCategories: ["VIP"] }))

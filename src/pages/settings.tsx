@@ -18,6 +18,7 @@ import {
   Webhook,
 } from "lucide-react"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
+import { SyncBanner } from "@/components/layout/sync-banner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -69,6 +70,7 @@ function readTab(params: URLSearchParams): TabId {
 export function SettingsPage() {
   const [params, setParams] = useSearchParams()
   const { hash } = useLocation()
+  const { crmSync, persistSync } = useStore()
   const tab = readTab(params)
   useHashScroll("pixel", tab === "bot")
 
@@ -90,6 +92,12 @@ export function SettingsPage() {
     <div className="h-full overflow-y-auto">
       <div className="page-shell">
         <PageChrome icon={SettingsIcon} title="Configurações" />
+        <SyncBanner
+          items={[
+            { ok: crmSync !== "error", message: "Não consegui ler os funis do Worker. O pixel e os scripts de página podem estar desactualizados." },
+            { ok: persistSync !== "error", message: "Não consegui sincronizar leads com o Worker. O CSV e os contadores podem estar desactualizados." },
+          ]}
+        />
 
         <div role="tablist" aria-label="Secções de configurações" className="flex w-fit flex-wrap gap-1 rounded-full bg-card p-1">
           {TABS.map((item, index) => (
@@ -687,7 +695,12 @@ function AccountPane() {
 function PluginsPane() {
   const { state, persistSync } = useStore()
   const telegramOn = Boolean(state.settings.plugins.telegram)
-  const leadCount = persistSync === "idle" && state.leads.length === 0 ? "…" : state.leads.length
+  const leadCount =
+    persistSync === "idle" && state.leads.length === 0
+      ? "…"
+      : persistSync === "error" && state.leads.length === 0
+        ? "—"
+        : state.leads.length
 
   return (
     <section>

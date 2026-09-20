@@ -104,7 +104,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       )}
       {!canvasEditor && (
         <div className={cn("fixed inset-0 z-50 md:hidden", open ? "pointer-events-auto" : "pointer-events-none")}>
-          <div
+          <button
+            type="button"
+            tabIndex={open ? 0 : -1}
+            aria-label="Fechar menu"
             className={cn(
               "absolute inset-0 bg-slate-900/25 transition-opacity duration-300 motion-reduce:transition-none",
               open ? "opacity-100" : "opacity-0"

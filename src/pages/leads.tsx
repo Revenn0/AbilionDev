@@ -408,6 +408,9 @@ function CategoryField({
         ))}
       </select>
       <div className="flex gap-2">
+        <Label htmlFor={`${id}-new`} className="sr-only">
+          Nova categoria
+        </Label>
         <Input
           id={`${id}-new`}
           value={draft}
