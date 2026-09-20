@@ -21,14 +21,19 @@ export function LandingPage() {
 
   useEffect(() => {
     let cancelled = false
-    void fetchHealth().then((health) => {
-      if (cancelled) return
-      setUnreachable(Boolean(health.unreachable))
-      setUsername(health.telegramBotUsername || "")
-      setReady(true)
-    })
+    const pull = () => {
+      void fetchHealth().then((health) => {
+        if (cancelled) return
+        setUnreachable(Boolean(health.unreachable))
+        setUsername(health.telegramBotUsername || "")
+        setReady(true)
+      })
+    }
+    pull()
+    const timer = window.setInterval(pull, 15_000)
     return () => {
       cancelled = true
+      window.clearInterval(timer)
     }
   }, [])
 
@@ -54,7 +59,21 @@ export function LandingPage() {
           </p>
         ) : unreachable ? (
           <p role="alert" className="mt-8 text-[14px] text-zinc-400">
-            Não consegui falar com o Worker. Recarrega a página.
+            Não consegui falar com o Worker.{" "}
+            <button
+              type="button"
+              className="underline underline-offset-2 hover:text-zinc-200"
+              onClick={() => {
+                setReady(false)
+                void fetchHealth().then((health) => {
+                  setUnreachable(Boolean(health.unreachable))
+                  setUsername(health.telegramBotUsername || "")
+                  setReady(true)
+                })
+              }}
+            >
+              Tentar outra vez
+            </button>
           </p>
         ) : href ? (
           <a

@@ -240,6 +240,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         removedFunnelIds.current.clear()
         pendingFunnelIds.current.clear()
         persistIdSet(PENDING_FUNNELS, pendingFunnelIds.current)
+        persistIdSet(REMOVED_FUNNELS, removedFunnelIds.current)
         settingsDirty.current = false
         persistFlag(PENDING_SETTINGS, false)
         lastGoodFunnels.current = current.funnels
@@ -547,6 +548,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         pushWorker()
       },
       saveFunnel: (funnel) => {
+        if (removedFunnelIds.current.has(funnel.id)) return
         pendingFunnelIds.current.add(funnel.id)
         persistIdSet(PENDING_FUNNELS, pendingFunnelIds.current)
         const prev = stateRef.current

@@ -140,6 +140,8 @@ function BotPane() {
   const [runtime, setRuntime] = useState<RuntimeStatus>({ ok: false })
   const botLock = useRef(false)
   const voiceLock = useRef(false)
+  const userDirty = useRef(false)
+  const groupDirty = useRef(false)
   const origin = workerUrl()
   const hook = runtime.webhook || `${origin}/api/telegram`
   const pixel = `<script src="${origin}/t.js" data-cta="[data-abilion-cta]"></script>`
@@ -149,20 +151,38 @@ function BotPane() {
     const nextRuntime = await fetchRuntime()
     setRuntime(nextRuntime)
     setRuntimeLoaded(true)
-    if (nextRuntime.telegramBotUsername) setUsername(nextRuntime.telegramBotUsername)
-    if (nextRuntime.telegramGroupUrl) setGroup(nextRuntime.telegramGroupUrl)
+    if (nextRuntime.telegramBotUsername && !userDirty.current) setUsername(nextRuntime.telegramBotUsername)
+    if (nextRuntime.telegramGroupUrl && !groupDirty.current) setGroup(nextRuntime.telegramGroupUrl)
     if (nextRuntime.model) setModel(normalizeSteModel(nextRuntime.model))
   }
 
   useEffect(() => {
+    if (!userDirty.current) setUsername(state.settings.telegramBotUsername)
+    if (!groupDirty.current) setGroup(state.settings.telegramGroupUrl)
+  }, [state.settings.telegramBotUsername, state.settings.telegramGroupUrl])
+
+  useEffect(() => {
     void refresh()
+    const pull = () => {
+      if (document.visibilityState === "hidden") return
+      void refresh()
+    }
+    const timer = window.setInterval(pull, 15_000)
+    window.addEventListener("focus", pull)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener("focus", pull)
+    }
   }, [])
 
   return (
     <div className="grid max-w-3xl gap-3">
       {runtimeLoaded && !runtime.ok && (
         <p role="alert" className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-[12.5px] text-destructive">
-          Não consegui ler o runtime do Worker. Recarrega ou confere a sessão.
+          Não consegui ler o runtime do Worker.{" "}
+          <button type="button" className="font-medium underline-offset-2 hover:underline" onClick={() => void refresh()}>
+            Tentar outra vez
+          </button>
         </p>
       )}
       <section className="surface p-6">
@@ -252,6 +272,8 @@ function BotPane() {
                 setToken("")
                 setGlm("")
                 setOpencode("")
+                userDirty.current = false
+                groupDirty.current = false
                 saveSettings({
                   telegramBotUsername: next.telegramBotUsername || cleanUser,
                   telegramGroupUrl: next.telegramGroupUrl || group.trim(),
@@ -279,6 +301,7 @@ function BotPane() {
               id="bot-user"
               value={username}
               onChange={(event) => {
+                userDirty.current = true
                 setUsername(event.target.value)
                 setBotError("")
               }}
@@ -310,6 +333,7 @@ function BotPane() {
               id="bot-group"
               value={group}
               onChange={(event) => {
+                groupDirty.current = true
                 setGroup(event.target.value)
                 setGroupError("")
               }}
