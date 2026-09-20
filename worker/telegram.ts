@@ -1,7 +1,7 @@
 import type { KvLike } from "./kv.ts"
 
 export const TG_UPDATES = "tg:updates"
-const UPDATE_CAP = 400
+export const UPDATE_CAP = 8000
 
 export type TelegramCallResult = {
   ok: boolean
@@ -12,6 +12,7 @@ export type TelegramCallResult = {
 export type TelegramUpdateStore = {
   ids: number[]
   owners: Record<string, string>
+  seenBelow?: number
 }
 
 function readUpdateIds(raw: unknown): number[] {
@@ -24,15 +25,18 @@ function readUpdateIds(raw: unknown): number[] {
 export function readTelegramUpdates(raw: unknown): TelegramUpdateStore {
   const ids = readUpdateIds(raw)
   const owners: Record<string, string> = {}
+  let seenBelow = 0
   if (raw && typeof raw === "object") {
-    const value = (raw as { owners?: unknown }).owners
+    const value = (raw as { owners?: unknown; seenBelow?: unknown }).owners
     if (value && typeof value === "object" && !Array.isArray(value)) {
       for (const [key, owner] of Object.entries(value as Record<string, unknown>)) {
         if (typeof owner === "string" && owner) owners[key] = owner
       }
     }
+    const floor = (raw as { seenBelow?: unknown }).seenBelow
+    if (typeof floor === "number" && Number.isFinite(floor) && floor > 0) seenBelow = Math.floor(floor)
   }
-  return { ids, owners }
+  return { ids, owners, seenBelow: seenBelow || undefined }
 }
 
 export function mergeTelegramClaims(
@@ -50,24 +54,29 @@ export function mergeTelegramClaims(
     if (!Number.isFinite(id) || id < 1 || seen.has(id)) continue
     seen.add(id)
     ids.push(id)
-    if (ids.length >= cap) break
   }
-  const keep = new Set(ids.map(String))
+  const dropped = ids.slice(cap)
+  const kept = ids.slice(0, cap)
+  let seenBelow = Math.max(left.seenBelow ?? 0, right.seenBelow ?? 0)
+  for (const id of dropped) if (id > seenBelow) seenBelow = id
+  const keep = new Set(kept.map(String))
   const clipped: Record<string, string> = {}
   for (const [id, owner] of Object.entries(owners)) {
     if (keep.has(id)) clipped[id] = owner
   }
-  return { ids, owners: clipped }
+  return { ids: kept, owners: clipped, seenBelow: seenBelow || undefined }
 }
 
 export async function claimTelegramUpdate(kv: KvLike, id: number): Promise<boolean> {
   if (!Number.isFinite(id) || id < 1) return true
   const current = readTelegramUpdates(await kv.get(TG_UPDATES, "json"))
+  if ((current.seenBelow ?? 0) >= id && !current.owners[String(id)]) return false
   if (current.ids.includes(id) || current.owners[String(id)]) return false
   const owner = crypto.randomUUID()
   const next: TelegramUpdateStore = {
-    ids: [id, ...current.ids].slice(0, UPDATE_CAP),
+    ids: [id, ...current.ids],
     owners: { ...current.owners, [String(id)]: owner },
+    seenBelow: current.seenBelow,
   }
   const merged = mergeTelegramClaims(readTelegramUpdates(await kv.get(TG_UPDATES, "json")), next)
   await kv.put(TG_UPDATES, JSON.stringify(merged))
@@ -77,7 +86,7 @@ export async function claimTelegramUpdate(kv: KvLike, id: number): Promise<boole
 export function forgetTelegramId(store: TelegramUpdateStore, id: number): TelegramUpdateStore {
   const owners = { ...store.owners }
   delete owners[String(id)]
-  return { ids: store.ids.filter((item) => item !== id), owners }
+  return { ids: store.ids.filter((item) => item !== id), owners, seenBelow: store.seenBelow }
 }
 
 export async function forgetTelegramUpdate(kv: KvLike, id: number) {

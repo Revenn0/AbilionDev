@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react"
 import { fetchLeadQuery } from "@/lib/runtime-api"
 import { useStore } from "@/lib/store"
 
-/** Se a lista hidratada já não tem o @user, o alias do Worker ainda encontra. */
+/** Se a lista hidratada já não tem o lead, o Worker procura por id, @user, telefone e nome. */
 export function useRemoteLeadSearch(query: string) {
   const { ingestRemoteLeads } = useStore()
   const ingestRef = useRef(ingestRemoteLeads)

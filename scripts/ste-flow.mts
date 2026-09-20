@@ -71,7 +71,7 @@ import { applyEvent, canAdvanceRemoteWait, eventFromOrigin, publishedFunnel, pub
 import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
-import { CRM_CRON_LOCK, CRM_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, deleteLeadKv, dueLeadsKv, findLeadInKv, isLeadPageCursor, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadRemovedFunnelIds, loadRemovedLeadIds, mergeIndexEntries, releaseCronLock, renewCronLock, reserveLeadIdentity, saveFunnelsKv, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_CRON_LOCK, CRM_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, deleteLeadKv, dueLeadsKv, findLeadInKv, isLeadPageCursor, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadRemovedFunnelIds, loadRemovedLeadIds, mergeIndexEntries, rememberRemovedLead, releaseCronLock, renewCronLock, reserveLeadIdentity, saveFunnelsKv, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
@@ -81,13 +81,13 @@ import { LEAD_WRITE_BATCH, leadWriteChunks, leadWriteIds } from "../src/lib/runt
 import { safeAppPath, withSafeNext } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { contactLookups, normalizeTelegramContact, validateCapture } from "../src/lib/capture.ts"
-import { displayContact, formatPhoneContact, isPhoneLikeName, isResolvedPersonName, nameFromMessages, preferLeadName, resolveLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
+import { displayContact, formatPhoneContact, isPhoneLikeName, isResolvedPersonName, leadMatchesQuery, nameFromMessages, preferLeadName, resolveLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, migrateLeadOrigin, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
-import { barShare, isImportedLead, isOperatorLockedLead, leadsHydrating } from "../src/lib/ops.ts"
+import { barShare, hasConversation, isImportedLead, isOperatorLockedLead, leadsHydrating } from "../src/lib/ops.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
 import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, handleAuth, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeThrottles, retainUserSessions, sessionUser } from "../worker/auth.ts"
@@ -1644,9 +1644,23 @@ const lookKv = memoryKv()
 const lookLead = lead("look-me", "@lookme")
 lookLead.telegramChatId = "4400"
 await upsertLeadKv(lookKv, lookLead)
+lookLead.name = "Paulo Sergio de Souza"
+await upsertLeadKv(lookKv, lookLead)
 assert((await lookupLeadsByQuery(lookKv, "@lookme"))[0]?.id === "look-me", "busca pelo @user usa o alias")
 assert((await lookupLeadsByQuery(lookKv, "look-me"))[0]?.id === "look-me", "busca pelo id do lead")
+assert((await lookupLeadsByQuery(lookKv, "Paulo Sergio"))[0]?.id === "look-me", "busca pelo nome da pessoa")
+assert((await lookupLeadsByQuery(lookKv, "sergio"))[0]?.id === "look-me", "busca pelo nome sem acento/caixa")
 assert((await lookupLeadsByQuery(lookKv, "ab")).length === 0, "busca curta não varre o índice")
+assert(leadMatchesQuery({ id: "x", name: "Maria Silva", contact: "+5511987654321" }, "maria"), "nome dobra na busca")
+assert(!leadMatchesQuery({ id: "x", name: "Maria Silva", contact: "@maria" }, "ab"), "busca curta não casa")
+const silentChat = lead("silent-fb", "@silent")
+assert(!hasConversation(silentChat), "origem facebook sem fala não é conversa")
+silentChat.lastMessage = "oi"
+assert(hasConversation(silentChat), "lastMessage conta como conversa")
+assert(clipRemovedIds(Array.from({ length: 8010 }, (_, i) => `gone-${i}`), LEAD_REMOVED_CAP).length === 8000, "tombstone de lead aguenta 8000")
+const tombKv = memoryKv()
+for (let i = 0; i < 12; i++) await rememberRemovedLead(tombKv, `gone-${i}`)
+assert((await loadRemovedLeadIds(tombKv)).length === 12, "tombstones recentes ficam")
 const olderIdx = { id: "a", contact: "@a", updatedAt: "2020-01-01T00:00:00.000Z", channel: "telegram" as const }
 const newerIdx = { id: "a", contact: "@a", updatedAt: "2026-01-01T00:00:00.000Z", channel: "telegram" as const }
 const otherIdx = { id: "b", contact: "@b", updatedAt: "2026-01-02T00:00:00.000Z", channel: "telegram" as const }
@@ -2075,6 +2089,16 @@ const claimedOnce = mergeTelegramClaims(
   { ids: [88], owners: { "88": "second" } }
 )
 assert(claimedOnce.owners["88"] === "first", "primeiro dono do update_id fica")
+const evicted = mergeTelegramClaims(
+  { ids: [3, 2, 1], owners: { "1": "a", "2": "b", "3": "c" } },
+  { ids: [4], owners: { "4": "d" } },
+  3
+)
+assert(!evicted.ids.includes(1) && (evicted.seenBelow ?? 0) >= 1, "o anel evicto marca o piso")
+const evictKv = memoryKv()
+await evictKv.put("tg:updates", JSON.stringify(evicted))
+assert((await claimTelegramUpdate(evictKv, 1)) === false, "update_id evicto não reprocessa")
+assert(await claimTelegramUpdate(evictKv, 9), "update_id novo ainda entra")
 const raceTg = memoryKv()
 const racedClaims = await Promise.all([claimTelegramUpdate(raceTg, 88), claimTelegramUpdate(raceTg, 88)])
 assert(racedClaims.filter(Boolean).length === 1, "só um claim do mesmo update_id ganha")

@@ -102,6 +102,32 @@ export function displayContact(value: string) {
   return isPhoneLikeName(trimmed) ? formatPhoneContact(trimmed) : trimmed
 }
 
+export function foldSearch(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9@+]+/g, " ")
+    .trim()
+}
+
+export function leadMatchesQuery(
+  lead: { id: string; name: string; contact: string; telegramChatId?: string },
+  query: string
+) {
+  const raw = query.trim()
+  if (raw.length < 3) return false
+  if (lead.id === raw) return true
+  const needle = foldSearch(raw)
+  if (!needle) return false
+  const hay = foldSearch([lead.name, lead.contact, lead.telegramChatId ?? "", displayContact(lead.contact), displayContact(lead.name)].join(" "))
+  if (hay.includes(needle)) return true
+  const digits = raw.replace(/\D/g, "")
+  if (digits.length < 8) return false
+  const contactDigits = `${lead.contact}${lead.name}${lead.telegramChatId ?? ""}`.replace(/\D/g, "")
+  return contactDigits.includes(digits)
+}
+
 /** Nome apresentável. Contacto (telefone / @user) não se inventa nem se substitui. */
 export function resolveLeadName(name?: string, contact?: string, extra?: LeadNameExtra) {
   const rawName = (name ?? "").trim()

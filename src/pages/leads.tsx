@@ -388,6 +388,12 @@ function LeadDrawer({
     dirtyMemory.current = false
     onSave({ ...current, name: nextName, memory: nextMemory, updatedAt: new Date().toISOString() })
   }
+  const flushEditsRef = useRef(flushEdits)
+  const onFlushRef = useRef(onFlush)
+  useEffect(() => {
+    flushEditsRef.current = flushEdits
+    onFlushRef.current = onFlush
+  })
 
   const commit = (next: Lead) => {
     onSave({
@@ -405,8 +411,8 @@ function LeadDrawer({
 
   useEffect(() => {
     return () => {
-      flushEdits()
-      void onFlush?.()
+      flushEditsRef.current()
+      void onFlushRef.current?.()
     }
   }, [lead?.id])
 

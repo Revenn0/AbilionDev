@@ -7,14 +7,7 @@ function startOfDay(ms: number) {
 }
 
 export function hasConversation(lead: Lead) {
-  return (
-    lead.channel === "telegram" &&
-    ((lead.messages?.length ?? 0) > 0 ||
-      Boolean(lead.lastMessage) ||
-      lead.origin === "private" ||
-      lead.origin === "facebook" ||
-      lead.origin === "group_join")
-  )
+  return lead.channel === "telegram" && ((lead.messages?.length ?? 0) > 0 || Boolean(lead.lastMessage))
 }
 
 export function needsEster(lead: Lead) {

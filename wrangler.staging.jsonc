@@ -1,12 +1,15 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "abiliondev-staging",
+  "account_id": "73dd2cecfc9c7f0220a36fe999e3edf1",
   "main": "worker/index.ts",
   "compatibility_date": "2026-08-23",
   "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
+    "run_worker_first": true,
     "not_found_handling": "single-page-application"
   },
   "observability": {
@@ -23,5 +26,8 @@
     "STE_MODEL": "google/gemma-4-31b-it:free",
     "STE_FALLBACK_MODEL": "deepseek/deepseek-v4-flash-0731:free",
     "STE_USE_LLM": "1"
-  }
+  },
+  "kv_namespaces": [
+    { "binding": "AUTH", "id": "99b7a6f2ce764741a37a5a1330f90cf6" }
+  ]
 }

@@ -1,5 +1,6 @@
 import { contactLookups } from "../src/lib/capture.ts"
 import { clipRemovedIds, emptySettings, publicSettings } from "../src/lib/crm.ts"
+import { leadMatchesQuery } from "../src/lib/lead-name.ts"
 import { migrateLead, migrateSettings, sanitizeIncomingFunnel } from "../src/lib/migrate.ts"
 import type { Lead, SalesFunnel, Settings } from "../src/lib/types.ts"
 import type { KvLike } from "./kv.ts"
@@ -9,9 +10,11 @@ export const CRM_FUNNELS = "crm:funnels"
 export const CRM_SETTINGS = "crm:settings"
 export const CRM_REMOVED = "crm:removed"
 export const CRM_REMOVED_FUNNELS = "crm:removed-funnels"
+export const CRM_NAMES = "crm:names"
 export const CRM_CRON_LOCK = "crm:cron-lock"
 
-const REMOVED_CAP = 400
+export const LEAD_REMOVED_CAP = 8000
+const FUNNEL_REMOVED_CAP = 400
 export const LEAD_INDEX_REST_CAP = 4000
 export const LEAD_INDEX_PINNED_CAP = 8000
 
@@ -23,6 +26,7 @@ export function aliasKey(kind: "contact" | "chat", value: string) {
 export type CrmIndexEntry = {
   id: string
   contact: string
+  name?: string
   chatId?: string
   waitUntil?: string
   updatedAt: string
@@ -48,7 +52,11 @@ export function mergeIndexEntries(left: CrmIndexEntry[], right: CrmIndexEntry[])
   const byId = new Map(left.map((item) => [item.id, item]))
   for (const item of right) {
     const prev = byId.get(item.id)
-    if (!prev || item.updatedAt >= prev.updatedAt) byId.set(item.id, item)
+    if (!prev || item.updatedAt >= prev.updatedAt) {
+      byId.set(item.id, { ...prev, ...item, name: item.name || prev?.name })
+    } else {
+      byId.set(item.id, { ...item, ...prev, name: prev.name || item.name })
+    }
   }
   return [...byId.values()]
 }
@@ -121,6 +129,7 @@ export async function listLeadPage(
   }
   const slice = rows.slice(start, start + Math.max(1, limit))
   const leads = (await Promise.all(slice.map((item) => loadLead(kv, item.id)))).filter((lead): lead is Lead => Boolean(lead))
+  await rememberLeadNames(kv, leads)
   const last = slice.at(-1)
   return {
     leads,
@@ -232,25 +241,83 @@ export async function findLeadInKv(kv: KvLike, contact: string, telegramId: numb
   return hit ? loadLead(kv, hit.id) : null
 }
 
+function readNameMap(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {}
+  const out: Record<string, string> = {}
+  for (const [id, name] of Object.entries(raw as Record<string, unknown>)) {
+    if (!id || typeof name !== "string") continue
+    const next = name.trim().slice(0, 80)
+    if (next) out[id] = next
+  }
+  return out
+}
+
+export async function loadLeadNames(kv: KvLike): Promise<Record<string, string>> {
+  return readNameMap(await kv.get(CRM_NAMES, "json"))
+}
+
+export async function rememberLeadNames(kv: KvLike, leads: Array<Pick<Lead, "id" | "name">>) {
+  if (!leads.length) return
+  const names = await loadLeadNames(kv)
+  let changed = false
+  for (const lead of leads) {
+    const next = lead.name.trim().slice(0, 80)
+    if (!lead.id || !next || names[lead.id] === next) continue
+    names[lead.id] = next
+    changed = true
+  }
+  if (!changed) return
+  const keep = new Set((await loadIndex(kv)).entries.map((item) => item.id))
+  const clipped: Record<string, string> = {}
+  for (const [id, name] of Object.entries(names)) {
+    if (keep.has(id) || leads.some((lead) => lead.id === id)) clipped[id] = name
+  }
+  await kv.put(CRM_NAMES, JSON.stringify(clipped))
+}
+
 export async function lookupLeadsByQuery(kv: KvLike, query: string): Promise<Lead[]> {
   const needle = query.trim().slice(0, 80)
   if (needle.length < 3) return []
-  const byId = await loadLead(kv, needle)
-  if (byId) return [byId]
-  const found = await findLeadInKv(kv, needle, 0, needle)
-  return found ? [found] : []
+  const hits: Lead[] = []
+  const seen = new Set<string>()
+  const push = (lead: Lead | null) => {
+    if (!lead || seen.has(lead.id)) return
+    seen.add(lead.id)
+    hits.push(lead)
+  }
+  push(await loadLead(kv, needle))
+  push(await findLeadInKv(kv, needle, 0, needle))
+  const index = await loadIndex(kv)
+  const names = await loadLeadNames(kv)
+  const matchIds: string[] = []
+  for (const entry of index.entries) {
+    const name = entry.name || names[entry.id] || ""
+    if (!leadMatchesQuery({ id: entry.id, name, contact: entry.contact, telegramChatId: entry.chatId }, needle)) continue
+    if (!seen.has(entry.id) && !matchIds.includes(entry.id)) matchIds.push(entry.id)
+    if (matchIds.length >= 20) break
+  }
+  if (matchIds.length < 20) {
+    for (const [id, name] of Object.entries(names)) {
+      if (seen.has(id) || matchIds.includes(id)) continue
+      if (!leadMatchesQuery({ id, name, contact: "", telegramChatId: "" }, needle)) continue
+      matchIds.push(id)
+      if (matchIds.length >= 20) break
+    }
+  }
+  for (const id of matchIds) push(await loadLead(kv, id))
+  return hits
 }
 
 export async function loadRemovedLeadIds(kv: KvLike): Promise<string[]> {
   const raw = await kv.get(CRM_REMOVED, "json")
   if (!raw || typeof raw !== "object") return []
-  return clipRemovedIds((raw as { ids?: unknown }).ids, REMOVED_CAP)
+  return clipRemovedIds((raw as { ids?: unknown }).ids, LEAD_REMOVED_CAP)
 }
 
 export async function rememberRemovedLead(kv: KvLike, id: string) {
   const next = id.trim()
   if (!next || next.length > 80) return
-  const ids = clipRemovedIds([next, ...(await loadRemovedLeadIds(kv))], REMOVED_CAP)
+  const ids = clipRemovedIds([next, ...(await loadRemovedLeadIds(kv))], LEAD_REMOVED_CAP)
   await kv.put(CRM_REMOVED, JSON.stringify({ ids }))
 }
 
@@ -264,6 +331,7 @@ export async function upsertLeadKv(kv: KvLike, lead: Lead) {
   const entry: CrmIndexEntry = {
     id: lead.id,
     contact: lead.contact,
+    name: lead.name,
     chatId: lead.telegramChatId,
     waitUntil: lead.waitUntil,
     updatedAt: lead.updatedAt,
@@ -271,6 +339,7 @@ export async function upsertLeadKv(kv: KvLike, lead: Lead) {
   }
   await kv.put(leadKey(lead.id), JSON.stringify(lead))
   await writeAliases(kv, lead)
+  await rememberLeadNames(kv, [lead])
   await commitIndex(kv, [entry])
 }
 
@@ -280,6 +349,11 @@ export async function deleteLeadKv(kv: KvLike, id: string) {
   const entry = index.entries.find((item) => item.id === id)
   await rememberRemovedLead(kv, id)
   await clearAliases(kv, prev, entry)
+  const names = await loadLeadNames(kv)
+  if (names[id]) {
+    delete names[id]
+    await kv.put(CRM_NAMES, JSON.stringify(names))
+  }
   await kv.delete?.(leadKey(id))
   await commitIndex(kv, [], [id])
 }
@@ -287,11 +361,11 @@ export async function deleteLeadKv(kv: KvLike, id: string) {
 export async function loadRemovedFunnelIds(kv: KvLike): Promise<string[]> {
   const raw = await kv.get(CRM_REMOVED_FUNNELS, "json")
   if (!raw || typeof raw !== "object") return []
-  return clipRemovedIds((raw as { ids?: unknown }).ids, REMOVED_CAP)
+  return clipRemovedIds((raw as { ids?: unknown }).ids, FUNNEL_REMOVED_CAP)
 }
 
 export async function rememberRemovedFunnels(kv: KvLike, ids: string[]) {
-  const next = clipRemovedIds([...ids, ...(await loadRemovedFunnelIds(kv))], REMOVED_CAP)
+  const next = clipRemovedIds([...ids, ...(await loadRemovedFunnelIds(kv))], FUNNEL_REMOVED_CAP)
   await kv.put(CRM_REMOVED_FUNNELS, JSON.stringify({ ids: next }))
 }
 
