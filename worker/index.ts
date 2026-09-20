@@ -50,6 +50,7 @@ import {
   persistFunnelsMerge,
   persistSettingsMerge,
   isLeadRemoved,
+  rememberSentLead,
   reserveLeadIdentity,
   resolveLeadWrite,
   upsertLeadKv,
@@ -720,18 +721,30 @@ async function processWaits(env: Env) {
           if (!talked.replies.length && talked.lead.waitUntil === lead.waitUntil) continue
           if (!(await saveLead(env, talked.lead))) continue
           if (token && lead.telegramChatId && talked.replies.length) {
-            await sendSteReplies(env, token, lead.telegramChatId, talked.replies, talked.beat)
+            const sent = await sendSteReplies(env, token, lead.telegramChatId, talked.replies, talked.beat)
+            if (!sent.ok) {
+              await restoreQueuedLead(env, lead)
+              continue
+            }
           }
         } else {
           const result = applyEvent(snapshot, lead, { type: "timer" }, Date.now())
           if (!(await saveLead(env, result.lead))) continue
+          let telegramNeeded = false
+          let telegramOk = false
           for (const effect of result.effects) {
             if ((effect.kind === "offer" || effect.kind === "send_message") && token && lead.telegramChatId) {
-              await sendTelegramMarkup(token, lead.telegramChatId, effect.body || "", effect.url)
+              telegramNeeded = true
+              const sent = await sendTelegramMarkup(token, lead.telegramChatId, effect.body || "", effect.url)
+              if (sent.ok) telegramOk = true
             }
             if (effect.kind === "notify_ester" && token) {
               await notifyEster(env, token, effect.body)
             }
+          }
+          if (telegramNeeded && !telegramOk) {
+            await restoreQueuedLead(env, lead)
+            continue
           }
         }
         advanced += 1
@@ -949,26 +962,39 @@ async function removeLead(env: Env, id: string) {
 }
 
 async function persistLeadAfterSend(env: Env, lead: Lead) {
+  if (env.AUTH) {
+    try {
+      await rememberSentLead(env.AUTH, lead)
+    } catch {
+      /* ainda tentamos o crm:lead */
+    }
+  }
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
       if (await saveLead(env, lead)) return true
     } catch {
-      /* o Telegram já entregou — não largamos o update */
+      /* o Telegram já entregou — o crm:sent segura o estado */
     }
     if (attempt < 3) await sleep(40 * (attempt + 1))
   }
   return false
 }
 
-async function saveLead(env: Env, lead: Lead) {
+async function restoreQueuedLead(env: Env, lead: Lead) {
+  return saveLead(env, { ...lead, updatedAt: new Date().toISOString() }, { replace: true })
+}
+
+async function saveLead(env: Env, lead: Lead, opts?: { replace?: boolean }) {
   let bounded = sanitizeIncomingLead(lead)
   if (!bounded) return false
   if (env.AUTH) {
     if (await isLeadRemoved(env.AUTH, bounded.id)) return false
-    const prev = await loadLead(env.AUTH, bounded.id)
-    bounded = commitStoredLead(prev, bounded)
-    const latest = await loadLead(env.AUTH, bounded.id)
-    bounded = commitStoredLead(prev, bounded, latest)
+    if (!opts?.replace) {
+      const prev = await loadLead(env.AUTH, bounded.id)
+      bounded = commitStoredLead(prev, bounded)
+      const latest = await loadLead(env.AUTH, bounded.id)
+      bounded = commitStoredLead(prev, bounded, latest)
+    }
     await upsertLeadKv(env.AUTH, bounded)
   }
   if (!env.SUPABASE_SERVICE_ROLE) return true

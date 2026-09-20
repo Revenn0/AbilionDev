@@ -78,7 +78,7 @@ import { applyEvent, canAdvanceRemoteWait, eventFromOrigin, pickLiveDueLead, pub
 import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
-import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, deleteLeadKv, dueLeadsKv, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, deleteLeadKv, dueLeadsKv, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
@@ -1898,6 +1898,29 @@ assert(!(await loadRemovedLeadIds(kv)).includes("gone"), "voltar a gravar limpa 
 assert((await findLeadInKv(kv, "@gone", 9, "9"))?.id === "gone", "alias volta quando o lead volta")
 await deleteLeadKv(kv, "gone")
 
+const sentOnly = memoryKv()
+const sentNewer = {
+  ...lead("sent-1", "@sent"),
+  updatedAt: "2026-01-02T00:00:00.000Z",
+  memory: "ste:welcome",
+  telegramChatId: "9301",
+  messages: [{ id: "m-ste", at: "2026-01-02T00:00:00.000Z", role: "ste" as const, text: "oi" }],
+}
+await rememberSentLead(sentOnly, sentNewer)
+assert((await loadLead(sentOnly, "sent-1"))?.messages?.some((item) => item.id === "m-ste"), "loadLead lê crm:sent sem crm:lead")
+await sentOnly.put(
+  leadKey("sent-1"),
+  JSON.stringify({ ...lead("sent-1", "@sent"), updatedAt: "2026-01-01T00:00:00.000Z", messages: [] })
+)
+assert((await loadLead(sentOnly, "sent-1"))?.messages?.some((item) => item.id === "m-ste"), "loadLead prefere crm:sent mais novo")
+await upsertLeadKv(sentOnly, { ...sentNewer, updatedAt: "2026-01-03T00:00:00.000Z", memory: "ste:welcome" })
+assert(!(await sentOnly.get(sentLeadKey("sent-1"), "json")), "upsert canónico apaga o crm:sent")
+const sentGone = memoryKv()
+await rememberSentLead(sentGone, sentNewer)
+await rememberRemovedLead(sentGone, "sent-1")
+assert((await loadLead(sentGone, "sent-1")) === null, "lead apagado larga o crm:sent")
+assert(!(await sentGone.get(sentLeadKey("sent-1"), "json")), "tombstone apaga crm:sent")
+
 const capKv = memoryKv()
 for (let i = 0; i < 401; i++) {
   const row = lead(`id-${i}`, `@u${i}`)
@@ -2482,6 +2505,32 @@ await handleRequest(
 )
 await saveFailAgain.flush()
 assert(saveFailCalls === firstSaveFailCalls, "retry do mesmo update não volta a mandar")
+const sentLia = await findLeadInKv(saveFailKv, "@savefail", 9301, "9301")
+assert((sentLia?.messages ?? []).some((item) => item.role === "ste"), "crm:sent guarda as boas-vindas se crm:lead falhar")
+assert(sentLia?.stePhase === "listen", "crm:sent guarda a fase listen")
+assert(sentLia?.memory?.includes("ste:remarketing"), "crm:sent guarda o token da espera")
+const welcomeSaved = (sentLia?.messages ?? []).filter((item) => item.role === "ste").length
+const saveFailStart2 = backgroundCtx()
+await handleRequest(
+  new Request("http://local.test/api/telegram", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+    body: JSON.stringify({
+      update_id: 502,
+      message: {
+        chat: { id: 9301 },
+        text: "/start fb_again",
+        from: { id: 9301, username: "savefail", first_name: "Lia" },
+      },
+    }),
+  }),
+  saveFailEnv,
+  saveFailStart2
+)
+await saveFailStart2.flush()
+assert(saveFailCalls === firstSaveFailCalls, "segundo /start não reenvia as boas-vindas")
+const sentLiaAgain = await findLeadInKv(saveFailKv, "@savefail", 9301, "9301")
+assert((sentLiaAgain?.messages ?? []).filter((item) => item.role === "ste").length === welcomeSaved, "transcript do /start seguinte fica igual")
 globalThis.fetch = saveFailFetch
 await forgetTelegramUpdate(dupEnv.AUTH, 42)
 assert(await claimTelegramUpdate(dupEnv.AUTH, 42), "esquecer o update permite retry")
@@ -3531,6 +3580,65 @@ assert(sentHtml.length >= 2, "cron manda mensagem e oferta em HTML")
 assert(telegramBodies.some((body) => body.includes("mundoaviator.com.br/mini-curso")), "cron envia o send_message")
 assert(telegramBodies.some((body) => body.includes("app.mundoaviator.com.br")), "cron envia a oferta")
 globalThis.fetch = prevCronFetch
+
+const cronFailKv = memoryKv()
+const cronFailEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  AUTH: cronFailKv,
+  ABILION_ENV: "development",
+  CRON_SECRET: "cron",
+  TELEGRAM_BOT_TOKEN: "000:cronfail",
+} as Env
+const cronFailWait = new Date(Date.now() - 2000).toISOString()
+await upsertLeadKv(cronFailKv, {
+  ...lead("cron-403", "@cron403"),
+  telegramChatId: "9401",
+  waitUntil: cronFailWait,
+  memory: "ste:remarketing",
+  stePhase: "offer",
+})
+let cronFailCalls = 0
+const cronFailPrev = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("api.telegram.org")) {
+    cronFailCalls += 1
+    return new Response(JSON.stringify({ ok: false, description: "Forbidden" }), { status: 403 })
+  }
+  return cronFailPrev(input, init)
+}) as typeof fetch
+const cronFailRes = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), cronFailEnv, backgroundCtx())
+assert(cronFailRes.status === 200, "cron com Telegram 403 ainda é 200")
+const cronFailBody = (await cronFailRes.json()) as { advanced?: number }
+assert((cronFailBody.advanced ?? 1) === 0, "cron não conta avanço se o Telegram recusou")
+const cronFailLead = await loadLead(cronFailKv, "cron-403")
+assert(cronFailLead?.waitUntil === cronFailWait, "Telegram 403 devolve a espera")
+assert(!(cronFailLead?.messages ?? []).some((item) => item.role === "ste"), "Telegram 403 não grava remarketing")
+assert(cronFailCalls > 0, "cron tentou mandar")
+const cronFailAgain = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), cronFailEnv, backgroundCtx())
+assert(cronFailAgain.status === 200, "segundo cron com 403 corre")
+assert(cronFailCalls > 1, "segundo cron tenta outra vez a espera restaurada")
+assert((await loadLead(cronFailKv, "cron-403"))?.waitUntil === cronFailWait, "segundo 403 mantém a espera")
+
+const boardFailKv = memoryKv()
+const boardFailEnv = { ...cronFailEnv, AUTH: boardFailKv, TELEGRAM_BOT_TOKEN: "000:boardfail" } as Env
+await saveFunnelsKv(boardFailKv, [htmlBoard])
+const boardWait = new Date(Date.now() - 2000).toISOString()
+await upsertLeadKv(boardFailKv, {
+  ...lead("due-board-fail", "@boardfail"),
+  telegramChatId: "9501",
+  nodeId: waitId,
+  waitUntil: boardWait,
+})
+const boardFailCallsBefore = cronFailCalls
+const boardFailRes = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), boardFailEnv, backgroundCtx())
+assert(boardFailRes.status === 200, "cron do quadro com 403 ainda é 200")
+const boardFailBody = (await boardFailRes.json()) as { advanced?: number }
+assert((boardFailBody.advanced ?? 1) === 0, "quadro não avança se o Telegram recusou")
+const boardFailLead = await loadLead(boardFailKv, "due-board-fail")
+assert(boardFailLead?.waitUntil === boardWait, "403 do quadro devolve a espera")
+assert(boardFailLead?.nodeId === waitId, "403 do quadro mantém o nó da espera")
+assert(cronFailCalls > boardFailCallsBefore, "cron do quadro tentou mandar")
+globalThis.fetch = cronFailPrev
 
 const hugePixel = await handleRequest(
   new Request("http://local.test/api/track", {

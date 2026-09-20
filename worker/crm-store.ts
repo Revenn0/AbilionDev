@@ -64,6 +64,11 @@ export function goneFunnelKey(id: string) {
   return next && next.length <= 80 ? `crm:funnel-gone:${next}` : ""
 }
 
+export function sentLeadKey(id: string) {
+  const next = id.trim()
+  return next && next.length <= 80 ? `crm:sent:${next}` : ""
+}
+
 export async function loadIndex(kv: KvLike): Promise<CrmIndex> {
   const raw = await kv.get(CRM_INDEX, "json")
   if (!raw || typeof raw !== "object") return { entries: [] }
@@ -321,10 +326,29 @@ export async function persistFunnelsMerge(kv: KvLike, incoming: SalesFunnel[], i
   return clean
 }
 
+export async function rememberSentLead(kv: KvLike, lead: Lead) {
+  const key = sentLeadKey(lead.id)
+  if (!key || (await isLeadRemoved(kv, lead.id))) return
+  await kv.put(key, JSON.stringify(lead))
+}
+
+export async function forgetSentLead(kv: KvLike, id: string) {
+  const key = sentLeadKey(id)
+  if (key) await kv.delete?.(key)
+}
+
 export async function loadLead(kv: KvLike, id: string): Promise<Lead | null> {
   const raw = await kv.get(leadKey(id), "json")
-  if (!raw || typeof raw !== "object") return null
-  return migrateLead(raw as Lead)
+  const stored = raw && typeof raw === "object" ? migrateLead(raw as Lead) : null
+  const sentRaw = await kv.get(sentLeadKey(id), "json")
+  const sent = sentRaw && typeof sentRaw === "object" ? migrateLead(sentRaw as Lead) : null
+  if (sent && (await isLeadRemoved(kv, id))) {
+    await forgetSentLead(kv, id)
+    return stored
+  }
+  if (!stored) return sent
+  if (!sent) return stored
+  return sent.updatedAt > stored.updatedAt ? sent : stored
 }
 
 export async function listLeads(kv: KvLike, limit = 80, channel: Lead["channel"] | "all" = "telegram"): Promise<Lead[]> {
@@ -440,6 +464,7 @@ export async function rememberRemovedLead(kv: KvLike, id: string) {
   await kv.put(CRM_REMOVED, JSON.stringify({ ids }))
   const gone = goneLeadKey(next)
   if (gone) await kv.put(gone, JSON.stringify({ at: new Date().toISOString() }))
+  await forgetSentLead(kv, next)
 }
 
 export async function forgetRemovedLead(kv: KvLike, id: string) {
@@ -465,6 +490,7 @@ export async function upsertLeadKv(kv: KvLike, lead: Lead) {
   await writeAliases(kv, lead)
   await rememberLeadNames(kv, [lead])
   await commitIndex(kv, [entry])
+  await forgetSentLead(kv, lead.id)
   return true
 }
 
