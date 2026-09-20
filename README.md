@@ -114,7 +114,7 @@ O anúncio aponta para `https://t.me/BOT?start=fb` (ou `fb_campanha`). O Worker:
 - abre a Sté com o motor determinístico; o papo livre da oferta usa OpenCode (DeepSeek V4.1 Flash) e cai no OpenRouter (Gemma, DeepSeek V4 Flash)
 - reenvia se a API do Telegram devolver 429
 
-Correr [`supabase/migrations/003_facebook_scale.sql`](supabase/migrations/003_facebook_scale.sql) e [`supabase/migrations/004_track_and_facts.sql`](supabase/migrations/004_track_and_facts.sql) no SQL editor. A inbox mostra no máximo 80 conversas (aguardando / hoje / Facebook).
+Correr [`supabase/migrations/003_facebook_scale.sql`](supabase/migrations/003_facebook_scale.sql) e [`supabase/migrations/004_track_and_facts.sql`](supabase/migrations/004_track_and_facts.sql) no SQL editor. Conversas lista 80 e tem **Carregar mais** a partir dos leads hidratados. O poll da inbox continua a ser as 80 mais recentes.
 
 Pixel da landing (Configurações → Bot Telegram, e também Telegram):
 
@@ -153,9 +153,9 @@ Autenticadas:
 - `/` — dashboard (leads, conversas, Facebook, espera, ofertas).
 - `/analytics` — funil Ads → landing → Telegram, globo, 30 dias.
 - `/fluxo` — lista de funis.
-- `/fluxo/funil/:id` — editor visual + runtime.
+- `/fluxo/funil/:id` — editor visual + runtime. Zoom/ajuste no canto superior direito; **Testar fluxo** no canto inferior direito — no telemóvel já não tapam um ao outro.
 - `/leads` — CRM, captura, print/banca. Em lead com `telegramChatId` a ficha não avança print, espera nem oferta — isso corre no Telegram. Nota e temperatura ainda gravam. O POST `/api/leads` recusa o mesmo avanço.
-- `/conversas` — inbox Telegram da Sté (máx. 80). Sem conversas, “Simular conversa” corre o motor no painel. Leads com `telegramChatId` real não avançam a espera no browser e a caixa “Simular lead” fica fechada — simular ali gravaria falas que o Telegram nunca enviou. O cron é que manda o Telegram.
+- `/conversas` — inbox Telegram da Sté. Os primeiros 80 vêm na lista; **Carregar mais** abre o resto hidratado. Sem conversas, “Simular conversa” corre o motor no painel. Leads com `telegramChatId` real não avançam a espera no browser e a caixa “Simular lead” fica fechada — simular ali gravaria falas que o Telegram nunca enviou. O cron é que manda o Telegram. Leads só do painel disparam a espera no `waitUntil` (setTimeout), não só quando o operador volta a escrever.
 - `/telegram` — saúde do bot, webhook, snippet do pixel, simulação de /start.
 - `/configuracoes` — bot, conta, plugins, notificações, aparência.
 
@@ -175,7 +175,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `POST /api/auth/reset` | token de reset |
 | `POST /api/auth/password` | sessão |
 | `GET/POST /api/crm` | sessão — funis e settings (sem token). POST aceita `removedFunnelIds`; o KV ganha se já houver quadro |
-| `GET/POST/DELETE /api/leads` | sessão — GET pagina 400 (`nextCursor`). O hydrate pede até 5 páginas (2000) |
+| `GET/POST/DELETE /api/leads` | sessão — GET pagina 400 (`nextCursor`, `stale` se o cursor sumiu). O hydrate pede até 5 páginas (2000) e **não** trata página a meio vazia como lista completa |
 | `GET /api/inbox` | sessão — recorte de 80 do Telegram. O poll não reabre lead apagado nesta sessão |
 | `GET/POST /api/runtime` | sessão — Telegram, IA, voz |
 | `POST /api/runtime/voice` | sessão — gera clips ElevenLabs |
@@ -209,7 +209,7 @@ Estes itens dependem de credenciais ou de uma decisão humana. O código não in
 - Gravar um lead mais novo com memória, factos ou mensagens vazias não apaga o que já estava no KV. Um POST com chat incompleto (gaveta aberta, clique de temperatura) une as falas por id — não substitui o array. Um webhook mais antigo ainda consegue acrescentar a fala nova sem reverter temperatura ou nota. Se o Telegram chegar depois com `updatedAt` mais novo, a fala entra e a temperatura/print/nome do operador ficam. O `saveLead` do painel faz o mesmo merge antes de pintar, para o clique na gaveta não esconder o chat até ao próximo poll.
 - Espera do quadro com `delayHours` inválido (`NaN`, negativo) cai nas 84h e o persist do funil já não guarda `NaN`. O inspector também recusa o valor.
 - O lock do cron renova-se em cada lead. Se o TTL de 90s acabar a meio de um lote, o dono estende; um cron sobreposto não pega o mesmo lote.
-- Em Conversas, mudar o filtro já não abre o chat de outra pessoa. A conversa escolhida que sair do recorte mostra o estado vazio.
+- Em Conversas, mudar o filtro já não abre o chat de outra pessoa. A conversa escolhida que sair do recorte mostra o estado vazio. **Carregar mais** junta os próximos 80 do recorte hidratado — a busca já corre na lista toda.
 - A ficha do lead com chat real não dispara print/espera/oferta no browser. O POST `/api/leads` só aceita nota, nome e temperatura nesses leads — o quadro continua com o webhook e o cron.
 - `webhookOk` e `webhookUrl` só o Worker escreve depois do `setWebhook`. O cliente não marca o webhook como activo.
 - `openaiBaseUrl` do POST `/api/runtime` é ignorado. A IA só fala com OpenCode, OpenRouter ou `OPENAI_BASE_URL` do Worker.

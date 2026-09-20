@@ -71,14 +71,14 @@ export async function listLeadPage(
   limit = 80,
   channel: Lead["channel"] | "all" = "telegram",
   cursor = ""
-): Promise<{ leads: Lead[]; nextCursor?: string }> {
+): Promise<{ leads: Lead[]; nextCursor?: string; stale?: boolean }> {
   const index = await loadIndex(kv)
   const rows = channel === "all" ? index.entries : index.entries.filter((item) => item.channel === channel)
   let start = 0
   const mark = cursor.trim()
   if (mark) {
     const at = rows.findIndex((item) => leadPageCursor(item) === mark)
-    if (at < 0) return { leads: [] }
+    if (at < 0) return { leads: [], stale: true }
     start = at + 1
   }
   const slice = rows.slice(start, start + Math.max(1, limit))

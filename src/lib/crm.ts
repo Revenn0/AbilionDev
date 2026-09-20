@@ -4,6 +4,26 @@ import { defaultSettings, type ChatMessage, type Lead, type LeadEvent, type Lead
 const CAP = 400
 export const LEAD_LIST_CAP = 2000
 
+export type LeadListPage = {
+  leads: Lead[]
+  nextCursor?: string
+  stale?: boolean
+}
+
+/** Junta páginas do GET /api/leads. Cursor velho no meio não conta como lista completa. */
+export function collectLeadPages(pages: LeadListPage[]): { ok: boolean; leads: Lead[]; retry: boolean } {
+  const leads: Lead[] = []
+  for (let index = 0; index < pages.length; index++) {
+    const page = pages[index]
+    if (page.stale || (index > 0 && page.leads.length === 0)) {
+      return { ok: false, leads: [], retry: true }
+    }
+    leads.push(...page.leads)
+    if (!page.nextCursor) return { ok: true, leads, retry: false }
+  }
+  return { ok: true, leads, retry: false }
+}
+
 export function publicSettings(settings: Settings): Settings {
   return { ...settings, telegramBotToken: "", esterTelegramChatId: "" }
 }

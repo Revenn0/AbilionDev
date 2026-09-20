@@ -14,7 +14,7 @@ import { ORIGIN_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { GeoBadge } from "@/components/crm/geo-badge"
 import { factsWithTrack } from "@/lib/geo"
 import { publishedFunnel } from "@/lib/runtime"
-import { advanceSteIfDue, canSimulateSte, canTickSteLocally, replySteLived, splitSteMarkup, steHeardChips, steRuntimeFromFunnels, steStepLabel } from "@/lib/ste"
+import { advanceSteIfDue, canSimulateSte, canTickSteLocally, replySteLived, splitSteMarkup, steHeardChips, steRuntimeFromFunnels, steStepLabel, steWaitDelayMs } from "@/lib/ste"
 import { useTrackSummary } from "@/lib/use-track-summary"
 import { timeAgo } from "@/lib/format"
 import type { Lead } from "@/lib/types"
@@ -59,6 +59,7 @@ export function ConversationsPage() {
   const runtimeKey = publishedFunnel(state.funnels)?.production?.publishedAt ?? ""
   const [filter, setFilter] = useState<FilterId>("waiting")
   const [query, setQuery] = useState("")
+  const [shown, setShown] = useState(INBOX_CAP)
   const [id, setId] = useState<string | null>(null)
   const [draft, setDraft] = useState("")
   const end = useRef<HTMLDivElement>(null)
@@ -83,30 +84,47 @@ export function ConversationsPage() {
     [all]
   )
 
-  const rows = useMemo(() => {
+  const matched = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    return all
-      .filter((lead) => matchesFilter(lead, filter))
-      .filter((lead) => {
-        if (!needle) return true
-        return [lead.name, lead.contact, lead.campaign, lead.lastMessage].some((value) =>
-          (value ?? "").toLowerCase().includes(needle)
-        )
-      })
-      .slice(0, INBOX_CAP)
+    return all.filter((lead) => matchesFilter(lead, filter)).filter((lead) => {
+      if (!needle) return true
+      return [lead.name, lead.contact, lead.campaign, lead.lastMessage].some((value) =>
+        (value ?? "").toLowerCase().includes(needle)
+      )
+    })
   }, [all, filter, query])
+
+  const rows = useMemo(() => {
+    const cut = matched.slice(0, shown)
+    if (id && matched.some((item) => item.id === id) && !cut.some((item) => item.id === id)) {
+      const extra = matched.find((item) => item.id === id)
+      if (extra) return [extra, ...cut]
+    }
+    return cut
+  }, [matched, shown, id])
 
   const selected = id ? all.find((item) => item.id === id) ?? null : null
   const listed = Boolean(selected && rows.some((row) => row.id === selected.id))
   const lead = listed ? selected : id && selected ? null : rows[0] ?? null
 
   useEffect(() => {
+    setShown(INBOX_CAP)
+  }, [filter, query])
+
+  useEffect(() => {
     if (!lead || !canTickSteLocally(lead)) return
-    const result = advanceSteIfDue(lead, Date.now(), runtime)
-    if (result.replies.length) {
-      saveLead(result.lead)
-      void flushLeadNow()
+    const tick = () => {
+      const result = advanceSteIfDue(lead, Date.now(), runtime)
+      if (result.replies.length) {
+        saveLead(result.lead)
+        void flushLeadNow()
+      }
     }
+    tick()
+    const delay = steWaitDelayMs(lead.waitUntil)
+    if (delay == null) return
+    const timer = window.setTimeout(tick, delay)
+    return () => window.clearTimeout(timer)
   }, [lead?.id, lead?.waitUntil, runtimeKey])
 
   useEffect(() => {
@@ -206,7 +224,7 @@ export function ConversationsPage() {
               </div>
               {rows.length === 0 ? (
                 <p className="px-4 py-10 text-center text-[13px] text-muted-foreground">
-                  Nada neste recorte. A inbox mostra no máximo {INBOX_CAP} conversas.
+                  Nada neste recorte. Limpa a busca ou escolhe Todas.
                 </p>
               ) : (
                 <ul className="min-h-0 flex-1 overflow-y-auto">
@@ -234,6 +252,25 @@ export function ConversationsPage() {
                       </button>
                     </li>
                   ))}
+                  {matched.length > rows.length ? (
+                    <li className="border-t border-border p-3">
+                      <p className="text-center text-[11px] text-muted-foreground">
+                        A mostrar {rows.length} de {matched.length}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="mt-1 h-8 w-full rounded-full text-[12px]"
+                        onClick={() => setShown((value) => value + INBOX_CAP)}
+                      >
+                        Carregar mais
+                      </Button>
+                    </li>
+                  ) : matched.length > INBOX_CAP ? (
+                    <li className="px-4 py-3 text-center text-[11px] text-muted-foreground">
+                      {matched.length} conversas neste recorte
+                    </li>
+                  ) : null}
                 </ul>
               )}
             </div>

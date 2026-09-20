@@ -22,6 +22,7 @@ import {
   STE_REMARKETING_BLOCK,
   STE_CLOSE,
   steRuntimeFromSnapshot,
+  steWaitDelayMs,
   safeHttpUrl,
   splitSteMarkup,
   toTelegramHtml,
@@ -44,6 +45,7 @@ import {
   canDeleteFunnel,
   canFlushCrm,
   clipRemovedIds,
+  collectLeadPages,
   commitCrmFunnels,
   hydrateFunnels,
   hydrateLeads,
@@ -734,6 +736,18 @@ assert(
   overlayPendingLeads([inboxOnly], new Map(), ["inbox-1"]).length === 0,
   "overlay sem fila ainda aplica tombstone"
 )
+const pageA = lead("page-a")
+const pageB = lead("page-b")
+assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }, { leads: [pageB] }]).ok, "duas páginas completas entram")
+assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }, { leads: [pageB] }]).leads.map((item) => item.id).join() === "page-a,page-b", "páginas somam")
+assert(collectLeadPages([{ leads: [] }]).ok && collectLeadPages([{ leads: [] }]).leads.length === 0, "primeira página vazia é lista completa")
+assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }, { leads: [], stale: true }]).retry, "cursor velho pede retry")
+assert(!collectLeadPages([{ leads: [pageA], nextCursor: "c1" }, { leads: [], stale: true }]).ok, "cursor velho não finge lista completa")
+assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }, { leads: [] }]).retry, "página seguinte vazia sem stale também retenta")
+assert(steWaitDelayMs(undefined) === null, "sem espera não agenda tick")
+assert(steWaitDelayMs(new Date(Date.now() + 1000).toISOString(), Date.now()) === 1050, "espera futura agenda com folga")
+assert(steWaitDelayMs(new Date(Date.now() - 1000).toISOString(), Date.now()) === 50, "espera atrasada dispara já")
+assert(steWaitDelayMs(new Date(Date.now() + 2 * 86_400_000).toISOString(), Date.now()) === null, "espera de dias não fica no browser")
 assert(
   settingsWriteFingerprint({ ...defaultSettings, telegramBotToken: "secret" }) ===
     settingsWriteFingerprint({ ...defaultSettings, telegramBotToken: "" }),
@@ -1422,6 +1436,10 @@ assert(secondLeadPage.leads.some((item) => item.id === "id-0"), "página seguint
 assert(
   (await listLeadPage(capKv, 400, "all", "1999-01-01T00:00:00.000Z|missing")).leads.length === 0,
   "cursor desconhecido não rebobina a lista"
+)
+assert(
+  (await listLeadPage(capKv, 400, "all", "1999-01-01T00:00:00.000Z|missing")).stale,
+  "cursor desconhecido marca a página como velha"
 )
 const waitingOld = lead("wait-old", "@waitold")
 waitingOld.waitUntil = new Date(Date.now() - 1000).toISOString()

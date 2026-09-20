@@ -1,3 +1,4 @@
+import { collectLeadPages, type LeadListPage } from "./crm"
 import { fetchWithTimeout } from "./http"
 import { noteUnauthorized } from "./session"
 import type { Lead, SalesFunnel, Settings } from "./types"
@@ -70,25 +71,43 @@ export async function prepareVoice() {
   )
 }
 
+async function readLeadPage(cursor: string): Promise<LeadListPage | { failed: true }> {
+  const res = await fetchWithTimeout(cursor ? `/api/leads?cursor=${encodeURIComponent(cursor)}` : "/api/leads", {
+    credentials: "include",
+    cache: "no-store",
+  })
+  noteUnauthorized(res)
+  if (!res.ok) return { failed: true }
+  const data = (await res.json()) as { leads?: Lead[]; nextCursor?: string; stale?: boolean }
+  if (!Array.isArray(data.leads)) return { failed: true }
+  return {
+    leads: data.leads,
+    nextCursor: typeof data.nextCursor === "string" ? data.nextCursor.trim() : undefined,
+    stale: data.stale === true,
+  }
+}
+
 export async function fetchLeads() {
   try {
-    const leads: Lead[] = []
-    let cursor = ""
-    for (let page = 0; page < 5; page++) {
-      const res = await fetchWithTimeout(cursor ? `/api/leads?cursor=${encodeURIComponent(cursor)}` : "/api/leads", {
-        credentials: "include",
-        cache: "no-store",
-      })
-      noteUnauthorized(res)
-      if (!res.ok) return page === 0 ? { ok: false as const, leads: [] as Lead[] } : { ok: true as const, leads }
-      const data = (await res.json()) as { leads?: Lead[]; nextCursor?: string }
-      if (!Array.isArray(data.leads)) return page === 0 ? { ok: false as const, leads: [] as Lead[] } : { ok: true as const, leads }
-      leads.push(...data.leads)
-      const next = typeof data.nextCursor === "string" ? data.nextCursor.trim() : ""
-      if (!next) return { ok: true as const, leads }
-      cursor = next
+    const pull = async () => {
+      const pages: LeadListPage[] = []
+      let cursor = ""
+      for (let page = 0; page < 5; page++) {
+        const next = await readLeadPage(cursor)
+        if ("failed" in next) {
+          return page === 0 ? { ok: false as const, leads: [] as Lead[], retry: false } : collectLeadPages([...pages, { leads: [], stale: true }])
+        }
+        pages.push(next)
+        const folded = collectLeadPages(pages)
+        if (folded.retry || !next.nextCursor) return folded
+        cursor = next.nextCursor
+      }
+      return collectLeadPages(pages)
     }
-    return { ok: true as const, leads }
+    const first = await pull()
+    if (first.ok || !first.retry) return { ok: first.ok as boolean, leads: first.leads }
+    const second = await pull()
+    return { ok: second.ok, leads: second.leads }
   } catch {
     return { ok: false as const, leads: [] as Lead[] }
   }

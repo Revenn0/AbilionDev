@@ -387,7 +387,12 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     const cursor = (url.searchParams.get("cursor") || "").trim()
     if (cursor && !isLeadPageCursor(cursor)) return json({ error: "Cursor inválido." }, 400)
     const page = await loadMergedLeads(env, 400, "all", cursor)
-    return json({ ok: true, leads: page.leads, nextCursor: page.nextCursor })
+    return json({
+      ok: true,
+      leads: page.leads,
+      nextCursor: page.stale ? undefined : page.nextCursor,
+      stale: page.stale || undefined,
+    })
   }
 
   if (url.pathname === "/api/leads" && request.method === "POST") {
@@ -819,7 +824,8 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
   const scoped = kv.length || cursor ? remote.filter((lead) => keep.has(lead.id)) : remote
   return {
     leads: adoptLeadStores(kv, await attachLeadEvents(env, scoped)).slice(0, limit),
-    nextCursor: page.nextCursor,
+    nextCursor: page.stale ? undefined : page.nextCursor,
+    stale: page.stale,
   }
 }
 

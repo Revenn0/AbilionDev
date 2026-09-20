@@ -798,6 +798,13 @@ export function canSimulateSte(lead: Lead) {
   return canTickSteLocally(lead) && !lead.steBlocked && !lead.steQuiet
 }
 
+export function steWaitDelayMs(waitUntil: string | undefined, now = Date.now()) {
+  if (!waitUntil) return null
+  const due = new Date(waitUntil).getTime() - now
+  if (!Number.isFinite(due) || due > 86_400_000) return null
+  return Math.max(50, due + 50)
+}
+
 export function advanceSteIfDue(lead: Lead, now = Date.now(), runtime?: SteRuntime): SteResult {
   const due = lead.waitUntil ? new Date(lead.waitUntil).getTime() : 0
   if (!due || due > now || !isSteWait(lead)) return pack(lead, [])

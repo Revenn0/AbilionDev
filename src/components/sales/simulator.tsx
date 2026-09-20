@@ -84,7 +84,7 @@ export function FlowSimulator({
   }
 
   return (
-    <div className="absolute bottom-3 left-3 z-20 w-[min(360px,calc(100%-1.5rem))]">
+    <div className="absolute right-3 bottom-3 z-20 w-[min(360px,calc(100%-1.5rem))]">
       {!open ? (
         <Button size="sm" className="h-8 rounded-full text-[12px]" onClick={() => setOpen(true)}>
           <Play className="size-3.5" /> Testar fluxo

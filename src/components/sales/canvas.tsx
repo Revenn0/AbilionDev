@@ -35,7 +35,7 @@ const SALES_BOX = { w: 300, h: 220 }
 function BoardControls() {
   const { zoomIn, zoomOut, fitView } = useReactFlow()
   return (
-    <Controls showZoom={false} showFitView={false} showInteractive={false} aria-label="Controlos do quadro">
+    <Controls position="top-right" showZoom={false} showFitView={false} showInteractive={false} aria-label="Controlos do quadro">
       <ControlButton type="button" onClick={() => zoomIn()} title="Aproximar" aria-label="Aproximar">
         <Plus />
       </ControlButton>
