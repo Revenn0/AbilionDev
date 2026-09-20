@@ -1,4 +1,4 @@
-import { collectLeadPages, INBOX_LIST_PAGES, LEAD_LIST_PAGES, type LeadListPage } from "./crm"
+import { collectLeadPages, LEAD_LIST_PAGES, type LeadListPage } from "./crm"
 import { fetchWithTimeout, fetchWrite } from "./http"
 import { noteUnauthorized } from "./session"
 import type { Lead, SalesFunnel, Settings } from "./types"
