@@ -487,7 +487,7 @@ assert(adsDeepLink("@good_bot", "fb_a1b2c3d4e5") === "https://t.me/good_bot?star
 assert(visitorIdFromStart("fb_a1b2c3d4e5") === "a1b2c3d4e5", "start fb_vid devolve o visitor")
 assert(visitorIdFromStart("fb") === undefined, "start fb sem vid não inventa visitor")
 assert(
-  pixelSnippet("https://www.abilion.lol") === `<script src="https://www.abilion.lol/t.js" data-cta="[data-abilion-cta]"></script>`,
+  pixelSnippet("https://www.abilion.lol") === `<script src="https://www.abilion.lol/t.js?v=2" data-cta="[data-abilion-cta]"></script>`,
   "snippet do pixel usa a origem"
 )
 assert(ADS_ORIGIN === "https://www.abilion.lol", "pixel do ads aponta para produção")
@@ -2605,6 +2605,7 @@ assert(pixel.status === 204, "pixel público grava")
 const tracker = await handleRequest(new Request("http://local.test/t.js"), liveEnv, backgroundCtx())
 assert(tracker.status === 200, "t.js público")
 assert(tracker.headers.get("x-content-type-options") === "nosniff", "t.js tem nosniff")
+assert(tracker.headers.get("cache-control") === "public, max-age=60", "t.js não fica 5 minutos velho")
 assert(tracker.headers.get("strict-transport-security")?.includes("max-age=31536000"), "t.js manda HSTS")
 const trackerBody = await tracker.text()
 assert(trackerBody.includes("/api/track"), "t.js aponta o pixel")

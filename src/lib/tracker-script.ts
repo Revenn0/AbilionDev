@@ -1,9 +1,10 @@
 export const VISITOR_STORAGE_KEY = "abilion_vid"
 export const ADS_ORIGIN = "https://www.abilion.lol"
+export const PIXEL_VERSION = 2
 
 export function pixelSnippet(origin: string) {
   const base = origin.replace(/\/$/, "")
-  return `<script src="${base}/t.js" data-cta="[data-abilion-cta]"></script>`
+  return `<script src="${base}/t.js?v=${PIXEL_VERSION}" data-cta="[data-abilion-cta]"></script>`
 }
 
 export function pixelPageHtml(origin: string, telegramHref = "") {

@@ -119,7 +119,7 @@ Correr [`supabase/migrations/003_facebook_scale.sql`](supabase/migrations/003_fa
 Pixel da landing — no topo de Telegram e de Configurações → Bot Telegram (`#pixel`). O snippet que se cola no anúncio é sempre o de produção, mesmo no painel local:
 
 ```html
-<script src="https://www.abilion.lol/t.js" data-cta="[data-abilion-cta]"></script>
+<script src="https://www.abilion.lol/t.js?v=2" data-cta="[data-abilion-cta]"></script>
 <a href="https://t.me/BOT?start=fb" data-abilion-cta>Falar no Telegram</a>
 ```
 

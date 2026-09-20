@@ -163,7 +163,7 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext) {
         headers: {
           "content-type": "text/javascript; charset=utf-8",
           "access-control-allow-origin": "*",
-          "cache-control": "public, max-age=300",
+          "cache-control": "public, max-age=60",
           "x-content-type-options": "nosniff",
         },
       })
