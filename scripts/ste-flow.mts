@@ -646,6 +646,34 @@ const afterClick = { ...keptChat, updatedAt: "2026-06-02T00:00:00.000Z", tempera
 const mergedLate = adoptStoredLead(afterClick, lateTelegram)
 assert(mergedLate.temperature === "quente", "gravação antiga do webhook não reverte a temperatura")
 assert(mergedLate.messages?.some((item) => item.id === "m-3"), "mensagem nova do Telegram entra mesmo com updatedAt velho")
+const afterOperator = {
+  ...afterClick,
+  temperature: "quente" as const,
+  updatedAt: "2026-06-02T00:00:00.000Z",
+  printAt: "2026-06-02T00:00:00.000Z",
+}
+const newerTelegram = {
+  ...afterOperator,
+  updatedAt: "2026-06-03T00:00:00.000Z",
+  temperature: "novo" as const,
+  printAt: undefined,
+  name: afterOperator.name,
+  messages: [
+    ...afterOperator.messages,
+    { id: "m-4", at: "2026-06-03T00:00:00.000Z", role: "ste" as const, text: "superbet" },
+  ],
+}
+const keptTemp = adoptStoredLead(afterOperator, newerTelegram)
+assert(keptTemp.temperature === "quente", "webhook mais novo não arrefece o lead que o operador marcou")
+assert(keptTemp.printAt === "2026-06-02T00:00:00.000Z", "print do operador sobrevive ao webhook")
+assert(keptTemp.messages?.some((item) => item.id === "m-4"), "fala nova do webhook mais novo entra")
+const operatorRename = adoptStoredLead(afterOperator, {
+  ...afterOperator,
+  updatedAt: "2026-06-04T00:00:00.000Z",
+  name: "Ana Quente",
+  temperature: "morno" as const,
+})
+assert(operatorRename.name === "Ana Quente" && operatorRename.temperature === "morno", "POST só de operador ainda troca nome e temperatura")
 assert(mergeLeadMessages([{ id: "m-1", at: "1", role: "ste", text: "a" }], [{ id: "m-2", at: "2", role: "lead", text: "b" }]).map((item) => item.id).join(",") === "m-1,m-2", "merge de falas une por id")
 assert(waitHours(Number("x")) === 84, "espera NaN cai nas 84h")
 assert(waitHours(-3) === 84, "espera negativa cai nas 84h")
@@ -1814,6 +1842,33 @@ assert(
 const afterLate = await loadLead(liveEnv.AUTH, "chat-1")
 assert(afterLate?.temperature === "quente", "POST atrasado não reverte a temperatura")
 assert(afterLate?.messages?.some((item) => item.id === "cm-3"), "fala nova do Telegram entra com updatedAt velho")
+const newerTalk = {
+  ...afterLate!,
+  updatedAt: "2026-06-05T00:00:00.000Z",
+  temperature: "novo" as const,
+  printAt: undefined,
+  messages: [
+    ...(afterLate?.messages ?? []),
+    { id: "cm-4", at: "2026-06-05T00:00:00.000Z", role: "ste" as const, text: "superbet" },
+  ],
+}
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/leads", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: liveCookie },
+        body: JSON.stringify({ lead: newerTalk }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 200,
+  "POST mais novo só com fala nova é 200"
+)
+const afterTalk = await loadLead(liveEnv.AUTH, "chat-1")
+assert(afterTalk?.temperature === "quente", "webhook mais novo não arrefece o lead")
+assert(afterTalk?.messages?.some((item) => item.id === "cm-4"), "fala do webhook mais novo entra")
 assert((await handleRequest(new Request("http://local.test/api/leads?id=", { method: "DELETE", headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())).status === 400, "DELETE sem id é 400")
 assert(
   (

@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import {
   activatePublishedFunnels,
   adoptRemoteFunnels,
+  adoptStoredLead,
   applyRemovedFunnels,
   applyRemovedLeads,
   canDeleteFunnel,
@@ -467,11 +468,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         })
       },
       saveLead: (lead) => {
-        setState((prev) => ({
-          ...prev,
-          leads: prev.leads.map((item) => (item.id === lead.id ? lead : item)),
-        }))
-        queueLeadWrite(lead)
+        setState((prev) => {
+          const current = prev.leads.find((item) => item.id === lead.id)
+          const next = current ? adoptStoredLead(current, lead) : lead
+          queueLeadWrite(next)
+          return {
+            ...prev,
+            leads: prev.leads.map((item) => (item.id === lead.id ? next : item)),
+          }
+        })
       },
       deleteLead: (id) => {
         pendingLeadWrites.current.delete(id)

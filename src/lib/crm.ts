@@ -47,8 +47,19 @@ export function adoptStoredLead(prev: Lead, incoming: Lead): Lead {
       visitorId === prev.visitorId &&
       JSON.stringify(facts ?? {}) === JSON.stringify(prev.facts ?? {})
     if (sameMessages && sameEvents && sameExtra) return prev
-    return { ...prev, events, messages, memory, facts, telegramChatId, visitorId }
+    return {
+      ...prev,
+      events,
+      messages,
+      memory,
+      facts,
+      telegramChatId,
+      visitorId,
+      printAt: prev.printAt || incoming.printAt,
+      bancaAt: prev.bancaAt || incoming.bancaAt,
+    }
   }
+  const addedChat = (incoming.messages ?? []).some((msg) => msg.id && !(prev.messages ?? []).some((item) => item.id === msg.id))
   return {
     ...incoming,
     events,
@@ -57,6 +68,11 @@ export function adoptStoredLead(prev: Lead, incoming: Lead): Lead {
     facts,
     telegramChatId,
     visitorId,
+    printAt: incoming.printAt || prev.printAt,
+    bancaAt: incoming.bancaAt || prev.bancaAt,
+    temperature: addedChat ? prev.temperature : incoming.temperature,
+    name: addedChat ? prev.name : incoming.name,
+    contact: addedChat ? prev.contact : incoming.contact,
   }
 }
 

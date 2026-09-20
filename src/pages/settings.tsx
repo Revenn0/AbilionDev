@@ -627,8 +627,9 @@ function AccountPane() {
 }
 
 function PluginsPane() {
-  const { state } = useStore()
+  const { state, persistSync } = useStore()
   const telegramOn = Boolean(state.settings.plugins.telegram)
+  const leadCount = persistSync === "idle" && state.leads.length === 0 ? "…" : state.leads.length
 
   return (
     <section>
@@ -637,7 +638,7 @@ function PluginsPane() {
           <p className="text-[14px] font-medium">Plugins</p>
           <p className="mt-0.5 text-[12.5px] text-muted-foreground">O canal activo é o Telegram. Interruptores sem efeito saíram daqui.</p>
         </div>
-        <p className="text-[12.5px] text-muted-foreground">{state.leads.length} leads na base</p>
+        <p className="text-[12.5px] text-muted-foreground">{leadCount} leads na base</p>
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         {PLUGINS.map((plugin) => {
