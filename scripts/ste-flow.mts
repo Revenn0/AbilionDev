@@ -3506,8 +3506,35 @@ const mcpAccount = await handleRequest(
   backgroundCtx()
 )
 const mcpAccountBody = (await mcpAccount.json()) as { result?: { content?: Array<{ text?: string }> } }
-const mcpUser = JSON.parse(mcpAccountBody.result?.content?.[0]?.text || "{}") as { user?: { email?: string } }
+const mcpUser = JSON.parse(mcpAccountBody.result?.content?.[0]?.text || "{}") as { user?: { id?: string; email?: string } }
 assert(mcpUser.user?.email === "carla@abilion.com", "MCP cria conta")
+const mcpPatch = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 9,
+      method: "tools/call",
+      params: { name: "abilion_patch_user", arguments: { id: mcpUser.user?.id, disabled: true } },
+    }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const mcpPatchBody = (await mcpPatch.json()) as { result?: { content?: Array<{ text?: string }> } }
+const mcpPatched = JSON.parse(mcpPatchBody.result?.content?.[0]?.text || "{}") as { user?: { disabled?: boolean } }
+assert(mcpPatch.status === 200 && mcpPatched.user?.disabled === true, "MCP desliga conta")
+const carlaDisabled = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.209" },
+    body: JSON.stringify({ email: "carla@abilion.com", password: "senhaok" }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+assert(carlaDisabled.status === 401, "conta desligada pelo MCP não entra")
 
 const mcpPublic = await handleRequest(new Request("http://local.test/mcp"), teamEnv, backgroundCtx())
 const mcpPublicBody = (await mcpPublic.json()) as { ok?: boolean; name?: string }
@@ -3607,6 +3634,36 @@ const mcpToken = await handleRequest(
 const mcpTokenBody = (await mcpToken.json()) as { result?: { content?: Array<{ text?: string }> } }
 const mcpTokenOut = JSON.parse(mcpTokenBody.result?.content?.[0]?.text || "{}") as { token?: string }
 assert(mcpToken.status === 200 && mcpTokenOut.token?.startsWith("abn_"), "MCP cria token")
+
+const mcpLimitEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://example.supabase.co",
+  AUTH: memoryKv(),
+  ABILION_ENV: "development",
+} as Env
+const mcpLimitLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.91" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  mcpLimitEnv,
+  backgroundCtx()
+)
+assert(mcpLimitLogin.status === 200, "login para o limite MCP")
+const mcpLimitCookie = mcpLimitLogin.headers.get("set-cookie") || ""
+const mcpHit = () =>
+  handleRequest(
+    new Request("http://local.test/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: mcpLimitCookie, "x-forwarded-for": "198.51.100.91" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
+    }),
+    mcpLimitEnv,
+    backgroundCtx()
+  )
+for (let i = 0; i < 60; i++) assert((await mcpHit()).status === 200, `mcp ${i + 1} ainda entra no throttle`)
+assert((await mcpHit()).status === 429, "61º MCP bloqueia")
 
 const importedHttp = await handleRequest(
   new Request("http://local.test/api/funnels/import", {

@@ -219,7 +219,7 @@ No Claude Code / Claude Desktop, um exemplo está em [`mcp/claude.example.json`]
 }
 ```
 
-Ferramentas: saúde, listar/criar contas, listar/criar/importar/publicar funis, listar leads, definições (sem segredos), criar token. O dono é que cria contas. Importar um funil deixa-o em rascunho até `abilion_publish_funnel`.
+Ferramentas: saúde, listar/criar/desligar contas, listar/criar/importar/publicar funis, listar leads, definições (sem segredos), criar token. O dono é que cria ou altera contas (`abilion_patch_user`). Importar um funil deixa-o em rascunho até `abilion_publish_funnel`. POST autenticado em `/mcp` tem limite de 60 pedidos / minuto por conta e IP.
 
 ## Limitações e bloqueios
 

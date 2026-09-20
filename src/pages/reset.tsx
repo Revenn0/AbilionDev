@@ -1,5 +1,6 @@
 import { useRef, useState } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
+import { Eye, EyeOff } from "lucide-react"
 import { AUTH_FIELD, AUTH_HINT, AUTH_LABEL, AUTH_LINK, AUTH_SUBMIT, AuthBrand, AuthSplit } from "@/components/brand/auth-split"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
@@ -8,12 +9,14 @@ import { Label } from "@/components/ui/label"
 import { resetPasswordRequest } from "@/lib/auth-api"
 import { withSafeNext } from "@/lib/safe-path"
 import { toast } from "sonner"
+import { cn } from "@/lib/utils"
 
 export function ResetPage() {
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const token = params.get("token") || ""
   const [password, setPassword] = useState("")
+  const [show, setShow] = useState(false)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const lock = useRef(false)
@@ -62,16 +65,26 @@ export function ResetPage() {
               <Label htmlFor="password" className={AUTH_LABEL}>
                 Senha
               </Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="new-password"
-                className={AUTH_FIELD}
-                aria-invalid={Boolean(error)}
-                aria-describedby={error ? "reset-error" : undefined}
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={show ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="new-password"
+                  className={cn(AUTH_FIELD, "pr-10")}
+                  aria-invalid={Boolean(error)}
+                  aria-describedby={error ? "reset-error" : undefined}
+                />
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShow((v) => !v)}
+                  aria-label={show ? "Ocultar senha" : "Mostrar senha"}
+                >
+                  {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
+              </div>
             </div>
             {error && (
               <p id="reset-error" role="alert" className="text-xs text-destructive">

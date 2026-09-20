@@ -103,6 +103,20 @@ const TOOLS = [
     },
   },
   {
+    name: "abilion_patch_user",
+    description: "Desliga, reactiva ou muda o papel de uma conta. Só o dono. Donos iniciais não desligam.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        disabled: { type: "boolean" },
+        role: { type: "string", enum: ["owner", "operator"] },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "abilion_list_funnels",
     description: "Lista os funis do quadro.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
@@ -258,6 +272,19 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     })
     const data = await res.json()
     if (!res.ok) throw new Error(typeof data === "object" && data && "error" in data ? String((data as { error: string }).error) : "Não criei a conta.")
+    return data
+  }
+  if (name === "abilion_patch_user") {
+    if (!isOwner(actor)) throw new Error("Só o dono altera contas.")
+    const id = str(args.id).trim()
+    if (!id) throw new Error("Falta o id da conta.")
+    const body: { id: string; disabled?: boolean; role?: "owner" | "operator" } = { id }
+    if (typeof args.disabled === "boolean") body.disabled = args.disabled
+    if (args.role === "owner" || args.role === "operator") body.role = args.role
+    if (body.disabled === undefined && !body.role) throw new Error("Informa disabled ou role.")
+    const res = await callHttp(request, env, actor, "/api/users", "PATCH", body)
+    const data = await res.json()
+    if (!res.ok) throw new Error(typeof data === "object" && data && "error" in data ? String((data as { error: string }).error) : "Não actualizei a conta.")
     return data
   }
   if (name === "abilion_list_funnels") {

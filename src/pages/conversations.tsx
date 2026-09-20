@@ -69,6 +69,9 @@ export function ConversationsPage() {
   const sending = useRef(false)
   const simulating = useRef(false)
   const leadRef = useRef<Lead | null>(null)
+  const runtimeRef = useRef(runtime)
+  const saveLeadRef = useRef(saveLead)
+  const flushLeadNowRef = useRef(flushLeadNow)
 
   const all = useMemo(
     () =>
@@ -114,17 +117,20 @@ export function ConversationsPage() {
 
   useEffect(() => {
     leadRef.current = lead
-  }, [lead])
+    runtimeRef.current = runtime
+    saveLeadRef.current = saveLead
+    flushLeadNowRef.current = flushLeadNow
+  }, [lead, runtime, saveLead, flushLeadNow])
 
   useEffect(() => {
     if (!lead || !canTickSteLocally(lead)) return
     const tick = () => {
       const current = leadRef.current
       if (!current || !canTickSteLocally(current)) return
-      const result = advanceSteIfDue(current, Date.now(), runtime)
+      const result = advanceSteIfDue(current, Date.now(), runtimeRef.current)
       if (result.replies.length) {
-        saveLead(result.lead)
-        void flushLeadNow()
+        saveLeadRef.current(result.lead)
+        void flushLeadNowRef.current()
       }
     }
     tick()

@@ -63,7 +63,10 @@ export function GlobePulse({ markers = [], className = "", speed = 0.003 }: Glob
   const markersRef = useRef(markers)
   const [ready, setReady] = useState(false)
   const [failed, setFailed] = useState(false)
-  markersRef.current = markers
+
+  useEffect(() => {
+    markersRef.current = markers
+  }, [markers])
 
   const handlePointerDown = useCallback((event: React.PointerEvent) => {
     pointerInteracting.current = { x: event.clientX, y: event.clientY }

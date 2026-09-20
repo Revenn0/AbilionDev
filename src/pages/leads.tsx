@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Plus, Users } from "lucide-react"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
 import { HydratePanel } from "@/components/layout/hydrate-panel"
@@ -399,11 +399,11 @@ function LeadDrawer({
     })
   }
 
-  const close = () => {
-    flushEdits()
-    void onFlush?.()
+  const close = useCallback(() => {
+    flushEditsRef.current()
+    void onFlushRef.current?.()
     onClose()
-  }
+  }, [onClose])
 
   useEffect(() => {
     return () => {
@@ -451,7 +451,7 @@ function LeadDrawer({
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [lead, onClose])
+  }, [lead, close])
 
   if (!lead) return null
 
