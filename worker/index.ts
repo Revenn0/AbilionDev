@@ -713,18 +713,23 @@ async function saveLead(env: Env, lead: Lead) {
 
 async function rest<T>(env: Env, path: string, init?: RequestInit): Promise<T | null> {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return null
-  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, {
-    ...init,
-    headers: {
-      apikey: env.SUPABASE_SERVICE_ROLE,
-      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE}`,
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-  })
-  if (!res.ok) return null
-  const text = await res.text()
-  return text ? (JSON.parse(text) as T) : (true as T)
+  try {
+    const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, {
+      ...init,
+      headers: {
+        apikey: env.SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE}`,
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {}),
+      },
+    })
+    if (!res.ok) return null
+    const text = await res.text()
+    if (!text) return true as T
+    return JSON.parse(text) as T
+  } catch {
+    return null
+  }
 }
 
 async function sendSteReplies(env: Env, token: string, chatId: string, replies: string[], beat?: SteBeat) {

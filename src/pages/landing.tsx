@@ -77,7 +77,7 @@ export function LandingPage() {
             <>Sem cadastro nesta página. O clique só abre quando o bot estiver ligado.</>
           )}
         </p>
-        <p className="mt-auto pt-16 text-[11px] text-zinc-600">Abilion · landing de teste do pixel</p>
+        <p className="mt-auto pt-16 text-[11px] text-zinc-400">Abilion · landing do pixel</p>
       </div>
     </main>
   )

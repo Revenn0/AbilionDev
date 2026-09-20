@@ -6,7 +6,7 @@ import { canDeleteFunnel, mergeFunnels, mergeLeads } from "@/lib/crm"
 import { migrateFunnel, migrateLead, migrateSettings } from "@/lib/migrate"
 import { fetchCrm, fetchInbox, fetchLeads, fetchRuntime, persistLeads, removeRemoteLead, saveCrm } from "@/lib/runtime-api"
 import { seededOperation } from "@/lib/templates"
-import { defaultSettings, type AppState, type Lead, type PluginId, type SalesFunnel, type Settings, type User } from "@/lib/types"
+import { defaultSettings, type AppState, type Lead, type SalesFunnel, type Settings, type User } from "@/lib/types"
 
 const KEY = "abilion.dev.v2"
 const LEGACY = "abilion.dev.v1"
@@ -75,7 +75,6 @@ type Store = {
   saveLead: (lead: Lead) => void
   deleteLead: (id: string) => void
   saveSettings: (patch: Partial<Settings>) => void
-  togglePlugin: (id: PluginId) => void
 }
 
 const StoreContext = createContext<Store | null>(null)
@@ -316,17 +315,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setState((prev) => ({
           ...prev,
           settings: { ...prev.settings, ...patch, telegramBotToken: "", plugins: patch.plugins ?? prev.settings.plugins },
-        }))
-        pushWorker()
-      },
-      togglePlugin: (id) => {
-        if (id === "whatsapp") return
-        setState((prev) => ({
-          ...prev,
-          settings: {
-            ...prev.settings,
-            plugins: { ...prev.settings.plugins, [id]: !prev.settings.plugins[id] },
-          },
         }))
         pushWorker()
       },

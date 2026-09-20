@@ -22,7 +22,7 @@ Vite + React + TypeScript + Tailwind + shadcn/ui + React Flow. Globo de visitant
 
 Worker Cloudflare (`abilion`) serve o estático e as rotas `/api/*` em [abilion.lol](https://www.abilion.lol).
 
-Dados: o Worker grava leads, funis e o token do Telegram no KV `abilion-auth`. Sem service role do Supabase a operação continua. O browser não fala com o Supabase — não há cliente nem chave anónima no frontend. Só o Worker usa `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE`.
+Dados: o Worker grava leads, funis e o token do Telegram no KV `abilion-auth`. Sem service role do Supabase a operação continua. Se o PostgREST falhar (rede, JSON inválido, 4xx/5xx), o Worker devolve o KV e não derruba o CRM. O browser não fala com o Supabase — não há cliente nem chave anónima no frontend. Só o Worker usa `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE`.
 
 ## Correr
 

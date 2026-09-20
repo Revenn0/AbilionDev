@@ -791,6 +791,13 @@ const pixel = await handleRequest(
   backgroundCtx()
 )
 assert(pixel.status === 204, "pixel público grava")
+const downEnv = {
+  ...liveEnv,
+  SUPABASE_URL: "https://invalid.invalid",
+  SUPABASE_SERVICE_ROLE: "role",
+} as Env
+const downCrm = await handleRequest(new Request("http://local.test/api/crm", { headers: { cookie: liveCookie } }), downEnv, backgroundCtx())
+assert(downCrm.status === 200, "CRM lê o KV se o Supabase cair")
 
 const inboxLead = simulateOpenLead([emptySalesFunnel("inbox")])
 assert(!inboxLead.steBlocked && !inboxLead.steQuiet, "simular conversa não encerra")
