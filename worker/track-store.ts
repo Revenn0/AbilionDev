@@ -33,6 +33,18 @@ export function kvTrackStore(kv: { get(key: string, type: "json"): Promise<unkno
   }
 }
 
+export function mergeTrackEvents(...batches: TrackEvent[][]): TrackEvent[] {
+  const byId = new Map<string, TrackEvent>()
+  for (const batch of batches) {
+    for (const event of batch) {
+      if (!event?.id) continue
+      const prev = byId.get(event.id)
+      if (!prev || event.at >= prev.at) byId.set(event.id, event)
+    }
+  }
+  return [...byId.values()].sort((left, right) => (left.at < right.at ? -1 : left.at > right.at ? 1 : left.id.localeCompare(right.id))).slice(-MAX)
+}
+
 export function ingestTrack(
   events: TrackEvent[],
   input: {
@@ -90,9 +102,40 @@ export function ingestTrack(
 }
 
 export async function recordTrack(store: TrackStore, input: Parameters<typeof ingestTrack>[1], now = Date.now()) {
-  const events = ingestTrack(await store.load(), input, now)
-  await store.save(events)
-  return events.at(-1) ?? null
+  const id = input.id || crypto.randomUUID()
+  const payload = { ...input, id }
+  let last: TrackEvent | null = null
+  for (let attempt = 0; attempt < 16; attempt++) {
+    const loaded = await store.load()
+    const events = ingestTrack(loaded, payload, now)
+    last = events.find((item) => item.id === id) ?? events.at(-1) ?? null
+    const next = mergeTrackEvents(loaded, events)
+    await store.save(next)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const latest = await store.load()
+    const combined = mergeTrackEvents(next, latest)
+    const haveIncoming = !last || combined.some((item) => item.id === last.id)
+    const latestHasAll =
+      combined.length === latest.length && latest.every((item) => combined.some((other) => other.id === item.id))
+    if (haveIncoming && latestHasAll) {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const confirm = await store.load()
+      if (last && !confirm.some((item) => item.id === last.id)) {
+        await new Promise((resolve) => setTimeout(resolve, 8 * (attempt + 1)))
+        continue
+      }
+      const confirmCombined = mergeTrackEvents(next, confirm)
+      if (confirmCombined.length !== confirm.length) {
+        await store.save(confirmCombined)
+        await new Promise((resolve) => setTimeout(resolve, 8 * (attempt + 1)))
+        continue
+      }
+      return last
+    }
+    if (haveIncoming && combined.length !== latest.length) await store.save(combined)
+    await new Promise((resolve) => setTimeout(resolve, 8 * (attempt + 1)))
+  }
+  return last
 }
 
 export async function summaryFromStore(store: TrackStore, now = Date.now()) {

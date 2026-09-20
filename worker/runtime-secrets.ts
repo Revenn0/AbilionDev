@@ -112,8 +112,14 @@ export function mergeSecrets(current: RuntimeSecrets, patch: RuntimeSecrets): Ru
     const key = patch.openaiApiKey.trim()
     if (!looksMasked(key)) next.openaiApiKey = key
   }
-  if (patch.telegramBotUsername !== undefined) next.telegramBotUsername = cleanBotUsername(patch.telegramBotUsername)
-  if (patch.telegramGroupUrl !== undefined) next.telegramGroupUrl = cleanTelegramGroupUrl(patch.telegramGroupUrl)
+  if (patch.telegramBotUsername !== undefined) {
+    const username = cleanBotUsername(patch.telegramBotUsername)
+    if (username || !current.telegramBotUsername) next.telegramBotUsername = username
+  }
+  if (patch.telegramGroupUrl !== undefined) {
+    const group = cleanTelegramGroupUrl(patch.telegramGroupUrl)
+    if (group || !current.telegramGroupUrl) next.telegramGroupUrl = group
+  }
   if (patch.steModel !== undefined) next.steModel = normalizeSteModel(patch.steModel)
   if (patch.steFallbackModel !== undefined) next.steFallbackModel = normalizeSteModel(patch.steFallbackModel)
   if (patch.opencodeApiKey !== undefined) {
@@ -202,8 +208,37 @@ export async function loadSecrets(kv: KvLike): Promise<RuntimeSecrets> {
   return secrets
 }
 
+export function commitSecrets(latest: RuntimeSecrets, next: RuntimeSecrets): RuntimeSecrets {
+  const merged = mergeSecrets(latest, next)
+  merged.webhookUrl = next.webhookUrl || latest.webhookUrl
+  merged.webhookOk = Boolean(next.webhookOk || latest.webhookOk)
+  merged.telegramWebhookSecret = next.telegramWebhookSecret || latest.telegramWebhookSecret
+  return merged
+}
+
+function secretsSettled(stored: RuntimeSecrets, wanted: RuntimeSecrets) {
+  const again = commitSecrets(stored, wanted)
+  return (
+    (again.telegramBotToken || "") === (stored.telegramBotToken || "") &&
+    (again.telegramBotUsername || "") === (stored.telegramBotUsername || "") &&
+    (again.telegramGroupUrl || "") === (stored.telegramGroupUrl || "") &&
+    (again.openaiApiKey || "") === (stored.openaiApiKey || "") &&
+    (again.opencodeApiKey || "") === (stored.opencodeApiKey || "") &&
+    (again.elevenApiKey || "") === (stored.elevenApiKey || "") &&
+    (again.elevenVoiceId || "") === (stored.elevenVoiceId || "") &&
+    Boolean(again.webhookOk) === Boolean(stored.webhookOk) &&
+    (again.webhookUrl || "") === (stored.webhookUrl || "")
+  )
+}
+
 export async function saveSecrets(kv: KvLike, next: RuntimeSecrets) {
-  await kv.put(RUNTIME_KEY, JSON.stringify(next))
+  for (let attempt = 0; attempt < 16; attempt++) {
+    const latest = await loadSecrets(kv)
+    await kv.put(RUNTIME_KEY, JSON.stringify(commitSecrets(latest, next)))
+    const after = await loadSecrets(kv)
+    if (secretsSettled(after, next)) return
+    await new Promise((resolve) => setTimeout(resolve, 8 * (attempt + 1)))
+  }
 }
 
 export async function setTelegramWebhook(token: string, url: string, secret?: string) {

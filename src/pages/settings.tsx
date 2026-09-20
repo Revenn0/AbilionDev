@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
-import { Link, useSearchParams } from "react-router-dom"
+import { Link, useLocation, useSearchParams } from "react-router-dom"
+import { useHashScroll } from "@/lib/use-hash-scroll"
 import { useTheme } from "@/components/theme/provider"
 import {
   Bell,
@@ -65,7 +66,9 @@ function readTab(params: URLSearchParams): TabId {
 
 export function SettingsPage() {
   const [params, setParams] = useSearchParams()
+  const { hash } = useLocation()
   const tab = readTab(params)
+  useHashScroll("pixel", tab === "bot")
 
   const go = (next: TabId) => {
     const copy = new URLSearchParams(params)
@@ -73,6 +76,13 @@ export function SettingsPage() {
     else copy.set("tab", next)
     setParams(copy, { replace: true })
   }
+
+  useEffect(() => {
+    if (hash !== "#pixel" || tab === "bot") return
+    const copy = new URLSearchParams(params)
+    copy.delete("tab")
+    setParams(copy, { replace: true })
+  }, [hash, tab, params, setParams])
 
   return (
     <div className="h-full overflow-y-auto">

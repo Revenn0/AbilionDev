@@ -1,4 +1,5 @@
 import { publishedFunnel } from "./runtime.ts"
+import { migrateSettings } from "./migrate.ts"
 import { defaultSettings, type ChatMessage, type Lead, type LeadEvent, type LeadFacts, type SalesFunnel, type Settings } from "./types.ts"
 
 const CAP = 400
@@ -259,6 +260,26 @@ export function hydrateLeads(
     next = mergeLeads(next, applyRemovedLeads(inbox.leads, removed))
   }
   return overlayPendingLeads(next, pending, removed)
+}
+
+/** POST do CRM: username/grupo do Vincular não somem se o autosave vier vazio. */
+export function commitStoredSettings(stored: Settings, incoming: Settings, latest: Settings = stored): Settings {
+  const live = migrateSettings(latest)
+  const patch = migrateSettings(incoming)
+  const prev = migrateSettings(stored)
+  return migrateSettings({
+    ...live,
+    ...patch,
+    telegramBotUsername: patch.telegramBotUsername || live.telegramBotUsername || prev.telegramBotUsername,
+    telegramGroupUrl: patch.telegramGroupUrl || live.telegramGroupUrl || prev.telegramGroupUrl,
+    plugins: {
+      ...live.plugins,
+      ...patch.plugins,
+      telegram: Boolean(patch.plugins.telegram || live.plugins.telegram),
+    },
+    telegramBotToken: "",
+    esterTelegramChatId: "",
+  })
 }
 
 /** GET do CRM não pisa username/grupo/plugins ainda por gravar nesta sessão. */

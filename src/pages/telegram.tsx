@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
+import { useHashScroll } from "@/lib/use-hash-scroll"
 import { Send } from "lucide-react"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
 import { PixelSnippet } from "@/components/layout/pixel-snippet"
@@ -30,6 +31,7 @@ export function TelegramPage() {
   const [burstLock, setBurstLock] = useState(false)
   const botName = runtime?.telegramBotUsername || settings.telegramBotUsername
   const ads = adsDeepLink(botName)
+  useHashScroll("pixel")
 
   useEffect(() => {
     let cancelled = false

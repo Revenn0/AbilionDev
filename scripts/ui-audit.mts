@@ -174,6 +174,14 @@ try {
     Boolean(await page.$('a[href="/telegram#pixel"]')),
     "dashboard aponta para o snippet do ads"
   )
+  await page.click('a[href="/telegram#pixel"]')
+  await page.waitForSelector("#pixel", { timeout: 8_000 })
+  assert(page.url().includes("/telegram#pixel") || page.url().includes("/telegram"), "Pixel Ads abre o Telegram")
+  const pixelInView = await page.$eval("#pixel", (el) => {
+    const box = el.getBoundingClientRect()
+    return box.top < window.innerHeight && box.bottom > 0
+  })
+  assert(pixelInView, "Pixel Ads do dashboard faz scroll até #pixel")
 
   await open(page, "/telegram")
   await page.waitForSelector("#pixel", { timeout: 8_000 })

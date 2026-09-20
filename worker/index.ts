@@ -22,11 +22,12 @@ import {
   mergeLeadEvents,
   publicSettings,
   commitCrmFunnels,
+  commitStoredSettings,
   resolveLeadLookup,
 } from "../src/lib/crm.ts"
 import { cleanBotUsername, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { resolveClientGeo } from "./geo-lookup.ts"
-import { ingestTrack, kvTrackStore, memoryTrackStore, readTrackBody, summaryFromStore, type TrackStore } from "./track-store.ts"
+import { kvTrackStore, memoryTrackStore, readTrackBody, recordTrack, summaryFromStore, type TrackStore } from "./track-store.ts"
 import {
   deleteLeadKv,
   dueLeadsKv,
@@ -214,8 +215,8 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       regionCode: typeof body.regionCode === "string" ? body.regionCode : undefined,
     })
     const store = trackStore(env)
-    const events = ingestTrack(
-      await store.load(),
+    const last = await recordTrack(
+      store,
       {
         ...body,
         ...compactGeo(geo),
@@ -224,8 +225,6 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       },
       Date.now()
     )
-    await store.save(events)
-    const last = events.at(-1)
     if (last && env.SUPABASE_SERVICE_ROLE) {
       await rest(env, "page_events", {
         method: "POST",
@@ -377,7 +376,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       await persistFunnels(env, funnels)
       if (env.AUTH && incomingRemoved.length) await rememberRemovedFunnels(env.AUTH, incomingRemoved)
     }
-    if (body.settings) await persistSettings(env, migrateSettings(body.settings))
+    if (body.settings) await persistSettings(env, body.settings)
     return json({ ok: true })
   }
 
@@ -546,10 +545,7 @@ async function deliverTelegram(env: Env, update: TelegramUpdate, token: string) 
 
   lead.telegramChatId = chatId
   if (visitorId && start.isStart) {
-    const store = trackStore(env)
-    const events = ingestTrack(await store.load(), { kind: "telegram", visitorId, path: "/telegram", utmCampaign: campaign }, Date.now())
-    await store.save(events)
-    const last = events.at(-1)
+    const last = await recordTrack(trackStore(env), { kind: "telegram", visitorId, path: "/telegram", utmCampaign: campaign }, Date.now())
     if (last?.country || last?.region || last?.regionCode) {
       lead.facts = {
         ...lead.facts,
@@ -688,8 +684,23 @@ async function persistFunnels(env: Env, funnels: SalesFunnel[]) {
 }
 
 async function persistSettings(env: Env, settings: Settings) {
-  const clean = migrateSettings(settings)
-  if (env.AUTH) await saveSettingsKv(env.AUTH, clean)
+  const incoming = migrateSettings(settings)
+  let clean = incoming
+  if (env.AUTH) {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const latest = await loadSettings(env)
+      clean = commitStoredSettings(latest, incoming, latest)
+      await saveSettingsKv(env.AUTH, clean)
+      const after = await loadSettings(env)
+      const again = commitStoredSettings(after, incoming, after)
+      if (
+        after.telegramBotUsername === again.telegramBotUsername &&
+        after.telegramGroupUrl === again.telegramGroupUrl
+      ) {
+        break
+      }
+    }
+  }
   if (!env.SUPABASE_SERVICE_ROLE) return
   await rest(env, "settings", {
     method: "POST",

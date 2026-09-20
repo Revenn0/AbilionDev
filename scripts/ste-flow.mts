@@ -50,6 +50,7 @@ import {
   LEAD_LIST_PAGES,
   LEAD_CACHE_CAP,
   commitCrmFunnels,
+  commitStoredSettings,
   hydrateFunnels,
   hydrateLeads,
   leftoverPendingFunnelIds,
@@ -85,7 +86,8 @@ import { adsDeepLink, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { barShare, leadsHydrating } from "../src/lib/ops.ts"
-import { loadSecrets, mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
+import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
+import { memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
 import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, handleAuth, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeThrottles, retainUserSessions } from "../worker/auth.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTelegramClaims, telegramCall } from "../worker/telegram.ts"
@@ -288,9 +290,46 @@ assert(counted.facebook.buttonClicks === 1, "um clique no botao")
 assert(counted.facebook.starts === 1, "/start nao mistura no botao")
 assert(counted.views === 3, "page view total inclui direto")
 assert(counted.clicks === 2, "clique total inclui direto")
+assert(mergeTrackEvents([sample({ id: "a1" })], [sample({ id: "b1" })]).length === 2, "pixel une ids distintos")
+assert(
+  mergeTrackEvents([sample({ id: "same", at: "2020-01-01T00:00:00.000Z" })], [sample({ id: "same", at: "2026-01-01T00:00:00.000Z", path: "/novo" })]).find(
+    (item) => item.id === "same"
+  )?.path === "/novo",
+  "pixel fica com o evento mais novo do mesmo id"
+)
+const raceTrack = memoryTrackStore()
+await Promise.all([
+  recordTrack(raceTrack, { kind: "view", visitorId: "aaaaaa", path: "/a", id: "pix-a" }, 1000),
+  recordTrack(raceTrack, { kind: "view", visitorId: "bbbbbb", path: "/b", id: "pix-b" }, 2000),
+])
+const racedPixel = await raceTrack.load()
+assert(racedPixel.some((item) => item.id === "pix-a"), "pixel A não some na corrida")
+assert(racedPixel.some((item) => item.id === "pix-b"), "pixel B não some na corrida")
 
 const kept = mergeSecrets({ telegramBotToken: "123:abc" }, { telegramBotToken: "•••• abc" })
 assert(kept.telegramBotToken === "123:abc", "mascara nao apaga o token")
+assert(
+  mergeSecrets({ telegramBotUsername: "@ste_bot" }, { telegramBotUsername: "" }).telegramBotUsername === "@ste_bot",
+  "username vazio não apaga o Vincular"
+)
+assert(
+  mergeSecrets({ telegramGroupUrl: "https://t.me/steaviator" }, { telegramGroupUrl: "" }).telegramGroupUrl ===
+    "https://t.me/steaviator",
+  "grupo vazio não apaga o convite"
+)
+const secretRaceKv = memoryKv()
+await Promise.all([
+  saveSecrets(secretRaceKv, { telegramBotUsername: "@ste_bot" }),
+  saveSecrets(secretRaceKv, { telegramBotToken: "123:abc" }),
+])
+const racedSecrets = await loadSecrets(secretRaceKv)
+assert(racedSecrets.telegramBotUsername === "@ste_bot", "Vincular em paralelo não perde o username")
+assert(racedSecrets.telegramBotToken === "123:abc", "Vincular em paralelo não perde o token")
+assert(
+  commitSecrets({ telegramBotUsername: "@ste_bot" }, { telegramBotToken: "123:abc", webhookOk: true }).telegramBotUsername ===
+    "@ste_bot",
+  "commit do runtime une username e token"
+)
 const spoofHook = mergeSecrets({ webhookOk: false, webhookUrl: "https://www.abilion.lol/api/telegram" }, { webhookOk: true, webhookUrl: "https://evil.test/hook" })
 assert(spoofHook.webhookOk !== true, "cliente não marca webhookOk")
 assert(spoofHook.webhookUrl !== "https://evil.test/hook", "cliente não aponta o webhook")
@@ -798,6 +837,18 @@ assert(
 assert(
   settingsWriteFingerprint({ ...defaultSettings, telegramBotUsername: "novo" }) !== settingsWriteFingerprint(defaultSettings),
   "fingerprint muda quando o username muda"
+)
+const settingsLive = migrateSettings({ telegramBotUsername: "@ste_bot", plugins: { telegram: true } })
+const settingsStale = migrateSettings({ telegramBotUsername: "", workspaceName: "Abilion" })
+assert(
+  commitStoredSettings(settingsStale, settingsStale, settingsLive).telegramBotUsername === "@ste_bot",
+  "autosave vazio não apaga o username do Vincular"
+)
+assert(commitStoredSettings(settingsStale, settingsStale, settingsLive).plugins.telegram, "autosave vazio não desliga o plugin do Telegram")
+assert(
+  commitStoredSettings(settingsLive, migrateSettings({ telegramBotUsername: "@novo_bot" }), settingsLive).telegramBotUsername ===
+    "@novo_bot",
+  "username novo substitui"
 )
 assert(!canFlushCrm(false), "sem hydrate o painel não grava CRM")
 assert(canFlushCrm(true), "depois do GET o painel pode gravar")
