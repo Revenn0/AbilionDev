@@ -186,8 +186,10 @@ try {
   await page.waitForSelector("#bot-user-error", { timeout: 4_000 })
 
   await open(page, "/pagina-inexistente")
-  const notFound = await page.evaluate(() => document.body.innerText)
-  assert(notFound.includes("não encontrada") || notFound.includes("404"), "404 no painel")
+  await page.waitForFunction(
+    () => document.body.innerText.includes("não encontrada") || document.body.innerText.includes("404"),
+    { timeout: 8_000 }
+  )
   await open(page, "/fluxo/funil/nao-existe")
   await page.waitForFunction(() => document.body.innerText.includes("Funil não encontrado"), { timeout: 10_000 })
 
