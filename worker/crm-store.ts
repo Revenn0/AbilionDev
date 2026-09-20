@@ -11,7 +11,8 @@ export const CRM_REMOVED = "crm:removed"
 export const CRM_REMOVED_FUNNELS = "crm:removed-funnels"
 export const CRM_CRON_LOCK = "crm:cron-lock"
 
-const CAP = 400
+const REMOVED_CAP = 400
+export const LEAD_INDEX_REST_CAP = 2000
 
 export function aliasKey(kind: "contact" | "chat", value: string) {
   const next = value.trim().slice(0, 80)
@@ -49,7 +50,7 @@ async function saveIndex(kv: KvLike, index: CrmIndex) {
   const rest = all
     .filter((item) => !item.waitUntil && !item.chatId)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    .slice(0, CAP)
+    .slice(0, LEAD_INDEX_REST_CAP)
   const keep = new Map<string, CrmIndexEntry>()
   for (const item of [...pinned, ...rest]) keep.set(item.id, item)
   const entries = [...keep.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
@@ -198,13 +199,13 @@ export async function findLeadInKv(kv: KvLike, contact: string, telegramId: numb
 export async function loadRemovedLeadIds(kv: KvLike): Promise<string[]> {
   const raw = await kv.get(CRM_REMOVED, "json")
   if (!raw || typeof raw !== "object") return []
-  return clipRemovedIds((raw as { ids?: unknown }).ids, CAP)
+  return clipRemovedIds((raw as { ids?: unknown }).ids, REMOVED_CAP)
 }
 
 export async function rememberRemovedLead(kv: KvLike, id: string) {
   const next = id.trim()
   if (!next || next.length > 80) return
-  const ids = clipRemovedIds([next, ...(await loadRemovedLeadIds(kv))], CAP)
+  const ids = clipRemovedIds([next, ...(await loadRemovedLeadIds(kv))], REMOVED_CAP)
   await kv.put(CRM_REMOVED, JSON.stringify({ ids }))
 }
 
@@ -243,11 +244,11 @@ export async function deleteLeadKv(kv: KvLike, id: string) {
 export async function loadRemovedFunnelIds(kv: KvLike): Promise<string[]> {
   const raw = await kv.get(CRM_REMOVED_FUNNELS, "json")
   if (!raw || typeof raw !== "object") return []
-  return clipRemovedIds((raw as { ids?: unknown }).ids, CAP)
+  return clipRemovedIds((raw as { ids?: unknown }).ids, REMOVED_CAP)
 }
 
 export async function rememberRemovedFunnels(kv: KvLike, ids: string[]) {
-  const next = clipRemovedIds([...ids, ...(await loadRemovedFunnelIds(kv))], CAP)
+  const next = clipRemovedIds([...ids, ...(await loadRemovedFunnelIds(kv))], REMOVED_CAP)
   await kv.put(CRM_REMOVED_FUNNELS, JSON.stringify({ ids: next }))
 }
 

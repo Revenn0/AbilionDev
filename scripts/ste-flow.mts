@@ -67,12 +67,13 @@ import { applyEvent, canAdvanceRemoteWait, publishedFunnel, publishedSnapshot, w
 import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
-import { CRM_CRON_LOCK, CRM_FUNNELS, aliasKey, claimCronLock, claimLeadAlias, deleteLeadKv, dueLeadsKv, findLeadInKv, isLeadPageCursor, listLeadPage, listLeads, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, releaseCronLock, renewCronLock, reserveLeadIdentity, saveFunnelsKv, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_CRON_LOCK, CRM_FUNNELS, LEAD_INDEX_REST_CAP, aliasKey, claimCronLock, claimLeadAlias, deleteLeadKv, dueLeadsKv, findLeadInKv, isLeadPageCursor, listLeadPage, listLeads, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, releaseCronLock, renewCronLock, reserveLeadIdentity, saveFunnelsKv, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
+import { LEAD_WRITE_BATCH, leadWriteChunks } from "../src/lib/runtime-api.ts"
 import { safeAppPath, withSafeNext } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { contactLookups, normalizeTelegramContact, validateCapture } from "../src/lib/capture.ts"
@@ -1464,7 +1465,18 @@ for (let i = 0; i < 401; i++) {
   await upsertLeadKv(capKv, row)
 }
 assert((await findLeadInKv(capKv, "@u0", 0, "0"))?.id === "id-0", "alias encontra lead fora do recorte de 400")
-assert((await listLeads(capKv, 400, "all")).length === 400, "lista continua no teto de 400")
+assert((await listLeads(capKv, 400, "all")).length === 400, "lista pagina 400 de um índice maior")
+assert(LEAD_WRITE_BATCH === 120, "POST de leads corta em 120")
+assert(leadWriteChunks(Array.from({ length: 250 }, (_, i) => lead(`w-${i}`, `@w${i}`))).length === 3, "250 leads vão em 3 POSTs")
+assert(leadWriteChunks(Array.from({ length: 250 }, (_, i) => lead(`k-${i}`, `@k${i}`)), true).length === 1, "pagehide só manda o primeiro lote")
+assert(LEAD_INDEX_REST_CAP === 2000, "simulação sem chat cabe até 2000 no índice")
+const simKv = memoryKv()
+for (let i = 0; i < 401; i++) {
+  const row = lead(`sim-${i}`, `@sim${i}`)
+  row.updatedAt = new Date(1_700_000_000_000 + i * 1000).toISOString()
+  await upsertLeadKv(simKv, row)
+}
+assert((await listLeads(simKv, 500, "all")).length === 401, "401 simulações sem chat não caem do índice")
 const firstLeadPage = await listLeadPage(capKv, 400, "all")
 assert(firstLeadPage.nextCursor && isLeadPageCursor(firstLeadPage.nextCursor), "primeira página de 401 leads tem cursor")
 const secondLeadPage = await listLeadPage(capKv, 400, "all", firstLeadPage.nextCursor)

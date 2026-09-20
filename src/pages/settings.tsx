@@ -686,7 +686,11 @@ function PluginsPane() {
                       disabled={!state.leads.length}
                       onClick={() => {
                         downloadLeadsCsv(state.leads)
-                        toast.success(state.leads.length ? `CSV com ${state.leads.length} leads.` : "Sem leads para exportar.")
+                        toast.success(
+                          state.leads.length >= 2000
+                            ? `CSV com ${state.leads.length} leads (teto da lista hidratada).`
+                            : `CSV com ${state.leads.length} leads.`
+                        )
                       }}
                     >
                       Exportar CSV

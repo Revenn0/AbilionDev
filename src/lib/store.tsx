@@ -185,19 +185,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
       const batch = [...pendingLeadWrites.current.values()]
       if (!batch.length) return true
-      const ok = await persistLeads(batch, opts)
-      const raced = batch.filter((lead) => removedLeadIds.current.has(lead.id))
+      const result = await persistLeads(batch, opts)
+      const sent = batch.slice(0, result.saved)
+      const raced = sent.filter((lead) => removedLeadIds.current.has(lead.id))
       if (raced.length) await Promise.all(raced.map((lead) => removeRemoteLead(lead.id)))
-      if (ok) {
-        for (const lead of batch) {
-          if (removedLeadIds.current.has(lead.id)) continue
-          const latest = pendingLeadWrites.current.get(lead.id)
-          if (latest && latest.updatedAt === lead.updatedAt) pendingLeadWrites.current.delete(lead.id)
-        }
+      for (const lead of sent) {
+        if (removedLeadIds.current.has(lead.id)) continue
+        const latest = pendingLeadWrites.current.get(lead.id)
+        if (latest && latest.updatedAt === lead.updatedAt) pendingLeadWrites.current.delete(lead.id)
       }
       persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
-      setPersistSync(ok ? "ok" : "error")
-      return ok
+      setPersistSync(result.ok ? "ok" : "error")
+      return result.ok
     }
     const pending = leadFlushRef.current.then(run, run)
     leadFlushRef.current = pending.then(

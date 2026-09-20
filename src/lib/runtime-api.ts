@@ -158,20 +158,35 @@ async function writeResult(run: () => Promise<Response>): Promise<WriteResult> {
   }
 }
 
+export const LEAD_WRITE_BATCH = 120
+
+export function leadWriteChunks(leads: Lead[], keepalive = false) {
+  const work = keepalive ? leads.slice(0, LEAD_WRITE_BATCH) : leads
+  const chunks: Lead[][] = []
+  for (let i = 0; i < work.length; i += LEAD_WRITE_BATCH) chunks.push(work.slice(i, i + LEAD_WRITE_BATCH))
+  return chunks
+}
+
 export async function persistLeads(leads: Lead[], opts?: { keepalive?: boolean }) {
-  if (!leads.length) return true
-  return writeOk(() =>
-    fetchWrite(
-      "/api/leads",
-      {
-        method: "POST",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ leads: leads.slice(0, 120) }),
-      },
-      opts
+  if (!leads.length) return { ok: true, saved: 0 }
+  let saved = 0
+  for (const chunk of leadWriteChunks(leads, Boolean(opts?.keepalive))) {
+    const ok = await writeOk(() =>
+      fetchWrite(
+        "/api/leads",
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ leads: chunk }),
+        },
+        opts
+      )
     )
-  )
+    if (!ok) return { ok: false, saved }
+    saved += chunk.length
+  }
+  return { ok: true, saved }
 }
 
 export async function removeRemoteLead(id: string, opts?: { keepalive?: boolean }) {
