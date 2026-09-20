@@ -5,7 +5,7 @@ import { toast } from "sonner"
 import { mergeLeads } from "@/lib/crm"
 import { migrateFunnel, migrateLead, migrateSettings } from "@/lib/migrate"
 import { pullRemote, pushRemote, supabaseEnabled } from "@/lib/persist"
-import { fetchCrm, fetchInbox, fetchRuntime, persistLeads, removeRemoteLead, saveCrm } from "@/lib/runtime-api"
+import { fetchCrm, fetchInbox, fetchLeads, fetchRuntime, persistLeads, removeRemoteLead, saveCrm } from "@/lib/runtime-api"
 import { seededOperation } from "@/lib/templates"
 import { defaultSettings, type AppState, type Lead, type PluginId, type SalesFunnel, type Settings, type User } from "@/lib/types"
 
@@ -162,12 +162,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!state.user) return
     let cancelled = false
     skipPush.current = true
-    void Promise.all([fetchCrm(), fetchRuntime()]).then(([crm, runtime]) => {
+    void Promise.all([fetchCrm(), fetchRuntime(), fetchLeads()]).then(([crm, runtime, remoteLeads]) => {
       if (cancelled) return
       setCrmSync(crm.ok ? "ok" : "error")
+      setPersistSync(remoteLeads.ok ? "ok" : "error")
       setState((prev) => ({
         ...prev,
         funnels: crm.ok && crm.funnels.length ? crm.funnels.map(migrateFunnel) : prev.funnels,
+        leads: remoteLeads.ok && remoteLeads.leads.length ? mergeLeads(prev.leads, remoteLeads.leads.map(migrateLead)) : prev.leads,
         settings: {
           ...prev.settings,
           ...(crm.ok && crm.settings ? migrateSettings({ ...crm.settings, telegramBotToken: "" }) : {}),

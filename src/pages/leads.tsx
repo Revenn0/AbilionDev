@@ -67,7 +67,7 @@ export function LeadsPage() {
           items={[
             { ok: crmSync !== "error", message: "Não consegui ler o CRM do Worker." },
             { ok: inboxSync !== "error", message: "A inbox do Telegram não sincronizou." },
-            { ok: persistSync !== "error", message: "A gravação de leads no Worker falhou." },
+            { ok: persistSync !== "error", message: "Não consegui ler ou gravar leads no Worker." },
           ]}
         />
         <PageChrome icon={Users} title="Leads">

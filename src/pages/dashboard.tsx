@@ -27,13 +27,15 @@ export function DashboardPage() {
           items={[
             { ok: crmSync !== "error", message: "Não consegui ler os funis do Worker. O quadro local pode estar desactualizado." },
             { ok: inboxSync !== "error", message: "A inbox do Telegram não sincronizou. Leads novos podem faltar." },
-            { ok: persistSync !== "error", message: "Não consegui gravar leads no Worker. A lista local pode divergir." },
+            { ok: persistSync !== "error", message: "Não consegui ler ou gravar leads no Worker. A lista local pode divergir." },
             { ok: status !== "error", message: "Não consegui ler o pixel. Os números de tráfego abaixo podem estar vazios." },
           ]}
         />
         <PageChrome icon={LayoutDashboard} title="Dashboard">
           <StatusPill>Últimos 30 dias</StatusPill>
-          <StatusPill tone={status === "error" ? "danger" : "success"}>Telegram</StatusPill>
+          <StatusPill tone={status === "error" ? "danger" : status === "ok" ? "success" : "muted"}>
+            {status === "ok" ? "Pixel ao vivo" : status === "error" ? "Pixel falhou" : "A carregar pixel"}
+          </StatusPill>
         </PageChrome>
 
         <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">

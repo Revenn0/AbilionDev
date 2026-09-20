@@ -44,9 +44,10 @@ export async function loadLead(kv: KvLike, id: string): Promise<Lead | null> {
   return migrateLead(raw as Lead)
 }
 
-export async function listLeads(kv: KvLike, limit = 80): Promise<Lead[]> {
+export async function listLeads(kv: KvLike, limit = 80, channel: Lead["channel"] | "all" = "telegram"): Promise<Lead[]> {
   const index = await loadIndex(kv)
-  const ids = index.entries.filter((item) => item.channel === "telegram").slice(0, limit).map((item) => item.id)
+  const rows = channel === "all" ? index.entries : index.entries.filter((item) => item.channel === channel)
+  const ids = rows.slice(0, limit).map((item) => item.id)
   const leads = await Promise.all(ids.map((id) => loadLead(kv, id)))
   return leads.filter((lead): lead is Lead => Boolean(lead))
 }

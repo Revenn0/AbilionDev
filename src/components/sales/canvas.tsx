@@ -213,7 +213,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
           <Button
             size="sm"
             variant="outline"
-            className="hidden h-8 rounded-full border-slate-200 bg-white text-[12px] text-slate-700 hover:bg-slate-50 sm:inline-flex"
+            className="h-8 rounded-full border-slate-200 bg-white text-[12px] text-slate-700 hover:bg-slate-50"
             disabled={readOnly}
             onClick={() => {
               setNodes((nds) => autoLayout(nds, edges, SALES_BOX))
@@ -226,7 +226,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
           <Button
             size="sm"
             variant="outline"
-            className="hidden h-8 rounded-full border-slate-200 bg-white text-[12px] text-slate-700 hover:bg-slate-50 sm:inline-flex"
+            className="h-8 rounded-full border-slate-200 bg-white text-[12px] text-slate-700 hover:bg-slate-50"
             disabled={readOnly}
             onClick={() => {
               persist()

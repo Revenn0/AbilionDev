@@ -50,6 +50,8 @@ function toCobeArcs(markers: PulseMarker[]) {
 }
 
 export function GlobePulse({ markers = [], className = "", speed = 0.003 }: GlobePulseProps) {
+  const reduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  const spin = reduced ? 0 : speed
   const hostRef = useRef<HTMLDivElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
   const globeRef = useRef<Globe | null>(null)
@@ -167,7 +169,7 @@ export function GlobePulse({ markers = [], className = "", speed = 0.003 }: Glob
       globeRef.current = globe
       const tick = () => {
         if (!globe) return
-        if (!pausedRef.current) phi += speed
+        if (!pausedRef.current) phi += spin
         globe.update({
           phi: phi + phiOffsetRef.current + dragOffset.current.phi,
           theta: baseTheta + thetaOffsetRef.current + dragOffset.current.theta,
@@ -205,13 +207,15 @@ export function GlobePulse({ markers = [], className = "", speed = 0.003 }: Glob
       globeRef.current = null
       host.replaceChildren()
     }
-  }, [speed])
+  }, [spin])
 
   return (
     <div className={cn("relative aspect-square w-full select-none", className)}>
       <div
         ref={hostRef}
         className="absolute inset-0 cursor-grab overflow-hidden rounded-full"
+        role="img"
+        aria-label="Globo de visitantes"
         onPointerDown={handlePointerDown}
         style={{ touchAction: "none" }}
       />

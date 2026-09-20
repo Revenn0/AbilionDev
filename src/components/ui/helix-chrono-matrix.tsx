@@ -43,8 +43,16 @@ export function HelixChronoMatrix({
   const containerRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const [isDarkMode, setIsDarkMode] = useState(true)
-  const [isRunning, setIsRunning] = useState(true)
+  const [isRunning, setIsRunning] = useState(() => !window.matchMedia("(prefers-reduced-motion: reduce)").matches)
   const [topology, setTopology] = useState<TopologyMode>("DOUBLE_HELIX")
+
+  useEffect(() => {
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)")
+    const sync = () => setIsRunning(!motion.matches)
+    sync()
+    motion.addEventListener("change", sync)
+    return () => motion.removeEventListener("change", sync)
+  }, [])
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
@@ -146,11 +154,7 @@ export function HelixChronoMatrix({
     let time = 0
 
     const render = () => {
-      if (!isRunning) {
-        animId = requestAnimationFrame(render)
-        return
-      }
-      time += 0.012
+      if (isRunning) time += 0.012
       const { width, height } = dimensionsRef.current
       const pointer = pointerRef.current
       const rings = ringsRef.current
@@ -169,7 +173,7 @@ export function HelixChronoMatrix({
       for (let rIdx = 0; rIdx < rings.length; rIdx++) {
         const ring = rings[rIdx]
         if (!ring) continue
-        ring.angle += ring.rotationSpeed
+        if (isRunning) ring.angle += ring.rotationSpeed
         const points = ring.points
         const numPoints = points.length
         ctx.beginPath()
@@ -292,7 +296,7 @@ export function HelixChronoMatrix({
         className
       )}
     >
-      <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full cursor-crosshair" />
+      <canvas ref={canvasRef} aria-hidden="true" className="absolute inset-0 block h-full w-full cursor-crosshair" />
       <div className="relative z-20 flex h-full w-full flex-col justify-between p-6 md:p-10">
         {chrome ? (
           <header className="flex w-full flex-wrap items-center justify-between gap-4 font-mono text-[11px] text-neutral-500 dark:text-neutral-400">
@@ -316,6 +320,8 @@ export function HelixChronoMatrix({
               </div>
               <button
                 type="button"
+                aria-pressed={!isRunning}
+                aria-label={isRunning ? "Pausar animação" : "Retomar animação"}
                 onClick={() => setIsRunning((prev) => !prev)}
                 className="flex items-center gap-1.5 rounded-xl border border-neutral-200 bg-white/80 px-3 py-1.5 shadow-sm backdrop-blur-md transition-all hover:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-900/80 dark:hover:bg-neutral-800"
               >
@@ -328,12 +334,12 @@ export function HelixChronoMatrix({
           <div />
         )}
         {headline ? (
-          <main className="pointer-events-none flex flex-col items-center justify-center text-center">
+          <div className="pointer-events-none flex flex-col items-center justify-center text-center">
             <p className="font-mono text-[11px] tracking-[0.28em] text-neutral-500 uppercase dark:text-neutral-400">CRM interno</p>
-            <h1 className="mt-3 font-mono text-5xl font-black tracking-tighter text-neutral-900/90 uppercase sm:text-7xl dark:text-white/90">
+            <p className="mt-3 font-mono text-5xl font-black tracking-tighter text-neutral-900/90 uppercase sm:text-7xl dark:text-white/90">
               {headline}
-            </h1>
-          </main>
+            </p>
+          </div>
         ) : (
           <div />
         )}

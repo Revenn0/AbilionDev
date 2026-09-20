@@ -125,10 +125,11 @@ export async function handleRequest(request: Request, env: Env, ctx: ExecutionCo
 async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionContext) {
   if (url.pathname === "/api/health") {
     const { resolved } = await runtimeOf(env, webhookUrl(request, env))
+    const settings = await loadSettings(env)
     return json({
       ok: true,
       telegram: resolved.telegram,
-      telegramBotUsername: cleanBotUsername(resolved.telegramBotUsername),
+      telegramBotUsername: cleanBotUsername(resolved.telegramBotUsername || settings.telegramBotUsername),
       supabase: resolved.supabase,
       ste: true,
       llm: resolved.llm,
@@ -288,6 +289,13 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     return json({ ok: true })
   }
 
+  if (url.pathname === "/api/leads" && request.method === "GET") {
+    if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
+    const user = await sessionUser(request, kvAuthStore(env.AUTH))
+    if (!user) return json({ error: "Sessão expirada." }, 401)
+    return json({ ok: true, leads: await listLeads(env.AUTH, 400, "all") })
+  }
+
   if (url.pathname === "/api/leads" && request.method === "POST") {
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
@@ -336,7 +344,8 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       const header = request.headers.get("x-telegram-bot-api-secret-token")
       if (header !== expected) return json({ ok: false }, 401)
     }
-    const update = (await request.json()) as TelegramUpdate
+    const update = (await request.json().catch(() => null)) as TelegramUpdate | null
+    if (!update || typeof update !== "object") return json({ ok: false }, 400)
     ctx.waitUntil(handleTelegram(env, update))
     return json({ ok: true })
   }

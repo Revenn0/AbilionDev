@@ -25,13 +25,13 @@ import {
 import { emptySalesFunnel } from "../src/lib/templates.ts"
 import { mergeLeads } from "../src/lib/crm.ts"
 import type { Lead } from "../src/lib/types.ts"
-import { deleteLeadKv, findLeadInKv, loadLead, upsertLeadKv } from "../worker/crm-store.ts"
+import { deleteLeadKv, findLeadInKv, listLeads, loadLead, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { safeAppPath } from "../src/lib/safe-path.ts"
 import { validateCapture } from "../src/lib/capture.ts"
-import { cleanBotUsername, cleanTelegramGroupUrl, sanitizeIncomingLead } from "../src/lib/migrate.ts"
+import { cleanBotUsername, cleanTelegramGroupUrl, migrateSettings, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink } from "../src/lib/telegram-start.ts"
 import { mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
 import { consumeThrottle, consumeMemoryThrottle, clearThrottle, handleAuth, memoryAuthStore } from "../worker/auth.ts"
@@ -317,6 +317,7 @@ const kv = memoryKv()
 await upsertLeadKv(kv, first)
 const found = await findLeadInKv(kv, "@ana", 41, "41")
 assert(found?.id === "crm-1", "lead no KV por contacto")
+assert((await listLeads(kv, 400, "all")).some((item) => item.id === "crm-1"), "lista completa inclui o lead")
 const newer = { ...first, lastMessage: "oi", updatedAt: new Date(Date.now() + 1000).toISOString() }
 assert(mergeLeads([first], [newer])[0]?.lastMessage === "oi", "merge fica com o mais novo")
 assert(mergeLeads([newer], [first])[0]?.lastMessage === "oi", "merge nao volta atras")
@@ -476,10 +477,27 @@ const deniedLeads = await handleRequest(
   backgroundCtx()
 )
 assert(deniedLeads.status === 401, "leads sem sessão é 401")
+const deniedLeadList = await handleRequest(new Request("http://local.test/api/leads"), apiEnv, backgroundCtx())
+assert(deniedLeadList.status === 401, "lista de leads sem sessão é 401")
 const deniedSummary = await handleRequest(new Request("http://local.test/api/track/summary"), apiEnv, backgroundCtx())
 assert(deniedSummary.status === 401, "analytics sem sessão é 401")
 const health = await handleRequest(new Request("http://local.test/api/health"), apiEnv, backgroundCtx())
 const healthBody = (await health.json()) as { ok?: boolean; telegramBotUsername?: string }
 assert(health.status === 200 && healthBody.ok && healthBody.telegramBotUsername === "", "health público expõe username vazio")
+await saveSettingsKv(apiEnv.AUTH, migrateSettings({ telegramBotUsername: "good_bot" }))
+const namedHealth = (await (await handleRequest(new Request("http://local.test/api/health"), apiEnv, backgroundCtx())).json()) as {
+  telegramBotUsername?: string
+}
+assert(namedHealth.telegramBotUsername === "@good_bot", "health usa o username das settings")
+const badHook = await handleRequest(
+  new Request("http://local.test/api/telegram", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{",
+  }),
+  apiEnv,
+  backgroundCtx()
+)
+assert(badHook.status === 400, "webhook recusa JSON inválido")
 
 console.log("ste-flow ok")

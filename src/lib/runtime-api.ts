@@ -67,6 +67,18 @@ export async function prepareVoice() {
   )
 }
 
+export async function fetchLeads() {
+  try {
+    const res = await fetch("/api/leads", { credentials: "include", cache: "no-store" })
+    noteUnauthorized(res)
+    if (!res.ok) return { ok: false as const, leads: [] as Lead[] }
+    const data = (await res.json()) as { leads?: Lead[] }
+    return { ok: true as const, leads: data.leads ?? [] }
+  } catch {
+    return { ok: false as const, leads: [] as Lead[] }
+  }
+}
+
 export async function fetchInbox() {
   try {
     const res = await fetch("/api/inbox", { credentials: "include", cache: "no-store" })

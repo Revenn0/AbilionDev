@@ -48,6 +48,7 @@ export function TelegramPage() {
             disabled={burstLock}
             onClick={() => {
               if (burstLock) return
+              if (!confirm("Isto cria 100 leads Facebook no CRM. Continuar?")) return
               setBurstLock(true)
               const batch = burstFacebookLeads(state.funnels, 100)
               createLeads(batch)
