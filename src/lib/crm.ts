@@ -97,6 +97,27 @@ export function adoptLeadStores(kv: Lead[], remote: Lead[]): Lead[] {
   return mergeLeads(kv, remote.filter((lead) => keep.has(lead.id)))
 }
 
+export function resolveLeadLookup(
+  kvLead: Lead | null | undefined,
+  remoteLead: Lead | null | undefined,
+  removedIds: Iterable<string> = []
+): Lead | null {
+  if (kvLead) return kvLead
+  if (!remoteLead) return null
+  const removed = removedIds instanceof Set ? removedIds : new Set(removedIds)
+  return removed.has(remoteLead.id) ? null : remoteLead
+}
+
+export function adoptDueLeads(kvLeads: Lead[], remoteLeads: Lead[], removedIds: Iterable<string> = []): Lead[] {
+  const removed = new Set(removedIds)
+  const byId = new Map<string, Lead>()
+  for (const lead of remoteLeads) {
+    if (!removed.has(lead.id)) byId.set(lead.id, lead)
+  }
+  for (const lead of kvLeads) byId.set(lead.id, lead)
+  return [...byId.values()]
+}
+
 export function emptySettings(): Settings {
   return { ...defaultSettings, plugins: { ...defaultSettings.plugins } }
 }

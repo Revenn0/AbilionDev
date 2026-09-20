@@ -85,6 +85,12 @@ export function formatDelta(value: number) {
   return signed
 }
 
+export function pixelFigure(status: "loading" | "ok" | "error", hasData: boolean, value: number): string | number {
+  if (!hasData && status === "loading") return "…"
+  if (!hasData && status === "error") return "—"
+  return value
+}
+
 export type GlobePulseMarker = {
   id: string
   location: [number, number]

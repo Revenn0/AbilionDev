@@ -1,4 +1,4 @@
-import { emptySettings, publicSettings } from "../src/lib/crm.ts"
+import { clipRemovedIds, emptySettings, publicSettings } from "../src/lib/crm.ts"
 import { migrateLead, migrateSettings, sanitizeIncomingFunnel } from "../src/lib/migrate.ts"
 import type { Lead, SalesFunnel, Settings } from "../src/lib/types.ts"
 import type { KvLike } from "./kv.ts"
@@ -6,6 +6,7 @@ import type { KvLike } from "./kv.ts"
 export const CRM_INDEX = "crm:index"
 export const CRM_FUNNELS = "crm:funnels"
 export const CRM_SETTINGS = "crm:settings"
+export const CRM_REMOVED = "crm:removed"
 
 const CAP = 400
 
@@ -61,7 +62,26 @@ export async function findLeadInKv(kv: KvLike, contact: string, telegramId: numb
   return hit ? loadLead(kv, hit.id) : null
 }
 
+export async function loadRemovedLeadIds(kv: KvLike): Promise<string[]> {
+  const raw = await kv.get(CRM_REMOVED, "json")
+  if (!raw || typeof raw !== "object") return []
+  return clipRemovedIds((raw as { ids?: unknown }).ids, CAP)
+}
+
+export async function rememberRemovedLead(kv: KvLike, id: string) {
+  const next = id.trim()
+  if (!next || next.length > 80) return
+  const ids = clipRemovedIds([next, ...(await loadRemovedLeadIds(kv))], CAP)
+  await kv.put(CRM_REMOVED, JSON.stringify({ ids }))
+}
+
+export async function forgetRemovedLead(kv: KvLike, id: string) {
+  const ids = (await loadRemovedLeadIds(kv)).filter((item) => item !== id)
+  await kv.put(CRM_REMOVED, JSON.stringify({ ids }))
+}
+
 export async function upsertLeadKv(kv: KvLike, lead: Lead) {
+  await forgetRemovedLead(kv, lead.id)
   const index = await loadIndex(kv)
   const entry: CrmIndexEntry = {
     id: lead.id,
@@ -77,6 +97,7 @@ export async function upsertLeadKv(kv: KvLike, lead: Lead) {
 }
 
 export async function deleteLeadKv(kv: KvLike, id: string) {
+  await rememberRemovedLead(kv, id)
   const index = await loadIndex(kv)
   await saveIndex(kv, { entries: index.entries.filter((item) => item.id !== id) })
   await kv.delete?.(leadKey(id))

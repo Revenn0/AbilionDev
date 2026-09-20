@@ -7,38 +7,40 @@ import { cn } from "@/lib/utils"
 export function FacebookSplit({
   summary,
   deltas,
+  ready = true,
 }: {
   summary: TrackSummary
   deltas?: { ads?: number; views?: number; clicks?: number }
+  ready?: boolean
 }) {
   const facebook = facebookOf(summary)
   const rows = [
     {
       id: "ads",
       title: "Clique no anúncio",
-      value: facebook.adClicks,
+      value: ready ? facebook.adClicks : "—",
       hint: "Chegaram na landing pelo Facebook.",
       tone: "blue" as const,
       icon: Megaphone,
-      delta: deltas?.ads,
+      delta: ready ? deltas?.ads : undefined,
     },
     {
       id: "views",
       title: "Page views",
-      value: facebook.pageViews,
+      value: ready ? facebook.pageViews : "—",
       hint: "Aberturas da landing deste tráfego.",
       tone: "sky" as const,
       icon: PanelsTopLeft,
-      delta: deltas?.views,
+      delta: ready ? deltas?.views : undefined,
     },
     {
       id: "clicks",
       title: "Clique no Telegram",
-      value: facebook.buttonClicks,
+      value: ready ? facebook.buttonClicks : "—",
       hint: "Tocaram no botão da página.",
       tone: "pink" as const,
       icon: MousePointerClick,
-      delta: deltas?.clicks,
+      delta: ready ? deltas?.clicks : undefined,
     },
   ]
 

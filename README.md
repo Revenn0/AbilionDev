@@ -198,6 +198,8 @@ Estes itens dependem de credenciais ou de uma decisão humana. O código não in
 - **Notificações** na conta também são “Em breve”. O aviso da Ester no print continua a sair pelo funil quando há `ESTER_CHAT_ID`.
 - **Primeiro login em produção** recusa criar senha se o Worker não tiver `ABILION_OPERATOR_PASSWORD`. Localmente o primeiro acesso ainda define a senha (6+).
 - `ESTER_CHAT_ID` só é preciso se a Ester receber aviso no Telegram.
+- Apagar um lead grava um tombstone no KV (`crm:removed`). O webhook e o cron não voltam a puxar essa linha do Supabase. Sem `SUPABASE_SERVICE_ROLE` isto não muda nada.
+- Dashboard, Analytics e Conversas mostram "—" / "…" no pixel quando a leitura ainda não veio ou falhou. Não tratam zero como dado real.
 
 ## Auditoria
 
@@ -211,7 +213,7 @@ npx tsx scripts/ui-audit.mts
 
 `scripts/ui-audit.mts` percorre login, rotas do painel, 404, skip-link, teclado das tabs, captura, logout → forgot/reset e as larguras 320 / 375 / 768 / 1024 / 1440. Precisa do `npm run dev` em `http://127.0.0.1:43173`.
 
-`scripts/ste-flow.mts` cobre o webhook assinado (`/start fb`, segundo `/start` sem spam, fala do lead, join no grupo), inbox autenticada, runtime sem vazar o token, DELETE do lead, cron com duas esperas, recusa de JSON enorme (413), hydrate que não ressuscita lead/funil apagado, tombstone de funil e a regra de que simulação/lote não inventam `telegramChatId`.
+`scripts/ste-flow.mts` cobre o webhook assinado (`/start fb`, segundo `/start` sem spam, fala do lead, join no grupo), inbox autenticada, runtime sem vazar o token, DELETE do lead, cron com duas esperas, recusa de JSON enorme (413), hydrate que não ressuscita lead/funil apagado, tombstone de funil e de lead (KV ganha do Supabase no webhook e no cron), a regra de que simulação/lote não inventam `telegramChatId`, e o pixel que não finge zero quando a leitura falha.
 
 ```bash
 npx tsx scripts/ui-audit.mts

@@ -5,6 +5,7 @@ import { fetchTrackSummary } from "@/lib/track-api"
 export function useTrackSummary(ms = 5000) {
   const [summary, setSummary] = useState<TrackSummary>(emptySummary)
   const [status, setStatus] = useState<"loading" | "ok" | "error">("loading")
+  const [hasData, setHasData] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -14,6 +15,7 @@ export function useTrackSummary(ms = 5000) {
           if (cancelled) return
           setSummary(next)
           setStatus("ok")
+          setHasData(true)
         })
         .catch(() => {
           if (!cancelled) setStatus("error")
@@ -27,5 +29,5 @@ export function useTrackSummary(ms = 5000) {
     }
   }, [ms])
 
-  return { summary, status }
+  return { summary, status, hasData }
 }

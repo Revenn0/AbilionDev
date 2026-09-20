@@ -4,13 +4,14 @@ import { PageChrome, StatusPill } from "@/components/layout/chrome"
 import { SyncBanner } from "@/components/layout/sync-banner"
 import { SparkBars, TrendLine } from "@/components/ui/spark"
 import { useStore } from "@/lib/store"
+import { pixelFigure } from "@/lib/analytics-view"
 import { barShare, deriveOps, seriesLast30 } from "@/lib/ops"
 import { facebookOf } from "@/lib/track"
 import { useTrackSummary } from "@/lib/use-track-summary"
 
 export function DashboardPage() {
   const { state, crmSync, inboxSync, persistSync } = useStore()
-  const { summary, status } = useTrackSummary(8000)
+  const { summary, status, hasData } = useTrackSummary(8000)
   const facebook = facebookOf(summary)
   const ops = deriveOps(state.leads)
   const empty = ops.leads === 0
@@ -47,9 +48,9 @@ export function DashboardPage() {
             hint={empty ? "nenhuma iniciada" : "eventos do fluxo"}
             bars={spark}
           />
-          <Kpi href="/analytics" label="Anúncio" value={facebook.adClicks} hint="clique no ads" bars={spark} />
-          <Kpi href="/analytics" label="Page views" value={facebook.pageViews} hint="landing do Facebook" bars={spark} />
-          <Kpi href="/analytics" label="Botão TG" value={facebook.buttonClicks} hint="clique no Telegram" bars={spark} />
+          <Kpi href="/analytics" label="Anúncio" value={pixelFigure(status, hasData, facebook.adClicks)} hint="clique no ads" bars={spark} />
+          <Kpi href="/analytics" label="Page views" value={pixelFigure(status, hasData, facebook.pageViews)} hint="landing do Facebook" bars={spark} />
+          <Kpi href="/analytics" label="Botão TG" value={pixelFigure(status, hasData, facebook.buttonClicks)} hint="clique no Telegram" bars={spark} />
           <Kpi href="/leads" label="Aguardando" value={ops.waiting} hint="espera do fluxo" bars={waitSpark} />
           <Kpi href="/leads" label="Ofertas" value={ops.offered} hint="disparadas pelo quadro" bars={offerSpark} />
         </section>
@@ -90,9 +91,9 @@ export function DashboardPage() {
             <div className="mt-5 space-y-5">
               <ChannelRow label="Telegram · convite" value={ops.telegram} total={ops.leads} />
               <ChannelRow label="Facebook → Telegram" value={ops.facebook} total={ops.leads} />
-              <ChannelRow label="Clique no anúncio" value={facebook.adClicks} total={facebookTotal} />
-              <ChannelRow label="Page views Facebook" value={facebook.pageViews} total={facebookTotal} />
-              <ChannelRow label="Clique no botão" value={facebook.buttonClicks} total={facebookTotal} />
+              <ChannelRow label="Clique no anúncio" value={pixelFigure(status, hasData, facebook.adClicks)} total={facebookTotal} />
+              <ChannelRow label="Page views Facebook" value={pixelFigure(status, hasData, facebook.pageViews)} total={facebookTotal} />
+              <ChannelRow label="Clique no botão" value={pixelFigure(status, hasData, facebook.buttonClicks)} total={facebookTotal} />
             </div>
           </div>
           <div className="surface p-6">
@@ -121,7 +122,7 @@ function Kpi({
 }: {
   href: string
   label: string
-  value: number
+  value: string | number
   hint: string
   bars: number[]
 }) {
@@ -139,8 +140,8 @@ function Kpi({
   )
 }
 
-function ChannelRow({ label, value, total }: { label: string; value: number; total: number }) {
-  const share = barShare(value, total)
+function ChannelRow({ label, value, total }: { label: string; value: string | number; total: number }) {
+  const share = typeof value === "number" ? barShare(value, total) : 0
   return (
     <div>
       <div className="flex items-center justify-between text-[13px]">

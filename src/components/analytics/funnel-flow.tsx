@@ -10,8 +10,9 @@ const META: Record<FunnelStep["id"], { icon: typeof Megaphone; tone: StudioTone 
   chat: { icon: MessagesSquare, tone: "emerald" },
 }
 
-export function FunnelFlow({ steps }: { steps: FunnelStep[] }) {
+export function FunnelFlow({ steps, pixelReady = true }: { steps: FunnelStep[]; pixelReady?: boolean }) {
   const peak = Math.max(...steps.map((item) => item.value), 1)
+  const figure = (step: FunnelStep) => (pixelReady || step.id === "chat" ? step.value : "—")
   return (
     <StudioPanel
       eyebrow="Funil Facebook"
@@ -21,7 +22,7 @@ export function FunnelFlow({ steps }: { steps: FunnelStep[] }) {
       <div className="hidden md:grid md:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] md:items-stretch md:gap-1">
         {steps.map((step, index) => {
           const prev = steps[index - 1]
-          const drop = prev ? stepDrop(step.value, prev.value) : null
+          const drop = pixelReady && prev ? stepDrop(step.value, prev.value) : null
           const meta = META[step.id]
           const Icon = meta.icon
           return (
@@ -35,7 +36,7 @@ export function FunnelFlow({ steps }: { steps: FunnelStep[] }) {
               <StudioMetric
                 title={step.label}
                 tone={meta.tone}
-                value={step.value}
+                value={figure(step)}
                 hint={step.hint}
                 footer={
                   <div className="mt-3">
@@ -60,7 +61,7 @@ export function FunnelFlow({ steps }: { steps: FunnelStep[] }) {
       <ol className="space-y-3 md:hidden">
         {steps.map((step, index) => {
           const prev = steps[index - 1]
-          const drop = prev ? stepDrop(step.value, prev.value) : null
+          const drop = pixelReady && prev ? stepDrop(step.value, prev.value) : null
           const meta = META[step.id]
           return (
             <li key={step.id}>
@@ -69,7 +70,7 @@ export function FunnelFlow({ steps }: { steps: FunnelStep[] }) {
                   ↓ {drop === null ? "—" : formatPercent(drop)}
                 </p>
               ) : null}
-              <StudioMetric title={step.label} tone={meta.tone} value={step.value} hint={step.hint} />
+              <StudioMetric title={step.label} tone={meta.tone} value={figure(step)} hint={step.hint} />
             </li>
           )
         })}

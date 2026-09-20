@@ -1,4 +1,4 @@
-import { chatStarted, funnelFrom, markersFromGeos, mergeGlobeGeos, periodDelta, stepDrop } from "../src/lib/analytics-view.ts"
+import { chatStarted, funnelFrom, markersFromGeos, mergeGlobeGeos, periodDelta, pixelFigure, stepDrop } from "../src/lib/analytics-view.ts"
 import { coordsFromGeo } from "../src/lib/geo-coords.ts"
 import { flagEmoji, formatGeo, mergeGeo, normalizeRegionCode, stateLabel } from "../src/lib/geo.ts"
 import { emptySummary, isFacebookTraffic, summarizeTrack, type TrackEvent } from "../src/lib/track.ts"
@@ -28,6 +28,7 @@ import {
 import { emptySalesFunnel } from "../src/lib/templates.ts"
 import {
   activatePublishedFunnels,
+  adoptDueLeads,
   adoptLeadStores,
   adoptRemoteFunnels,
   applyRemovedFunnels,
@@ -38,11 +39,12 @@ import {
   mergeLeads,
   reconcileFunnels,
   reconcileLeads,
+  resolveLeadLookup,
 } from "../src/lib/crm.ts"
 import { publishedFunnel } from "../src/lib/runtime.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import type { Lead } from "../src/lib/types.ts"
-import { CRM_FUNNELS, deleteLeadKv, findLeadInKv, listLeads, loadFunnelsKv, loadLead, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_FUNNELS, deleteLeadKv, findLeadInKv, listLeads, loadFunnelsKv, loadLead, loadRemovedLeadIds, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
@@ -836,6 +838,19 @@ await upsertLeadKv(kv, gone)
 assert((await loadLead(kv, "gone"))?.contact === "@gone", "lead persistido no KV")
 await deleteLeadKv(kv, "gone")
 assert((await loadLead(kv, "gone")) === null, "lead apagado do KV")
+assert((await loadRemovedLeadIds(kv)).includes("gone"), "apagar grava tombstone persistente")
+const staleGone = { ...gone, memory: "", updatedAt: new Date(Date.now() + 5000).toISOString() }
+assert(resolveLeadLookup(null, staleGone, await loadRemovedLeadIds(kv)) === null, "tombstone bloqueia o remoto")
+assert(resolveLeadLookup(first, staleGone)?.id === "crm-1", "KV ganha do remoto no webhook")
+assert(resolveLeadLookup(null, first)?.id === "crm-1", "remoto serve se o KV nao tem")
+assert(
+  !adoptDueLeads([], [staleGone], ["gone"]).some((item) => item.id === "gone"),
+  "cron nao adopta lead tombstoned"
+)
+assert(adoptDueLeads([first], [staleGone], []).some((item) => item.id === "crm-1"), "cron prefere o KV")
+await upsertLeadKv(kv, gone)
+assert(!(await loadRemovedLeadIds(kv)).includes("gone"), "voltar a gravar limpa o tombstone")
+await deleteLeadKv(kv, "gone")
 
 clearSessionExpired()
 let expiredHits = 0
@@ -1069,6 +1084,10 @@ const deleted = await handleRequest(
 )
 assert(deleted.status === 200, "DELETE lead autenticado")
 assert(!(await listLeads(startEnv.AUTH, 20, "all")).some((item) => item.contact === "@fbuser"), "lead apagado some do KV")
+assert(
+  (await loadRemovedLeadIds(startEnv.AUTH)).some((id) => id === (anaTalk?.id || ana?.id)),
+  "DELETE autenticado grava tombstone"
+)
 
 const liveEnv = {
   ASSETS: { fetch: async () => new Response("ok") },
@@ -1344,5 +1363,61 @@ assert(burstMix.blocked >= 1 && burstMix.talking >= 1, "lote Facebook mistura ab
 assert(barShare(0, 0) === 0, "barra vazia fica em 0")
 assert(barShare(5, 5) === 100, "barra igual ao total é 100")
 assert(barShare(2, 10) === 20, "barra compara com o total")
+assert(pixelFigure("loading", false, 0) === "…", "pixel a carregar nao finge zero")
+assert(pixelFigure("error", false, 0) === "—", "pixel falhou nao finge zero")
+assert(pixelFigure("error", true, 12) === 12, "pixel falhou depois guarda a ultima leitura")
+assert(pixelFigure("ok", true, 0) === 0, "pixel vazio de verdade continua zero")
+
+const ghostDue = lead("ghost-due", "@ghost")
+ghostDue.waitUntil = new Date(Date.now() - 2000).toISOString()
+ghostDue.telegramChatId = "77"
+ghostDue.channel = "telegram"
+const ghostEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://example.supabase.co",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: memoryKv(),
+  CRON_SECRET: "cron",
+  ABILION_ENV: "development",
+} as Env
+await deleteLeadKv(ghostEnv.AUTH, ghostDue.id)
+const ghostFetch = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL) => {
+  const url = String(input)
+  if (url.includes("/rest/v1/leads") && url.includes("wait_until")) {
+    return new Response(
+      JSON.stringify([
+        {
+          id: ghostDue.id,
+          name: ghostDue.name,
+          contact: ghostDue.contact,
+          channel: ghostDue.channel,
+          campaign: ghostDue.campaign,
+          origin: ghostDue.origin,
+          temperature: ghostDue.temperature,
+          stage: ghostDue.stage,
+          memory: ghostDue.memory,
+          facts: {},
+          events: [],
+          messages: [],
+          telegram_chat_id: ghostDue.telegramChatId,
+          wait_until: ghostDue.waitUntil,
+          updated_at: ghostDue.updatedAt,
+          created_at: ghostDue.createdAt,
+        },
+      ]),
+      { status: 200, headers: { "content-type": "application/json" } }
+    )
+  }
+  return new Response("[]", { status: 200, headers: { "content-type": "application/json" } })
+}) as typeof fetch
+try {
+  const ghostCron = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), ghostEnv, backgroundCtx())
+  const ghostBody = (await ghostCron.json()) as { ok?: boolean; advanced?: number }
+  assert(ghostCron.status === 200 && ghostBody.ok && ghostBody.advanced === 0, "cron ignora espera tombstoned do Supabase")
+  assert((await loadLead(ghostEnv.AUTH, ghostDue.id)) === null, "cron nao ressuscita lead apagado")
+} finally {
+  globalThis.fetch = ghostFetch
+}
 
 console.log("ste-flow ok")

@@ -8,17 +8,25 @@ import { VisitorGlobe } from "@/components/analytics/visitor-globe"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
 import { SyncBanner } from "@/components/layout/sync-banner"
 import { StudioPanel } from "@/components/layout/studio"
-import { funnelFrom, periodDelta, splitSeries } from "@/lib/analytics-view"
+import { funnelFrom, periodDelta, pixelFigure, splitSeries } from "@/lib/analytics-view"
 import { useStore } from "@/lib/store"
 import { facebookOf, formatPercent, formatSession } from "@/lib/track"
 import { useTrackSummary } from "@/lib/use-track-summary"
 
 export function AnalyticsPage() {
   const { state } = useStore()
-  const { summary, status } = useTrackSummary(4000)
+  const { summary, status, hasData } = useTrackSummary(4000)
   const facebook = facebookOf(summary)
+  const pixelReady = status === "ok" || hasData
   const empty =
-    summary.visitors === 0 && summary.clicks === 0 && summary.telegrams === 0 && facebook.adClicks === 0 && state.leads.length === 0
+    pixelReady &&
+    summary.visitors === 0 &&
+    summary.clicks === 0 &&
+    summary.telegrams === 0 &&
+    facebook.adClicks === 0 &&
+    state.leads.length === 0
+  const unread = status === "error" && !hasData
+  const unreadEmpty = "Sem leitura do pixel."
   const periods = splitSeries(summary.series)
   const funnel = funnelFrom(summary, state.leads)
   const viewSpark = summary.series.map((item) => item.views)
@@ -49,6 +57,7 @@ export function AnalyticsPage() {
 
         <FacebookSplit
           summary={summary}
+          ready={pixelReady}
           deltas={{
             ads: periodDelta(periods.facebookAds.current, periods.facebookAds.previous),
             views: periodDelta(periods.facebookViews.current, periods.facebookViews.previous),
@@ -56,39 +65,49 @@ export function AnalyticsPage() {
           }}
         />
 
-        <FunnelFlow steps={funnel} />
+        <FunnelFlow steps={funnel} pixelReady={pixelReady} />
 
         <VisitorGlobe geos={summary.geos} leads={state.leads} />
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <KpiCard label="Ao vivo" value={summary.online} hint="ativos nos últimos 2 min" live spark={viewSpark.slice(-12)} />
+          <KpiCard label="Ao vivo" value={pixelFigure(status, hasData, summary.online)} hint="ativos nos últimos 2 min" live spark={viewSpark.slice(-12)} />
           <KpiCard
             label="Visitantes"
-            value={summary.visitors}
+            value={pixelFigure(status, hasData, summary.visitors)}
             hint="todas as origens"
-            delta={periodDelta(periods.views.current, periods.views.previous)}
+            delta={pixelReady ? periodDelta(periods.views.current, periods.views.previous) : undefined}
             spark={viewSpark}
           />
-          <KpiCard label="Bounce" value={formatPercent(summary.bounce)} hint="viu e não clicou no Telegram" spark={clickSpark} />
-          <KpiCard label="Sessão" value={formatSession(summary.sessionMs)} hint="tempo médio na página" spark={viewSpark} />
+          <KpiCard
+            label="Bounce"
+            value={pixelReady ? formatPercent(summary.bounce) : pixelFigure(status, hasData, 0)}
+            hint="viu e não clicou no Telegram"
+            spark={clickSpark}
+          />
+          <KpiCard
+            label="Sessão"
+            value={pixelReady ? formatSession(summary.sessionMs) : pixelFigure(status, hasData, 0)}
+            hint="tempo médio na página"
+            spark={viewSpark}
+          />
         </section>
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <KpiCard
             label="/start"
-            value={facebook.starts || summary.telegrams}
+            value={pixelFigure(status, hasData, facebook.starts || summary.telegrams)}
             hint="fechou o Telegram depois do botão"
-            delta={periodDelta(periods.telegrams.current, periods.telegrams.previous)}
+            delta={pixelReady ? periodDelta(periods.telegrams.current, periods.telegrams.previous) : undefined}
             spark={telegramSpark}
           />
           <KpiCard
             label="Page views totais"
-            value={summary.views}
+            value={pixelFigure(status, hasData, summary.views)}
             hint="Facebook e o resto"
             spark={facebookViewSpark}
           />
           <KpiCard
             label="Botão Telegram total"
-            value={summary.clicks}
+            value={pixelFigure(status, hasData, summary.clicks)}
             hint="todas as origens"
             spark={facebookClickSpark}
           />
@@ -99,10 +118,16 @@ export function AnalyticsPage() {
           title="Page views do Facebook"
           hint="Anúncio, page view e clique no Telegram — linhas do Facebook, sem misturar /start."
         >
-          <p className="mb-4 text-[32px] font-medium tracking-[-0.04em] tabular-nums">{facebook.pageViews || summary.views}</p>
-          {status === "loading" ? (
+          <p className="mb-4 text-[32px] font-medium tracking-[-0.04em] tabular-nums">
+            {pixelFigure(status, hasData, facebook.pageViews || summary.views)}
+          </p>
+          {status === "loading" && !hasData ? (
             <p role="status" className="text-[13px] leading-relaxed text-muted-foreground">
               A carregar o pixel…
+            </p>
+          ) : unread ? (
+            <p role="alert" className="text-[13px] leading-relaxed text-muted-foreground">
+              Sem leitura do pixel. Os números acima não são zero — a API não respondeu.
             </p>
           ) : empty ? (
             <p className="text-[13px] leading-relaxed text-muted-foreground">
@@ -114,15 +139,15 @@ export function AnalyticsPage() {
         </StudioPanel>
 
         <section className="grid gap-3 lg:grid-cols-2">
-          <RankList title="Campanha / origem" rows={summary.referrers} empty="Sem origem ainda." />
-          <RankList title="Estado" rows={summary.regions} empty="Sem estado ainda. O pixel grava UF no Cloudflare ou via ipwho.is." />
+          <RankList title="Campanha / origem" rows={summary.referrers} empty={unread ? unreadEmpty : "Sem origem ainda."} />
+          <RankList title="Estado" rows={summary.regions} empty={unread ? unreadEmpty : "Sem estado ainda. O pixel grava UF no Cloudflare ou via ipwho.is."} />
         </section>
         <section className="grid gap-3 lg:grid-cols-2">
-          <RankList title="País" rows={summary.countries} empty="Sem país ainda." />
-          <RankList title="Páginas" rows={summary.pages} empty="Nenhuma página rastreada." />
+          <RankList title="País" rows={summary.countries} empty={unread ? unreadEmpty : "Sem país ainda."} />
+          <RankList title="Páginas" rows={summary.pages} empty={unread ? unreadEmpty : "Nenhuma página rastreada."} />
         </section>
         <section className="grid gap-3 lg:grid-cols-2">
-          <RankList title="Browser / app" rows={summary.devices} empty="Sem device ainda." />
+          <RankList title="Browser / app" rows={summary.devices} empty={unread ? unreadEmpty : "Sem device ainda."} />
         </section>
       </div>
     </div>

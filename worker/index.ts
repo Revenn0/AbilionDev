@@ -8,7 +8,17 @@ import { applyEvent, dueWaits, publishedSnapshot } from "../src/lib/runtime.ts"
 import { BANCA_FIXED, type Lead, type LeadEvent, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types.ts"
 import { compactGeo, factsFromGeo } from "../src/lib/geo.ts"
 import { parseDevice } from "../src/lib/track.ts"
-import { adoptLeadStores, applyRemovedFunnels, clipRemovedIds, emptySettings, publicSettings, reconcileFunnels } from "../src/lib/crm.ts"
+import {
+  adoptDueLeads,
+  adoptLeadStores,
+  applyRemovedFunnels,
+  applyRemovedLeads,
+  clipRemovedIds,
+  emptySettings,
+  publicSettings,
+  reconcileFunnels,
+  resolveLeadLookup,
+} from "../src/lib/crm.ts"
 import { cleanBotUsername, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { resolveClientGeo } from "./geo-lookup.ts"
 import { ingestTrack, kvTrackStore, memoryTrackStore, readTrackBody, summaryFromStore, type TrackStore } from "./track-store.ts"
@@ -20,6 +30,7 @@ import {
   loadLead,
   CRM_SETTINGS,
   loadFunnelsKv,
+  loadRemovedLeadIds,
   loadSettingsKv,
   saveFunnelsKv,
   saveSettingsKv,
@@ -113,7 +124,7 @@ export default {
     try {
       await processWaits(env)
     } catch {
-      return
+      console.error("cron falhou")
     }
   },
 }
@@ -495,9 +506,8 @@ async function processWaits(env: Env) {
   const now = new Date().toISOString()
   const restRows = (await rest<LeadRow[]>(env, `leads?workspace_id=eq.${WORKSPACE}&wait_until=lte.${now}&select=*`)) ?? []
   const kvDue = env.AUTH ? await dueLeadsKv(env.AUTH, now) : []
-  const byId = new Map<string, Lead>()
-  for (const row of restRows) byId.set(row.id, rowToLead(row))
-  for (const lead of kvDue) byId.set(lead.id, lead)
+  const removed = env.AUTH ? await loadRemovedLeadIds(env.AUTH) : []
+  const byId = new Map(adoptDueLeads(kvDue, restRows.map(rowToLead), removed).map((lead) => [lead.id, lead]))
   if (!byId.size) return 0
   const funnels = await loadFunnels(env)
   const settings = await loadSettings(env)
@@ -613,17 +623,18 @@ async function loadSettings(env: Env): Promise<Settings> {
 }
 
 async function findLead(env: Env, contact: string, telegramId: number, chatId: string): Promise<Lead | null> {
+  const kvLead = env.AUTH ? await findLeadInKv(env.AUTH, contact, telegramId, chatId) : null
+  if (kvLead) return kvLead
   const filter = [
     `contact.eq.${quote(contact)}`,
     `contact.eq.${quote(`tg:${telegramId}`)}`,
     `telegram_chat_id.eq.${quote(chatId)}`,
   ].join(",")
   const rows = (await rest<LeadRow[]>(env, `leads?workspace_id=eq.${WORKSPACE}&or=(${filter})&select=*&limit=1`)) ?? []
-  if (rows[0]) {
-    const [hydrated] = await attachLeadEvents(env, [rowToLead(rows[0])])
-    return hydrated ?? null
-  }
-  return env.AUTH ? findLeadInKv(env.AUTH, contact, telegramId, chatId) : null
+  if (!rows[0]) return null
+  const removed = env.AUTH ? await loadRemovedLeadIds(env.AUTH) : []
+  const [hydrated] = await attachLeadEvents(env, [rowToLead(rows[0])])
+  return resolveLeadLookup(null, hydrated, removed)
 }
 
 function quote(value: string) {
@@ -699,7 +710,8 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
       env,
       `leads?workspace_id=eq.${WORKSPACE}${filter}&select=*&order=updated_at.desc&limit=${limit}`
     )) ?? []
-  const remote = rows.map(rowToLead)
+  const removed = env.AUTH ? await loadRemovedLeadIds(env.AUTH) : []
+  const remote = applyRemovedLeads(rows.map(rowToLead), removed)
   const keep = new Set(kv.map((lead) => lead.id))
   const scoped = kv.length ? remote.filter((lead) => keep.has(lead.id)) : remote
   return adoptLeadStores(kv, await attachLeadEvents(env, scoped)).slice(0, limit)

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { simulateOpenLead } from "@/lib/burst"
 import { useStore } from "@/lib/store"
+import { pixelFigure } from "@/lib/analytics-view"
 import { hasConversation } from "@/lib/ops"
 import { ORIGIN_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { GeoBadge } from "@/components/crm/geo-badge"
@@ -49,7 +50,7 @@ function matchesFilter(lead: Lead, filter: FilterId) {
 
 export function ConversationsPage() {
   const { state, saveLead, createLead, inboxSync, persistSync } = useStore()
-  const { summary } = useTrackSummary(4000)
+  const { summary, status, hasData } = useTrackSummary(4000)
   const runtime = steRuntimeFromFunnels(state.funnels, state.settings)
   const [filter, setFilter] = useState<FilterId>("waiting")
   const [query, setQuery] = useState("")
@@ -134,8 +135,8 @@ export function ConversationsPage() {
           ))}
         </PageChrome>
         <FlowStrip
-          page={summary.visitors}
-          click={summary.clicks}
+          page={pixelFigure(status, hasData, summary.visitors)}
+          click={pixelFigure(status, hasData, summary.clicks)}
           telegram={all.length}
           talking={all.filter((item) => (item.messages ?? []).some((msg) => msg.role === "lead") && !item.steBlocked && !item.steQuiet).length}
           premium={all.filter((item) => item.stePhase === "offer" || item.steQuiet).length}
@@ -301,8 +302,8 @@ function FlowStrip({
   talking,
   premium,
 }: {
-  page: number
-  click: number
+  page: string | number
+  click: string | number
   telegram: number
   talking: number
   premium: number
