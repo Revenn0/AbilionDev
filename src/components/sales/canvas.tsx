@@ -61,6 +61,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
   const [renameOpen, setRenameOpen] = useState(false)
   const [cursor, setCursor] = useState<string | undefined>()
   const [mobilePanel, setMobilePanel] = useState<"none" | "blocks" | "props">("none")
+  const [publishError, setPublishError] = useState("")
   const keepDropSelection = useRef(false)
   const didFit = useRef(false)
 
@@ -147,9 +148,9 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
   }
 
   return (
-    <div className="sales-studio flex h-full flex-col bg-[#f4f5f7] text-slate-900">
-      <header className="grid min-h-12 grid-cols-[1fr_auto_1fr] items-center gap-2 border-b border-slate-200 bg-white px-3">
-        <div className="flex min-w-0 items-center gap-1.5">
+    <div className="sales-studio flex h-full min-w-0 flex-col overflow-hidden bg-[#f4f5f7] text-slate-900">
+      <header className="flex min-h-12 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-1.5">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <LogoMark className="size-6 shrink-0" />
           <Button asChild variant="ghost" size="sm" className="h-8 rounded-full text-[12px] text-slate-600 -ml-0.5 hover:bg-slate-100">
             <Link to="/fluxo">
@@ -162,6 +163,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
           <div className="flex rounded-full border border-slate-200 bg-[#f4f5f7] p-0.5 text-[11px]">
             <button
               type="button"
+              aria-pressed={version === "draft"}
               className={cn("rounded-full px-2.5 py-1", version === "draft" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500")}
               onClick={() => setVersion("draft")}
             >
@@ -170,6 +172,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
             <button
               type="button"
               disabled={!production}
+              aria-pressed={version === "production"}
               className={cn("rounded-full px-2.5 py-1 disabled:opacity-40", version === "production" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500")}
               onClick={() => setVersion("production")}
             >
@@ -181,14 +184,14 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
           type="button"
           disabled={readOnly}
           onClick={() => setRenameOpen(true)}
-          className="flex max-w-[240px] items-center gap-1.5 truncate rounded-full border border-slate-200 bg-[#f4f5f7] px-3 py-1 text-[13px] font-medium text-slate-800"
+          className="flex max-w-[min(100%,240px)] min-w-0 items-center gap-1.5 truncate rounded-full border border-slate-200 bg-[#f4f5f7] px-3 py-1 text-[13px] font-medium text-slate-800"
           aria-label="Alterar nome do funil"
           title="Alterar nome"
         >
           <span className="truncate">{name}</span>
           <Pencil className="size-3 shrink-0 text-slate-400" />
         </button>
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
           <Button
             size="icon-sm"
             variant="ghost"
@@ -251,9 +254,11 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
               }))
               const issues = validatePublish(draftNodes, draftEdges)
               if (issues.length) {
+                setPublishError(issues[0].message)
                 toast.error(issues[0].message)
                 return
               }
+              setPublishError("")
               const snap: SalesSnapshot = {
                 name,
                 publishedAt: new Date().toISOString(),
@@ -268,6 +273,11 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
             Publicar
           </Button>
         </div>
+        {publishError ? (
+          <p role="alert" className="basis-full text-[12px] text-red-600">
+            {publishError}
+          </p>
+        ) : null}
       </header>
       <div
         className="relative flex min-h-0 flex-1"

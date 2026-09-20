@@ -118,7 +118,20 @@ try {
     }
     console.log("ui-audit public ok")
   } else {
+  await open(page, "/login")
+  await waitAuthPage(page)
+  await page.click("#email", { clickCount: 3 })
+  await page.type("#email", EMAIL)
+  await page.click("#password", { clickCount: 3 })
+  await page.type("#password", "errada1")
+  await page.click("button[type=submit]")
+  await page.waitForSelector("#login-error", { timeout: 8_000 })
+
   await login(page)
+
+  await page.setOfflineMode(true)
+  await page.waitForFunction(() => document.body.innerText.includes("Sem rede"), { timeout: 4_000 })
+  await page.setOfflineMode(false)
 
   for (const route of ROUTES) {
     await open(page, route)
@@ -144,9 +157,18 @@ try {
   await page.waitForSelector("#lead-name-error", { timeout: 3_000 })
   assert(await page.$("#lead-contact-error"), "captura mostra os dois erros")
 
+  await open(page, "/fluxo")
+  await clickNamed(page, "Novo funil")
+  await page.waitForFunction(() => location.pathname.includes("/fluxo/funil/"), { timeout: 8_000 })
+  await page.waitForFunction(
+    () => [...document.querySelectorAll("button")].some((el) => (el.textContent || "").includes("Publicar")),
+    { timeout: 8_000 }
+  )
+  const editorPath = new URL(page.url()).pathname
+
   for (const viewport of VIEWPORTS) {
     await page.setViewport({ width: viewport.width, height: viewport.height })
-    for (const route of ["/", "/leads", "/conversas", "/configuracoes"] as const) {
+    for (const route of ["/", "/leads", "/conversas", "/configuracoes", "/fluxo", editorPath] as const) {
       await open(page, route)
       const box = await overflow(page)
       assert(!box.overflow, `overflow ${viewport.name}px em ${route} (${box.scrollWidth}>${box.clientWidth})`)

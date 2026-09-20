@@ -23,15 +23,22 @@ export function RenameFunnelDialog({
   onSave: (name: string) => void
 }) {
   const [value, setValue] = useState(name)
+  const [error, setError] = useState("")
 
   useEffect(() => {
-    if (open) setValue(name)
+    if (open) {
+      setValue(name)
+      setError("")
+    }
   }, [open, name])
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
     const next = value.trim()
-    if (!next) return
+    if (!next) {
+      setError("Informa o nome do funil.")
+      return
+    }
     onSave(next)
     onOpenChange(false)
   }
@@ -49,19 +56,27 @@ export function RenameFunnelDialog({
             <Input
               id="funnel-name"
               value={value}
-              onChange={(event) => setValue(event.target.value)}
+              onChange={(event) => {
+                setValue(event.target.value)
+                setError("")
+              }}
               autoFocus
               maxLength={80}
               placeholder="Nome do funil"
+              aria-invalid={Boolean(error)}
+              aria-describedby={error ? "funnel-name-error" : undefined}
             />
+            {error ? (
+              <p id="funnel-name-error" role="alert" className="text-[12px] text-destructive">
+                {error}
+              </p>
+            ) : null}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={!value.trim()}>
-              Guardar
-            </Button>
+            <Button type="submit">Guardar</Button>
           </DialogFooter>
         </form>
       </DialogContent>

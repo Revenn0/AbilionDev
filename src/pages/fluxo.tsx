@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { Pencil, Plus, Trash2, Workflow } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -17,8 +17,11 @@ export function FluxoPage() {
   const navigate = useNavigate()
   const funnels = state.funnels
   const [renaming, setRenaming] = useState<SalesFunnel | null>(null)
+  const creating = useRef(false)
 
   const createSales = () => {
+    if (creating.current) return
+    creating.current = true
     const funnel = emptySalesFunnel("Novo funil")
     createFunnel(funnel)
     toast.success("Funil criado.")

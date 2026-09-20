@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react"
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom"
 import { AppShell } from "@/components/layout/app-shell"
+import { OfflineBanner } from "@/components/layout/offline-banner"
 import { DashboardPage } from "@/pages/dashboard"
 import { ForgotPage } from "@/pages/forgot"
 import { LoginPage } from "@/pages/login"
@@ -92,6 +93,7 @@ export default function App() {
       <a href="#conteudo" className="skip-link">
         Ir para o conteúdo
       </a>
+      <OfflineBanner />
       <div id="conteudo" tabIndex={-1}>
         <AppRoutes />
       </div>
