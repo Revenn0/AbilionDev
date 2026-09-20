@@ -182,7 +182,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `POST /api/track` | público, CORS aberto só aqui (pixel) |
 | `GET /api/track/summary` | sessão |
 | `POST /api/telegram` | Telegram; `secret_token` do webhook |
-| `GET /api/cron` | `CRON_SECRET` obrigatório |
+| `GET /api/cron` | `CRON_SECRET` obrigatório; cada espera corre isolada |
 | `GET /t.js` | pixel |
 
 ## Limitações e bloqueios
