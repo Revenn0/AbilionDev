@@ -74,7 +74,8 @@ export async function fetchLeads() {
     noteUnauthorized(res)
     if (!res.ok) return { ok: false as const, leads: [] as Lead[] }
     const data = (await res.json()) as { leads?: Lead[] }
-    return { ok: true as const, leads: data.leads ?? [] }
+    if (!Array.isArray(data.leads)) return { ok: false as const, leads: [] as Lead[] }
+    return { ok: true as const, leads: data.leads }
   } catch {
     return { ok: false as const, leads: [] as Lead[] }
   }
@@ -97,7 +98,9 @@ export async function fetchCrm() {
     const res = await fetch("/api/crm", { credentials: "include", cache: "no-store" })
     noteUnauthorized(res)
     if (!res.ok) return { ok: false as const, funnels: [] as SalesFunnel[], settings: undefined as Settings | undefined }
-    return (await res.json()) as { ok: true; funnels: SalesFunnel[]; settings?: Settings }
+    const data = (await res.json()) as { funnels?: SalesFunnel[]; settings?: Settings }
+    if (!Array.isArray(data.funnels)) return { ok: false as const, funnels: [] as SalesFunnel[], settings: undefined as Settings | undefined }
+    return { ok: true as const, funnels: data.funnels, settings: data.settings }
   } catch {
     return { ok: false as const, funnels: [] as SalesFunnel[], settings: undefined as Settings | undefined }
   }
@@ -124,7 +127,7 @@ export async function removeRemoteLead(id: string) {
   return res.ok
 }
 
-export async function saveCrm(body: { funnels?: SalesFunnel[]; settings?: Settings }) {
+export async function saveCrm(body: { funnels?: SalesFunnel[]; settings?: Settings; removedFunnelIds?: string[] }) {
   const res = await fetch("/api/crm", {
     method: "POST",
     credentials: "include",

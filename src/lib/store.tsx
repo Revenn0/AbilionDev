@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { loginRequest, logoutRequest, meRequest } from "@/lib/auth-api"
 import { clearSessionExpired, noteSessionExpired, subscribeSessionExpired } from "@/lib/session"
 import { toast } from "sonner"
-import { canDeleteFunnel, mergeFunnels, mergeLeads } from "@/lib/crm"
+import { adoptRemoteFunnels, canDeleteFunnel, mergeLeads, reconcileLeads } from "@/lib/crm"
 import { migrateFunnel, migrateLead, migrateSettings } from "@/lib/migrate"
 import { fetchCrm, fetchInbox, fetchLeads, fetchRuntime, persistLeads, removeRemoteLead, saveCrm } from "@/lib/runtime-api"
 import { seededOperation } from "@/lib/templates"
@@ -90,14 +90,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const crmTimer = useRef(0)
   const leadWriteTimer = useRef(0)
   const pendingLeadWrites = useRef(new Map<string, Lead>())
+  const pendingFunnelIds = useRef(new Set<string>())
+  const removedFunnelIds = useRef(new Set<string>())
   const stateRef = useRef(state)
 
   const flushLeadWrites = () => {
     window.clearTimeout(leadWriteTimer.current)
     const batch = [...pendingLeadWrites.current.values()]
-    pendingLeadWrites.current.clear()
     if (!batch.length) return
-    void persistLeads(batch).then((ok) => setPersistSync(ok ? "ok" : "error"))
+    void persistLeads(batch).then((ok) => {
+      if (ok) {
+        for (const lead of batch) {
+          const latest = pendingLeadWrites.current.get(lead.id)
+          if (latest && latest.updatedAt === lead.updatedAt) pendingLeadWrites.current.delete(lead.id)
+        }
+      }
+      setPersistSync(ok ? "ok" : "error")
+    })
   }
 
   const queueLeadWrite = (lead: Lead) => {
@@ -118,7 +127,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       void saveCrm({
         funnels: current.funnels,
         settings: { ...current.settings, telegramBotToken: "" },
-      }).then((ok) => setCrmSync(ok ? "ok" : "error"))
+        removedFunnelIds: [...removedFunnelIds.current],
+      }).then((ok) => {
+        if (ok) {
+          removedFunnelIds.current.clear()
+          pendingFunnelIds.current.clear()
+        }
+        setCrmSync(ok ? "ok" : "error")
+      })
     }, 400)
   }
 
@@ -181,8 +197,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setRemote(runtime.persist === "supabase" ? "cloud" : runtime.ok ? "local" : "off")
       setState((prev) => ({
         ...prev,
-        funnels: crm.ok && crm.funnels.length ? mergeFunnels(prev.funnels, crm.funnels.map(migrateFunnel)) : prev.funnels,
-        leads: remoteLeads.ok && remoteLeads.leads.length ? mergeLeads(prev.leads, remoteLeads.leads.map(migrateLead)) : prev.leads,
+        funnels:
+          crm.ok && crm.funnels.length
+            ? adoptRemoteFunnels(prev.funnels, crm.funnels.map(migrateFunnel), pendingFunnelIds.current)
+            : prev.funnels,
+        leads: remoteLeads.ok
+          ? remoteLeads.leads.length
+            ? reconcileLeads(prev.leads, remoteLeads.leads.map(migrateLead), pendingLeadWrites.current.keys())
+            : prev.leads.filter((lead) => pendingLeadWrites.current.has(lead.id))
+          : prev.leads,
         settings: {
           ...prev.settings,
           ...(crm.ok && crm.settings ? migrateSettings({ ...crm.settings, telegramBotToken: "" }) : {}),
@@ -266,12 +289,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setState((prev) => ({ ...prev, user: null }))
       },
       createFunnel: (funnel) => {
+        pendingFunnelIds.current.add(funnel.id)
+        removedFunnelIds.current.delete(funnel.id)
         setState((prev) => ({ ...prev, funnels: [funnel, ...prev.funnels] }))
         pushWorker()
       },
       saveFunnel: (funnel) => {
         setState((prev) => {
           const exists = prev.funnels.some((item) => item.id === funnel.id)
+          if (!exists) pendingFunnelIds.current.add(funnel.id)
           return {
             ...prev,
             funnels: exists
@@ -287,17 +313,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           toast.error(gate.reason)
           return false
         }
+        pendingFunnelIds.current.delete(id)
+        removedFunnelIds.current.add(id)
         setState((prev) => ({ ...prev, funnels: prev.funnels.filter((item) => item.id !== id) }))
         pushWorker()
         return true
       },
       createLead: (lead) => {
+        pendingLeadWrites.current.set(lead.id, lead)
         setState((prev) => ({ ...prev, leads: [lead, ...prev.leads] }))
-        void persistLeads([lead]).then((ok) => setPersistSync(ok ? "ok" : "error"))
+        void persistLeads([lead]).then((ok) => {
+          if (ok) {
+            const latest = pendingLeadWrites.current.get(lead.id)
+            if (latest && latest.updatedAt === lead.updatedAt) pendingLeadWrites.current.delete(lead.id)
+          }
+          setPersistSync(ok ? "ok" : "error")
+        })
       },
       createLeads: (leads) => {
+        for (const lead of leads) pendingLeadWrites.current.set(lead.id, lead)
         setState((prev) => ({ ...prev, leads: [...leads, ...prev.leads] }))
-        void persistLeads(leads).then((ok) => setPersistSync(ok ? "ok" : "error"))
+        void persistLeads(leads).then((ok) => {
+          if (ok) {
+            for (const lead of leads) {
+              const latest = pendingLeadWrites.current.get(lead.id)
+              if (latest && latest.updatedAt === lead.updatedAt) pendingLeadWrites.current.delete(lead.id)
+            }
+          }
+          setPersistSync(ok ? "ok" : "error")
+        })
       },
       saveLead: (lead) => {
         setState((prev) => ({

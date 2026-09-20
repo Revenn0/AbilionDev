@@ -30,6 +30,55 @@ export function mergeLeads(current: Lead[], incoming: Lead[]): Lead[] {
   return [...map.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, CAP)
 }
 
+export function clipRemovedIds(ids: unknown, cap = 20): string[] {
+  if (!Array.isArray(ids)) return []
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const id of ids) {
+    if (typeof id !== "string") continue
+    const next = id.trim()
+    if (!next || next.length > 80 || seen.has(next)) continue
+    seen.add(next)
+    out.push(next)
+    if (out.length >= cap) break
+  }
+  return out
+}
+
+export function reconcileLeads(current: Lead[], incoming: Lead[], pendingIds: Iterable<string> = []): Lead[] {
+  if (!incoming.length) return current
+  const merged = mergeLeads(current, incoming)
+  const remoteIds = new Set(incoming.map((lead) => lead.id))
+  const pending = new Set(pendingIds)
+  const next = merged.filter((lead) => remoteIds.has(lead.id) || pending.has(lead.id))
+  if (next.length === merged.length) return merged
+  return next.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, CAP)
+}
+
+export function adoptRemoteFunnels(
+  current: SalesFunnel[],
+  incoming: SalesFunnel[],
+  pendingIds: Iterable<string> = []
+): SalesFunnel[] {
+  if (!incoming.length) return current
+  const incomingIds = new Set(incoming.map((item) => item.id))
+  const pending = new Set(pendingIds)
+  const next = incoming.map((funnel) => {
+    const prev = current.find((item) => item.id === funnel.id)
+    return prev && prev.updatedAt > funnel.updatedAt ? prev : funnel
+  })
+  for (const funnel of current) {
+    if (!incomingIds.has(funnel.id) && pending.has(funnel.id)) next.push(funnel)
+  }
+  return next.slice(0, 20)
+}
+
+export function applyRemovedFunnels(funnels: SalesFunnel[], removedIds: string[]): SalesFunnel[] {
+  if (!removedIds.length) return funnels
+  const drop = new Set(removedIds)
+  return funnels.filter((item) => !drop.has(item.id))
+}
+
 export function emptySettings(): Settings {
   return { ...defaultSettings, plugins: { ...defaultSettings.plugins } }
 }

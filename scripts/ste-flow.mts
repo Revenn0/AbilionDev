@@ -24,7 +24,16 @@ import {
   toTelegramHtml,
 } from "../src/lib/ste.ts"
 import { emptySalesFunnel } from "../src/lib/templates.ts"
-import { canDeleteFunnel, mergeFunnels, mergeLeads, reconcileFunnels } from "../src/lib/crm.ts"
+import {
+  adoptRemoteFunnels,
+  applyRemovedFunnels,
+  canDeleteFunnel,
+  clipRemovedIds,
+  mergeFunnels,
+  mergeLeads,
+  reconcileFunnels,
+  reconcileLeads,
+} from "../src/lib/crm.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import type { Lead } from "../src/lib/types.ts"
 import { CRM_FUNNELS, deleteLeadKv, findLeadInKv, listLeads, loadFunnelsKv, loadLead, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
@@ -489,6 +498,31 @@ const deletedOld = reconcileFunnels(
   [{ ...publishedA, updatedAt: "2026-04-01T00:00:00.000Z" }]
 )
 assert(!deletedOld.some((item) => item.id === publishedC.id), "reconcile deixa apagar funil mais velho")
+const newestKept = reconcileFunnels(
+  [{ ...publishedA, updatedAt: "2026-01-01T00:00:00.000Z" }, { ...publishedC, updatedAt: "2026-05-01T00:00:00.000Z" }],
+  [{ ...publishedA, updatedAt: "2026-04-01T00:00:00.000Z" }]
+)
+assert(newestKept.some((item) => item.id === publishedC.id), "sem tombstone o funil mais novo fica")
+assert(
+  !applyRemovedFunnels(newestKept, [publishedC.id]).some((item) => item.id === publishedC.id),
+  "tombstone apaga o funil mais novo"
+)
+assert(clipRemovedIds(["  ok  ", "", "x".repeat(81), "ok", 12, null]).join(",") === "ok", "ids removidos são cortados")
+assert(
+  !adoptRemoteFunnels(
+    [{ ...publishedA, updatedAt: "2020-01-01T00:00:00.000Z" }, { ...publishedC, updatedAt: "2026-05-01T00:00:00.000Z" }],
+    [{ ...publishedA, updatedAt: "2026-04-01T00:00:00.000Z" }]
+  ).some((item) => item.id === publishedC.id),
+  "hydrate do CRM não ressuscita funil apagado"
+)
+assert(
+  adoptRemoteFunnels(
+    [{ ...publishedA, updatedAt: "2020-01-01T00:00:00.000Z" }, { ...publishedC, updatedAt: "2026-05-01T00:00:00.000Z" }],
+    [{ ...publishedA, updatedAt: "2026-04-01T00:00:00.000Z" }],
+    [publishedC.id]
+  ).some((item) => item.id === publishedC.id),
+  "hydrate conserva funil local ainda a gravar"
+)
 const olderLead = lead("merge-1")
 olderLead.updatedAt = "2020-01-01T00:00:00.000Z"
 olderLead.events = [{ id: "ev-1", at: olderLead.updatedAt, kind: "entered", title: "entrou" }]
@@ -497,6 +531,19 @@ const newerEmpty = { ...olderLead, updatedAt: "2026-01-01T00:00:00.000Z", events
 const mergedNewer = mergeLeads([olderLead], [newerEmpty])[0]
 assert(mergedNewer?.events[0]?.id === "ev-1", "hydrate remoto vazio conserva eventos")
 assert(mergedNewer?.messages?.[0]?.id === "m-1", "hydrate remoto vazio conserva mensagens")
+const staleLead = lead("stale")
+staleLead.updatedAt = "2020-01-01T00:00:00.000Z"
+const liveLead = lead("live")
+liveLead.updatedAt = "2026-06-01T00:00:00.000Z"
+const freshLead = lead("fresh")
+freshLead.updatedAt = "2026-07-01T00:00:00.000Z"
+assert(!reconcileLeads([staleLead, liveLead], [liveLead]).some((item) => item.id === "stale"), "hydrate dropa lead apagado")
+assert(reconcileLeads([staleLead], []).some((item) => item.id === "stale"), "lista remota vazia nao limpa")
+assert(!reconcileLeads([freshLead, liveLead], [liveLead]).some((item) => item.id === "fresh"), "lead local sem pending some")
+assert(
+  reconcileLeads([freshLead, liveLead], [liveLead], ["fresh"]).some((item) => item.id === "fresh"),
+  "pending local sobrevive ao hydrate"
+)
 assert(csvCell("a,b") === '"a,b"', "csv cita vírgula")
 assert(csvCell('diz "oi"') === '"diz ""oi"""', "csv escapa aspas")
 assert(leadsToCsv([lead()]).includes("lead-1"), "csv inclui o id")
@@ -1016,6 +1063,73 @@ const crmGet = (await (
   await handleRequest(new Request("http://local.test/api/crm", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
 ).json()) as { funnels?: Array<{ id?: string; name?: string }> }
 assert(crmGet.funnels?.some((item) => item.id === persistFunnel.id), "CRM GET devolve o funil gravado")
+const extraFunnel = emptySalesFunnel("extra")
+extraFunnel.updatedAt = "2099-01-01T00:00:00.000Z"
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/crm", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: liveCookie },
+        body: JSON.stringify({ funnels: [persistFunnel, extraFunnel] }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 200,
+  "CRM POST grava o funil extra"
+)
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/crm", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: liveCookie },
+        body: JSON.stringify({ funnels: [persistFunnel] }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 200,
+  "CRM POST sem tombstone aceita a lista menor"
+)
+const crmWithoutTombstone = (await (
+  await handleRequest(new Request("http://local.test/api/crm", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
+).json()) as { funnels?: Array<{ id?: string }> }
+assert(crmWithoutTombstone.funnels?.some((item) => item.id === extraFunnel.id), "sem tombstone o extra mais novo fica")
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/crm", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: liveCookie },
+        body: JSON.stringify({ funnels: [persistFunnel], removedFunnelIds: [extraFunnel.id] }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 200,
+  "CRM POST com tombstone apaga o extra"
+)
+const crmAfterTombstone = (await (
+  await handleRequest(new Request("http://local.test/api/crm", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
+).json()) as { funnels?: Array<{ id?: string }> }
+assert(!crmAfterTombstone.funnels?.some((item) => item.id === extraFunnel.id), "tombstone remove o extra do KV")
+assert(crmAfterTombstone.funnels?.some((item) => item.id === persistFunnel.id), "o funil que ficou continua")
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/crm", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: liveCookie },
+        body: JSON.stringify({ funnels: [], removedFunnelIds: [persistFunnel.id] }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 400,
+  "CRM recusa ficar sem funil"
+)
 assert((await handleRequest(new Request("http://local.test/api/leads?id=", { method: "DELETE", headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())).status === 400, "DELETE sem id é 400")
 assert(
   (

@@ -8,7 +8,7 @@ import { applyEvent, dueWaits, publishedSnapshot } from "../src/lib/runtime.ts"
 import { BANCA_FIXED, type Lead, type LeadEvent, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types.ts"
 import { compactGeo, factsFromGeo } from "../src/lib/geo.ts"
 import { parseDevice } from "../src/lib/track.ts"
-import { emptySettings, mergeFunnels, mergeLeads, publicSettings, reconcileFunnels } from "../src/lib/crm.ts"
+import { applyRemovedFunnels, clipRemovedIds, emptySettings, mergeLeads, publicSettings, reconcileFunnels } from "../src/lib/crm.ts"
 import { cleanBotUsername, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { resolveClientGeo } from "./geo-lookup.ts"
 import { ingestTrack, kvTrackStore, memoryTrackStore, readTrackBody, summaryFromStore, type TrackStore } from "./track-store.ts"
@@ -306,12 +306,13 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
-    const parsed = await readJsonObject<{ funnels?: SalesFunnel[]; settings?: Settings }>(request, 256_000)
+    const parsed = await readJsonObject<{ funnels?: SalesFunnel[]; settings?: Settings; removedFunnelIds?: string[] }>(request, 256_000)
     if (!parsed.ok) return json({ error: "Pedido demasiado grande." }, 413)
     const body = parsed.value
     if (Array.isArray(body.funnels)) {
       const incoming = body.funnels.map(sanitizeIncomingFunnel).filter((item): item is NonNullable<typeof item> => Boolean(item))
-      const funnels = reconcileFunnels(await loadFunnels(env), incoming)
+      const funnels = applyRemovedFunnels(reconcileFunnels(await loadFunnels(env), incoming), clipRemovedIds(body.removedFunnelIds))
+      if (!funnels.length) return json({ error: "Mantém pelo menos um funil." }, 400)
       await persistFunnels(env, funnels)
     }
     if (body.settings) await persistSettings(env, migrateSettings(body.settings))
@@ -540,24 +541,31 @@ async function notifyEster(env: Env, token: string, body: string, settings: Sett
 async function persistFunnels(env: Env, funnels: SalesFunnel[]) {
   const clean = funnels.map(sanitizeIncomingFunnel).filter((item): item is SalesFunnel => Boolean(item)).slice(0, 20)
   if (env.AUTH) await saveFunnelsKv(env.AUTH, clean)
-  if (!env.SUPABASE_SERVICE_ROLE || !clean.length) return
-  await rest(env, "funnels", {
-    method: "POST",
-    headers: { Prefer: "resolution=merge-duplicates" },
-    body: JSON.stringify(
-      clean.map((funnel) => ({
-        id: funnel.id,
-        workspace_id: WORKSPACE,
-        name: funnel.name,
-        mode: funnel.mode,
-        status: funnel.status,
-        nodes: funnel.nodes,
-        edges: funnel.edges,
-        production: funnel.production ?? null,
-        updated_at: funnel.updatedAt,
-      }))
-    ),
-  })
+  if (!env.SUPABASE_SERVICE_ROLE) return
+  if (clean.length) {
+    await rest(env, "funnels", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates" },
+      body: JSON.stringify(
+        clean.map((funnel) => ({
+          id: funnel.id,
+          workspace_id: WORKSPACE,
+          name: funnel.name,
+          mode: funnel.mode,
+          status: funnel.status,
+          nodes: funnel.nodes,
+          edges: funnel.edges,
+          production: funnel.production ?? null,
+          updated_at: funnel.updatedAt,
+        }))
+      ),
+    })
+  }
+  const rows = (await rest<{ id: string }[]>(env, `funnels?workspace_id=eq.${WORKSPACE}&select=id`)) ?? []
+  const keep = new Set(clean.map((item) => item.id))
+  for (const row of rows.filter((item) => item.id && !keep.has(item.id)).slice(0, 40)) {
+    await rest(env, `funnels?id=eq.${encodeURIComponent(row.id)}&workspace_id=eq.${WORKSPACE}`, { method: "DELETE" })
+  }
 }
 
 async function persistSettings(env: Env, settings: Settings) {
@@ -573,8 +581,9 @@ async function persistSettings(env: Env, settings: Settings) {
 
 async function loadFunnels(env: Env): Promise<SalesFunnel[]> {
   const kv = env.AUTH ? await loadFunnelsKv(env.AUTH) : []
+  if (kv.length) return kv
   const rows = (await rest<SalesFunnelRow[]>(env, `funnels?workspace_id=eq.${WORKSPACE}`)) ?? []
-  const remote = rows
+  return rows
     .map((row) =>
       sanitizeIncomingFunnel({
         id: row.id,
@@ -588,9 +597,6 @@ async function loadFunnels(env: Env): Promise<SalesFunnel[]> {
       })
     )
     .filter((item): item is SalesFunnel => Boolean(item))
-  if (!remote.length) return kv
-  if (!kv.length) return remote
-  return mergeFunnels(kv, remote)
 }
 
 async function loadSettings(env: Env): Promise<Settings> {

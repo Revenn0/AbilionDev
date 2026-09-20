@@ -174,8 +174,8 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `POST /api/auth/forgot` | público; em produção não devolve link |
 | `POST /api/auth/reset` | token de reset |
 | `POST /api/auth/password` | sessão |
-| `GET/POST /api/crm` | sessão — funis e settings (sem token) |
-| `GET/POST/DELETE /api/leads` | sessão — lista até 400, grava e apaga |
+| `GET/POST /api/crm` | sessão — funis e settings (sem token). POST aceita `removedFunnelIds`; o KV ganha se já houver quadro |
+| `GET/POST/DELETE /api/leads` | sessão — lista até 400. O hydrate trata o GET como lista completa |
 | `GET /api/inbox` | sessão — leads do Telegram |
 | `GET/POST /api/runtime` | sessão — Telegram, IA, voz |
 | `POST /api/runtime/voice` | sessão — gera clips ElevenLabs |
@@ -211,7 +211,7 @@ npx tsx scripts/ui-audit.mts
 
 `scripts/ui-audit.mts` percorre login, rotas do painel, 404, skip-link, teclado das tabs, captura, logout → forgot/reset e as larguras 320 / 375 / 768 / 1024 / 1440. Precisa do `npm run dev` em `http://127.0.0.1:43173`.
 
-`scripts/ste-flow.mts` cobre o webhook assinado (`/start fb`, segundo `/start` sem spam, fala do lead, join no grupo), inbox autenticada, runtime sem vazar o token, DELETE do lead, cron com duas esperas, recusa de JSON enorme (413) e a regra de que simulação/lote não inventam `telegramChatId`.
+`scripts/ste-flow.mts` cobre o webhook assinado (`/start fb`, segundo `/start` sem spam, fala do lead, join no grupo), inbox autenticada, runtime sem vazar o token, DELETE do lead, cron com duas esperas, recusa de JSON enorme (413), hydrate que não ressuscita lead/funil apagado, tombstone de funil e a regra de que simulação/lote não inventam `telegramChatId`.
 
 ```bash
 npx tsx scripts/ui-audit.mts
