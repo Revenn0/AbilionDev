@@ -201,7 +201,11 @@ Estes itens dependem de credenciais ou de uma decisão humana. O código não in
 - Apagar um lead grava um tombstone no KV (`crm:removed`). O webhook e o cron não voltam a puxar essa linha do Supabase. Sem `SUPABASE_SERVICE_ROLE` isto não muda nada.
 - O índice do CRM lista 400 leads; o contacto/chat fica num alias permanente e as esperas não saem do índice. O Telegram não cria um lead novo só porque o recorte da lista encheu.
 - JSON inválido em `/api/crm`, `/api/leads`, `/api/runtime` e login devolve 400 — não grava objeto vazio.
-- Vincular runtime (10 / 15 min) e gerar voz (5 / 15 min) têm limite por operador+IP. URLs do funil só aceitam http(s). Chat id e aliases do KV são cortados para não rebentar a chave.
+- Vincular runtime (10 / 15 min) e gerar voz (5 / 15 min) têm limite por operador+IP. Gravar CRM (80 / min), leads (40 / min) e apagar lead (30 / min) também. URLs do funil só aceitam http(s). Chat id e aliases do KV são cortados para não rebentar a chave.
+- O envio ao Telegram só conta sucesso com HTTP ok e `ok: true`. 429 e 5xx tentam de novo (até 3). 400/403 ficam no log do Worker, sem token. O cron continua a gravar a espera antes de mandar — prefere falhar uma vez a mandar duas.
+- O lock do cron (`crm:cron-lock`) grava um dono e confirma a escrita. Um release alheio não solta o lock.
+- Eventos do lead no Supabase unem-se aos do KV por id (não só quando o KV está vazio). A leitura vai em blocos de 50 ids.
+- Apagar lead/funil nesta sessão fica no `localStorage`. Outro separador some o cartão sem esperar refresh. A lista de leads reconcilia com o Worker a cada 30 s.
 - O Worker impõe um só funil `active`+`production` ao gravar. Tombstone de funil também fica no KV.
 - Dashboard, Analytics e Conversas mostram "—" / "…" no pixel quando a leitura ainda não veio ou falhou. Não tratam zero como dado real.
 
@@ -217,7 +221,7 @@ npx tsx scripts/ui-audit.mts
 
 `scripts/ui-audit.mts` percorre login, rotas do painel, 404, skip-link, teclado das tabs, captura, logout → forgot/reset e as larguras 320 / 375 / 768 / 1024 / 1440. Precisa do `npm run dev` em `http://127.0.0.1:43173`.
 
-`scripts/ste-flow.mts` cobre o webhook assinado (`/start fb`, segundo `/start` sem spam, fala do lead, join no grupo), inbox autenticada, runtime sem vazar o token, DELETE do lead, cron com duas esperas, recusa de JSON enorme (413), hydrate que não ressuscita lead/funil apagado, tombstone de funil e de lead (KV ganha do Supabase no webhook e no cron), a regra de que simulação/lote não inventam `telegramChatId`, e o pixel que não finge zero quando a leitura falha.
+`scripts/ste-flow.mts` cobre o webhook assinado (`/start fb`, segundo `/start` sem spam, fala do lead, join no grupo), inbox autenticada, runtime sem vazar o token, DELETE do lead, cron com duas esperas, recusa de JSON enorme (413), hydrate que não ressuscita lead/funil apagado, tombstone de funil e de lead (KV ganha do Supabase no webhook e no cron), a regra de que simulação/lote não inventam `telegramChatId`, o pixel que não finge zero quando a leitura falha, o envio Telegram que não trata 403 como sucesso, o lock do cron com dono, a união de eventos do lead, e os limites de escrita do CRM/leads.
 
 ```bash
 npx tsx scripts/ui-audit.mts

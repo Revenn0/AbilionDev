@@ -37,6 +37,7 @@ import {
   canDeleteFunnel,
   clipRemovedIds,
   mergeFunnels,
+  mergeLeadEvents,
   mergeLeads,
   reconcileFunnels,
   reconcileLeads,
@@ -45,7 +46,7 @@ import {
 import { publishedFunnel } from "../src/lib/runtime.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import type { Lead } from "../src/lib/types.ts"
-import { CRM_FUNNELS, aliasKey, claimCronLock, deleteLeadKv, dueLeadsKv, findLeadInKv, listLeads, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_CRON_LOCK, CRM_FUNNELS, aliasKey, claimCronLock, deleteLeadKv, dueLeadsKv, findLeadInKv, listLeads, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, releaseCronLock, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
@@ -59,6 +60,7 @@ import { barShare } from "../src/lib/ops.ts"
 import { mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
 import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, handleAuth, memoryAuthStore, retainUserSessions } from "../worker/auth.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
+import { telegramCall } from "../worker/telegram.ts"
 import { backgroundCtx, handleRequest, type Env } from "../worker/index.ts"
 import { clearSessionExpired, noteUnauthorized, subscribeSessionExpired } from "../src/lib/session.ts"
 
@@ -348,6 +350,19 @@ assert((await listLeads(kv, 400, "all")).some((item) => item.id === "crm-1"), "l
 const newer = { ...first, lastMessage: "oi", updatedAt: new Date(Date.now() + 1000).toISOString() }
 assert(mergeLeads([first], [newer])[0]?.lastMessage === "oi", "merge fica com o mais novo")
 assert(mergeLeads([newer], [first])[0]?.lastMessage === "oi", "merge nao volta atras")
+const localEvents = [
+  { id: "e1", at: "2026-01-01T00:00:00.000Z", kind: "entered" as const, title: "kv" },
+  { id: "e2", at: "2026-01-01T00:01:00.000Z", kind: "message" as const, title: "kv" },
+]
+const remoteEvents = [
+  { id: "e1", at: "2026-01-01T00:00:00.000Z", kind: "entered" as const, title: "supabase" },
+  { id: "e3", at: "2026-01-01T00:02:00.000Z", kind: "wait" as const, title: "supabase" },
+]
+const mergedEvents = mergeLeadEvents(localEvents, remoteEvents)
+assert(mergedEvents.map((item) => item.id).join(",") === "e1,e2,e3", "eventos unem por id")
+assert(mergedEvents[0]?.title === "kv", "evento local ganha no mesmo id")
+assert(mergeLeadEvents(localEvents, []).length === 2, "remoto vazio não apaga o KV")
+assert(mergeLeadEvents([], remoteEvents).map((item) => item.id).join(",") === "e1,e3", "KV vazio adopta o remoto")
 
 const seen: string[] = []
 const realFetch = globalThis.fetch
@@ -905,8 +920,29 @@ assert(
   "espera antiga não cai do índice"
 )
 const lockKv = memoryKv()
-assert(await claimCronLock(lockKv, Date.now(), 90_000), "cron pega o lock")
+const lockOwner = await claimCronLock(lockKv, Date.now(), 90_000)
+assert(lockOwner, "cron pega o lock")
 assert(!(await claimCronLock(lockKv, Date.now(), 90_000)), "lock impede cron sobreposto")
+await releaseCronLock(lockKv, "outro")
+assert(!(await claimCronLock(lockKv, Date.now(), 90_000)), "release alheio não solta o lock")
+await releaseCronLock(lockKv, lockOwner ?? "")
+assert(await claimCronLock(lockKv, Date.now(), 90_000), "release certo solta o lock")
+const expiredLock = memoryKv()
+await expiredLock.put(CRM_CRON_LOCK, JSON.stringify({ until: new Date(Date.now() - 1000).toISOString(), owner: "velho" }))
+assert(await claimCronLock(expiredLock, Date.now(), 90_000), "lock expirado pode ser pego")
+let lockReads = 0
+const racedLock = {
+  async get(key: string) {
+    if (key === CRM_CRON_LOCK) {
+      lockReads += 1
+      if (lockReads === 1) return null
+      return { until: new Date(Date.now() + 90_000).toISOString(), owner: "outro" }
+    }
+    return null
+  },
+  async put() {},
+}
+assert(!(await claimCronLock(racedLock, Date.now(), 90_000, "eu")), "lock perde a corrida no verify")
 const badJsonReq = new Request("http://local.test/api/crm", { method: "POST", headers: { "content-type": "application/json" }, body: "{bad" })
 assert((await readJsonObject(badJsonReq, 1000)).ok === false, "JSON inválido não passa a objeto vazio")
 
@@ -1499,6 +1535,98 @@ assert(pixelFigure("loading", false, 0) === "…", "pixel a carregar nao finge z
 assert(pixelFigure("error", false, 0) === "—", "pixel falhou nao finge zero")
 assert(pixelFigure("error", true, 12) === 12, "pixel falhou depois guarda a ultima leitura")
 assert(pixelFigure("ok", true, 0) === 0, "pixel vazio de verdade continua zero")
+
+const telegramOk = await telegramCall(
+  "tok",
+  "sendMessage",
+  { chat_id: "1", text: "oi" },
+  async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+  async () => undefined
+)
+assert(telegramOk.ok, "telegram 200 ok conta como enviado")
+const telegramDenied = await telegramCall(
+  "tok",
+  "sendMessage",
+  { chat_id: "1", text: "oi" },
+  async () => new Response(JSON.stringify({ ok: false, description: "Forbidden: bot was blocked" }), { status: 403 }),
+  async () => undefined
+)
+assert(!telegramDenied.ok && !telegramDenied.retryable && telegramDenied.status === 403, "telegram 403 não finge sucesso")
+const telegramApiFalse = await telegramCall(
+  "tok",
+  "sendMessage",
+  { chat_id: "1", text: "oi" },
+  async () => new Response(JSON.stringify({ ok: false, description: "chat not found" }), { status: 200 }),
+  async () => undefined
+)
+assert(!telegramApiFalse.ok && telegramApiFalse.status === 200, "telegram ok:false não finge sucesso")
+let telegramAttempts = 0
+const telegramRetry = await telegramCall(
+  "tok",
+  "sendMessage",
+  { chat_id: "1", text: "oi" },
+  async () => {
+    telegramAttempts += 1
+    if (telegramAttempts < 3) return new Response("busy", { status: 500 })
+    return new Response(JSON.stringify({ ok: true }), { status: 200 })
+  },
+  async () => undefined
+)
+assert(telegramRetry.ok && telegramAttempts === 3, "telegram 500 tenta de novo")
+
+const throttleEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://example.supabase.co",
+  AUTH: memoryKv(),
+  ABILION_ENV: "development",
+} as Env
+const throttleLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.70" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  throttleEnv,
+  backgroundCtx()
+)
+assert(throttleLogin.status === 200, "login para o limite de escrita")
+const throttleCookie = throttleLogin.headers.get("set-cookie") || ""
+const throttleFunnel = emptySalesFunnel("limite-crm")
+const crmHit = () =>
+  handleRequest(
+    new Request("http://local.test/api/crm", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: throttleCookie, "x-forwarded-for": "198.51.100.70" },
+      body: JSON.stringify({ funnels: [throttleFunnel] }),
+    }),
+    throttleEnv,
+    backgroundCtx()
+  )
+for (let i = 0; i < 80; i++) assert((await crmHit()).status === 200, `crm ${i + 1} ainda entra no throttle`)
+assert((await crmHit()).status === 429, "81º CRM bloqueia")
+const leadHit = () =>
+  handleRequest(
+    new Request("http://local.test/api/leads", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: throttleCookie, "x-forwarded-for": "198.51.100.70" },
+      body: JSON.stringify({ lead: lead("limite-lead", "@limite") }),
+    }),
+    throttleEnv,
+    backgroundCtx()
+  )
+for (let i = 0; i < 40; i++) assert((await leadHit()).status === 200, `lead ${i + 1} ainda entra no throttle`)
+assert((await leadHit()).status === 429, "41º POST de lead bloqueia")
+const deleteHit = () =>
+  handleRequest(
+    new Request("http://local.test/api/leads?id=limite-lead", {
+      method: "DELETE",
+      headers: { cookie: throttleCookie, "x-forwarded-for": "198.51.100.70" },
+    }),
+    throttleEnv,
+    backgroundCtx()
+  )
+for (let i = 0; i < 30; i++) assert((await deleteHit()).status === 200, `delete ${i + 1} ainda entra no throttle`)
+assert((await deleteHit()).status === 429, "31º DELETE de lead bloqueia")
 
 const ghostDue = lead("ghost-due", "@ghost")
 ghostDue.waitUntil = new Date(Date.now() - 2000).toISOString()

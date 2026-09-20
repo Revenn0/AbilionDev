@@ -16,6 +16,7 @@ import {
   clipRemovedIds,
   enforceSinglePublished,
   emptySettings,
+  mergeLeadEvents,
   publicSettings,
   reconcileFunnels,
   resolveLeadLookup,
@@ -52,6 +53,7 @@ import {
 } from "./runtime-secrets.ts"
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
 import { readJsonObject, readJsonStrict, type JsonFail } from "./json-body.ts"
+import { telegramCall } from "./telegram.ts"
 import type { KvLike } from "./kv.ts"
 
 type Fetcher = { fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> }
@@ -329,6 +331,9 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
+    if (!(await consumeKvThrottle(env.AUTH, `crm:${user.id}:${clientIp(request)}`, 80, 60_000))) {
+      return json({ error: "Demasiados pedidos ao CRM. Espera um pouco." }, 429)
+    }
     const parsed = await readJsonObject<{ funnels?: SalesFunnel[]; settings?: Settings; removedFunnelIds?: string[] }>(request, 256_000)
     if (!parsed.ok) return jsonReadError(parsed)
     const body = parsed.value
@@ -359,6 +364,9 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
+    if (!(await consumeKvThrottle(env.AUTH, `leads:${user.id}:${clientIp(request)}`, 40, 60_000))) {
+      return json({ error: "Demasiados pedidos de leads. Espera um pouco." }, 429)
+    }
     const parsed = await readJsonObject<{ lead?: Lead; leads?: Lead[] }>(request, 256_000)
     if (!parsed.ok) return jsonReadError(parsed)
     const body = parsed.value
@@ -377,6 +385,9 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
+    if (!(await consumeKvThrottle(env.AUTH, `leads-del:${user.id}:${clientIp(request)}`, 30, 60_000))) {
+      return json({ error: "Demasiados pedidos de exclusão. Espera um pouco." }, 429)
+    }
     const id = (url.searchParams.get("id") || "").trim()
     if (!id || id.length > 80) return json({ error: "Falta o id do lead." }, 400)
     await removeLead(env, id)
@@ -421,7 +432,7 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
   try {
     await runTelegram(env, update)
   } catch {
-    return
+    console.error("telegram update falhou", typeof update.update_id === "number" ? update.update_id : "")
   }
 }
 
@@ -520,7 +531,8 @@ async function runTelegram(env: Env, update: TelegramUpdate) {
 }
 
 async function processWaits(env: Env) {
-  if (env.AUTH && !(await claimCronLock(env.AUTH))) return 0
+  const lockOwner = env.AUTH ? await claimCronLock(env.AUTH) : "local"
+  if (!lockOwner) return 0
   try {
     const now = new Date().toISOString()
     const restRows = (await rest<LeadRow[]>(env, `leads?workspace_id=eq.${WORKSPACE}&wait_until=lte.${now}&select=*`)) ?? []
@@ -558,12 +570,13 @@ async function processWaits(env: Env) {
         }
         advanced += 1
       } catch {
+        console.error("cron lead falhou")
         continue
       }
     }
     return advanced
   } finally {
-    if (env.AUTH) await releaseCronLock(env.AUTH)
+    if (env.AUTH) await releaseCronLock(env.AUTH, lockOwner)
   }
 }
 
@@ -672,11 +685,16 @@ function quote(value: string) {
 async function attachLeadEvents(env: Env, leads: Lead[]): Promise<Lead[]> {
   if (!leads.length) return leads
   const ids = [...new Set(leads.map((lead) => lead.id).filter(Boolean))]
-  const rows =
-    (await rest<LeadEventRow[]>(
-      env,
-      `lead_events?lead_id=in.(${ids.map(quote).join(",")})&select=*&order=at.asc`
-    )) ?? []
+  const rows: LeadEventRow[] = []
+  for (let i = 0; i < ids.length; i += 50) {
+    const slice = ids.slice(i, i + 50)
+    const batch =
+      (await rest<LeadEventRow[]>(
+        env,
+        `lead_events?lead_id=in.(${slice.map(quote).join(",")})&select=*&order=at.asc`
+      )) ?? []
+    rows.push(...batch)
+  }
   if (!rows.length) return leads
   const byLead = new Map<string, LeadEvent[]>()
   for (const row of rows) {
@@ -694,7 +712,8 @@ async function attachLeadEvents(env: Env, leads: Lead[]): Promise<Lead[]> {
   }
   return leads.map((lead) => {
     const events = byLead.get(lead.id)
-    return events?.length && !lead.events.length ? { ...lead, events } : lead
+    if (!events?.length) return lead
+    return { ...lead, events: mergeLeadEvents(lead.events, events) }
   })
 }
 
@@ -747,8 +766,10 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
 
 async function removeLead(env: Env, id: string) {
   if (env.AUTH) await deleteLeadKv(env.AUTH, id)
-  await rest(env, `leads?id=eq.${encodeURIComponent(id)}&workspace_id=eq.${WORKSPACE}`, { method: "DELETE" })
-  await rest(env, `lead_events?lead_id=eq.${encodeURIComponent(id)}`, { method: "DELETE" })
+  if (!env.SUPABASE_SERVICE_ROLE) return
+  const leadGone = await rest(env, `leads?id=eq.${encodeURIComponent(id)}&workspace_id=eq.${WORKSPACE}`, { method: "DELETE" })
+  const eventsGone = await rest(env, `lead_events?lead_id=eq.${encodeURIComponent(id)}`, { method: "DELETE" })
+  if (leadGone === null || eventsGone === null) console.error("supabase delete incompleto")
 }
 
 async function saveLead(env: Env, lead: Lead) {
@@ -828,11 +849,15 @@ async function rest<T>(env: Env, path: string, init?: RequestInit): Promise<T | 
         ...(init?.headers ?? {}),
       },
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      console.error("supabase falhou", path.split("?")[0], res.status)
+      return null
+    }
     const text = await res.text()
     if (!text) return true as T
     return JSON.parse(text) as T
   } catch {
+    console.error("supabase sem rede", path.split("?")[0])
     return null
   }
 }
@@ -876,20 +901,7 @@ async function sendSteReplies(env: Env, token: string, chatId: string, replies: 
 }
 
 async function telegram(token: string, method: string, body: Record<string, unknown>) {
-  try {
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      })
-      if (res.status !== 429) return
-      const retryAfter = Number(res.headers.get("retry-after") ?? "1")
-      await sleep(Math.min(Math.max(retryAfter, 1), 8) * 1000)
-    }
-  } catch {
-    return
-  }
+  return telegramCall(token, method, body)
 }
 
 function sleep(ms: number) {
@@ -937,6 +949,7 @@ function json(data: unknown, status = 200, extra?: Record<string, string>) {
 
 type TelegramUser = { id: number; username?: string; first_name?: string; last_name?: string }
 type TelegramUpdate = {
+  update_id?: number
   message?: {
     chat: { id: number }
     text?: string

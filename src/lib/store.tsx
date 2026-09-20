@@ -2,7 +2,16 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { loginRequest, logoutRequest, meRequest } from "@/lib/auth-api"
 import { clearSessionExpired, noteSessionExpired, subscribeSessionExpired } from "@/lib/session"
 import { toast } from "sonner"
-import { activatePublishedFunnels, adoptRemoteFunnels, applyRemovedLeads, canDeleteFunnel, mergeLeads, reconcileLeads } from "@/lib/crm"
+import {
+  activatePublishedFunnels,
+  adoptRemoteFunnels,
+  applyRemovedFunnels,
+  applyRemovedLeads,
+  canDeleteFunnel,
+  clipRemovedIds,
+  mergeLeads,
+  reconcileLeads,
+} from "@/lib/crm"
 import { migrateFunnel, migrateLead, migrateSettings } from "@/lib/migrate"
 import { fetchCrm, fetchInbox, fetchLeads, fetchRuntime, persistLeads, removeRemoteLead, saveCrm } from "@/lib/runtime-api"
 import { seededOperation } from "@/lib/templates"
@@ -11,6 +20,8 @@ import { defaultSettings, type AppState, type Lead, type SalesFunnel, type Setti
 const KEY = "abilion.dev.v2"
 const LEGACY = "abilion.dev.v1"
 const SESSION = "abilion.dev.session"
+const REMOVED_LEADS = "abilion.dev.removed-leads"
+const REMOVED_FUNNELS = "abilion.dev.removed-funnels"
 
 const empty: AppState = {
   user: null,
@@ -49,11 +60,31 @@ function withSeed(state: AppState, firstVisit: boolean): AppState {
   return { ...state, funnels: [seededOperation()] }
 }
 
+function loadIdSet(key: string): Set<string> {
+  try {
+    return new Set(clipRemovedIds(JSON.parse(localStorage.getItem(key) || "[]"), 400))
+  } catch {
+    return new Set()
+  }
+}
+
+function persistIdSet(key: string, ids: Set<string>) {
+  try {
+    localStorage.setItem(key, JSON.stringify([...ids].slice(0, 400)))
+  } catch {
+    /* quota */
+  }
+}
+
 function bootState(): AppState {
   const firstVisit = !localStorage.getItem(KEY) && !localStorage.getItem(LEGACY)
   const saved = withSeed(readState(), firstVisit)
   saved.user = readUser()
-  return saved
+  return {
+    ...saved,
+    leads: applyRemovedLeads(saved.leads, loadIdSet(REMOVED_LEADS)),
+    funnels: applyRemovedFunnels(saved.funnels, [...loadIdSet(REMOVED_FUNNELS)]),
+  }
 }
 
 type SyncState = "idle" | "ok" | "error"
@@ -91,8 +122,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const leadWriteTimer = useRef(0)
   const pendingLeadWrites = useRef(new Map<string, Lead>())
   const pendingFunnelIds = useRef(new Set<string>())
-  const removedFunnelIds = useRef(new Set<string>())
-  const removedLeadIds = useRef(new Set<string>())
+  const removedFunnelIds = useRef(loadIdSet(REMOVED_FUNNELS))
+  const removedLeadIds = useRef(loadIdSet(REMOVED_LEADS))
   const stateRef = useRef(state)
 
   const flushLeadWrites = () => {
@@ -259,6 +290,67 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [state.user])
 
   useEffect(() => {
+    if (!state.user) return
+    let cancelled = false
+    const reconcile = async () => {
+      const remoteLeads = await fetchLeads()
+      if (cancelled) return
+      if (!remoteLeads.ok) {
+        setPersistSync("error")
+        return
+      }
+      setPersistSync("ok")
+      setState((prev) => {
+        const incoming = applyRemovedLeads(remoteLeads.leads.map(migrateLead), removedLeadIds.current)
+        const leads = remoteLeads.leads.length
+          ? reconcileLeads(prev.leads, incoming, pendingLeadWrites.current.keys())
+          : prev.leads.filter((lead) => pendingLeadWrites.current.has(lead.id))
+        return leads === prev.leads ? prev : { ...prev, leads }
+      })
+    }
+    const timer = window.setInterval(() => void reconcile(), 30_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [state.user])
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === REMOVED_LEADS) {
+        const ids = loadIdSet(REMOVED_LEADS)
+        let changed = false
+        for (const id of ids) {
+          if (removedLeadIds.current.has(id)) continue
+          removedLeadIds.current.add(id)
+          changed = true
+        }
+        if (changed) persistIdSet(REMOVED_LEADS, removedLeadIds.current)
+        setState((prev) => {
+          const leads = applyRemovedLeads(prev.leads, removedLeadIds.current)
+          return leads === prev.leads ? prev : { ...prev, leads }
+        })
+      }
+      if (event.key === REMOVED_FUNNELS) {
+        const ids = loadIdSet(REMOVED_FUNNELS)
+        let changed = false
+        for (const id of ids) {
+          if (removedFunnelIds.current.has(id)) continue
+          removedFunnelIds.current.add(id)
+          changed = true
+        }
+        if (changed) persistIdSet(REMOVED_FUNNELS, removedFunnelIds.current)
+        setState((prev) => {
+          const funnels = applyRemovedFunnels(prev.funnels, [...removedFunnelIds.current])
+          return funnels === prev.funnels ? prev : { ...prev, funnels }
+        })
+      }
+    }
+    window.addEventListener("storage", onStorage)
+    return () => window.removeEventListener("storage", onStorage)
+  }, [])
+
+  useEffect(() => {
     const onHide = () => {
       flushLeadWrites()
       flushCrm()
@@ -307,6 +399,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       createFunnel: (funnel) => {
         pendingFunnelIds.current.add(funnel.id)
         removedFunnelIds.current.delete(funnel.id)
+        persistIdSet(REMOVED_FUNNELS, removedFunnelIds.current)
         setState((prev) => ({
           ...prev,
           funnels:
@@ -338,12 +431,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
         pendingFunnelIds.current.delete(id)
         removedFunnelIds.current.add(id)
+        persistIdSet(REMOVED_FUNNELS, removedFunnelIds.current)
         setState((prev) => ({ ...prev, funnels: prev.funnels.filter((item) => item.id !== id) }))
         pushWorker()
         return true
       },
       createLead: (lead) => {
         removedLeadIds.current.delete(lead.id)
+        persistIdSet(REMOVED_LEADS, removedLeadIds.current)
         pendingLeadWrites.current.set(lead.id, lead)
         setState((prev) => ({ ...prev, leads: [lead, ...prev.leads] }))
         void persistLeads([lead]).then((ok) => {
@@ -359,6 +454,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           removedLeadIds.current.delete(lead.id)
           pendingLeadWrites.current.set(lead.id, lead)
         }
+        persistIdSet(REMOVED_LEADS, removedLeadIds.current)
         setState((prev) => ({ ...prev, leads: [...leads, ...prev.leads] }))
         void persistLeads(leads).then((ok) => {
           if (ok) {
@@ -380,6 +476,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       deleteLead: (id) => {
         pendingLeadWrites.current.delete(id)
         removedLeadIds.current.add(id)
+        persistIdSet(REMOVED_LEADS, removedLeadIds.current)
         setState((prev) => ({ ...prev, leads: prev.leads.filter((item) => item.id !== id) }))
         void removeRemoteLead(id).then((ok) => setPersistSync(ok ? "ok" : "error"))
       },

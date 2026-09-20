@@ -176,15 +176,37 @@ export async function forgetRemovedFunnels(kv: KvLike, ids: string[]) {
   await kv.put(CRM_REMOVED_FUNNELS, JSON.stringify({ ids: next }))
 }
 
-export async function claimCronLock(kv: KvLike, now = Date.now(), holdMs = 90_000): Promise<boolean> {
-  const raw = await kv.get(CRM_CRON_LOCK, "json")
-  const until = raw && typeof raw === "object" && typeof (raw as { until?: unknown }).until === "string" ? (raw as { until: string }).until : ""
-  if (until && until > new Date(now).toISOString()) return false
-  await kv.put(CRM_CRON_LOCK, JSON.stringify({ until: new Date(now + holdMs).toISOString() }))
-  return true
+type CronLock = {
+  until: string
+  owner: string
 }
 
-export async function releaseCronLock(kv: KvLike) {
+function readCronLock(raw: unknown): CronLock | null {
+  if (!raw || typeof raw !== "object") return null
+  const until = typeof (raw as { until?: unknown }).until === "string" ? (raw as { until: string }).until : ""
+  const owner = typeof (raw as { owner?: unknown }).owner === "string" ? (raw as { owner: string }).owner : ""
+  if (!until) return null
+  return { until, owner }
+}
+
+export async function claimCronLock(
+  kv: KvLike,
+  now = Date.now(),
+  holdMs = 90_000,
+  owner = crypto.randomUUID()
+): Promise<string | null> {
+  const current = readCronLock(await kv.get(CRM_CRON_LOCK, "json"))
+  if (current && current.until > new Date(now).toISOString()) return null
+  await kv.put(CRM_CRON_LOCK, JSON.stringify({ until: new Date(now + holdMs).toISOString(), owner }))
+  const stored = readCronLock(await kv.get(CRM_CRON_LOCK, "json"))
+  return stored?.owner === owner ? owner : null
+}
+
+export async function releaseCronLock(kv: KvLike, owner?: string) {
+  if (owner) {
+    const stored = readCronLock(await kv.get(CRM_CRON_LOCK, "json"))
+    if (stored?.owner && stored.owner !== owner) return
+  }
   await kv.delete?.(CRM_CRON_LOCK)
 }
 

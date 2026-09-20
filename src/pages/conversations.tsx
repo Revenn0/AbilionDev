@@ -12,6 +12,7 @@ import { hasConversation } from "@/lib/ops"
 import { ORIGIN_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { GeoBadge } from "@/components/crm/geo-badge"
 import { factsWithTrack } from "@/lib/geo"
+import { publishedFunnel } from "@/lib/runtime"
 import { advanceSteIfDue, canTickSteLocally, replySteLived, splitSteMarkup, steHeardChips, steRuntimeFromFunnels, steStepLabel } from "@/lib/ste"
 import { useTrackSummary } from "@/lib/use-track-summary"
 import { timeAgo } from "@/lib/format"
@@ -52,6 +53,7 @@ export function ConversationsPage() {
   const { state, saveLead, createLead, inboxSync, persistSync } = useStore()
   const { summary, status, hasData } = useTrackSummary(4000)
   const runtime = steRuntimeFromFunnels(state.funnels, state.settings)
+  const runtimeKey = publishedFunnel(state.funnels)?.production?.publishedAt ?? ""
   const [filter, setFilter] = useState<FilterId>("waiting")
   const [query, setQuery] = useState("")
   const [id, setId] = useState<string | null>(null)
@@ -97,7 +99,7 @@ export function ConversationsPage() {
     if (!lead || !canTickSteLocally(lead)) return
     const result = advanceSteIfDue(lead, Date.now(), runtime)
     if (result.replies.length) saveLead(result.lead)
-  }, [lead?.id, lead?.waitUntil])
+  }, [lead?.id, lead?.waitUntil, runtimeKey])
 
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" })

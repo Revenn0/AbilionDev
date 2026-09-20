@@ -1,5 +1,5 @@
 import { publishedFunnel } from "./runtime.ts"
-import { defaultSettings, type Lead, type SalesFunnel, type Settings } from "./types.ts"
+import { defaultSettings, type Lead, type LeadEvent, type SalesFunnel, type Settings } from "./types.ts"
 
 const CAP = 400
 
@@ -89,6 +89,20 @@ export function applyRemovedLeads(leads: Lead[], removedIds: Iterable<string>): 
   if (!drop.size) return leads
   const next = leads.filter((lead) => !drop.has(lead.id))
   return next.length === leads.length ? leads : next
+}
+
+export function mergeLeadEvents(local: LeadEvent[], remote: LeadEvent[], cap = 80): LeadEvent[] {
+  if (!remote.length) return local
+  if (!local.length) return remote.slice(-cap)
+  const byId = new Map<string, LeadEvent>()
+  for (const event of local) {
+    if (event.id) byId.set(event.id, event)
+  }
+  for (const event of remote) {
+    if (!event.id || byId.has(event.id)) continue
+    byId.set(event.id, event)
+  }
+  return [...byId.values()].sort((a, b) => a.at.localeCompare(b.at)).slice(-cap)
 }
 
 export function adoptLeadStores(kv: Lead[], remote: Lead[]): Lead[] {
