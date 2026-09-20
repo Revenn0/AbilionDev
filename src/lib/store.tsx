@@ -173,7 +173,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const flushLeadWrites = (): Promise<boolean> => {
     window.clearTimeout(leadWriteTimer.current)
-    const batch = [...pendingLeadWrites.current.values()].filter((lead) => !removedLeadIds.current.has(lead.id))
+    for (const id of [...pendingLeadWrites.current.keys()]) {
+      if (removedLeadIds.current.has(id)) pendingLeadWrites.current.delete(id)
+    }
+    persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
+    const batch = [...pendingLeadWrites.current.values()]
     if (!batch.length) return leadFlushRef.current
     const pending = persistLeads(batch).then((ok) => {
       const raced = batch.filter((lead) => removedLeadIds.current.has(lead.id))
@@ -204,6 +208,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }
 
   const queueLeadWrite = (lead: Lead) => {
+    if (removedLeadIds.current.has(lead.id)) return
     pendingLeadWrites.current.set(lead.id, lead)
     persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
     window.clearTimeout(leadWriteTimer.current)
@@ -338,7 +343,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                   )
                 : prev.leads.filter((lead) => pendingLeadWrites.current.has(lead.id))
               : prev.leads,
-            pendingLeadWrites.current
+            pendingLeadWrites.current,
+            removedLeadIds.current
           ),
           settings: adoptHydrateSettings(prev.settings, remoteSettings, settingsDirty.current, runtime),
         }
@@ -374,7 +380,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setState((prev) => {
         const leads = overlayPendingLeads(
           mergeLeads(applyRemovedLeads(prev.leads, removedLeadIds.current), incoming),
-          pendingLeadWrites.current
+          pendingLeadWrites.current,
+          removedLeadIds.current
         )
         if (leads === prev.leads) return prev
         const next = { ...prev, leads }
@@ -407,7 +414,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           remoteLeads.leads.length
             ? reconcileLeads(prev.leads, incoming, pendingLeadWrites.current.keys())
             : prev.leads.filter((lead) => pendingLeadWrites.current.has(lead.id)),
-          pendingLeadWrites.current
+          pendingLeadWrites.current,
+          removedLeadIds.current
         )
         if (leads === prev.leads) return prev
         const next = { ...prev, leads }
@@ -573,6 +581,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return flushLeadWrites()
       },
       saveLead: (lead) => {
+        if (removedLeadIds.current.has(lead.id)) return
         const prev = stateRef.current
         const current = prev.leads.find((item) => item.id === lead.id)
         const nextLead = adoptOperatorLead(current ?? null, lead)

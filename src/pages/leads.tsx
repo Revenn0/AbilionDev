@@ -581,6 +581,7 @@ function LeadDrawer({
             className="rounded-full text-destructive"
             onClick={() => {
               if (!confirm("Remover este lead? Isto não se desfaz.")) return
+              dirtyMemory.current = false
               void Promise.resolve(onDelete(lead.id)).then((ok) => {
                 if (ok === false) toast.error("Não removi o lead no Worker.")
                 else toast.success("Lead removido.")

@@ -1,4 +1,5 @@
 import type { User } from "@/lib/types"
+import { fetchWithTimeout } from "@/lib/http"
 import { noteUnauthorized } from "@/lib/session"
 
 async function parse<T>(res: Promise<Response>, expireOn401 = false): Promise<T> {
@@ -11,7 +12,7 @@ async function parse<T>(res: Promise<Response>, expireOn401 = false): Promise<T>
 
 export function loginRequest(email: string, password: string) {
   return parse<{ user: User }>(
-    fetch("/api/auth/login", {
+    fetchWithTimeout("/api/auth/login", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -21,19 +22,19 @@ export function loginRequest(email: string, password: string) {
 }
 
 export function logoutRequest() {
-  return fetch("/api/auth/logout", { method: "POST", credentials: "include" })
+  return fetchWithTimeout("/api/auth/logout", { method: "POST", credentials: "include" })
 }
 
 export function meRequest() {
   return parse<{ user: User | null }>(
-    fetch("/api/auth/me", { credentials: "include", cache: "no-store" }),
+    fetchWithTimeout("/api/auth/me", { credentials: "include", cache: "no-store" }),
     true
   )
 }
 
 export function forgotPasswordRequest(email: string) {
   return parse<{ ok: boolean; resetPath?: string }>(
-    fetch("/api/auth/forgot", {
+    fetchWithTimeout("/api/auth/forgot", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -44,7 +45,7 @@ export function forgotPasswordRequest(email: string) {
 
 export function changePasswordRequest(currentPassword: string, password: string) {
   return parse<{ ok: boolean }>(
-    fetch("/api/auth/password", {
+    fetchWithTimeout("/api/auth/password", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -56,7 +57,7 @@ export function changePasswordRequest(currentPassword: string, password: string)
 
 export function resetPasswordRequest(token: string, password: string) {
   return parse<{ ok: boolean }>(
-    fetch("/api/auth/reset", {
+    fetchWithTimeout("/api/auth/reset", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },

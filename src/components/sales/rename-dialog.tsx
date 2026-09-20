@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -24,21 +24,25 @@ export function RenameFunnelDialog({
 }) {
   const [value, setValue] = useState(name)
   const [error, setError] = useState("")
+  const lock = useRef(false)
 
   useEffect(() => {
     if (open) {
       setValue(name)
       setError("")
+      lock.current = false
     }
   }, [open, name])
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
+    if (lock.current) return
     const next = value.trim()
     if (!next) {
       setError("Informa o nome do funil.")
       return
     }
+    lock.current = true
     onSave(next)
     onOpenChange(false)
   }

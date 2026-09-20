@@ -65,6 +65,7 @@ import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
+import { FETCH_TIMEOUT_MS } from "../src/lib/http.ts"
 import { safeAppPath } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { validateCapture } from "../src/lib/capture.ts"
@@ -805,6 +806,15 @@ assert(overlaidInbox?.temperature === "quente", "inbox não pisa a temperatura a
 assert(overlaidInbox?.memory === "nova", "inbox não pisa a nota ainda por gravar")
 assert(overlaidInbox?.messages?.some((item) => item.id === "in-1"), "fala nova da inbox entra por cima da fila")
 assert(overlaidInbox?.waitUntil === telegramWait.waitUntil, "overlay não avança a espera do Telegram")
+const ghostPending = lead("ghost-ui", "@ghostui")
+assert(
+  !overlayPendingLeads([], [ghostPending], ["ghost-ui"]).some((item) => item.id === "ghost-ui"),
+  "pending tombstoned não volta à lista"
+)
+assert(
+  overlayPendingLeads([], [ghostPending], []).some((item) => item.id === "ghost-ui"),
+  "pending sem tombstone ainda entra"
+)
 const localWait = { ...olderLead, id: "local-flow", waitUntil: "2026-09-21T00:00:00.000Z" }
 const localAdvanced = adoptOperatorLead(localWait, { ...localWait, waitUntil: undefined, updatedAt: "2026-09-22T00:00:00.000Z" })
 assert(!localAdvanced.waitUntil, "simulação local ainda avança a espera")
@@ -951,6 +961,9 @@ assert(safeAppPath("/fluxo/funil/abc") === "/fluxo/funil/abc", "editor do funil 
 assert(safeAppPath("/fluxo/funil/../x") === "/", "path traversal cai no inicio")
 assert(safeAppPath("/configuracoesfoo") === "/", "prefixo de configuracoes nao passa")
 assert(safeAppPath("/configuracoes/") === "/", "barra extra em configuracoes nao passa")
+assert(safeAppPath("/privacidade") === "/privacidade", "politica no next do login passa")
+assert(FETCH_TIMEOUT_MS === 12_000, "timeout do painel é 12s")
+assert(typeof AbortSignal.timeout === "function", "AbortSignal.timeout existe neste runtime")
 
 let gated = consumeThrottle({ users: [], sessions: [], resets: {} }, "login:1:a", 2, 60_000, 1000)
 assert(gated.ok, "primeira tentativa passa")

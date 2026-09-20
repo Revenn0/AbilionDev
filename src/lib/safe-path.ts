@@ -6,6 +6,7 @@ const ALLOWED = new Set([
   "/conversas",
   "/telegram",
   "/configuracoes",
+  "/privacidade",
 ])
 
 export function safeAppPath(raw: string | null | undefined) {

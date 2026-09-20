@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from "./http"
 import { noteUnauthorized } from "./session"
 import type { Lead, SalesFunnel, Settings } from "./types"
 
@@ -30,7 +31,7 @@ async function parse<T>(res: Response): Promise<T> {
 
 export async function fetchRuntime() {
   try {
-    const res = await fetch("/api/runtime", { credentials: "include", cache: "no-store" })
+    const res = await fetchWithTimeout("/api/runtime", { credentials: "include", cache: "no-store" })
     noteUnauthorized(res)
     if (!res.ok) return { ok: false } as RuntimeStatus
     return (await res.json()) as RuntimeStatus
@@ -51,7 +52,7 @@ export async function saveRuntime(body: {
   elevenVoiceId?: string
 }) {
   return parse<RuntimeStatus>(
-    await fetch("/api/runtime", {
+    await fetchWithTimeout("/api/runtime", {
       method: "POST",
       credentials: "include",
       headers: { "content-type": "application/json" },
@@ -62,7 +63,7 @@ export async function saveRuntime(body: {
 
 export async function prepareVoice() {
   return parse<RuntimeStatus>(
-    await fetch("/api/runtime/voice", {
+    await fetchWithTimeout("/api/runtime/voice", {
       method: "POST",
       credentials: "include",
     })
@@ -71,7 +72,7 @@ export async function prepareVoice() {
 
 export async function fetchLeads() {
   try {
-    const res = await fetch("/api/leads", { credentials: "include", cache: "no-store" })
+    const res = await fetchWithTimeout("/api/leads", { credentials: "include", cache: "no-store" })
     noteUnauthorized(res)
     if (!res.ok) return { ok: false as const, leads: [] as Lead[] }
     const data = (await res.json()) as { leads?: Lead[] }
@@ -84,7 +85,7 @@ export async function fetchLeads() {
 
 export async function fetchInbox() {
   try {
-    const res = await fetch("/api/inbox", { credentials: "include", cache: "no-store" })
+    const res = await fetchWithTimeout("/api/inbox", { credentials: "include", cache: "no-store" })
     noteUnauthorized(res)
     if (!res.ok) return { ok: false as const, leads: [] as Lead[] }
     const data = (await res.json()) as { leads?: Lead[] }
@@ -97,7 +98,7 @@ export async function fetchInbox() {
 
 export async function fetchCrm() {
   try {
-    const res = await fetch("/api/crm", { credentials: "include", cache: "no-store" })
+    const res = await fetchWithTimeout("/api/crm", { credentials: "include", cache: "no-store" })
     noteUnauthorized(res)
     if (!res.ok) return { ok: false as const, funnels: [] as SalesFunnel[], settings: undefined as Settings | undefined }
     const data = (await res.json()) as { funnels?: SalesFunnel[]; settings?: Settings }
@@ -130,7 +131,7 @@ async function writeResult(run: () => Promise<Response>): Promise<WriteResult> {
 export async function persistLeads(leads: Lead[]) {
   if (!leads.length) return true
   return writeOk(() =>
-    fetch("/api/leads", {
+    fetchWithTimeout("/api/leads", {
       method: "POST",
       credentials: "include",
       headers: { "content-type": "application/json" },
@@ -141,7 +142,7 @@ export async function persistLeads(leads: Lead[]) {
 
 export async function removeRemoteLead(id: string) {
   return writeOk(() =>
-    fetch(`/api/leads?id=${encodeURIComponent(id)}`, {
+    fetchWithTimeout(`/api/leads?id=${encodeURIComponent(id)}`, {
       method: "DELETE",
       credentials: "include",
     })
@@ -150,7 +151,7 @@ export async function removeRemoteLead(id: string) {
 
 export async function saveCrm(body: { funnels?: SalesFunnel[]; settings?: Settings; removedFunnelIds?: string[] }) {
   return writeResult(() =>
-    fetch("/api/crm", {
+    fetchWithTimeout("/api/crm", {
       method: "POST",
       credentials: "include",
       headers: { "content-type": "application/json" },

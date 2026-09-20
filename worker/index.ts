@@ -603,13 +603,13 @@ async function processWaits(env: Env) {
         if (!canAdvanceRemoteWait(lead, Boolean(token))) continue
         if (isSteWait(lead)) {
           const talked = advanceSteIfDue(lead, Date.now(), ste)
-          await saveLead(env, talked.lead)
+          if (!(await saveLead(env, talked.lead))) continue
           if (token && lead.telegramChatId && talked.replies.length) {
             await sendSteReplies(env, token, lead.telegramChatId, talked.replies, talked.beat)
           }
         } else {
           const result = applyEvent(snapshot, lead, { type: "timer" }, Date.now())
-          await saveLead(env, result.lead)
+          if (!(await saveLead(env, result.lead))) continue
           for (const effect of result.effects) {
             if ((effect.kind === "offer" || effect.kind === "send_message") && token && lead.telegramChatId) {
               await sendTelegramMarkup(token, lead.telegramChatId, effect.body || "", effect.url)

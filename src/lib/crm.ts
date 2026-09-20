@@ -129,8 +129,13 @@ export function clipRemovedIds(ids: unknown, cap = CAP): string[] {
 }
 
 /** A fila do painel manda na ficha: a inbox não pisa nota, nome ou temperatura a meio do debounce. */
-export function overlayPendingLeads(leads: Lead[], pending: Map<string, Lead> | Iterable<Lead>): Lead[] {
+export function overlayPendingLeads(
+  leads: Lead[],
+  pending: Map<string, Lead> | Iterable<Lead>,
+  removedIds: Iterable<string> = []
+): Lead[] {
   const queued = pending instanceof Map ? pending : new Map([...pending].map((lead) => [lead.id, lead]))
+  for (const id of removedIds) queued.delete(id)
   if (!queued.size) return leads
   let changed = false
   const seen = new Set<string>()
