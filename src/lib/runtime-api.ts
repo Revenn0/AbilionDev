@@ -87,7 +87,8 @@ export async function fetchInbox() {
     noteUnauthorized(res)
     if (!res.ok) return { ok: false as const, leads: [] as Lead[] }
     const data = (await res.json()) as { leads?: Lead[] }
-    return { ok: true as const, leads: data.leads ?? [] }
+    if (!Array.isArray(data.leads)) return { ok: false as const, leads: [] as Lead[] }
+    return { ok: true as const, leads: data.leads }
   } catch {
     return { ok: false as const, leads: [] as Lead[] }
   }
