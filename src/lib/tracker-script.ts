@@ -1,3 +1,16 @@
+export function isTelegramAdsHref(href: string, base = "https://abilion.lol") {
+  try {
+    const url = new URL(href, base)
+    const host = url.hostname.replace(/^www\./, "")
+    if (host !== "t.me" && host !== "telegram.me") return false
+    const path = url.pathname.replace(/^\//, "")
+    if (!path || path.startsWith("+") || /^joinchat\//i.test(path) || /^s\//i.test(path)) return false
+    return true
+  } catch {
+    return false
+  }
+}
+
 export const TRACKER_JS = `(() => {
   const script = document.currentScript;
   if (!script || !script.src) return;
@@ -37,10 +50,23 @@ export const TRACKER_JS = `(() => {
       fetch(endpoint, { method: "POST", body, mode: "no-cors", keepalive: true, headers: { "content-type": "text/plain" } });
     } catch (_) {}
   };
+  const adsHref = (raw) => {
+    try {
+      const href = new URL(raw || "", location.href);
+      const host = href.hostname.replace(/^www\\./, "");
+      if (host !== "t.me" && host !== "telegram.me") return false;
+      const path = href.pathname.replace(/^\\//, "");
+      if (!path || path.charAt(0) === "+" || /^joinchat\\//i.test(path) || /^s\\//i.test(path)) return false;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
   const rewrite = (anchor) => {
     try {
-      const href = new URL(anchor.getAttribute("href") || "", location.href);
-      if (!/t\\.me\\//i.test(href.href) && !anchor.matches(ctaSel)) return;
+      const raw = anchor.getAttribute("href") || "";
+      if (!anchor.matches(ctaSel) && !adsHref(raw)) return;
+      const href = new URL(raw, location.href);
       href.searchParams.set("start", "fb_" + vid());
       anchor.setAttribute("href", href.toString());
     } catch (_) {}
@@ -53,10 +79,9 @@ export const TRACKER_JS = `(() => {
   document.addEventListener("click", (event) => {
     const anchor = event.target && event.target.closest ? event.target.closest("a") : null;
     if (!anchor) return;
-    if (anchor.matches(ctaSel) || /t\\.me\\//i.test(anchor.href || "")) {
-      rewrite(anchor);
-      send("click", { href: anchor.href });
-    }
+    if (!anchor.matches(ctaSel) && !adsHref(anchor.href || "")) return;
+    rewrite(anchor);
+    send("click", { href: anchor.href });
   }, true);
   setInterval(function () { send("beat"); }, 30000);
 })();

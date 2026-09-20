@@ -47,7 +47,8 @@ import {
   reconcileLeads,
   resolveLeadLookup,
 } from "../src/lib/crm.ts"
-import { applyEvent, publishedFunnel, publishedSnapshot, waitHours } from "../src/lib/runtime.ts"
+import { applyEvent, canAdvanceRemoteWait, publishedFunnel, publishedSnapshot, waitHours } from "../src/lib/runtime.ts"
+import { isTelegramAdsHref, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
 import { CRM_CRON_LOCK, CRM_FUNNELS, aliasKey, claimCronLock, deleteLeadKv, dueLeadsKv, findLeadInKv, listLeads, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, releaseCronLock, renewCronLock, saveFunnelsKv, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
@@ -1933,7 +1934,9 @@ const tracker = await handleRequest(new Request("http://local.test/t.js"), liveE
 assert(tracker.status === 200, "t.js público")
 assert(tracker.headers.get("x-content-type-options") === "nosniff", "t.js tem nosniff")
 assert(tracker.headers.get("strict-transport-security")?.includes("max-age=31536000"), "t.js manda HSTS")
-assert((await tracker.text()).includes("/api/track"), "t.js aponta o pixel")
+const trackerBody = await tracker.text()
+assert(trackerBody.includes("/api/track"), "t.js aponta o pixel")
+assert(trackerBody.includes("joinchat"), "t.js não reescreve convite de grupo")
 const pixelPlain = await handleRequest(
   new Request("http://local.test/api/track", {
     method: "POST",
@@ -1985,6 +1988,24 @@ await upsertLeadKv(cronEnv.AUTH, {
 const cronRes = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), cronEnv, backgroundCtx())
 const cronBody = (await cronRes.json()) as { ok?: boolean; advanced?: number }
 assert(cronRes.status === 200 && cronBody.ok && (cronBody.advanced ?? 0) >= 2, "cron avança cada espera vencida")
+assert(canAdvanceRemoteWait(lead("sim-wait"), false), "espera simulada avança sem token")
+assert(canAdvanceRemoteWait({ ...lead("tg-wait"), telegramChatId: "8800" }, true), "espera Telegram avança com token")
+assert(!canAdvanceRemoteWait({ ...lead("tg-hold"), telegramChatId: "8800" }, false), "espera Telegram sem token não avança")
+await upsertLeadKv(cronEnv.AUTH, {
+  ...lead("hold-tg", "@hold"),
+  telegramChatId: "8800",
+  waitUntil: new Date(Date.now() - 2000).toISOString(),
+  memory: "ste:remarketing",
+  stePhase: "offer",
+})
+const holdWait = (await loadLead(cronEnv.AUTH, "hold-tg"))?.waitUntil
+const holdRes = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), cronEnv, backgroundCtx())
+assert(holdRes.status === 200, "cron sem token corre")
+assert((await loadLead(cronEnv.AUTH, "hold-tg"))?.waitUntil === holdWait, "sem token o cron não come a espera do Telegram")
+assert(isTelegramAdsHref("https://t.me/steaviator?start=fb"), "pixel reescreve deep link do bot")
+assert(!isTelegramAdsHref("https://t.me/+AbCdEfGhIjK"), "pixel não reescreve convite +")
+assert(!isTelegramAdsHref("https://t.me/joinchat/AbCdEf"), "pixel não reescreve joinchat")
+assert(TRACKER_JS.includes("joinchat") && TRACKER_JS.includes('charAt(0) === "+"'), "t.js recusa convite de grupo")
 
 const waitId = "w-html"
 const msgId = "m-html"

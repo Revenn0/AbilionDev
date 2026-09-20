@@ -364,6 +364,11 @@ export function dueWaits(leads: Lead[], nowMs = Date.now()) {
   return leads.filter((lead) => lead.waitUntil && new Date(lead.waitUntil).getTime() <= nowMs)
 }
 
+/** Espera com chat real só avança quando o Worker tem token — senão o cron come o follow-up sem mandar. */
+export function canAdvanceRemoteWait(lead: Lead, hasTelegramToken: boolean) {
+  return !lead.telegramChatId || hasTelegramToken
+}
+
 export function nodeTitle(snapshot: SalesSnapshot | null, nodeId?: string) {
   if (!snapshot || !nodeId) return undefined
   return snapshot.nodes.find((node) => node.id === nodeId)?.data.title

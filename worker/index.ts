@@ -4,7 +4,7 @@ import { advanceSteIfDue, isSteWait, replySte, replySteSmart, safeHttpUrl, steRu
 import { linkFollowUp, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { campaignFromStart, originFromStart, parseTelegramStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
-import { applyEvent, dueWaits, publishedSnapshot } from "../src/lib/runtime.ts"
+import { applyEvent, canAdvanceRemoteWait, dueWaits, publishedSnapshot } from "../src/lib/runtime.ts"
 import { BANCA_FIXED, type Lead, type LeadEvent, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types.ts"
 import { compactGeo, factsFromGeo } from "../src/lib/geo.ts"
 import { parseDevice } from "../src/lib/track.ts"
@@ -577,6 +577,7 @@ async function processWaits(env: Env) {
     for (const lead of due) {
       try {
         if (env.AUTH && lockOwner !== "local" && !(await renewCronLock(env.AUTH, lockOwner))) break
+        if (!canAdvanceRemoteWait(lead, Boolean(token))) continue
         if (isSteWait(lead)) {
           const talked = advanceSteIfDue(lead, Date.now(), ste)
           await saveLead(env, talked.lead)
