@@ -28,6 +28,7 @@ import {
 import { emptySalesFunnel } from "../src/lib/templates.ts"
 import {
   activatePublishedFunnels,
+  enforceSinglePublished,
   adoptDueLeads,
   adoptLeadStores,
   adoptRemoteFunnels,
@@ -44,7 +45,8 @@ import {
 import { publishedFunnel } from "../src/lib/runtime.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import type { Lead } from "../src/lib/types.ts"
-import { CRM_FUNNELS, deleteLeadKv, findLeadInKv, listLeads, loadFunnelsKv, loadLead, loadRemovedLeadIds, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_FUNNELS, claimCronLock, deleteLeadKv, dueLeadsKv, findLeadInKv, listLeads, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
+import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
@@ -501,6 +503,11 @@ const newerPub = { ...publishedC, production: { ...publishedC.production!, publi
 assert(publishedFunnel([olderPub, newerPub])?.id === newerPub.id, "Sté usa o quadro publicado mais recente")
 assert(publishedFunnel([newerPub, olderPub])?.id === newerPub.id, "a ordem da lista não manda no runtime")
 assert(activatePublishedFunnels([olderPub, newerPub], newerPub.id).find((item) => item.id === olderPub.id)?.status === "draft", "publicar um funil desce o outro")
+assert(
+  enforceSinglePublished([olderPub, newerPub]).filter((item) => item.status === "active" && item.production).length === 1,
+  "Worker deixa um só quadro publicado"
+)
+assert(enforceSinglePublished([olderPub, newerPub]).find((item) => item.status === "active")?.id === newerPub.id, "o publicado que fica é o mais recente")
 const localNew = emptySalesFunnel("local")
 const older = { ...publishedA, name: "servidor", updatedAt: "2020-01-01T00:00:00.000Z" }
 const newerLocal = { ...publishedA, name: "local-novo", updatedAt: "2026-01-01T00:00:00.000Z" }
@@ -838,6 +845,7 @@ await upsertLeadKv(kv, gone)
 assert((await loadLead(kv, "gone"))?.contact === "@gone", "lead persistido no KV")
 await deleteLeadKv(kv, "gone")
 assert((await loadLead(kv, "gone")) === null, "lead apagado do KV")
+assert((await findLeadInKv(kv, "@gone", 9, "9")) === null, "alias some com o lead apagado")
 assert((await loadRemovedLeadIds(kv)).includes("gone"), "apagar grava tombstone persistente")
 const staleGone = { ...gone, memory: "", updatedAt: new Date(Date.now() + 5000).toISOString() }
 assert(resolveLeadLookup(null, staleGone, await loadRemovedLeadIds(kv)) === null, "tombstone bloqueia o remoto")
@@ -850,7 +858,39 @@ assert(
 assert(adoptDueLeads([first], [staleGone], []).some((item) => item.id === "crm-1"), "cron prefere o KV")
 await upsertLeadKv(kv, gone)
 assert(!(await loadRemovedLeadIds(kv)).includes("gone"), "voltar a gravar limpa o tombstone")
+assert((await findLeadInKv(kv, "@gone", 9, "9"))?.id === "gone", "alias volta quando o lead volta")
 await deleteLeadKv(kv, "gone")
+
+const capKv = memoryKv()
+for (let i = 0; i < 401; i++) {
+  const row = lead(`id-${i}`, `@u${i}`)
+  row.telegramChatId = String(i)
+  row.updatedAt = new Date(1_700_000_000_000 + i * 1000).toISOString()
+  await upsertLeadKv(capKv, row)
+}
+assert((await findLeadInKv(capKv, "@u0", 0, "0"))?.id === "id-0", "alias encontra lead fora do recorte de 400")
+assert((await listLeads(capKv, 400, "all")).length === 400, "lista continua no teto de 400")
+const waitingOld = lead("wait-old", "@waitold")
+waitingOld.waitUntil = new Date(Date.now() - 1000).toISOString()
+waitingOld.updatedAt = new Date(1_600_000_000_000).toISOString()
+waitingOld.telegramChatId = "wait-old"
+waitingOld.channel = "telegram"
+await upsertLeadKv(capKv, waitingOld)
+for (let i = 500; i < 920; i++) {
+  const row = lead(`id-${i}`, `@u${i}`)
+  row.telegramChatId = String(i)
+  row.updatedAt = new Date(1_800_000_000_000 + i * 1000).toISOString()
+  await upsertLeadKv(capKv, row)
+}
+assert(
+  (await dueLeadsKv(capKv, new Date().toISOString())).some((item) => item.id === "wait-old"),
+  "espera antiga não cai do índice"
+)
+const lockKv = memoryKv()
+assert(await claimCronLock(lockKv, Date.now(), 90_000), "cron pega o lock")
+assert(!(await claimCronLock(lockKv, Date.now(), 90_000)), "lock impede cron sobreposto")
+const badJsonReq = new Request("http://local.test/api/crm", { method: "POST", headers: { "content-type": "application/json" }, body: "{bad" })
+assert((await readJsonObject(badJsonReq, 1000)).ok === false, "JSON inválido não passa a objeto vazio")
 
 clearSessionExpired()
 let expiredHits = 0
@@ -891,6 +931,7 @@ assert(deniedSummary.status === 401, "analytics sem sessão é 401")
 const health = await handleRequest(new Request("http://local.test/api/health"), apiEnv, backgroundCtx())
 const healthBody = (await health.json()) as { ok?: boolean; telegramBotUsername?: string }
 assert(health.status === 200 && healthBody.ok && healthBody.telegramBotUsername === "", "health público expõe username vazio")
+assert(health.headers.get("strict-transport-security")?.includes("max-age=31536000"), "health manda HSTS")
 assert(
   !("llm" in healthBody) && !("model" in healthBody) && !("persist" in healthBody) && !("telegram" in healthBody),
   "health público não expõe o runtime"
@@ -1213,13 +1254,58 @@ const crmAfterTombstone = (await (
 ).json()) as { funnels?: Array<{ id?: string }> }
 assert(!crmAfterTombstone.funnels?.some((item) => item.id === extraFunnel.id), "tombstone remove o extra do KV")
 assert(crmAfterTombstone.funnels?.some((item) => item.id === persistFunnel.id), "o funil que ficou continua")
+assert((await loadRemovedFunnelIds(liveEnv.AUTH)).includes(extraFunnel.id), "tombstone de funil fica no KV")
 assert(
   (
     await handleRequest(
       new Request("http://local.test/api/crm", {
         method: "POST",
         headers: { "content-type": "application/json", cookie: liveCookie },
-        body: JSON.stringify({ funnels: [], removedFunnelIds: [persistFunnel.id] }),
+        body: JSON.stringify({ funnels: [persistFunnel, extraFunnel] }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 200,
+  "CRM POST do extra já tombstoned é 200"
+)
+const crmNoRevive = (await (
+  await handleRequest(new Request("http://local.test/api/crm", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
+).json()) as { funnels?: Array<{ id?: string; status?: string }> }
+assert(!crmNoRevive.funnels?.some((item) => item.id === extraFunnel.id), "tombstone persistente impede o extra voltar")
+const twin = emptySalesFunnel("gemeo")
+twin.status = "active"
+twin.production = { name: "Gemeo", publishedAt: "2026-01-01T00:00:00.000Z", nodes: twin.nodes, edges: twin.edges }
+const latestPub = { ...persistFunnel, status: "active" as const, production: { name: persistFunnel.name, publishedAt: "2026-07-01T00:00:00.000Z", nodes: persistFunnel.nodes, edges: persistFunnel.edges } }
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/crm", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: liveCookie },
+        body: JSON.stringify({ funnels: [latestPub, twin] }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 200,
+  "CRM POST com dois publicados"
+)
+const crmOnePub = (await (
+  await handleRequest(new Request("http://local.test/api/crm", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
+).json()) as { funnels?: Array<{ id?: string; status?: string; production?: unknown }> }
+assert(
+  (crmOnePub.funnels ?? []).filter((item) => item.status === "active" && item.production).length === 1,
+  "Worker grava um só funil publicado"
+)
+assert(crmOnePub.funnels?.find((item) => item.status === "active")?.id === latestPub.id, "fica o publicado mais recente")
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/crm", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: liveCookie },
+        body: JSON.stringify({ funnels: [], removedFunnelIds: (crmOnePub.funnels ?? []).map((item) => item.id || "") }),
       }),
       liveEnv,
       backgroundCtx()
@@ -1281,6 +1367,26 @@ const hugeCrm = await handleRequest(
   backgroundCtx()
 )
 assert(hugeCrm.status === 413, "CRM recusa corpo enorme")
+const badCrm = await handleRequest(
+  new Request("http://local.test/api/crm", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: liveCookie },
+    body: "{nao-e-json",
+  }),
+  liveEnv,
+  backgroundCtx()
+)
+assert(badCrm.status === 400, "CRM recusa JSON inválido")
+const badLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{nao-e-json",
+  }),
+  liveEnv,
+  backgroundCtx()
+)
+assert(badLogin.status === 400, "login recusa JSON inválido")
 const pixel = await handleRequest(
   new Request("http://local.test/api/track", {
     method: "POST",

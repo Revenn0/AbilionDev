@@ -1,3 +1,4 @@
+import { publishedFunnel } from "./runtime.ts"
 import { defaultSettings, type Lead, type SalesFunnel, type Settings } from "./types.ts"
 
 const CAP = 400
@@ -167,6 +168,12 @@ export function activatePublishedFunnels(funnels: SalesFunnel[], id: string): Sa
     return item
   })
   return changed ? next : funnels
+}
+
+export function enforceSinglePublished(funnels: SalesFunnel[]): SalesFunnel[] {
+  const winner = publishedFunnel(funnels)
+  if (!winner?.production) return funnels
+  return activatePublishedFunnels(funnels, winner.id)
 }
 
 export function canDeleteFunnel(

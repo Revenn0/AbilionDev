@@ -239,7 +239,12 @@ type AuthBody = {
 
 async function readBody(request: Request): Promise<{ ok: true; body: AuthBody } | { ok: false; response: Response }> {
   const parsed = await readJsonObject<AuthBody>(request, 8_192)
-  if (!parsed.ok) return { ok: false, response: json({ error: "Pedido demasiado grande." }, 413) }
+  if (!parsed.ok) {
+    return {
+      ok: false,
+      response: json({ error: parsed.status === 413 ? "Pedido demasiado grande." : "JSON inválido." }, parsed.status),
+    }
+  }
   return { ok: true, body: parsed.value }
 }
 

@@ -5,16 +5,16 @@ export type JsonRead<T> = JsonOk<T> | JsonFail
 export async function readJsonObject<T extends Record<string, unknown>>(
   request: Request,
   limit: number
-): Promise<JsonOk<T> | { ok: false; status: 413 }> {
+): Promise<JsonRead<T>> {
   const text = await request.text()
   if (text.length > limit) return { ok: false, status: 413 }
   if (!text.trim()) return { ok: true, value: {} as T }
   try {
     const value = JSON.parse(text) as unknown
-    if (!value || typeof value !== "object") return { ok: true, value: {} as T }
+    if (!value || typeof value !== "object" || Array.isArray(value)) return { ok: false, status: 400 }
     return { ok: true, value: value as T }
   } catch {
-    return { ok: true, value: {} as T }
+    return { ok: false, status: 400 }
   }
 }
 

@@ -199,6 +199,9 @@ Estes itens dependem de credenciais ou de uma decisão humana. O código não in
 - **Primeiro login em produção** recusa criar senha se o Worker não tiver `ABILION_OPERATOR_PASSWORD`. Localmente o primeiro acesso ainda define a senha (6+).
 - `ESTER_CHAT_ID` só é preciso se a Ester receber aviso no Telegram.
 - Apagar um lead grava um tombstone no KV (`crm:removed`). O webhook e o cron não voltam a puxar essa linha do Supabase. Sem `SUPABASE_SERVICE_ROLE` isto não muda nada.
+- O índice do CRM lista 400 leads; o contacto/chat fica num alias permanente e as esperas não saem do índice. O Telegram não cria um lead novo só porque o recorte da lista encheu.
+- JSON inválido em `/api/crm`, `/api/leads`, `/api/runtime` e login devolve 400 — não grava objeto vazio.
+- O Worker impõe um só funil `active`+`production` ao gravar. Tombstone de funil também fica no KV.
 - Dashboard, Analytics e Conversas mostram "—" / "…" no pixel quando a leitura ainda não veio ou falhou. Não tratam zero como dado real.
 
 ## Auditoria

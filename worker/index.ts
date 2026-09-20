@@ -14,6 +14,7 @@ import {
   applyRemovedFunnels,
   applyRemovedLeads,
   clipRemovedIds,
+  enforceSinglePublished,
   emptySettings,
   publicSettings,
   reconcileFunnels,
@@ -29,9 +30,13 @@ import {
   listLeads,
   loadLead,
   CRM_SETTINGS,
+  claimCronLock,
   loadFunnelsKv,
+  loadRemovedFunnelIds,
   loadRemovedLeadIds,
   loadSettingsKv,
+  rememberRemovedFunnels,
+  releaseCronLock,
   saveFunnelsKv,
   saveSettingsKv,
   upsertLeadKv,
@@ -46,7 +51,7 @@ import {
   type RuntimeSecrets,
 } from "./runtime-secrets.ts"
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
-import { readJsonObject, readJsonStrict } from "./json-body.ts"
+import { readJsonObject, readJsonStrict, type JsonFail } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
 
 type Fetcher = { fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> }
@@ -267,7 +272,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
     const parsed = await readJsonObject<RuntimeSecrets>(request, 16_384)
-    if (!parsed.ok) return json({ error: "Pedido demasiado grande." }, 413)
+    if (!parsed.ok) return jsonReadError(parsed)
     const body = parsed.value
     const current = await loadSecrets(env.AUTH)
     const next = mergeSecrets(current, body)
@@ -319,11 +324,17 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
     const parsed = await readJsonObject<{ funnels?: SalesFunnel[]; settings?: Settings; removedFunnelIds?: string[] }>(request, 256_000)
-    if (!parsed.ok) return json({ error: "Pedido demasiado grande." }, 413)
+    if (!parsed.ok) return jsonReadError(parsed)
     const body = parsed.value
     if (Array.isArray(body.funnels)) {
       const incoming = body.funnels.map(sanitizeIncomingFunnel).filter((item): item is NonNullable<typeof item> => Boolean(item))
-      const funnels = applyRemovedFunnels(reconcileFunnels(await loadFunnels(env), incoming), clipRemovedIds(body.removedFunnelIds))
+      const incomingRemoved = clipRemovedIds(body.removedFunnelIds, 400)
+      if (env.AUTH && incomingRemoved.length) await rememberRemovedFunnels(env.AUTH, incomingRemoved)
+      const storedRemoved = env.AUTH ? await loadRemovedFunnelIds(env.AUTH) : []
+      const funnels = applyRemovedFunnels(
+        reconcileFunnels(await loadFunnels(env), incoming),
+        clipRemovedIds([...storedRemoved, ...incomingRemoved], 400)
+      )
       if (!funnels.length) return json({ error: "Mantém pelo menos um funil." }, 400)
       await persistFunnels(env, funnels)
     }
@@ -343,7 +354,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
     const parsed = await readJsonObject<{ lead?: Lead; leads?: Lead[] }>(request, 256_000)
-    if (!parsed.ok) return json({ error: "Pedido demasiado grande." }, 413)
+    if (!parsed.ok) return jsonReadError(parsed)
     const body = parsed.value
     const rows = (body.leads?.length ? body.leads : body.lead ? [body.lead] : []).slice(0, 120)
     let saved = 0
@@ -503,44 +514,51 @@ async function runTelegram(env: Env, update: TelegramUpdate) {
 }
 
 async function processWaits(env: Env) {
-  const now = new Date().toISOString()
-  const restRows = (await rest<LeadRow[]>(env, `leads?workspace_id=eq.${WORKSPACE}&wait_until=lte.${now}&select=*`)) ?? []
-  const kvDue = env.AUTH ? await dueLeadsKv(env.AUTH, now) : []
-  const removed = env.AUTH ? await loadRemovedLeadIds(env.AUTH) : []
-  const byId = new Map(adoptDueLeads(kvDue, restRows.map(rowToLead), removed).map((lead) => [lead.id, lead]))
-  if (!byId.size) return 0
-  const funnels = await loadFunnels(env)
-  const settings = await loadSettings(env)
-  const snapshot = publishedSnapshot(funnels)
-  const ste = steRuntimeFromFunnels(funnels, settings)
-  const { resolved } = await runtimeOf(env)
-  const token = resolved.telegramBotToken
-  const due = dueWaits([...byId.values()])
-  let advanced = 0
-  for (const lead of due) {
-    try {
-      if (isSteWait(lead)) {
-        const talked = advanceSteIfDue(lead, Date.now(), ste)
-        if (token && lead.telegramChatId) await sendSteReplies(env, token, lead.telegramChatId, talked.replies, talked.beat)
-        await saveLead(env, talked.lead)
-      } else {
-        const result = applyEvent(snapshot, lead, { type: "timer" }, Date.now())
-        await saveLead(env, result.lead)
-        for (const effect of result.effects) {
-          if (effect.kind === "offer" && token && lead.telegramChatId) {
-            await telegram(token, "sendMessage", { chat_id: lead.telegramChatId, text: effect.body || "Oferta do produto" })
+  if (env.AUTH && !(await claimCronLock(env.AUTH))) return 0
+  try {
+    const now = new Date().toISOString()
+    const restRows = (await rest<LeadRow[]>(env, `leads?workspace_id=eq.${WORKSPACE}&wait_until=lte.${now}&select=*`)) ?? []
+    const kvDue = env.AUTH ? await dueLeadsKv(env.AUTH, now) : []
+    const removed = env.AUTH ? await loadRemovedLeadIds(env.AUTH) : []
+    const byId = new Map(adoptDueLeads(kvDue, restRows.map(rowToLead), removed).map((lead) => [lead.id, lead]))
+    if (!byId.size) return 0
+    const funnels = await loadFunnels(env)
+    const settings = await loadSettings(env)
+    const snapshot = publishedSnapshot(funnels)
+    const ste = steRuntimeFromFunnels(funnels, settings)
+    const { resolved } = await runtimeOf(env)
+    const token = resolved.telegramBotToken
+    const due = dueWaits([...byId.values()])
+    let advanced = 0
+    for (const lead of due) {
+      try {
+        if (isSteWait(lead)) {
+          const talked = advanceSteIfDue(lead, Date.now(), ste)
+          await saveLead(env, talked.lead)
+          if (token && lead.telegramChatId && talked.replies.length) {
+            await sendSteReplies(env, token, lead.telegramChatId, talked.replies, talked.beat)
           }
-          if (effect.kind === "notify_ester" && token) {
-            await notifyEster(env, token, effect.body, settings)
+        } else {
+          const result = applyEvent(snapshot, lead, { type: "timer" }, Date.now())
+          await saveLead(env, result.lead)
+          for (const effect of result.effects) {
+            if (effect.kind === "offer" && token && lead.telegramChatId) {
+              await telegram(token, "sendMessage", { chat_id: lead.telegramChatId, text: effect.body || "Oferta do produto" })
+            }
+            if (effect.kind === "notify_ester" && token) {
+              await notifyEster(env, token, effect.body, settings)
+            }
           }
         }
+        advanced += 1
+      } catch {
+        continue
       }
-      advanced += 1
-    } catch {
-      continue
     }
+    return advanced
+  } finally {
+    if (env.AUTH) await releaseCronLock(env.AUTH)
   }
-  return advanced
 }
 
 async function notifyEster(env: Env, token: string, body: string, settings: Settings) {
@@ -550,7 +568,9 @@ async function notifyEster(env: Env, token: string, body: string, settings: Sett
 }
 
 async function persistFunnels(env: Env, funnels: SalesFunnel[]) {
-  const clean = funnels.map(sanitizeIncomingFunnel).filter((item): item is SalesFunnel => Boolean(item)).slice(0, 20)
+  const clean = enforceSinglePublished(
+    funnels.map(sanitizeIncomingFunnel).filter((item): item is SalesFunnel => Boolean(item)).slice(0, 20)
+  )
   if (env.AUTH) await saveFunnelsKv(env.AUTH, clean)
   if (!env.SUPABASE_SERVICE_ROLE) return
   if (clean.length) {
@@ -592,22 +612,24 @@ async function persistSettings(env: Env, settings: Settings) {
 
 async function loadFunnels(env: Env): Promise<SalesFunnel[]> {
   const kv = env.AUTH ? await loadFunnelsKv(env.AUTH) : []
-  if (kv.length) return kv
-  const rows = (await rest<SalesFunnelRow[]>(env, `funnels?workspace_id=eq.${WORKSPACE}`)) ?? []
-  return rows
-    .map((row) =>
-      sanitizeIncomingFunnel({
-        id: row.id,
-        name: row.name,
-        mode: row.mode,
-        status: row.status,
-        updatedAt: row.updated_at,
-        nodes: row.nodes ?? [],
-        edges: row.edges ?? [],
-        production: row.production,
-      })
-    )
-    .filter((item): item is SalesFunnel => Boolean(item))
+  const rows = kv.length
+    ? kv
+    : ((await rest<SalesFunnelRow[]>(env, `funnels?workspace_id=eq.${WORKSPACE}`)) ?? [])
+        .map((row) =>
+          sanitizeIncomingFunnel({
+            id: row.id,
+            name: row.name,
+            mode: row.mode,
+            status: row.status,
+            updatedAt: row.updated_at,
+            nodes: row.nodes ?? [],
+            edges: row.edges ?? [],
+            production: row.production,
+          })
+        )
+        .filter((item): item is SalesFunnel => Boolean(item))
+  if (!env.AUTH) return rows
+  return applyRemovedFunnels(rows, await loadRemovedFunnelIds(env.AUTH))
 }
 
 async function loadSettings(env: Env): Promise<Settings> {
@@ -884,7 +906,12 @@ function securityHeaders() {
     "permissions-policy": "camera=(), microphone=(), geolocation=()",
     "content-security-policy":
       "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
   }
+}
+
+function jsonReadError(parsed: JsonFail) {
+  return json({ error: parsed.status === 413 ? "Pedido demasiado grande." : "JSON inválido." }, parsed.status)
 }
 
 function withSecurityHeaders(response: Response) {

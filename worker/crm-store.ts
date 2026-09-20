@@ -7,8 +7,15 @@ export const CRM_INDEX = "crm:index"
 export const CRM_FUNNELS = "crm:funnels"
 export const CRM_SETTINGS = "crm:settings"
 export const CRM_REMOVED = "crm:removed"
+export const CRM_REMOVED_FUNNELS = "crm:removed-funnels"
+export const CRM_CRON_LOCK = "crm:cron-lock"
 
 const CAP = 400
+
+export function aliasKey(kind: "contact" | "chat", value: string) {
+  const next = value.trim()
+  return next ? `crm:alias:${kind}:${next}` : ""
+}
 
 export type CrmIndexEntry = {
   id: string
@@ -35,8 +42,40 @@ export async function loadIndex(kv: KvLike): Promise<CrmIndex> {
 }
 
 async function saveIndex(kv: KvLike, index: CrmIndex) {
-  const entries = [...index.entries].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, CAP)
+  const byId = new Map(index.entries.map((item) => [item.id, item]))
+  const all = [...byId.values()]
+  const waiting = all.filter((item) => item.waitUntil)
+  const rest = all
+    .filter((item) => !item.waitUntil)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, CAP)
+  const keep = new Map<string, CrmIndexEntry>()
+  for (const item of [...waiting, ...rest]) keep.set(item.id, item)
+  const entries = [...keep.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   await kv.put(CRM_INDEX, JSON.stringify({ entries }))
+}
+
+async function writeAliases(kv: KvLike, lead: Pick<Lead, "id" | "contact" | "telegramChatId">) {
+  const contact = aliasKey("contact", lead.contact)
+  if (contact) await kv.put(contact, JSON.stringify({ id: lead.id }))
+  const chat = aliasKey("chat", lead.telegramChatId ?? "")
+  if (chat) await kv.put(chat, JSON.stringify({ id: lead.id }))
+}
+
+async function clearAliases(kv: KvLike, lead: Pick<Lead, "contact" | "telegramChatId"> | null, entry?: CrmIndexEntry) {
+  const contact = aliasKey("contact", lead?.contact || entry?.contact || "")
+  if (contact) await kv.delete?.(contact)
+  const chat = aliasKey("chat", lead?.telegramChatId || entry?.chatId || "")
+  if (chat) await kv.delete?.(chat)
+}
+
+async function loadAlias(kv: KvLike, kind: "contact" | "chat", value: string): Promise<string | null> {
+  const key = aliasKey(kind, value)
+  if (!key) return null
+  const raw = await kv.get(key, "json")
+  if (!raw || typeof raw !== "object") return null
+  const id = (raw as { id?: unknown }).id
+  return typeof id === "string" && id ? id : null
 }
 
 export async function loadLead(kv: KvLike, id: string): Promise<Lead | null> {
@@ -54,8 +93,21 @@ export async function listLeads(kv: KvLike, limit = 80, channel: Lead["channel"]
 }
 
 export async function findLeadInKv(kv: KvLike, contact: string, telegramId: number, chatId: string): Promise<Lead | null> {
+  const candidates = [contact, `tg:${telegramId}`, chatId].filter(Boolean)
+  for (const value of candidates) {
+    const byContact = await loadAlias(kv, "contact", value)
+    if (byContact) {
+      const lead = await loadLead(kv, byContact)
+      if (lead) return lead
+    }
+    const byChat = await loadAlias(kv, "chat", value)
+    if (byChat) {
+      const lead = await loadLead(kv, byChat)
+      if (lead) return lead
+    }
+  }
   const index = await loadIndex(kv)
-  const aliases = new Set([contact, `tg:${telegramId}`, chatId].filter(Boolean))
+  const aliases = new Set(candidates)
   const hit = index.entries.find(
     (item) => aliases.has(item.contact) || (item.chatId && (item.chatId === chatId || aliases.has(item.chatId)))
   )
@@ -93,14 +145,47 @@ export async function upsertLeadKv(kv: KvLike, lead: Lead) {
   }
   const next = { entries: [entry, ...index.entries.filter((item) => item.id !== lead.id)] }
   await kv.put(leadKey(lead.id), JSON.stringify(lead))
+  await writeAliases(kv, lead)
   await saveIndex(kv, next)
 }
 
 export async function deleteLeadKv(kv: KvLike, id: string) {
-  await rememberRemovedLead(kv, id)
+  const prev = await loadLead(kv, id)
   const index = await loadIndex(kv)
+  const entry = index.entries.find((item) => item.id === id)
+  await rememberRemovedLead(kv, id)
+  await clearAliases(kv, prev, entry)
   await saveIndex(kv, { entries: index.entries.filter((item) => item.id !== id) })
   await kv.delete?.(leadKey(id))
+}
+
+export async function loadRemovedFunnelIds(kv: KvLike): Promise<string[]> {
+  const raw = await kv.get(CRM_REMOVED_FUNNELS, "json")
+  if (!raw || typeof raw !== "object") return []
+  return clipRemovedIds((raw as { ids?: unknown }).ids, CAP)
+}
+
+export async function rememberRemovedFunnels(kv: KvLike, ids: string[]) {
+  const next = clipRemovedIds([...ids, ...(await loadRemovedFunnelIds(kv))], CAP)
+  await kv.put(CRM_REMOVED_FUNNELS, JSON.stringify({ ids: next }))
+}
+
+export async function forgetRemovedFunnels(kv: KvLike, ids: string[]) {
+  const drop = new Set(ids)
+  const next = (await loadRemovedFunnelIds(kv)).filter((id) => !drop.has(id))
+  await kv.put(CRM_REMOVED_FUNNELS, JSON.stringify({ ids: next }))
+}
+
+export async function claimCronLock(kv: KvLike, now = Date.now(), holdMs = 90_000): Promise<boolean> {
+  const raw = await kv.get(CRM_CRON_LOCK, "json")
+  const until = raw && typeof raw === "object" && typeof (raw as { until?: unknown }).until === "string" ? (raw as { until: string }).until : ""
+  if (until && until > new Date(now).toISOString()) return false
+  await kv.put(CRM_CRON_LOCK, JSON.stringify({ until: new Date(now + holdMs).toISOString() }))
+  return true
+}
+
+export async function releaseCronLock(kv: KvLike) {
+  await kv.delete?.(CRM_CRON_LOCK)
 }
 
 export async function dueLeadsKv(kv: KvLike, nowIso: string): Promise<Lead[]> {
