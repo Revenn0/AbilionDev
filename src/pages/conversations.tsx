@@ -52,6 +52,7 @@ function matchesFilter(lead: Lead, filter: FilterId) {
 
 export function ConversationsPage() {
   const { state, saveLead, createLead, inboxSync, persistSync } = useStore()
+  const hydrating = persistSync === "idle"
   const { summary, status, hasData } = useTrackSummary(4000)
   const runtime = steRuntimeFromFunnels(state.funnels, state.settings)
   const runtimeKey = publishedFunnel(state.funnels)?.production?.publishedAt ?? ""
@@ -140,9 +141,13 @@ export function ConversationsPage() {
         <FlowStrip
           page={pixelFigure(status, hasData, summary.visitors)}
           click={pixelFigure(status, hasData, summary.clicks)}
-          telegram={all.length}
-          talking={all.filter((item) => (item.messages ?? []).some((msg) => msg.role === "lead") && !item.steBlocked && !item.steQuiet).length}
-          premium={all.filter((item) => item.stePhase === "offer" || item.steQuiet).length}
+          telegram={hydrating && all.length === 0 ? "…" : all.length}
+          talking={
+            hydrating && all.length === 0
+              ? "…"
+              : all.filter((item) => (item.messages ?? []).some((msg) => msg.role === "lead") && !item.steBlocked && !item.steQuiet).length
+          }
+          premium={hydrating && all.length === 0 ? "…" : all.filter((item) => item.stePhase === "offer" || item.steQuiet).length}
         />
         {all.length === 0 && persistSync === "idle" ? (
           <section className="surface">
@@ -311,9 +316,9 @@ function FlowStrip({
 }: {
   page: string | number
   click: string | number
-  telegram: number
-  talking: number
-  premium: number
+  telegram: string | number
+  talking: string | number
+  premium: string | number
 }) {
   const steps = [
     { label: "Página", value: page },

@@ -890,6 +890,7 @@ async function rest<T>(env: Env, path: string, init?: RequestInit): Promise<T | 
 
 async function sendSteReplies(env: Env, token: string, chatId: string, replies: string[], beat?: SteBeat) {
   if (!replies.length) return { ok: true }
+  let delivered = false
   const clip = beat ? voiceClipFor(beat.kind) : null
   const kv = kvOf(env)
   if (clip && kv) {
@@ -899,12 +900,10 @@ async function sendSteReplies(env: Env, token: string, chatId: string, replies: 
         const stored = await ensureVoiceClip(kv, clip, resolved.elevenApiKey, resolved.elevenVoiceId)
         const fileId = await sendStoredVoice(token, chatId, stored)
         if (fileId) {
+          delivered = true
           if (fileId !== stored.fileId) await rememberVoiceFile(kv, clip.id, fileId)
           const links = linkFollowUp(replies)
-          if (links) {
-            const sent = await sendTelegramMarkup(token, chatId, links)
-            return { ok: sent.ok }
-          }
+          if (links) await sendTelegramMarkup(token, chatId, links)
           return { ok: true }
         }
       } catch {
@@ -914,7 +913,8 @@ async function sendSteReplies(env: Env, token: string, chatId: string, replies: 
   }
   for (const [index, text] of replies.entries()) {
     const sent = await sendTelegramMarkup(token, chatId, text)
-    if (!sent.ok) return { ok: false }
+    if (sent.ok) delivered = true
+    else return { ok: delivered }
     if (index < replies.length - 1) await sleep(280)
   }
   return { ok: true }

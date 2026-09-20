@@ -135,7 +135,7 @@ export function clipAuthTokens(ids: unknown, cap = AUTH_REVOKED_CAP): string[] {
   return out
 }
 
-function mergeThrottles(
+export function mergeThrottles(
   left: Record<string, AuthThrottle>,
   right: Record<string, AuthThrottle>
 ): Record<string, AuthThrottle> {
@@ -300,11 +300,23 @@ export async function consumeKvThrottle(
   now = Date.now(),
   bucket = "track:throttles"
 ) {
-  const raw = await kv.get(bucket, "json")
-  const throttles = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, AuthThrottle>) : {}
+  const read = async () => {
+    const raw = await kv.get(bucket, "json")
+    return raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, AuthThrottle>) : {}
+  }
+  const live = (map: Record<string, AuthThrottle>) =>
+    Object.fromEntries(Object.entries(map).filter(([, item]) => item.resetAt > now))
+  const throttles = await read()
   const gated = consumeThrottle({ users: [], sessions: [], resets: {}, throttles }, key, limit, windowMs, now)
-  const next = Object.fromEntries(Object.entries(gated.snapshot.throttles ?? {}).filter(([, item]) => item.resetAt > now))
-  await kv.put(bucket, JSON.stringify(next))
+  const next = live(gated.snapshot.throttles ?? {})
+  const latest = await read()
+  const merged = live(mergeThrottles(latest, next))
+  await kv.put(bucket, JSON.stringify(merged))
+  const verify = await read()
+  const settled = live(mergeThrottles(verify, merged))
+  if (JSON.stringify(settled) !== JSON.stringify(verify)) {
+    await kv.put(bucket, JSON.stringify(settled))
+  }
   return gated.ok
 }
 

@@ -60,7 +60,7 @@ import { adsDeepLink } from "../src/lib/telegram-start.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { barShare } from "../src/lib/ops.ts"
 import { mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
-import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, handleAuth, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, retainUserSessions } from "../worker/auth.ts"
+import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, handleAuth, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeThrottles, retainUserSessions } from "../worker/auth.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTelegramClaims, telegramCall } from "../worker/telegram.ts"
 import { backgroundCtx, handleRequest, type Env } from "../worker/index.ts"
@@ -678,6 +678,15 @@ const throttleKv = memoryKv()
 assert(await consumeKvThrottle(throttleKv, "track:kv-ip", 2, 60_000, 3000), "kv throttle primeira passa")
 assert(await consumeKvThrottle(throttleKv, "track:kv-ip", 2, 60_000, 3001), "kv throttle segunda passa")
 assert(!(await consumeKvThrottle(throttleKv, "track:kv-ip", 2, 60_000, 3002)), "kv throttle terceira bloqueia")
+const mergedLimits = mergeThrottles({ a: { count: 2, resetAt: 9 } }, { a: { count: 4, resetAt: 9 }, b: { count: 1, resetAt: 9 } })
+assert(mergedLimits.a?.count === 4 && mergedLimits.b?.count === 1, "throttle une a mesma janela pelo maior count")
+const throttleRaceKv = memoryKv()
+await Promise.all([
+  consumeKvThrottle(throttleRaceKv, "race-a", 5, 60_000, 4000),
+  consumeKvThrottle(throttleRaceKv, "race-b", 5, 60_000, 4000),
+])
+const racedThrottles = (await throttleRaceKv.get("track:throttles", "json")) as Record<string, { count: number }> | null
+assert(racedThrottles?.["race-a"] && racedThrottles?.["race-b"], "throttle concorrente não apaga a outra chave")
 const retained = retainUserSessions(
   [
     { token: "old", userId: "u1", expiresAt: 9, issuedAt: 1 },
@@ -1262,6 +1271,57 @@ const blocked = (await listLeads(failEnv.AUTH, 20, "all")).find((item) => item.c
 assert(blocked?.telegramChatId === "8001", "lead recusado fica com o chat")
 assert(!(blocked?.messages ?? []).some((item) => item.role === "ste"), "Telegram recusado não grava boas-vindas")
 globalThis.fetch = denyFetch
+let partialCalls = 0
+const partialPrev = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("api.telegram.org")) {
+    partialCalls += 1
+    if (partialCalls === 1) return new Response(JSON.stringify({ ok: true }), { status: 200 })
+    return new Response(JSON.stringify({ ok: false, description: "timeout" }), { status: 403 })
+  }
+  return partialPrev(input, init)
+}) as typeof fetch
+const partEnv = { ...apiEnv, TELEGRAM_WEBHOOK_SECRET: "hook-secret", TELEGRAM_BOT_TOKEN: "000:part" } as Env
+const partBody = {
+  update_id: 91,
+  message: {
+    chat: { id: 8201 },
+    text: "/start fb_part",
+    from: { id: 8201, username: "partial", first_name: "Pia" },
+  },
+}
+const partCtx = backgroundCtx()
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/telegram", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+        body: JSON.stringify(partBody),
+      }),
+      partEnv,
+      partCtx
+    )
+  ).status === 200,
+  "webhook parcial ainda é 200"
+)
+await partCtx.flush()
+const pia = (await listLeads(partEnv.AUTH, 20, "all")).find((item) => item.contact === "@partial")
+assert((pia?.messages ?? []).some((item) => item.role === "ste"), "envio parcial já entregue grava as boas-vindas")
+assert(partialCalls === 2, "para no primeiro recusado depois de um aceite")
+const partAgain = backgroundCtx()
+await handleRequest(
+  new Request("http://local.test/api/telegram", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+    body: JSON.stringify(partBody),
+  }),
+  partEnv,
+  partAgain
+)
+await partAgain.flush()
+assert(partialCalls === 2, "update parcial não reenvia as falas já aceites")
+globalThis.fetch = partialPrev
 const okFetch = globalThis.fetch
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   if (String(input).includes("api.telegram.org")) {

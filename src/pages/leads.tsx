@@ -103,15 +103,17 @@ export function LeadsPage() {
               >
                 {item.label}{" "}
                 <span className="text-muted-foreground">
-                  {item.id === "all"
-                    ? state.leads.length
-                    : item.id === "ester"
-                      ? state.leads.filter(needsEster).length
-                      : item.id === "facebook"
-                        ? state.leads.filter((row) => row.origin === "facebook").length
-                        : item.id === "telegram"
-                          ? state.leads.filter((row) => row.channel === "telegram").length
-                          : state.leads.filter((row) => row.temperature === item.id).length}
+                  {persistSync === "idle" && state.leads.length === 0
+                    ? "…"
+                    : item.id === "all"
+                      ? state.leads.length
+                      : item.id === "ester"
+                        ? state.leads.filter(needsEster).length
+                        : item.id === "facebook"
+                          ? state.leads.filter((row) => row.origin === "facebook").length
+                          : item.id === "telegram"
+                            ? state.leads.filter((row) => row.channel === "telegram").length
+                            : state.leads.filter((row) => row.temperature === item.id).length}
                 </span>
               </button>
             ))}

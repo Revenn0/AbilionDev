@@ -12,8 +12,9 @@ import { burstFacebookLeads, burstStats } from "@/lib/burst"
 import { toast } from "sonner"
 
 export function TelegramPage() {
-  const { state, createLeads } = useStore()
+  const { state, createLeads, persistSync } = useStore()
   const { settings, leads } = state
+  const hydrating = persistSync === "idle"
   const inGroup = leads.filter((lead) => lead.channel === "telegram" && (lead.origin === "group_join" || lead.stage === "group")).length
   const facebookToday = leads.filter((lead) => {
     if (lead.origin !== "facebook") return false
@@ -93,12 +94,12 @@ export function TelegramPage() {
           </article>
           <article className="surface p-5">
             <p className="text-[12.5px] text-muted-foreground">Joins no grupo</p>
-            <p className="mt-2 text-[18px] font-medium">{inGroup}</p>
+            <p className="mt-2 text-[18px] font-medium">{hydrating ? "…" : inGroup}</p>
             <p className="mt-2 text-[12.5px] text-muted-foreground">Join cria lead da campanha Telegram.</p>
           </article>
           <article className="surface p-5">
             <p className="text-[12.5px] text-muted-foreground">Facebook hoje</p>
-            <p className="mt-2 text-[18px] font-medium">{facebookToday}</p>
+            <p className="mt-2 text-[18px] font-medium">{hydrating ? "…" : facebookToday}</p>
             <p className="mt-2 text-[12.5px] text-muted-foreground">/start=fb no anúncio. Pico de 500–1000/dia.</p>
           </article>
         </section>

@@ -60,7 +60,7 @@ export function DashboardPage() {
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <p className="text-[12.5px] text-muted-foreground">Capturas ao longo do tempo</p>
-              <p className="mt-2 text-[32px] font-medium tracking-[-0.04em]">{ops.leads}</p>
+              <p className="mt-2 text-[32px] font-medium tracking-[-0.04em]">{hydrating ? "…" : ops.leads}</p>
             </div>
             <div className="flex items-center gap-4 text-[12px] text-muted-foreground">
               <span className="inline-flex items-center gap-1.5">
