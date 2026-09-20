@@ -591,6 +591,10 @@ export function readBearer(request: Request) {
   return match?.[1]?.trim() || ""
 }
 
+export function requestHasAuth(request: Request) {
+  return Boolean(readCookie(request) || readBearer(request))
+}
+
 export async function hashApiToken(token: string) {
   const bits = await crypto.subtle.digest("SHA-256", encoder.encode(token))
   return hex(new Uint8Array(bits))

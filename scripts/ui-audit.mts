@@ -218,6 +218,14 @@ try {
   await clickNamed(page, "Vincular Telegram")
   await page.waitForSelector("#bot-user-error", { timeout: 4_000 })
 
+  await open(page, "/utilizadores")
+  await page.waitForSelector("#user-password", { timeout: 8_000 })
+  const showInitial = await page.$("[aria-label='Mostrar senha inicial']")
+  assert(showInitial, "criar conta mostra a senha")
+  await showInitial.click()
+  const revealed = await page.$eval("#user-password", (el) => (el as HTMLInputElement).type)
+  assert(revealed === "text", "toggle revela a senha inicial")
+
   await open(page, "/pagina-inexistente")
   await page.waitForFunction(
     () => document.body.innerText.includes("não encontrada") || document.body.innerText.includes("404"),

@@ -1,4 +1,4 @@
-import { clientIp, consumeKvThrottle, consumeMemoryThrottle, handleAuth, kvAuthStore, randomToken, sessionUser } from "./auth.ts"
+import { clientIp, consumeKvThrottle, consumeMemoryThrottle, handleAuth, kvAuthStore, randomToken, requestHasAuth, sessionUser } from "./auth.ts"
 import { handleMcp, handleFunnelImport } from "./mcp.ts"
 import { handleTokens, handleUsers } from "./users.ts"
 import { campaignFor } from "../src/lib/labels.ts"
@@ -186,9 +186,21 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext) {
 async function handleMcpRoute(request: Request, env: Env) {
   if (request.method === "GET") return handleMcp(request, env, null)
   if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
+  const ip = clientIp(request)
+  if (request.method === "POST") {
+    if (!(await consumeKvThrottle(env.AUTH, `mcp:ip:${ip}`, 120, 60_000))) {
+      return json({ error: "Demasiados pedidos MCP. Espera um pouco." }, 429)
+    }
+    if (!requestHasAuth(request)) {
+      if (!(await consumeKvThrottle(env.AUTH, `mcp:anon:${ip}`, 20, 60_000))) {
+        return json({ error: "Demasiados pedidos MCP. Espera um pouco." }, 429)
+      }
+      return handleMcp(request, env, null)
+    }
+  }
   const actor = await sessionUser(request, kvAuthStore(env.AUTH))
   if (request.method === "POST" && actor) {
-    if (!(await consumeKvThrottle(env.AUTH, `mcp:${actor.id}:${clientIp(request)}`, 60, 60_000))) {
+    if (!(await consumeKvThrottle(env.AUTH, `mcp:${actor.id}:${ip}`, 60, 60_000))) {
       return json({ error: "Demasiados pedidos MCP. Espera um pouco." }, 429)
     }
   }

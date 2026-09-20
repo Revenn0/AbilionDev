@@ -157,13 +157,18 @@ export async function handleTokens(request: Request, store: AuthStore, actor: Pu
   if (request.method === "POST") {
     const parsed = await readJsonObject<{ name?: string }>(request, 4_096)
     if (!parsed.ok) return json({ error: parsed.status === 413 ? "Pedido demasiado grande." : "JSON inválido." }, parsed.status)
-    const minted = mintApiToken(parsed.value.name || "Agente")
     const snapshot = await store.load()
     const user = snapshot.users.find((item) => item.id === actor.id)
     if (!user) return json({ error: "Sessão expirada." }, 401)
     if ((user.tokens ?? []).length >= TOKEN_CAP) {
       return json({ error: `Cada conta aceita no máximo ${TOKEN_CAP} tokens.` }, 400)
     }
+    const taken = new Set([...(snapshot.revokedApi ?? []), ...(user.tokens ?? []).map((item) => item.id)])
+    let minted = mintApiToken(parsed.value.name || "Agente")
+    for (let attempt = 0; attempt < 8 && taken.has(minted.id); attempt++) {
+      minted = mintApiToken(parsed.value.name || "Agente")
+    }
+    if (taken.has(minted.id)) return json({ error: "Não gerei o token. Tenta outra vez." }, 409)
     const rec = {
       id: minted.id,
       name: minted.name,

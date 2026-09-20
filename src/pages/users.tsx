@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Copy, KeyRound, UserRoundCog } from "lucide-react"
+import { Copy, Eye, EyeOff, KeyRound, UserRoundCog } from "lucide-react"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -37,8 +37,10 @@ export function UsersPage() {
   const [freshToken, setFreshToken] = useState("")
   const [busy, setBusy] = useState(false)
   const [tokenBusy, setTokenBusy] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
   const lock = useRef(false)
   const tokenLock = useRef(false)
+  const patchLock = useRef(false)
 
   const reload = () => {
     void Promise.all([listUsersRequest(), listTokensRequest()])
@@ -87,9 +89,14 @@ export function UsersPage() {
           Contas do estúdio e tokens para o Claude Code ou outros agentes. Um e-mail novo só entra depois de o criares aqui — o login não inventa contas.
         </p>
         {error ? (
-          <p role="alert" className="text-[13px] text-destructive">
-            {error}
-          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <p role="alert" className="text-[13px] text-destructive">
+              {error}
+            </p>
+            <Button type="button" variant="ghost" size="sm" className="rounded-full" onClick={reload}>
+              Tentar outra vez
+            </Button>
+          </div>
         ) : null}
 
         <section className="surface overflow-hidden">
@@ -120,12 +127,27 @@ export function UsersPage() {
                         size="sm"
                         className="rounded-full"
                         onClick={() => {
-                          void patchUserRequest({ id: user.id, disabled: !user.disabled })
+                          if (patchLock.current) return
+                          const nextDisabled = !user.disabled
+                          if (
+                            !confirm(
+                              nextDisabled
+                                ? "Desligar esta conta? As sessões e os tokens MCP desta pessoa deixam de entrar."
+                                : "Reactivar esta conta?"
+                            )
+                          ) {
+                            return
+                          }
+                          patchLock.current = true
+                          void patchUserRequest({ id: user.id, disabled: nextDisabled })
                             .then((result) => {
                               setUsers((prev) => (prev ?? []).map((item) => (item.id === result.user.id ? result.user : item)))
                               toast.success(result.user.disabled ? "Conta desligada." : "Conta reactivada.")
                             })
                             .catch((err: Error) => toast.error(err.message))
+                            .finally(() => {
+                              patchLock.current = false
+                            })
                         }}
                       >
                         {user.disabled ? "Reactivar" : "Desligar"}
@@ -138,13 +160,18 @@ export function UsersPage() {
                         size="sm"
                         className="rounded-full"
                         onClick={() => {
+                          if (patchLock.current) return
                           const next = user.role === "owner" ? "operator" : "owner"
+                          patchLock.current = true
                           void patchUserRequest({ id: user.id, role: next })
                             .then((result) => {
                               setUsers((prev) => (prev ?? []).map((item) => (item.id === result.user.id ? result.user : item)))
                               toast.success(result.user.role === "owner" ? "Passou a dono." : "Passou a operador.")
                             })
                             .catch((err: Error) => toast.error(err.message))
+                            .finally(() => {
+                              patchLock.current = false
+                            })
                         }}
                       >
                         {user.role === "owner" ? "Tornar operador" : "Tornar dono"}
@@ -164,22 +191,48 @@ export function UsersPage() {
             <form className="mt-4 space-y-3" onSubmit={create}>
               <div className="space-y-1.5">
                 <Label htmlFor="user-name">Nome</Label>
-                <Input id="user-name" value={name} onChange={(event) => setName(event.target.value)} maxLength={80} required />
+                <Input
+                  id="user-name"
+                  value={name}
+                  autoComplete="name"
+                  onChange={(event) => setName(event.target.value)}
+                  maxLength={80}
+                  required
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="user-email">E-mail</Label>
-                <Input id="user-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
+                <Input
+                  id="user-email"
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  required
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="user-password">Senha inicial</Label>
-                <Input
-                  id="user-password"
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  minLength={6}
-                  required
-                />
+                <div className="relative">
+                  <Input
+                    id="user-password"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="new-password"
+                    value={password}
+                    className="pr-10"
+                    onChange={(event) => setPassword(event.target.value)}
+                    minLength={6}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowPassword((value) => !value)}
+                    aria-label={showPassword ? "Ocultar senha inicial" : "Mostrar senha inicial"}
+                  >
+                    {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="user-role">Papel</Label>

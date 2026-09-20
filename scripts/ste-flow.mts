@@ -92,7 +92,7 @@ import { campaignFor } from "../src/lib/labels.ts"
 import { barShare, hasConversation, isImportedLead, isOperatorLockedLead, leadsHydrating } from "../src/lib/ops.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
-import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, handleAuth, hashApiToken, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, retainUserSessions, sessionUser } from "../worker/auth.ts"
+import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, handleAuth, hashApiToken, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTelegramClaims, telegramCall } from "../worker/telegram.ts"
@@ -1433,6 +1433,11 @@ const prodAgain = await handleAuth(
   { ABILION_ENV: "production" }
 )
 assert(prodAgain.status === 200, "a senha do primeiro acesso continua a entrar")
+assert(!requestHasAuth(new Request("http://local.test/mcp")), "sem cookie nem bearer não há credencial")
+assert(
+  requestHasAuth(new Request("http://local.test/mcp", { headers: { authorization: "Bearer abn_x" } })),
+  "bearer conta como credencial"
+)
 assert((await loginAttempt("senhaok")).status === 200, "primeiro acesso define a senha")
 assert(
   (
@@ -3791,6 +3796,25 @@ const mcpHit = () =>
   )
 for (let i = 0; i < 60; i++) assert((await mcpHit()).status === 200, `mcp ${i + 1} ainda entra no throttle`)
 assert((await mcpHit()).status === 429, "61º MCP bloqueia")
+
+const mcpAnonLimitEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://example.supabase.co",
+  AUTH: memoryKv(),
+  ABILION_ENV: "development",
+} as Env
+const mcpAnonHit = () =>
+  handleRequest(
+    new Request("http://local.test/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.92" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26" } }),
+    }),
+    mcpAnonLimitEnv,
+    backgroundCtx()
+  )
+for (let i = 0; i < 20; i++) assert((await mcpAnonHit()).status === 401, `mcp anon ${i + 1} ainda é 401`)
+assert((await mcpAnonHit()).status === 429, "21º MCP sem token bloqueia")
 
 const importedHttp = await handleRequest(
   new Request("http://local.test/api/funnels/import", {
