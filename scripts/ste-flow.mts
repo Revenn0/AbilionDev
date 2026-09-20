@@ -1545,7 +1545,7 @@ assert(leadWriteIds({ ok: true, saved: 2 }, writeChunk).length === 0, "saved par
 assert(leadWriteIds({ ok: true, saved: 3 }, writeChunk).join() === "a,b,c", "Worker velho com saved completo ainda devolve o lote")
 assert(leadWriteIds({ ok: true, ids: ["a", "ghost", "a"] }, writeChunk).join() === "a", "id de outro lote e repetido não entram")
 assert(leadWriteIds({}, writeChunk).length === 0, "200 sem saved não finge que gravou")
-assert(LEAD_INDEX_REST_CAP === 2000, "simulação sem chat cabe até 2000 no índice")
+assert(LEAD_INDEX_REST_CAP === 4000, "simulação sem chat cabe até 4000 no índice")
 assert(LEAD_INDEX_PINNED_CAP === 8000, "chats sem espera cabem 8000 no índice")
 const clippedChats = clipCrmIndex(
   Array.from({ length: LEAD_INDEX_PINNED_CAP + 2 }, (_, i) => ({

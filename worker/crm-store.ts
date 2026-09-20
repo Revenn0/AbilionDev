@@ -12,7 +12,7 @@ export const CRM_REMOVED_FUNNELS = "crm:removed-funnels"
 export const CRM_CRON_LOCK = "crm:cron-lock"
 
 const REMOVED_CAP = 400
-export const LEAD_INDEX_REST_CAP = 2000
+export const LEAD_INDEX_REST_CAP = 4000
 export const LEAD_INDEX_PINNED_CAP = 8000
 
 export function aliasKey(kind: "contact" | "chat", value: string) {
