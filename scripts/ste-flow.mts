@@ -1164,20 +1164,40 @@ const loginAttempt = (password: string) =>
     authStore,
     { ABILION_ENV: "development" }
   )
-assert(
-  (
-    await handleAuth(
-      new Request("http://local.test/api/auth/login", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
-      }),
-      memoryAuthStore(),
-      { ABILION_ENV: "production" }
-    )
-  ).status === 403,
-  "produção sem senha de operador recusa o primeiro acesso"
+const prodFirstStore = memoryAuthStore()
+const prodFirst = await handleAuth(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.8" },
+    body: JSON.stringify({ email: "gabriel@abilion.com", password: "senhaok" }),
+  }),
+  prodFirstStore,
+  { ABILION_ENV: "production" }
 )
+assert(prodFirst.status === 200, "produção sem seed cria a senha no primeiro acesso")
+const prodFirstBody = (await prodFirst.json()) as { user: { email: string } | null }
+assert(prodFirstBody.user?.email === "gabriel@abilion.com", "primeiro acesso devolve o operador")
+assert(Boolean(prodFirst.headers.get("set-cookie")?.includes("abilion_session=")), "primeiro acesso grava cookie")
+const prodWrong = await handleAuth(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.8" },
+    body: JSON.stringify({ email: "gabriel@abilion.com", password: "outraok" }),
+  }),
+  prodFirstStore,
+  { ABILION_ENV: "production" }
+)
+assert(prodWrong.status === 401, "depois do primeiro acesso a senha errada não entra")
+const prodAgain = await handleAuth(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.8" },
+    body: JSON.stringify({ email: "gabriel@abilion.com", password: "senhaok" }),
+  }),
+  prodFirstStore,
+  { ABILION_ENV: "production" }
+)
+assert(prodAgain.status === 200, "a senha do primeiro acesso continua a entrar")
 assert((await loginAttempt("senhaok")).status === 200, "primeiro acesso define a senha")
 assert(
   (

@@ -67,7 +67,7 @@ O Worker `abilion` (conta `73dd2cecfc9c7f0220a36fe999e3edf1`) serve o painel e `
 
 Login: só `victor@abilion.com` ou `gabriel@abilion.com`. O primeiro acesso de cada conta grava a senha no KV `abilion-auth`. Depois, só essa senha entra. Login, “Esqueceu a senha?” e troca de senha têm limite por IP (8, 5 e 5 tentativas / 15 min). Cada operador fica com no máximo 5 sessões activas. O snapshot de auth no KV une sessões no gravar — dois logins ao mesmo tempo já não apagam um ao outro. Uma troca de senha marca `passwordUpdatedAt`: um login que ainda tinha o hash velho não reverte a senha nem reabre sessões antigas. Logout e troca de senha gravam tombstone do token (até 2000). Token do Telegram e chaves de IA **não** entram no git — Configurações → Vincular Telegram grava no mesmo KV e aponta o webhook. Troca de senha: Configurações → Conta. “Esqueceu a senha?” só devolve link fora de produção (não há e-mail). Leads: busca por nome/@user, exclusão com confirmação e hidratação até 400 no login. Simular 100 /start pede confirmação.
 
-`ABILION_OPERATOR_PASSWORD` só **cria** as contas que ainda não existem. Depois de criadas, a troca em Configurações → Conta fica. Não reescreve o hash em cada `/api/auth/me`.
+`ABILION_OPERATOR_PASSWORD` é opcional: só **cria** as contas que ainda não existem. Sem o secret, o primeiro login de cada operador define a senha. Depois de criadas, a troca em Configurações → Conta fica. Não reescreve o hash em cada `/api/auth/me`.
 
 ```bash
 npx wrangler secret put ABILION_OPERATOR_PASSWORD
@@ -81,7 +81,7 @@ npm run deploy
 
 Domínio **abilion.lol** já aponta para o Worker (`coco.ns.cloudflare.com` / `etienne.ns.cloudflare.com`). Apex, `www` e `abilion.vsanches1060.workers.dev` servem o mesmo painel.
 
-Ao vincular o Telegram, o Worker gera um `secret_token` do webhook e guarda-o no KV. `POST /api/telegram` sem esse secret (ou com o header errado) responde 401 — não aceita updates assinados. `GET /api/cron` só corre com `CRON_SECRET`. Sem cookie, `/api/crm`, `/api/inbox`, `/api/leads` e `/api/track/summary` respondem 401. O painel trata isso como sessão expirada e volta ao login. Analytics com 401 mostra “Sem leitura”, não um gráfico vazio verde. Sem rede, um aviso no topo deixa claro que a sincronização espera. Em produção, o primeiro login só cria a senha se existir `ABILION_OPERATOR_PASSWORD`.
+Ao vincular o Telegram, o Worker gera um `secret_token` do webhook e guarda-o no KV. `POST /api/telegram` sem esse secret (ou com o header errado) responde 401 — não aceita updates assinados. `GET /api/cron` só corre com `CRON_SECRET`. Sem cookie, `/api/crm`, `/api/inbox`, `/api/leads` e `/api/track/summary` respondem 401. O painel trata isso como sessão expirada e volta ao login. Analytics com 401 mostra “Sem leitura”, não um gráfico vazio verde. Sem rede, um aviso no topo deixa claro que a sincronização espera. O primeiro login de `victor@abilion.com` ou `gabriel@abilion.com` define a senha (6+), também em produção. `ABILION_OPERATOR_PASSWORD` é opcional e só cria contas que ainda não existem.
 
 Secrets (nunca no git):
 
@@ -193,10 +193,10 @@ Estes itens dependem de credenciais ou de uma decisão humana. O código não in
 - **Voz da Sté** fica em texto até `ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID`. Não há `voice_id` inventado.
 - **Esqueceu a senha?** em produção não envia e-mail. Troca em Configurações → Conta.
 - **Supabase** só entra com `SUPABASE_SERVICE_ROLE`. Sem isso a operação corre no KV `abilion-auth`. Corre `005_worker_only_rls.sql` no SQL editor do projecto Abilion (`eyjgmkmaixmpmeeahxon`) para fechar as policies anónimas. Não é o projecto alecrim.
-- **Senhas dos operadores** em produção já estão no KV. Não estão neste repositório. Primeiro acesso local define a senha (6+).
+- **Senhas dos operadores** não estão neste repositório. O primeiro acesso de cada e-mail (`victor@abilion.com` / `gabriel@abilion.com`) grava a senha no KV. Depois, só essa senha entra.
 - Plugin **Agenda** e **webhooks de saída** são “Em breve” de propósito. Relatórios exporta CSV da base de leads (células `= + - @` saem como texto, para o Excel não as tratar como fórmula). Captura abre Leads. Telegram mostra o estado do Worker — sem interruptores que não fazem nada.
 - **Notificações** na conta também são “Em breve”. O aviso da Ester no print só sai com o secret `ESTER_CHAT_ID` no Worker — um POST do CRM não define o chat. O botão Print no lead só marca o fluxo; o toast já não finge que a Ester foi avisada.
-- **Primeiro login em produção** recusa criar senha se o Worker não tiver `ABILION_OPERATOR_PASSWORD`. Localmente o primeiro acesso ainda define a senha (6+).
+- **Primeiro login em produção** já não precisa de `ABILION_OPERATOR_PASSWORD`. Sem conta no KV, a senha digitada no formulário fica a da conta. O secret continua a ser um seed opcional — nunca reescreve um hash existente.
 - `ESTER_CHAT_ID` só é preciso se a Ester receber aviso no Telegram. O campo não existe na UI. O POST `/api/crm` ignora `esterTelegramChatId` (o persist grava vazio) e o GET não o devolve.
 - Links da Sté (markup e HTML do Telegram) recusam `javascript:` e URLs com userinfo, como o funil. Publicar um quadro com `javascript:` ou userinfo no `data.url` falha no painel e no POST `/api/crm` (400). O inspector marca o campo inválido. O persist ainda limpa o valor se alguém gravar só o rascunho.
 - Gravar CRM ou leads com a rede em baixo devolve erro no banner — não rebenta a Promise no browser.

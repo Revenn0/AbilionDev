@@ -456,10 +456,6 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     }
     let user = snapshot.users.find((item) => item.email === email)
     if (!user) {
-      if (env?.ABILION_ENV === "production" && !env.ABILION_OPERATOR_PASSWORD) {
-        await store.save(snapshot)
-        return json({ error: "Primeiro acesso em produção precisa de ABILION_OPERATOR_PASSWORD no Worker." }, 403)
-      }
       user = {
         id: randomToken(8),
         email,
