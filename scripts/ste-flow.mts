@@ -2679,6 +2679,7 @@ assert(!isTelegramAdsHref("https://t.me/+AbCdEfGhIjK"), "pixel não reescreve co
 assert(!isTelegramAdsHref("https://t.me/joinchat/AbCdEf"), "pixel não reescreve joinchat")
 assert(TRACKER_JS.includes("joinchat") && TRACKER_JS.includes('charAt(0) === "+"'), "t.js recusa convite de grupo")
 assert(TRACKER_JS.includes("auxclick") && TRACKER_JS.includes("pointerdown"), "t.js reescreve o CTA antes do clique do meio")
+assert(TRACKER_JS.includes('querySelector(\'script[src*="/t.js"]\')'), "t.js aguenta async sem currentScript")
 
 const waitId = "w-html"
 const msgId = "m-html"

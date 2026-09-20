@@ -41,7 +41,7 @@ export function isTelegramAdsHref(href: string, base = "https://abilion.lol") {
 }
 
 export const TRACKER_JS = `(() => {
-  const script = document.currentScript;
+  const script = document.currentScript || document.querySelector('script[src*="/t.js"]');
   if (!script || !script.src) return;
   const origin = new URL(script.src).origin;
   const ctaSel = script.getAttribute("data-cta") || "[data-abilion-cta]";

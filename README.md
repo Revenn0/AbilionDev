@@ -123,7 +123,7 @@ Pixel da landing — no topo de Telegram e de Configurações → Bot Telegram (
 <a href="https://t.me/BOT?start=fb" data-abilion-cta>Falar no Telegram</a>
 ```
 
-O script reescreve o `t.me/BOT?start=fb_{vid}` no `pointerdown`, no clique e no clique do meio. Sem página própria, o anúncio aponta para [https://www.abilion.lol/l](https://www.abilion.lol/l). A `/l` já sai com o visitor no href. O webhook fecha o evento `telegram` com o mesmo visitor.
+O script reescreve o `t.me/BOT?start=fb_{vid}` no `pointerdown`, no clique e no clique do meio. Se o construtor da página puser o script em `async`, o pixel ainda encontra o `/t.js` sem `currentScript`. Sem página própria, o anúncio aponta para [https://www.abilion.lol/l](https://www.abilion.lol/l). A `/l` já sai com o visitor no href. O webhook fecha o evento `telegram` com o mesmo visitor.
 
 Landing de teste (pixel + CTA): `/l` — local [http://127.0.0.1:43173/l](http://127.0.0.1:43173/l), produção [https://www.abilion.lol/l](https://www.abilion.lol/l).
 
