@@ -9,7 +9,7 @@ import { BANCA_FIXED, type Lead, type LeadEvent, type LeadOrigin, type SalesFunn
 import { compactGeo, factsFromGeo } from "../src/lib/geo.ts"
 import { parseDevice } from "../src/lib/track.ts"
 import { emptySettings, mergeFunnels, mergeLeads, publicSettings, reconcileFunnels } from "../src/lib/crm.ts"
-import { cleanBotUsername, migrateFunnel, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
+import { cleanBotUsername, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { resolveClientGeo } from "./geo-lookup.ts"
 import { ingestTrack, kvTrackStore, memoryTrackStore, readTrackBody, summaryFromStore, type TrackStore } from "./track-store.ts"
 import {
@@ -347,8 +347,8 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
-    const id = url.searchParams.get("id") || ""
-    if (!id) return json({ error: "Falta o id do lead." }, 400)
+    const id = (url.searchParams.get("id") || "").trim()
+    if (!id || id.length > 80) return json({ error: "Falta o id do lead." }, 400)
     await removeLead(env, id)
     return json({ ok: true })
   }
@@ -538,13 +538,14 @@ async function notifyEster(env: Env, token: string, body: string, settings: Sett
 }
 
 async function persistFunnels(env: Env, funnels: SalesFunnel[]) {
-  if (env.AUTH) await saveFunnelsKv(env.AUTH, funnels)
-  if (!env.SUPABASE_SERVICE_ROLE || !funnels.length) return
+  const clean = funnels.map(sanitizeIncomingFunnel).filter((item): item is SalesFunnel => Boolean(item)).slice(0, 20)
+  if (env.AUTH) await saveFunnelsKv(env.AUTH, clean)
+  if (!env.SUPABASE_SERVICE_ROLE || !clean.length) return
   await rest(env, "funnels", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates" },
     body: JSON.stringify(
-      funnels.map((funnel) => ({
+      clean.map((funnel) => ({
         id: funnel.id,
         workspace_id: WORKSPACE,
         name: funnel.name,
@@ -560,30 +561,33 @@ async function persistFunnels(env: Env, funnels: SalesFunnel[]) {
 }
 
 async function persistSettings(env: Env, settings: Settings) {
-  if (env.AUTH) await saveSettingsKv(env.AUTH, settings)
+  const clean = migrateSettings(settings)
+  if (env.AUTH) await saveSettingsKv(env.AUTH, clean)
   if (!env.SUPABASE_SERVICE_ROLE) return
   await rest(env, "settings", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates" },
-    body: JSON.stringify({ workspace_id: WORKSPACE, data: publicSettings(settings) }),
+    body: JSON.stringify({ workspace_id: WORKSPACE, data: publicSettings(clean) }),
   })
 }
 
 async function loadFunnels(env: Env): Promise<SalesFunnel[]> {
   const kv = env.AUTH ? await loadFunnelsKv(env.AUTH) : []
   const rows = (await rest<SalesFunnelRow[]>(env, `funnels?workspace_id=eq.${WORKSPACE}`)) ?? []
-  const remote = rows.map((row) =>
-    migrateFunnel({
-      id: row.id,
-      name: row.name,
-      mode: row.mode,
-      status: row.status,
-      updatedAt: row.updated_at,
-      nodes: row.nodes ?? [],
-      edges: row.edges ?? [],
-      production: row.production,
-    })
-  )
+  const remote = rows
+    .map((row) =>
+      sanitizeIncomingFunnel({
+        id: row.id,
+        name: row.name,
+        mode: row.mode,
+        status: row.status,
+        updatedAt: row.updated_at,
+        nodes: row.nodes ?? [],
+        edges: row.edges ?? [],
+        production: row.production,
+      })
+    )
+    .filter((item): item is SalesFunnel => Boolean(item))
   if (!remote.length) return kv
   if (!kv.length) return remote
   return mergeFunnels(kv, remote)

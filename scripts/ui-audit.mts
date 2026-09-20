@@ -206,6 +206,15 @@ try {
     { timeout: 5_000 }
   )
   await clickNamed(page, "Lead Auditoria")
+  await page.waitForSelector("#lead-memory", { timeout: 5_000 })
+  await page.click("#lead-memory", { clickCount: 3 })
+  await page.type("#lead-memory", "memoria isolada")
+  await clickNamed(page, "Fechar")
+  await page.waitForFunction(() => !document.querySelector("#lead-memory"), { timeout: 5_000 })
+  await clickNamed(page, "Lead Auditoria")
+  await page.waitForSelector("#lead-memory", { timeout: 5_000 })
+  const remembered = await page.$eval("#lead-memory", (el) => (el as HTMLTextAreaElement).value)
+  assert(remembered.includes("memoria isolada"), "memória do lead sobrevive ao Fechar")
   await page.waitForFunction(
     () => [...document.querySelectorAll("button")].some((el) => (el.textContent || "").includes("Excluir lead")),
     { timeout: 5_000 }

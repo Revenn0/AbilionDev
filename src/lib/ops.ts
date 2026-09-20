@@ -1,5 +1,4 @@
-import { nodeTitle } from "@/lib/runtime"
-import type { Lead, SalesSnapshot } from "@/lib/types"
+import type { Lead } from "@/lib/types"
 
 function startOfDay(ms: number) {
   const date = new Date(ms)
@@ -30,24 +29,17 @@ export function hasOffer(lead: Lead) {
   return lead.stage === "offer" || lead.events.some((item) => item.kind === "offer")
 }
 
-export function deriveOps(leads: Lead[], snapshot: SalesSnapshot | null = null) {
-  const today = startOfDay(Date.now())
+export function deriveOps(leads: Lead[]) {
   return {
     leads: leads.length,
     conversations: leads.filter(hasConversation).length,
-    startedToday: leads.filter((lead) => hasConversation(lead) && new Date(lead.createdAt).getTime() >= today).length,
-    newToday: leads.filter((lead) => new Date(lead.createdAt).getTime() >= today).length,
     telegram: leads.filter((lead) => lead.channel === "telegram").length,
     novo: leads.filter((lead) => lead.temperature === "novo").length,
     morno: leads.filter((lead) => lead.temperature === "morno").length,
     quente: leads.filter((lead) => lead.temperature === "quente").length,
-    ester: leads.filter(needsEster).length,
     waiting: leads.filter((lead) => isWaiting(lead)).length,
     offered: leads.filter(hasOffer).length,
     facebook: leads.filter((lead) => lead.origin === "facebook").length,
-    facebookToday: leads.filter((lead) => lead.origin === "facebook" && new Date(lead.createdAt).getTime() >= today).length,
-    inStep: leads.filter((lead) => Boolean(lead.nodeId)).length,
-    stepLabel: (lead: Lead) => nodeTitle(snapshot, lead.nodeId) ?? lead.stage,
   }
 }
 

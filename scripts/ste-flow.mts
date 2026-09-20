@@ -26,7 +26,7 @@ import { emptySalesFunnel } from "../src/lib/templates.ts"
 import { canDeleteFunnel, mergeFunnels, mergeLeads, reconcileFunnels } from "../src/lib/crm.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import type { Lead } from "../src/lib/types.ts"
-import { deleteLeadKv, findLeadInKv, listLeads, loadLead, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_FUNNELS, deleteLeadKv, findLeadInKv, listLeads, loadFunnelsKv, loadLead, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
@@ -411,6 +411,54 @@ const fatProduction = sanitizeIncomingFunnel({
   },
 })
 assert(fatProduction?.production?.nodes.length === 200, "production também respeita o teto de nós")
+const fatBody = sanitizeIncomingFunnel({
+  id: "funil-body",
+  name: "x".repeat(200),
+  nodes: [
+    {
+      id: "n1",
+      type: "message",
+      position: { x: 0, y: 0 },
+      data: { title: "t".repeat(200), body: "b".repeat(5000), url: `https://exemplo.com/${"u".repeat(600)}` },
+    },
+  ],
+  edges: [],
+})
+assert(fatBody?.name.length === 80, "nome do funil corta em 80")
+assert(fatBody?.nodes[0]?.data.title.length === 80, "título do bloco corta em 80")
+assert((fatBody?.nodes[0]?.data.body?.length ?? 0) === 4000, "corpo do bloco corta em 4000")
+assert((fatBody?.nodes[0]?.data.url?.length ?? 0) === 500, "url do bloco corta em 500")
+const hugeName = migrateSettings({ workspaceName: "W".repeat(200), steWelcome: "S".repeat(800) })
+assert(hugeName.workspaceName.length === 80, "settings corta o nome do workspace")
+assert(hugeName.steWelcome.length === 500, "settings corta a boas-vindas")
+assert(hugeName.telegramBotToken === "", "settings nunca guarda token")
+const fatKv = memoryKv()
+await fatKv.put(
+  CRM_FUNNELS,
+  JSON.stringify([
+    {
+      id: "fat-kv",
+      name: "Gordo",
+      mode: "sales",
+      status: "draft",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      nodes: [],
+      edges: [],
+      production: {
+        name: "Pub",
+        publishedAt: "2026-01-01T00:00:00.000Z",
+        nodes: Array.from({ length: 250 }, (_, i) => ({
+          id: `p${i}`,
+          type: "message",
+          position: { x: 0, y: 0 },
+          data: { title: "x" },
+        })),
+        edges: [],
+      },
+    },
+  ])
+)
+assert((await loadFunnelsKv(fatKv))[0]?.production?.nodes.length === 200, "leitura do KV corta production gordo")
 
 const publishedA = emptySalesFunnel("A")
 publishedA.status = "active"
@@ -967,6 +1015,17 @@ const crmGet = (await (
   await handleRequest(new Request("http://local.test/api/crm", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
 ).json()) as { funnels?: Array<{ id?: string; name?: string }> }
 assert(crmGet.funnels?.some((item) => item.id === persistFunnel.id), "CRM GET devolve o funil gravado")
+assert((await handleRequest(new Request("http://local.test/api/leads?id=", { method: "DELETE", headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())).status === 400, "DELETE sem id é 400")
+assert(
+  (
+    await handleRequest(
+      new Request(`http://local.test/api/leads?id=${"x".repeat(81)}`, { method: "DELETE", headers: { cookie: liveCookie } }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 400,
+  "DELETE com id longo é 400"
+)
 const hugeCrm = await handleRequest(
   new Request("http://local.test/api/crm", {
     method: "POST",

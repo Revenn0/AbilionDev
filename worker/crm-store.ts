@@ -1,5 +1,5 @@
 import { emptySettings, publicSettings } from "../src/lib/crm.ts"
-import { migrateFunnel, migrateLead, migrateSettings } from "../src/lib/migrate.ts"
+import { migrateLead, migrateSettings, sanitizeIncomingFunnel } from "../src/lib/migrate.ts"
 import type { Lead, SalesFunnel, Settings } from "../src/lib/types.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -92,11 +92,12 @@ export async function dueLeadsKv(kv: KvLike, nowIso: string): Promise<Lead[]> {
 export async function loadFunnelsKv(kv: KvLike): Promise<SalesFunnel[]> {
   const raw = await kv.get(CRM_FUNNELS, "json")
   if (!Array.isArray(raw)) return []
-  return raw.map((item) => migrateFunnel(item as SalesFunnel))
+  return raw.map(sanitizeIncomingFunnel).filter((item): item is SalesFunnel => Boolean(item))
 }
 
 export async function saveFunnelsKv(kv: KvLike, funnels: SalesFunnel[]) {
-  await kv.put(CRM_FUNNELS, JSON.stringify(funnels))
+  const clean = funnels.map(sanitizeIncomingFunnel).filter((item): item is SalesFunnel => Boolean(item)).slice(0, 20)
+  await kv.put(CRM_FUNNELS, JSON.stringify(clean))
 }
 
 export async function loadSettingsKv(kv: KvLike): Promise<Settings> {

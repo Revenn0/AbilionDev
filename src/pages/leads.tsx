@@ -333,8 +333,7 @@ function LeadDrawer({
 
   useEffect(() => {
     memoryRef.current = memory
-    leadRef.current = lead
-  })
+  }, [memory])
 
   const flushMemory = () => {
     const current = leadRef.current
@@ -353,11 +352,14 @@ function LeadDrawer({
   }
 
   useEffect(() => {
-    dirtyMemory.current = false
-    setMemory(lead?.memory ?? "")
+    return () => flushMemory()
   }, [lead?.id])
 
-  useEffect(() => () => flushMemory(), [])
+  useEffect(() => {
+    dirtyMemory.current = false
+    setMemory(lead?.memory ?? "")
+    leadRef.current = lead
+  }, [lead?.id])
 
   useEffect(() => {
     if (!lead) return

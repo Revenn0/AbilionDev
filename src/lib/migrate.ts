@@ -109,10 +109,45 @@ export function cleanTelegramGroupUrl(value?: string) {
   }
 }
 
+function clipText(value: unknown, max: number) {
+  return typeof value === "string" ? value.slice(0, max) : undefined
+}
+
 function sanitizeGraph(nodes: unknown, edges: unknown) {
   return {
     nodes: Array.isArray(nodes) ? nodes.slice(0, 200) : [],
     edges: Array.isArray(edges) ? edges.slice(0, 400) : [],
+  }
+}
+
+function clipFunnel(funnel: SalesFunnel): SalesFunnel {
+  const clipNodes = (nodes: SalesFunnel["nodes"]) =>
+    nodes.slice(0, 200).map((node) => ({
+      ...node,
+      id: node.id.slice(0, 80),
+      data: {
+        ...node.data,
+        title: (node.data.title || "Bloco").slice(0, 80),
+        tag: clipText(node.data.tag, 40),
+        url: clipText(node.data.url, 500),
+        body: clipText(node.data.body, 4000),
+        cta: clipText(node.data.cta, 80),
+        conditionValue: clipText(node.data.conditionValue, 80),
+      },
+    }))
+  return {
+    ...funnel,
+    name: funnel.name.slice(0, 80),
+    nodes: clipNodes(funnel.nodes),
+    edges: funnel.edges.slice(0, 400),
+    production: funnel.production
+      ? {
+          ...funnel.production,
+          name: funnel.production.name.slice(0, 80),
+          nodes: clipNodes(funnel.production.nodes),
+          edges: funnel.production.edges.slice(0, 400),
+        }
+      : funnel.production,
   }
 }
 
@@ -137,16 +172,18 @@ export function sanitizeIncomingFunnel(raw: unknown): SalesFunnel | null {
   if (row.nodes !== undefined && !Array.isArray(row.nodes)) return null
   if (row.edges !== undefined && !Array.isArray(row.edges)) return null
   const graph = sanitizeGraph(row.nodes, row.edges)
-  return migrateFunnel({
-    id,
-    name: String(row.name || "Funil").slice(0, 80) || "Funil",
-    mode: row.mode === "messages" ? "messages" : "sales",
-    status: row.status === "active" ? "active" : "draft",
-    updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : new Date().toISOString(),
-    nodes: graph.nodes as SalesFunnel["nodes"],
-    edges: graph.edges as SalesFunnel["edges"],
-    production: sanitizeProduction(row.production),
-  })
+  return clipFunnel(
+    migrateFunnel({
+      id,
+      name: String(row.name || "Funil").slice(0, 80) || "Funil",
+      mode: row.mode === "messages" ? "messages" : "sales",
+      status: row.status === "active" ? "active" : "draft",
+      updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : new Date().toISOString(),
+      nodes: graph.nodes as SalesFunnel["nodes"],
+      edges: graph.edges as SalesFunnel["edges"],
+      production: sanitizeProduction(row.production),
+    })
+  )
 }
 
 export function sanitizeIncomingLead(raw: unknown): Lead | null {
@@ -176,14 +213,21 @@ export function migrateSettings(raw: Partial<Settings> | undefined): Settings {
     : defaultSettings.steWelcomeLines
   return {
     ...merged,
+    workspaceName: String(merged.workspaceName || defaultSettings.workspaceName).slice(0, 80) || defaultSettings.workspaceName,
+    timezone: String(merged.timezone || defaultSettings.timezone).slice(0, 64) || defaultSettings.timezone,
+    telegramBotToken: "",
     telegramBotUsername: cleanBotUsername(merged.telegramBotUsername),
     telegramGroupUrl: cleanTelegramGroupUrl(merged.telegramGroupUrl),
+    steWelcome: String(merged.steWelcome || defaultSettings.steWelcome).slice(0, 500),
     steWelcomeLines: [
-      welcomeLines[0] || defaultSettings.steWelcomeLines[0],
-      welcomeLines[1] || defaultSettings.steWelcomeLines[1],
-      welcomeLines[2] || defaultSettings.steWelcomeLines[2],
+      String(welcomeLines[0] || defaultSettings.steWelcomeLines[0]).slice(0, 400),
+      String(welcomeLines[1] || defaultSettings.steWelcomeLines[1]).slice(0, 400),
+      String(welcomeLines[2] || defaultSettings.steWelcomeLines[2]).slice(0, 400),
     ],
-    steRemarketingLines: Array.isArray(merged.steRemarketingLines) ? merged.steRemarketingLines.filter(Boolean) : [],
+    steRemarketingLines: (Array.isArray(merged.steRemarketingLines) ? merged.steRemarketingLines.filter(Boolean) : [])
+      .map((line) => String(line).slice(0, 400))
+      .slice(0, 8),
+    esterTelegramChatId: String(merged.esterTelegramChatId || "").slice(0, 32),
     steDieAfterRemarketing: merged.steDieAfterRemarketing !== false,
   }
 }
