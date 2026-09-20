@@ -1,4 +1,4 @@
-import { applyRemovedFunnels, applyRemovedLeads, clipNewestIds, commitStoredSettings, enforceSinglePublished, FUNNEL_CAP, publicSettings } from "../src/lib/crm.ts"
+import { applyRemovedFunnels, applyRemovedLeads, clipNewestIds, FUNNEL_CAP, publicSettings } from "../src/lib/crm.ts"
 import { addLeadCategory, leadFromImport, parseLeadImportText } from "../src/lib/lead-category.ts"
 import { addPageScript, pageInstallManual, pageScriptById, PAGE_SCRIPT_REMOVED_CAP, removePageScript } from "../src/lib/page-script.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
@@ -14,7 +14,7 @@ import {
   type PublicUser,
 } from "./auth.ts"
 import { handleTokens, handleUsers } from "./users.ts"
-import { listLeadPage, loadFunnelsKv, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, lookupLeadsByQuery, saveFunnelsKv, saveSettingsKv, upsertLeadKv } from "./crm-store.ts"
+import { importOrAdoptLead, listLeadPage, loadFunnelsKv, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge } from "./crm-store.ts"
 import { readJsonStrict } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -266,9 +266,7 @@ async function funnelsOf(env: McpEnv): Promise<SalesFunnel[]> {
 
 async function saveFunnels(env: McpEnv, funnels: SalesFunnel[]) {
   if (!env.AUTH) throw new Error("Auth ainda sem KV.")
-  if (!funnels.length) throw new Error("Mantém pelo menos um funil.")
-  if (funnels.length > FUNNEL_CAP) throw new Error(`O estúdio aceita no máximo ${FUNNEL_CAP} funis.`)
-  await saveFunnelsKv(env.AUTH, enforceSinglePublished(funnels))
+  await persistFunnelsMerge(env.AUTH, funnels)
 }
 
 async function publishFunnel(env: McpEnv, id: string) {
@@ -365,7 +363,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
   }
   if (name === "abilion_create_funnel") {
     const funnels = await funnelsOf(env)
-    if (funnels.length >= 20) throw new Error("O estúdio aceita no máximo 20 funis.")
+    if (funnels.length >= FUNNEL_CAP) throw new Error(`O estúdio aceita no máximo ${FUNNEL_CAP} funis.`)
     const funnel = emptySalesFunnel(clipName(str(args.name), "Novo funil"))
     await saveFunnels(env, [...funnels, funnel])
     return { ok: true, funnel: compactFunnel(funnel), id: funnel.id }
@@ -374,7 +372,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     const imported = importFunnel(args.payload, clipName(str(args.name), "Funil importado"))
     if (!imported.ok) throw new Error(imported.error)
     const funnels = await funnelsOf(env)
-    if (funnels.length >= 20) throw new Error("O estúdio aceita no máximo 20 funis.")
+    if (funnels.length >= FUNNEL_CAP) throw new Error(`O estúdio aceita no máximo ${FUNNEL_CAP} funis.`)
     let funnel = imported.funnel
     if (args.publish === true) {
       const issue = firstInvalidPublishUrl(funnel.nodes) ?? validatePublish(funnel.nodes, funnel.edges)[0]
@@ -456,7 +454,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
       settings.removedPageScripts
     )
     if (!made.ok) throw new Error(made.error)
-    await saveSettingsKv(env.AUTH, commitStoredSettings(settings, { ...settings, pageScripts: made.scripts }, settings))
+    await persistSettingsMerge(env.AUTH, { ...settings, pageScripts: made.scripts })
     return { ...pageInstallManual({ botUsername: settings.telegramBotUsername, script: made.script, funnelName: funnel.name }), script: made.script }
   }
   if (name === "abilion_delete_page_script") {
@@ -466,18 +464,11 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     const settings = await loadSettingsKv(env.AUTH)
     const next = removePageScript(settings.pageScripts, id)
     if (next.length === settings.pageScripts.length) throw new Error("Este script já não está no estúdio.")
-    await saveSettingsKv(
-      env.AUTH,
-      commitStoredSettings(
-        settings,
-        {
-          ...settings,
-          pageScripts: next,
-          removedPageScripts: clipNewestIds([...(settings.removedPageScripts ?? []), id], PAGE_SCRIPT_REMOVED_CAP),
-        },
-        settings
-      )
-    )
+    await persistSettingsMerge(env.AUTH, {
+      ...settings,
+      pageScripts: next,
+      removedPageScripts: clipNewestIds([...(settings.removedPageScripts ?? []), id], PAGE_SCRIPT_REMOVED_CAP),
+    })
     return { ok: true }
   }
   if (name === "abilion_import_leads") {
@@ -489,13 +480,14 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     const named = addLeadCategory(settings.leadCategories, str(args.category) || (toGroup ? "Grupo" : ""))
     const category = named.ok ? named.category : ""
     if (named.ok && named.categories !== settings.leadCategories) {
-      await saveSettingsKv(env.AUTH, commitStoredSettings(settings, { ...settings, leadCategories: named.categories }, settings))
+      await persistSettingsMerge(env.AUTH, { ...settings, leadCategories: named.categories })
     }
     const imported = []
     for (const row of parsed.rows.slice(0, 50)) {
       const lead = leadFromImport(row, { category, toGroup, groupUrl: settings.telegramGroupUrl })
-      await upsertLeadKv(env.AUTH, lead)
-      imported.push({ id: lead.id, name: lead.name, contact: lead.contact, category: lead.category, stage: lead.stage })
+      const saved = await importOrAdoptLead(env.AUTH, lead)
+      if (!saved) continue
+      imported.push({ id: saved.id, name: saved.name, contact: saved.contact, category: saved.category, stage: saved.stage })
     }
     return { ok: true, imported: imported.length, leads: imported }
   }

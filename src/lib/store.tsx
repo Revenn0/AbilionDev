@@ -28,6 +28,7 @@ import {
   recoverPendingFunnelIds,
   settingsWriteFingerprint,
 } from "@/lib/crm"
+import { sameLeadContact } from "@/lib/capture"
 import { migrateFunnel, migrateLead, migrateSettings } from "@/lib/migrate"
 import { fetchCrm, fetchInbox, fetchLeads, fetchRuntime, persistLeads, removeRemoteLead, saveCrm } from "@/lib/runtime-api"
 import { seededOperation } from "@/lib/templates"
@@ -642,23 +643,41 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return flushCrm({ silent: true }).then((result) => result.ok)
       },
       createLead: (lead) => {
-        removedLeadIds.current.delete(lead.id)
-        persistIdSet(REMOVED_LEADS, removedLeadIds.current, LEAD_REMOVED_CAP)
-        pendingLeadWrites.current.set(lead.id, lead)
-        persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
         const prev = stateRef.current
-        commitState({ ...prev, leads: [lead, ...prev.leads] })
+        const existing = prev.leads.find((item) => sameLeadContact(item.contact, lead.contact))
+        const next = existing ? adoptOperatorLead(existing, { ...lead, id: existing.id }) : lead
+        removedLeadIds.current.delete(next.id)
+        persistIdSet(REMOVED_LEADS, removedLeadIds.current, LEAD_REMOVED_CAP)
+        pendingLeadWrites.current.set(next.id, next)
+        persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
+        commitState({
+          ...prev,
+          leads: existing ? prev.leads.map((item) => (item.id === next.id ? next : item)) : [next, ...prev.leads],
+        })
         return flushLeadWrites()
       },
       createLeads: (leads) => {
+        const prev = stateRef.current
+        const adopted: Lead[] = []
+        const used = new Set<string>()
         for (const lead of leads) {
-          removedLeadIds.current.delete(lead.id)
-          pendingLeadWrites.current.set(lead.id, lead)
+          const existing = prev.leads.find((item) => !used.has(item.id) && sameLeadContact(item.contact, lead.contact))
+          const next = existing ? adoptOperatorLead(existing, { ...lead, id: existing.id }) : lead
+          used.add(next.id)
+          adopted.push(next)
+          removedLeadIds.current.delete(next.id)
+          pendingLeadWrites.current.set(next.id, next)
         }
         persistIdSet(REMOVED_LEADS, removedLeadIds.current, LEAD_REMOVED_CAP)
         persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
-        const prev = stateRef.current
-        commitState({ ...prev, leads: [...leads, ...prev.leads] })
+        const created = adopted.filter((lead) => !prev.leads.some((item) => item.id === lead.id))
+        commitState({
+          ...prev,
+          leads: [
+            ...created,
+            ...prev.leads.map((item) => adopted.find((lead) => lead.id === item.id) ?? item),
+          ],
+        })
         return flushLeadWrites()
       },
       saveLead: (lead) => {

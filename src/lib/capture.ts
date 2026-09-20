@@ -13,6 +13,13 @@ export function contactLookups(contact: string) {
   return [...new Set([raw, raw.replace(/^@/, ""), normalizeTelegramContact(raw), digits.length >= 8 ? digits : ""].filter(Boolean))]
 }
 
+export function sameLeadContact(left: string, right: string) {
+  const a = contactLookups(left)
+  if (!a.length) return false
+  const b = new Set(contactLookups(right))
+  return a.some((item) => b.has(item))
+}
+
 export function validateCapture(name: string, contact: string) {
   const errors: { name?: string; contact?: string } = {}
   if (!name.trim()) errors.name = "Informa o nome do lead."

@@ -76,7 +76,7 @@ import { applyEvent, canAdvanceRemoteWait, eventFromOrigin, pickLiveDueLead, pub
 import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
-import { CRM_CRON_LOCK, CRM_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, deleteLeadKv, dueLeadsKv, findLeadInKv, isLeadPageCursor, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadRemovedFunnelIds, loadRemovedLeadIds, mergeIndexEntries, rememberRemovedLead, releaseCronLock, renewCronLock, reserveLeadIdentity, saveFunnelsKv, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_CRON_LOCK, CRM_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, deleteLeadKv, dueLeadsKv, findLeadInKv, importOrAdoptLead, isLeadPageCursor, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
@@ -85,7 +85,7 @@ import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
 import { LEAD_WRITE_BATCH, leadWriteChunks, leadWriteIds } from "../src/lib/runtime-api.ts"
 import { safeAppPath, withSafeNext } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
-import { contactLookups, normalizeTelegramContact, validateCapture } from "../src/lib/capture.ts"
+import { contactLookups, normalizeTelegramContact, sameLeadContact, validateCapture } from "../src/lib/capture.ts"
 import { displayContact, draftLeadField, formatPhoneContact, isPhoneLikeName, isResolvedPersonName, leadMatchesQuery, nameFromMessages, preferLeadName, resolveLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, migrateLeadOrigin, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink, campaignFromStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
@@ -467,6 +467,34 @@ const aliasKv = memoryKv()
 await upsertLeadKv(aliasKv, lead("named", "@ana"))
 assert((await findLeadInKv(aliasKv, "ana", 0, ""))?.id === "named", "findLead sem @ reusa o @user")
 assert((await reserveLeadIdentity(aliasKv, "ana", "", "other")) === "named", "reserva sem @ reusa o @user")
+assert(sameLeadContact("@ana", "ana"), "mesmo contacto com e sem @")
+const importThenStart = memoryKv()
+const importedRita = leadFromImport({ name: "Rita", contact: "@rita" })
+await upsertLeadKv(importThenStart, importedRita)
+assert(
+  (await reserveLeadIdentity(importThenStart, "@rita", "937750764", "chat-novo")) === importedRita.id,
+  "/start reusa o import pelo @user"
+)
+const stealKv = memoryKv()
+await upsertLeadKv(stealKv, { ...lead("live-foo", "@foo"), telegramChatId: "1" })
+const stubFoo = leadFromImport({ name: "Foo", contact: "@foo" })
+await upsertLeadKv(stealKv, stubFoo)
+assert((await findLeadInKv(stealKv, "@foo", 0, "1"))?.id === "live-foo", "import não rouba o alias do chat vivo")
+const adoptedFoo = await importOrAdoptLead(stealKv, leadFromImport({ name: "Foo", contact: "@foo", }, { category: "Grupo" }))
+assert(adoptedFoo?.id === "live-foo" && adoptedFoo.category === "Grupo", "segundo import anota o lead vivo")
+assert((await listLeads(stealKv, 400, "all")).filter((item) => item.contact === "@foo" || item.id === "live-foo").length >= 1, "não duplica o @foo")
+const staleAlias = memoryKv()
+await rememberRemovedLead(staleAlias, "dead")
+await staleAlias.put(aliasKey("contact", "@gone"), JSON.stringify({ id: "dead" }))
+assert((await claimLeadAlias(staleAlias, "contact", "@gone", "fresh")) === "fresh", "alias de lead apagado cede o contacto")
+const twice = memoryKv()
+const firstImport = await importOrAdoptLead(twice, leadFromImport({ name: "Rita", contact: "@rita" }))
+const secondImport = await importOrAdoptLead(twice, leadFromImport({ name: "Rita Silva", contact: "@rita" }, { category: "VIP" }))
+assert(firstImport && secondImport && firstImport.id === secondImport.id, "importar o mesmo @user duas vezes é um lead")
+assert(secondImport?.category === "VIP", "reimport actualiza a categoria")
+assert((await listLeads(twice, 400, "all")).length === 1, "reimport não cria segunda ficha")
+const rematched = await resolveLeadWrite(twice, leadFromImport({ name: "Outra", contact: "@rita" }))
+assert(rematched.incoming.id === firstImport.id && rematched.prev?.id === firstImport.id, "POST rematch pelo contacto")
 assert((await listLeads(kv, 400, "all")).some((item) => item.id === "crm-1"), "lista completa inclui o lead")
 const newer = { ...first, lastMessage: "oi", updatedAt: new Date(Date.now() + 1000).toISOString() }
 assert(mergeLeads([first], [newer])[0]?.lastMessage === "oi", "merge fica com o mais novo")
@@ -951,6 +979,29 @@ const settingsDeleted = commitStoredSettings(
   settingsWithScript
 )
 assert(settingsDeleted.pageScripts.length === 0, "tombstone remove o último script")
+assert(
+  !settingsPersistSettled(
+    migrateSettings({ telegramBotUsername: "@a", leadCategories: ["VIP"] }),
+    migrateSettings({ telegramBotUsername: "@a", leadCategories: ["Outro"] })
+  ),
+  "categorias diferentes não fecham o persist"
+)
+const setKv = memoryKv()
+await saveSettingsKv(setKv, migrateSettings({ telegramBotUsername: "@ste_bot", leadCategories: ["VIP"] }))
+await persistSettingsMerge(setKv, migrateSettings({ pageScripts: scriptKept.scripts, leadCategories: ["VIP"] }))
+const afterSet = await loadSettingsKv(setKv)
+assert(afterSet.leadCategories.includes("VIP"), "merge de settings conserva categorias")
+assert(afterSet.pageScripts[0]?.id === scriptKept.script.id, "merge de settings conserva scripts")
+assert(afterSet.telegramBotUsername.includes("ste_bot"), "merge de settings não apaga o username")
+const funnelKeep = emptySalesFunnel("Keep")
+const funnelExtra = emptySalesFunnel("Extra")
+const funnelKv = memoryKv()
+await saveFunnelsKv(funnelKv, [funnelKeep])
+const mergedFunnels = await persistFunnelsMerge(funnelKv, [funnelKeep, funnelExtra])
+assert(
+  mergedFunnels.some((item) => item.id === funnelKeep.id) && mergedFunnels.some((item) => item.id === funnelExtra.id),
+  "persist de funis une o quadro novo sem largar o outro"
+)
 assert(parseLeadImportLine("Ana Silva, 11987654321")?.contact === "11987654321", "import lê nome e telefone")
 assert(parseLeadImportLine("@carlos")?.contact === "@carlos", "import lê @user")
 assert(parseLeadImportText("Ana, 11987654321\nAna, 11987654321").rows.length === 1, "import não duplica o mesmo contacto")
@@ -3952,10 +4003,33 @@ const mcpImportLeadsBody = (await mcpImportLeads.json()) as { result?: { content
 const mcpImportedLeads = JSON.parse(mcpImportLeadsBody.result?.content?.[0]?.text || "{}") as {
   ok?: boolean
   imported?: number
-  leads?: Array<{ stage?: string; category?: string }>
+  leads?: Array<{ id?: string; stage?: string; category?: string }>
 }
 assert(mcpImportLeads.status === 200 && mcpImportedLeads.ok && mcpImportedLeads.imported === 1, "MCP importa lista")
 assert(mcpImportedLeads.leads?.[0]?.stage === "group" && mcpImportedLeads.leads?.[0]?.category === "Grupo", "MCP importa para o grupo")
+const mcpImportAgain = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 25,
+      method: "tools/call",
+      params: { name: "abilion_import_leads", arguments: { text: "Rita, 11911112222", category: "VIP" } },
+    }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const mcpImportAgainBody = (await mcpImportAgain.json()) as { result?: { content?: Array<{ text?: string }> } }
+const mcpImportedAgain = JSON.parse(mcpImportAgainBody.result?.content?.[0]?.text || "{}") as {
+  ok?: boolean
+  imported?: number
+  leads?: Array<{ id?: string; category?: string }>
+}
+assert(mcpImportAgain.status === 200 && mcpImportedAgain.imported === 1, "MCP reimporta o mesmo contacto")
+assert(mcpImportedAgain.leads?.[0]?.id === mcpImportedLeads.leads?.[0]?.id, "MCP reimport não cria segunda ficha")
+assert(mcpImportedAgain.leads?.[0]?.category === "VIP", "MCP reimport actualiza a categoria")
 
 const mcpLeads = await handleRequest(
   new Request("http://local.test/mcp", {

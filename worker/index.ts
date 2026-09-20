@@ -25,7 +25,6 @@ import {
   mergeLeadEvents,
   publicSettings,
   commitCrmFunnels,
-  commitStoredSettings,
   FUNNEL_CAP,
   resolveLeadLookup,
 } from "../src/lib/crm.ts"
@@ -50,9 +49,10 @@ import {
   loadSettingsKv,
   rememberRemovedFunnels,
   releaseCronLock,
+  persistSettingsMerge,
   reserveLeadIdentity,
+  resolveLeadWrite,
   saveFunnelsKv,
-  saveSettingsKv,
   upsertLeadKv,
 } from "./crm-store.ts"
 import {
@@ -494,9 +494,10 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     const ids: string[] = []
     for (const row of rows) {
       const lead = sanitizeIncomingLead(row)
-      if (!lead || removed.includes(lead.id)) continue
-      const prev = await loadLead(env.AUTH, lead.id)
-      if (await saveLead(env, adoptOperatorLead(prev, lead))) ids.push(lead.id)
+      if (!lead) continue
+      const { incoming, prev } = await resolveLeadWrite(env.AUTH, lead)
+      if (removed.includes(incoming.id) || removed.includes(lead.id)) continue
+      if (await saveLead(env, adoptOperatorLead(prev, incoming))) ids.push(lead.id)
     }
     return json({ ok: true, saved: ids.length, ids })
   }
@@ -787,20 +788,7 @@ async function persistSettings(env: Env, settings: Settings) {
   const incoming = migrateSettings(settings)
   let clean = incoming
   if (env.AUTH) {
-    for (let attempt = 0; attempt < 8; attempt++) {
-      const latest = await loadSettings(env)
-      clean = commitStoredSettings(latest, incoming, latest)
-      await saveSettingsKv(env.AUTH, clean)
-      const after = await loadSettings(env)
-      const again = commitStoredSettings(after, incoming, after)
-      if (
-        after.telegramBotUsername === again.telegramBotUsername &&
-        after.telegramGroupUrl === again.telegramGroupUrl &&
-        JSON.stringify(after.pageScripts ?? []) === JSON.stringify(again.pageScripts ?? [])
-      ) {
-        break
-      }
-    }
+    clean = await persistSettingsMerge(env.AUTH, incoming)
   }
   if (!env.SUPABASE_SERVICE_ROLE) return
   await rest(env, "settings", {

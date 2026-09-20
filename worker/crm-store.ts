@@ -1,5 +1,18 @@
 import { contactLookups } from "../src/lib/capture.ts"
-import { clipRemovedIds, emptySettings, FUNNEL_REMOVED_CAP, LEAD_REMOVED_CAP, publicSettings } from "../src/lib/crm.ts"
+import {
+  adoptOperatorLead,
+  applyRemovedFunnels,
+  clipRemovedIds,
+  commitCrmFunnels,
+  commitStoredLead,
+  commitStoredSettings,
+  emptySettings,
+  enforceSinglePublished,
+  FUNNEL_CAP,
+  FUNNEL_REMOVED_CAP,
+  LEAD_REMOVED_CAP,
+  publicSettings,
+} from "../src/lib/crm.ts"
 import { leadMatchesQuery } from "../src/lib/lead-name.ts"
 import { migrateLead, migrateSettings, sanitizeIncomingFunnel } from "../src/lib/migrate.ts"
 import type { Lead, SalesFunnel, Settings } from "../src/lib/types.ts"
@@ -139,11 +152,9 @@ export async function listLeadPage(
 
 async function writeAliases(kv: KvLike, lead: Pick<Lead, "id" | "contact" | "telegramChatId">) {
   for (const value of contactLookups(lead.contact)) {
-    const contact = aliasKey("contact", value)
-    if (contact) await kv.put(contact, JSON.stringify({ id: lead.id }))
+    await claimLeadAlias(kv, "contact", value, lead.id)
   }
-  const chat = aliasKey("chat", lead.telegramChatId ?? "")
-  if (chat) await kv.put(chat, JSON.stringify({ id: lead.id }))
+  if (lead.telegramChatId) await claimLeadAlias(kv, "chat", lead.telegramChatId, lead.id)
 }
 
 async function clearAliases(kv: KvLike, lead: Pick<Lead, "contact" | "telegramChatId"> | null, entry?: CrmIndexEntry) {
@@ -164,6 +175,12 @@ async function loadAlias(kv: KvLike, kind: "contact" | "chat", value: string): P
   return typeof id === "string" && id ? id : null
 }
 
+async function aliasOwnerState(kv: KvLike, id: string): Promise<"live" | "reserved" | "dead"> {
+  if (await loadLead(kv, id)) return "live"
+  if ((await loadRemovedLeadIds(kv)).includes(id)) return "dead"
+  return "reserved"
+}
+
 export async function claimLeadAlias(
   kv: KvLike,
   kind: "contact" | "chat",
@@ -173,7 +190,7 @@ export async function claimLeadAlias(
   const key = aliasKey(kind, value)
   if (!key || !id) return id
   const current = await loadAlias(kv, kind, value)
-  if (current) return current
+  if (current && current !== id && (await aliasOwnerState(kv, current)) !== "dead") return current
   await kv.put(key, JSON.stringify({ id }))
   return (await loadAlias(kv, kind, value)) || id
 }
@@ -184,29 +201,113 @@ async function bindContactAliases(kv: KvLike, contact: string, id: string) {
   }
 }
 
+async function liveAliasId(kv: KvLike, kind: "contact" | "chat", value: string) {
+  const current = await loadAlias(kv, kind, value)
+  if (!current) return null
+  return (await aliasOwnerState(kv, current)) === "dead" ? null : current
+}
+
 export async function reserveLeadIdentity(
   kv: KvLike,
   contact: string,
   chatId: string,
   proposedId: string
 ): Promise<string> {
+  if (contact) {
+    for (const value of contactLookups(contact)) {
+      const current = await liveAliasId(kv, "contact", value)
+      if (!current) continue
+      if (chatId) await claimLeadAlias(kv, "chat", chatId, current)
+      await bindContactAliases(kv, contact, current)
+      return current
+    }
+  }
   if (chatId) {
     const id = await claimLeadAlias(kv, "chat", chatId, proposedId)
     if (contact) await bindContactAliases(kv, contact, id)
     return id
   }
   if (contact) {
+    await bindContactAliases(kv, contact, proposedId)
     for (const value of contactLookups(contact)) {
       const current = await loadAlias(kv, "contact", value)
-      if (current) {
-        await bindContactAliases(kv, contact, current)
-        return current
-      }
+      if (current) return current
     }
-    await bindContactAliases(kv, contact, proposedId)
     return proposedId
   }
   return proposedId
+}
+
+export async function resolveLeadWrite(kv: KvLike, lead: Lead): Promise<{ incoming: Lead; prev: Lead | null }> {
+  const existing = await loadLead(kv, lead.id)
+  if (existing) return { incoming: lead, prev: existing }
+  const reserved = await reserveLeadIdentity(kv, lead.contact, lead.telegramChatId ?? "", lead.id)
+  const prev = reserved === lead.id ? null : await loadLead(kv, reserved)
+  return {
+    incoming: { ...lead, id: reserved, createdAt: prev?.createdAt ?? lead.createdAt },
+    prev,
+  }
+}
+
+export async function importOrAdoptLead(kv: KvLike, lead: Lead): Promise<Lead | null> {
+  const { incoming, prev } = await resolveLeadWrite(kv, lead)
+  const removed = await loadRemovedLeadIds(kv)
+  if (removed.includes(incoming.id)) return null
+  const next = adoptOperatorLead(prev, incoming)
+  let bounded = commitStoredLead(prev, next)
+  const latest = await loadLead(kv, bounded.id)
+  bounded = commitStoredLead(prev, bounded, latest)
+  await upsertLeadKv(kv, bounded)
+  return bounded
+}
+
+export function settingsPersistSettled(after: Settings, again: Settings) {
+  return (
+    after.telegramBotUsername === again.telegramBotUsername &&
+    after.telegramGroupUrl === again.telegramGroupUrl &&
+    JSON.stringify(after.pageScripts ?? []) === JSON.stringify(again.pageScripts ?? []) &&
+    JSON.stringify(after.removedPageScripts ?? []) === JSON.stringify(again.removedPageScripts ?? []) &&
+    JSON.stringify(after.leadCategories ?? []) === JSON.stringify(again.leadCategories ?? [])
+  )
+}
+
+export async function persistSettingsMerge(kv: KvLike, incoming: Settings): Promise<Settings> {
+  let clean = incoming
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const latest = await loadSettingsKv(kv)
+    clean = commitStoredSettings(latest, incoming, latest)
+    await saveSettingsKv(kv, clean)
+    const after = await loadSettingsKv(kv)
+    const again = commitStoredSettings(after, incoming, after)
+    if (settingsPersistSettled(after, again)) break
+  }
+  return clean
+}
+
+function funnelPersistKey(funnels: SalesFunnel[]) {
+  return funnels
+    .map((item) => `${item.id}:${item.updatedAt}:${item.status}:${item.production ? "1" : "0"}`)
+    .sort()
+    .join("|")
+}
+
+export async function persistFunnelsMerge(kv: KvLike, incoming: SalesFunnel[], incomingRemoved: string[] = []): Promise<SalesFunnel[]> {
+  if (!incoming.length) throw new Error("Mantém pelo menos um funil.")
+  let clean = incoming
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const latestRemoved = await loadRemovedFunnelIds(kv)
+    const latest = applyRemovedFunnels(await loadFunnelsKv(kv), latestRemoved)
+    clean = enforceSinglePublished(commitCrmFunnels(latest, incoming, latestRemoved, incomingRemoved, latest, latestRemoved))
+    if (!clean.length) throw new Error("Mantém pelo menos um funil.")
+    if (clean.length > FUNNEL_CAP) throw new Error(`O estúdio aceita no máximo ${FUNNEL_CAP} funis.`)
+    await saveFunnelsKv(kv, clean)
+    if (incomingRemoved.length) await rememberRemovedFunnels(kv, incomingRemoved)
+    const afterRemoved = await loadRemovedFunnelIds(kv)
+    const after = applyRemovedFunnels(await loadFunnelsKv(kv), afterRemoved)
+    const again = enforceSinglePublished(commitCrmFunnels(after, incoming, afterRemoved, incomingRemoved, after, afterRemoved))
+    if (funnelPersistKey(after) === funnelPersistKey(again)) break
+  }
+  return clean
 }
 
 export async function loadLead(kv: KvLike, id: string): Promise<Lead | null> {
