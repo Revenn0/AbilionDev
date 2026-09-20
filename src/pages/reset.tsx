@@ -38,9 +38,18 @@ export function ResetPage() {
       <Card className="rounded-[12px] shadow-sm">
         <CardHeader className="pb-0">
           <AuthBrand title="Nova senha" />
-          <p className={`mt-2 text-center ${AUTH_HINT}`}>Define a senha desta conta.</p>
+          <p className={`mt-2 text-center ${AUTH_HINT}`}>
+            {token ? "Define a senha desta conta." : "Este link está incompleto. Pede um novo em Esqueceu a senha."}
+          </p>
         </CardHeader>
         <CardContent>
+          {!token ? (
+            <p className="text-center text-[13px]">
+              <Link to="/forgot" className={AUTH_LINK}>
+                Gerar outro link
+              </Link>
+            </p>
+          ) : (
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="password" className={AUTH_LABEL}>
@@ -53,9 +62,15 @@ export function ResetPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="new-password"
                 className={AUTH_FIELD}
+                aria-invalid={Boolean(error)}
+                aria-describedby={error ? "reset-error" : undefined}
               />
             </div>
-            {error && <p className="text-xs text-destructive">{error}</p>}
+            {error && (
+              <p id="reset-error" role="alert" className="text-xs text-destructive">
+                {error}
+              </p>
+            )}
             <Button type="submit" disabled={loading || !token} className={AUTH_SUBMIT}>
               {loading ? "A gravar…" : "Guardar senha"}
             </Button>
@@ -65,6 +80,7 @@ export function ResetPage() {
               </Link>
             </p>
           </form>
+          )}
         </CardContent>
       </Card>
     </AuthSplit>

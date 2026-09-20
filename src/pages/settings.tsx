@@ -7,6 +7,7 @@ import {
   FileSpreadsheet,
   FormInput,
   Moon,
+  KeyRound,
   Plug,
   Send,
   Settings as SettingsIcon,
@@ -20,6 +21,7 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { cleanBotUsername } from "@/lib/migrate"
 import { useStore } from "@/lib/store"
+import { changePasswordRequest } from "@/lib/auth-api"
 import { fetchHealth, workerUrl } from "@/lib/channel"
 import { fetchRuntime, prepareVoice, saveRuntime, type RuntimeStatus } from "@/lib/runtime-api"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_LLM_MODELS, normalizeSteModel } from "@/lib/llm"
@@ -31,6 +33,7 @@ import { toast } from "sonner"
 
 const TABS = [
   { id: "bot", label: "Bot Telegram" },
+  { id: "conta", label: "Conta" },
   { id: "plugins", label: "Plugins" },
   { id: "notificacoes", label: "Notificações" },
   { id: "aparencia", label: "Aparência" },
@@ -91,6 +94,7 @@ export function SettingsPage() {
         </div>
 
         {tab === "bot" && <BotPane />}
+        {tab === "conta" && <AccountPane />}
         {tab === "plugins" && <PluginsPane />}
         {tab === "notificacoes" && <NotifyPane />}
         {tab === "aparencia" && <ThemePane />}
@@ -416,6 +420,76 @@ function BotPane() {
         </Button>
       </section>
     </div>
+  )
+}
+
+function AccountPane() {
+  const { state } = useStore()
+  const [current, setCurrent] = useState("")
+  const [next, setNext] = useState("")
+  const [busy, setBusy] = useState(false)
+
+  return (
+    <section className="surface max-w-3xl p-6">
+      <p className="text-[14px] font-medium">Conta do operador</p>
+      <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+        Em produção o “Esqueceu a senha?” não envia e-mail. Troca a senha aqui com a senha actual.
+      </p>
+      <dl className="mt-4 space-y-2 text-[12.5px]">
+        <div className="flex flex-wrap justify-between gap-2">
+          <dt className="text-muted-foreground">Operador</dt>
+          <dd className="font-medium">{state.user?.name}</dd>
+        </div>
+        <div className="flex flex-wrap justify-between gap-2">
+          <dt className="text-muted-foreground">E-mail</dt>
+          <dd className="font-medium">{state.user?.email}</dd>
+        </div>
+      </dl>
+      <form
+        className="mt-5 space-y-4"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (next.length < 6) {
+            toast.error("A nova senha precisa de 6+ caracteres.")
+            return
+          }
+          setBusy(true)
+          void changePasswordRequest(current, next)
+            .then(() => {
+              setCurrent("")
+              setNext("")
+              toast.success("Senha actualizada.")
+            })
+            .catch((error: Error) => toast.error(error.message))
+            .finally(() => setBusy(false))
+        }}
+      >
+        <div className="space-y-1.5">
+          <Label htmlFor="current-password">Senha actual</Label>
+          <Input
+            id="current-password"
+            type="password"
+            autoComplete="current-password"
+            value={current}
+            onChange={(event) => setCurrent(event.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="new-password">Nova senha</Label>
+          <Input
+            id="new-password"
+            type="password"
+            autoComplete="new-password"
+            value={next}
+            onChange={(event) => setNext(event.target.value)}
+          />
+        </div>
+        <Button type="submit" className="rounded-full" disabled={busy || !current || next.length < 6}>
+          <KeyRound className="size-3.5" />
+          {busy ? "A gravar…" : "Guardar senha"}
+        </Button>
+      </form>
+    </section>
   )
 }
 

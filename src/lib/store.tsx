@@ -3,7 +3,7 @@ import { loginRequest, logoutRequest, meRequest } from "@/lib/auth-api"
 import { mergeLeads } from "@/lib/crm"
 import { migrateFunnel, migrateLead, migrateSettings } from "@/lib/migrate"
 import { pullRemote, pushRemote, supabaseEnabled } from "@/lib/persist"
-import { fetchInbox, fetchRuntime, saveCrm } from "@/lib/runtime-api"
+import { fetchCrm, fetchInbox, fetchRuntime, persistLeads, removeRemoteLead, saveCrm } from "@/lib/runtime-api"
 import { seededOperation } from "@/lib/templates"
 import { defaultSettings, type AppState, type Lead, type PluginId, type SalesFunnel, type Settings, type User } from "@/lib/types"
 
@@ -120,16 +120,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!state.user) return
     let cancelled = false
-    void fetchRuntime().then((runtime) => {
-      if (cancelled || !runtime.ok) return
+    skipPush.current = true
+    void Promise.all([fetchCrm(), fetchRuntime()]).then(([crm, runtime]) => {
+      if (cancelled) return
       setState((prev) => ({
         ...prev,
+        funnels: crm.ok && crm.funnels.length ? crm.funnels.map(migrateFunnel) : prev.funnels,
         settings: {
           ...prev.settings,
+          ...(crm.ok && crm.settings ? migrateSettings({ ...crm.settings, telegramBotToken: "" }) : {}),
           telegramBotToken: "",
           telegramBotUsername: runtime.telegramBotUsername || prev.settings.telegramBotUsername,
           telegramGroupUrl: runtime.telegramGroupUrl || prev.settings.telegramGroupUrl,
-          plugins: { ...prev.settings.plugins, telegram: Boolean(runtime.telegram) },
+          plugins: {
+            ...prev.settings.plugins,
+            ...(crm.ok && crm.settings?.plugins ? crm.settings.plugins : {}),
+            telegram: runtime.ok ? Boolean(runtime.telegram) : prev.settings.plugins.telegram,
+          },
         },
       }))
     })
@@ -240,14 +247,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setState((prev) => ({ ...prev, funnels: prev.funnels.filter((item) => item.id !== id) }))
         pushWorker()
       },
-      createLead: (lead) => setState((prev) => ({ ...prev, leads: [lead, ...prev.leads] })),
-      createLeads: (leads) => setState((prev) => ({ ...prev, leads: [...leads, ...prev.leads] })),
-      saveLead: (lead) =>
+      createLead: (lead) => {
+        setState((prev) => ({ ...prev, leads: [lead, ...prev.leads] }))
+        void persistLeads([lead])
+      },
+      createLeads: (leads) => {
+        setState((prev) => ({ ...prev, leads: [...leads, ...prev.leads] }))
+        void persistLeads(leads)
+      },
+      saveLead: (lead) => {
         setState((prev) => ({
           ...prev,
           leads: prev.leads.map((item) => (item.id === lead.id ? lead : item)),
-        })),
-      deleteLead: (id) => setState((prev) => ({ ...prev, leads: prev.leads.filter((item) => item.id !== id) })),
+        }))
+        void persistLeads([lead])
+      },
+      deleteLead: (id) => {
+        setState((prev) => ({ ...prev, leads: prev.leads.filter((item) => item.id !== id) }))
+        void removeRemoteLead(id)
+      },
       saveSettings: (patch) => {
         setState((prev) => ({
           ...prev,

@@ -20,7 +20,7 @@ Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / M
 
 Vite + React + TypeScript + Tailwind + shadcn/ui + React Flow. Globo de visitantes no Analytics. Helix Chrono Matrix só no login.
 
-Worker Cloudflare (`abiliondev`) serve o estático e as rotas `/api/*`. O Worker antigo `abilion` / `*.vsanches1060.workers.dev` ficou de fora.
+Worker Cloudflare (`abilion`) serve o estático e as rotas `/api/*` em [abilion.lol](https://www.abilion.lol).
 
 Dados: o Worker grava leads, funis e o token do Telegram no KV `abilion-auth`. Sem service role do Supabase a operação continua. O browser não guarda o token.
 
@@ -33,6 +33,13 @@ npm run dev
 ```
 
 Abre [http://127.0.0.1:43173](http://127.0.0.1:43173).
+
+```bash
+npm run typecheck
+npm run lint
+npm test
+npm run build
+```
 
 ## Fluxo
 
@@ -56,9 +63,9 @@ Projecto já usado no wrangler:
 
 URL no ar: [https://www.abilion.lol](https://www.abilion.lol) (apex [https://abilion.lol](https://abilion.lol) e [https://abilion.vsanches1060.workers.dev](https://abilion.vsanches1060.workers.dev)).
 
-O Worker `abilion` serve o painel e `/api/*`. O CRM Next antigo saiu do ar.
+O Worker `abilion` (conta `73dd2cecfc9c7f0220a36fe999e3edf1`) serve o painel e `/api/*`. O CRM Next antigo saiu do ar.
 
-Login: só `victor@abilion.com` ou `gabriel@abilion.com`. O primeiro acesso de cada conta grava a senha no KV `abilion-auth`. Depois, só essa senha entra. Token do Telegram e chave GLM **não** entram no git — Configurações → Vincular Telegram grava no mesmo KV e aponta o webhook.
+Login: só `victor@abilion.com` ou `gabriel@abilion.com`. O primeiro acesso de cada conta grava a senha no KV `abilion-auth`. Depois, só essa senha entra. Token do Telegram e chaves de IA **não** entram no git — Configurações → Vincular Telegram grava no mesmo KV e aponta o webhook. Troca de senha: Configurações → Conta. “Esqueceu a senha?” só devolve link fora de produção (não há e-mail).
 
 Para forçar a mesma senha nas duas contas:
 
@@ -72,21 +79,9 @@ npx wrangler login
 npm run deploy
 ```
 
-Domínio **abilion.lol** (Namecheap → DNS na Cloudflare):
+Domínio **abilion.lol** já aponta para o Worker (`coco.ns.cloudflare.com` / `etienne.ns.cloudflare.com`). Apex, `www` e `abilion.vsanches1060.workers.dev` servem o mesmo painel.
 
-O domínio é novo: a ICANN trava **transferência de registrador** por 60 dias. O que activa o site é apontar os **nameservers** para a Cloudflare. A compra continua na Namecheap.
-
-Estado actual do DNS: nameservers `coco.ns.cloudflare.com` / `etienne.ns.cloudflare.com`. O Worker já serve `abilion.lol` e `www.abilion.lol`.
-
-1. Na Cloudflare, conta do Worker `abilion`: [Onboard a domain](https://dash.cloudflare.com/?to=/:account/add-site). Apex `abilion.lol`. Plano **Free**.
-2. Na revisão de DNS, **apaga** o A de parking (`162.255.119.137`) e o CNAME/A de `www` da Namecheap. O custom domain do Worker cria os records certos depois. Continua e **copia os 2 nameservers** (`*.ns.cloudflare.com`).
-3. Na Namecheap [Domain List](https://ap.www.namecheap.com/domains/list/) → **Manage** em `abilion.lol`. Se **DNSSEC** estiver ligado, desliga. **Nameservers** → **Custom DNS**. Cola os 2 NS da Cloudflare e guarda o visto verde.
-4. Espera a zona ficar **Active** (minutos a algumas horas). Confere com `dig NS abilion.lol @1.1.1.1`.
-5. Workers → `abilion` → Settings → Domains & Routes → **Add** → Custom Domain → `abilion.lol` e `www.abilion.lol`.
-
-Não meter `custom_domain` no `wrangler.jsonc` de produção antes da zona existir — o deploy falha.
-
-Enquanto o DNS não propaga, o painel continua em [https://abilion.vsanches1060.workers.dev](https://abilion.vsanches1060.workers.dev).
+Ao vincular o Telegram, o Worker gera um `secret_token` do webhook e guarda-o no KV. `GET /api/cron` só corre com `CRON_SECRET`.
 
 Secrets (nunca no git):
 
@@ -107,7 +102,7 @@ A Sté fala primeiro com **DeepSeek V4.1 Flash** no OpenCode. Se cair, usa OpenR
 Mensagens grandes saem em áudio da **ElevenLabs** (voz clonada da Sté). Cada beat gera um clip só uma vez; o Telegram reenvia o mesmo `file_id`. Cola o `voice_id` e a chave `sk_…` em Configurações → Bot → Voz da Sté. Sem isso, o bloco continua em texto.
 
 Webhook Telegram: `{origem}/api/telegram`  
-Cron de espera: hora a hora, ou `GET /api/cron?secret=…`  
+Cron de espera: a cada 5 minutos, ou `GET /api/cron?secret=…` (secret obrigatório)  
 O bot configura-se em Configurações. Vincular grava o token no Worker, aponta `https://www.abilion.lol/api/telegram` e a Sté passa a responder. O token **não** entra no repositório.
 
 ## Facebook → Telegram (volume)

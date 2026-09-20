@@ -71,6 +71,35 @@ export async function fetchInbox() {
   return data.leads ?? []
 }
 
+export async function fetchCrm() {
+  try {
+    const res = await fetch("/api/crm", { credentials: "include", cache: "no-store" })
+    if (!res.ok) return { ok: false as const, funnels: [] as SalesFunnel[], settings: undefined as Settings | undefined }
+    return (await res.json()) as { ok: true; funnels: SalesFunnel[]; settings?: Settings }
+  } catch {
+    return { ok: false as const, funnels: [] as SalesFunnel[], settings: undefined as Settings | undefined }
+  }
+}
+
+export async function persistLeads(leads: Lead[]) {
+  if (!leads.length) return true
+  const res = await fetch("/api/leads", {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ leads: leads.slice(0, 120) }),
+  })
+  return res.ok
+}
+
+export async function removeRemoteLead(id: string) {
+  const res = await fetch(`/api/leads?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    credentials: "include",
+  })
+  return res.ok
+}
+
 export async function saveCrm(body: { funnels?: SalesFunnel[]; settings?: Settings }) {
   const res = await fetch("/api/crm", {
     method: "POST",

@@ -8,7 +8,9 @@ export function PrivacyPage() {
         <LogoWord />
         <h1 className="page-title mt-8">Política de privacidade</h1>
         <p className="page-hint">
-          O Abilion guarda sessão e funis localmente neste recorte. Em produção, os dados ficam no projeto Supabase do workspace.
+          O Abilion é um CRM interno. A sessão fica num cookie HttpOnly. Funis, leads e o token do Telegram ficam no
+          Worker (KV). O browser não guarda o token. Pixel e geo usam a origem da visita para UF e país. Sem service
+          role do Supabase a operação continua só no Worker.
         </p>
         <Link to="/login" className="mt-6 inline-flex text-sm text-primary">
           Voltar ao login

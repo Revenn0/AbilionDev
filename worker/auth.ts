@@ -29,10 +29,16 @@ export type ResetRecord = {
   expiresAt: number
 }
 
+export type AuthThrottle = {
+  count: number
+  resetAt: number
+}
+
 export type AuthSnapshot = {
   users: StoredUser[]
   sessions: Session[]
   resets: Record<string, ResetRecord>
+  throttles?: Record<string, AuthThrottle>
 }
 
 export type AuthStore = {
@@ -52,7 +58,7 @@ function fromHex(value: string) {
   return bytes
 }
 
-function randomToken(bytes = 24) {
+export function randomToken(bytes = 24) {
   return hex(crypto.getRandomValues(new Uint8Array(bytes)))
 }
 
@@ -102,7 +108,36 @@ export function publicUser(user: StoredUser) {
 }
 
 function emptySnapshot(): AuthSnapshot {
-  return { users: [], sessions: [], resets: {} }
+  return { users: [], sessions: [], resets: {}, throttles: {} }
+}
+
+export function consumeThrottle(
+  snapshot: AuthSnapshot,
+  key: string,
+  limit: number,
+  windowMs: number,
+  now = Date.now()
+) {
+  const throttles = { ...(snapshot.throttles ?? {}) }
+  const current = throttles[key]
+  if (!current || current.resetAt <= now) {
+    throttles[key] = { count: 1, resetAt: now + windowMs }
+    return { ok: true as const, snapshot: { ...snapshot, throttles } }
+  }
+  if (current.count >= limit) return { ok: false as const, snapshot }
+  throttles[key] = { ...current, count: current.count + 1 }
+  return { ok: true as const, snapshot: { ...snapshot, throttles } }
+}
+
+export function clearThrottle(snapshot: AuthSnapshot, key: string): AuthSnapshot {
+  const throttles = { ...(snapshot.throttles ?? {}) }
+  delete throttles[key]
+  return { ...snapshot, throttles }
+}
+
+export function clientIp(request: Request) {
+  const forwarded = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for") || ""
+  return forwarded.split(",")[0]?.trim() || "local"
 }
 
 function prune(snapshot: AuthSnapshot, now = Date.now()): AuthSnapshot {
@@ -199,7 +234,13 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     if (!isOperatorEmail(email)) {
       return json({ error: "E-mail ou senha inválidos." }, 401)
     }
-    const snapshot = prune(await store.load())
+    let snapshot = prune(await store.load())
+    const guard = consumeThrottle(snapshot, `login:${clientIp(request)}:${email}`, 8, 15 * 60 * 1000)
+    snapshot = guard.snapshot
+    if (!guard.ok) {
+      await store.save(snapshot)
+      return json({ error: "Muitas tentativas. Espera uns minutos e tenta de novo." }, 429)
+    }
     let user = snapshot.users.find((item) => item.email === email)
     if (!user) {
       user = {
@@ -211,10 +252,12 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
       }
       snapshot.users.push(user)
     } else if (!(await verifyPassword(password, user.passwordHash))) {
+      await store.save(snapshot)
       return json({ error: "E-mail ou senha inválidos." }, 401)
     }
     const now = Date.now()
     const token = randomToken()
+    snapshot = clearThrottle(snapshot, `login:${clientIp(request)}:${email}`)
     snapshot.sessions.push({ token, userId: user.id, expiresAt: now + SESSION_TTL_MS, issuedAt: now })
     await store.save(snapshot)
     return json({ user: publicUser(user) }, 200, { "set-cookie": cookieHeader(token, secure) })
@@ -301,6 +344,7 @@ export function kvAuthStore(kv: { get(key: string, type: "json"): Promise<unknow
         users: Array.isArray(value.users) ? value.users : [],
         sessions: Array.isArray(value.sessions) ? value.sessions : [],
         resets: value.resets && typeof value.resets === "object" ? value.resets : {},
+        throttles: value.throttles && typeof value.throttles === "object" ? value.throttles : {},
       }
     },
     async save(next) {

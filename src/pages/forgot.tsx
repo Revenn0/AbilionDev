@@ -36,7 +36,9 @@ export function ForgotPage() {
       <Card className="rounded-[12px] shadow-sm">
         <CardHeader className="pb-0">
           <AuthBrand title="Redefinir senha" />
-          <p className={`mt-2 text-center ${AUTH_HINT}`}>Informe o e-mail da conta.</p>
+          <p className={`mt-2 text-center ${AUTH_HINT}`}>
+            Localmente gera um link. Em produção não há e-mail — troca a senha em Configurações → Conta.
+          </p>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="space-y-4">
@@ -52,10 +54,20 @@ export function ForgotPage() {
                 autoComplete="email"
                 placeholder="nome@empresa.com"
                 className={AUTH_FIELD}
+                aria-invalid={Boolean(error)}
+                aria-describedby={error ? "forgot-error" : done ? "forgot-done" : undefined}
               />
             </div>
-            {error && <p className="text-xs text-destructive">{error}</p>}
-            {done && <p className="text-xs text-emerald-600 dark:text-emerald-400">{done}</p>}
+            {error && (
+              <p id="forgot-error" role="alert" className="text-xs text-destructive">
+                {error}
+              </p>
+            )}
+            {done && (
+              <p id="forgot-done" role="status" className="text-xs text-emerald-600 dark:text-emerald-400">
+                {done}
+              </p>
+            )}
             <Button type="submit" disabled={loading} className={AUTH_SUBMIT}>
               {loading ? "A enviar…" : "Continuar"}
             </Button>

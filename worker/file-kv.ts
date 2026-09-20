@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import type { KvLike } from "./kv.ts"
 
@@ -19,6 +19,13 @@ export function fileKv(dir: string): KvLike {
     async put(key: string, value: string) {
       mkdirSync(dir, { recursive: true })
       writeFileSync(fileFor(dir, key), value)
+    },
+    async delete(key: string) {
+      try {
+        unlinkSync(fileFor(dir, key))
+      } catch {
+        /* já não existe */
+      }
     },
   }
 }

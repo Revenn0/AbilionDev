@@ -25,11 +25,13 @@ import {
 import { emptySalesFunnel } from "../src/lib/templates.ts"
 import { mergeLeads } from "../src/lib/crm.ts"
 import type { Lead } from "../src/lib/types.ts"
-import { findLeadInKv, upsertLeadKv } from "../worker/crm-store.ts"
+import { deleteLeadKv, findLeadInKv, loadLead, upsertLeadKv } from "../worker/crm-store.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
+import { safeAppPath } from "../src/lib/safe-path.ts"
 import { mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
+import { consumeThrottle, clearThrottle } from "../worker/auth.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
 
 function lead(id = "lead-1", contact = "@fb1"): Lead {
@@ -361,5 +363,29 @@ try {
 } finally {
   globalThis.fetch = realFetch
 }
+
+assert(safeAppPath("/leads") === "/leads", "rota interna passa")
+assert(safeAppPath("/configuracoes?tab=conta") === "/configuracoes?tab=conta", "query da conta passa")
+assert(safeAppPath("//evil.com") === "/", "protocol-relative nao redireciona")
+assert(safeAppPath("/\\evil") === "/", "backslash nao redireciona")
+assert(safeAppPath("https://evil.com") === "/", "url absoluta cai no inicio")
+assert(safeAppPath("/fluxo/funil/abc") === "/fluxo/funil/abc", "editor do funil passa")
+assert(safeAppPath("/fluxo/funil/../x") === "/", "path traversal cai no inicio")
+
+let gated = consumeThrottle({ users: [], sessions: [], resets: {} }, "login:1:a", 2, 60_000, 1000)
+assert(gated.ok, "primeira tentativa passa")
+gated = consumeThrottle(gated.snapshot, "login:1:a", 2, 60_000, 1001)
+assert(gated.ok, "segunda tentativa passa")
+gated = consumeThrottle(gated.snapshot, "login:1:a", 2, 60_000, 1002)
+assert(!gated.ok, "terceira tentativa bloqueia")
+const unlocked = consumeThrottle(clearThrottle(gated.snapshot, "login:1:a"), "login:1:a", 2, 60_000, 1003)
+assert(unlocked.ok, "sucesso limpa o bloqueio")
+
+const gone = lead("gone", "@gone")
+gone.telegramChatId = "9"
+await upsertLeadKv(kv, gone)
+assert((await loadLead(kv, "gone"))?.contact === "@gone", "lead persistido no KV")
+await deleteLeadKv(kv, "gone")
+assert((await loadLead(kv, "gone")) === null, "lead apagado do KV")
 
 console.log("ste-flow ok")

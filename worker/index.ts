@@ -1,4 +1,4 @@
-import { handleAuth, kvAuthStore, sessionUser } from "./auth.ts"
+import { handleAuth, kvAuthStore, randomToken, sessionUser } from "./auth.ts"
 import { campaignFor } from "../src/lib/labels.ts"
 import { advanceSteIfDue, isSteWait, replySte, replySteSmart, steRuntimeFromFunnels, toTelegramHtml, type SteBeat } from "../src/lib/ste.ts"
 import { linkFollowUp, voiceClipFor } from "../src/lib/ste-voice.ts"
@@ -9,10 +9,11 @@ import { BANCA_FIXED, type Lead, type LeadEvent, type LeadOrigin, type SalesFunn
 import { compactGeo, factsFromGeo } from "../src/lib/geo.ts"
 import { parseDevice } from "../src/lib/track.ts"
 import { emptySettings, publicSettings } from "../src/lib/crm.ts"
-import { migrateSettings } from "../src/lib/migrate.ts"
+import { migrateLead, migrateSettings } from "../src/lib/migrate.ts"
 import { resolveClientGeo } from "./geo-lookup.ts"
 import { ingestTrack, kvTrackStore, memoryTrackStore, readTrackBody, summaryFromStore, type TrackStore } from "./track-store.ts"
 import {
+  deleteLeadKv,
   dueLeadsKv,
   findLeadInKv,
   listLeads,
@@ -116,9 +117,9 @@ export async function handleRequest(request: Request, env: Env, ctx: ExecutionCo
     })
   }
   if (url.pathname.startsWith("/api/")) {
-    return handleApi(request, env, url, ctx)
+    return withSecurityHeaders(await handleApi(request, env, url, ctx))
   }
-  return env.ASSETS.fetch(request)
+  return withSecurityHeaders(await env.ASSETS.fetch(request))
 }
 
 async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionContext) {
@@ -231,8 +232,10 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     const current = await loadSecrets(env.AUTH)
     const next = mergeSecrets(current, body)
     const hook = webhookUrl(request, env)
+    const webhookSecret = (env.TELEGRAM_WEBHOOK_SECRET || next.telegramWebhookSecret || randomToken()).trim()
+    if (!env.TELEGRAM_WEBHOOK_SECRET) next.telegramWebhookSecret = webhookSecret
     if (next.telegramBotToken && next.telegramBotToken !== current.telegramBotToken) {
-      const hooked = await setTelegramWebhook(next.telegramBotToken, hook, env.TELEGRAM_WEBHOOK_SECRET)
+      const hooked = await setTelegramWebhook(next.telegramBotToken, hook, webhookSecret)
       if (!hooked.ok && /unauthorized/i.test(hooked.description)) {
         return json({ error: "Token do Telegram recusado." }, 400)
       }
@@ -243,7 +246,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
         return json({ error: hooked.description || "Webhook do Telegram falhou.", ...(await publishedRuntime(env, resolveRuntime(env, next, hook))) }, 400)
       }
     } else if (next.telegramBotToken && !next.webhookOk) {
-      const hooked = await setTelegramWebhook(next.telegramBotToken, hook, env.TELEGRAM_WEBHOOK_SECRET)
+      const hooked = await setTelegramWebhook(next.telegramBotToken, hook, webhookSecret)
       next.webhookUrl = hook
       next.webhookOk = hooked.ok
     }
@@ -281,6 +284,29 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     return json({ ok: true })
   }
 
+  if (url.pathname === "/api/leads" && request.method === "POST") {
+    if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
+    const user = await sessionUser(request, kvAuthStore(env.AUTH))
+    if (!user) return json({ error: "Sessão expirada." }, 401)
+    const body = (await request.json().catch(() => ({}))) as { lead?: Lead; leads?: Lead[] }
+    const rows = (body.leads?.length ? body.leads : body.lead ? [body.lead] : []).slice(0, 120)
+    for (const row of rows) {
+      if (!row || typeof row !== "object" || !row.id) continue
+      await upsertLeadKv(env.AUTH, migrateLead(row))
+    }
+    return json({ ok: true, saved: rows.length })
+  }
+
+  if (url.pathname === "/api/leads" && request.method === "DELETE") {
+    if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
+    const user = await sessionUser(request, kvAuthStore(env.AUTH))
+    if (!user) return json({ error: "Sessão expirada." }, 401)
+    const id = url.searchParams.get("id") || ""
+    if (!id) return json({ error: "Falta o id do lead." }, 400)
+    await deleteLeadKv(env.AUTH, id)
+    return json({ ok: true })
+  }
+
   if (url.pathname === "/api/inbox" && request.method === "GET") {
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
@@ -295,9 +321,11 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   }
 
   if (url.pathname === "/api/telegram" && request.method === "POST") {
-    if (env.TELEGRAM_WEBHOOK_SECRET) {
+    const { secrets } = await runtimeOf(env)
+    const expected = (env.TELEGRAM_WEBHOOK_SECRET || secrets.telegramWebhookSecret || "").trim()
+    if (expected) {
       const header = request.headers.get("x-telegram-bot-api-secret-token")
-      if (header !== env.TELEGRAM_WEBHOOK_SECRET) return json({ ok: false }, 401)
+      if (header !== expected) return json({ ok: false }, 401)
     }
     const update = (await request.json()) as TelegramUpdate
     ctx.waitUntil(handleTelegram(env, update))
@@ -306,7 +334,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
 
   if (url.pathname === "/api/cron") {
     const secret = url.searchParams.get("secret") ?? request.headers.get("x-cron-secret")
-    if (env.CRON_SECRET && secret !== env.CRON_SECRET) return json({ ok: false }, 401)
+    if (!env.CRON_SECRET || secret !== env.CRON_SECRET) return json({ ok: false }, 401)
     const count = await processWaits(env)
     return json({ ok: true, advanced: count })
   }
@@ -669,10 +697,27 @@ function corsHeaders() {
   }
 }
 
-function json(data: unknown, status = 200) {
+function securityHeaders() {
+  return {
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "x-frame-options": "DENY",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+  }
+}
+
+function withSecurityHeaders(response: Response) {
+  const next = new Headers(response.headers)
+  for (const [key, value] of Object.entries(securityHeaders())) {
+    if (!next.has(key)) next.set(key, value)
+  }
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers: next })
+}
+
+function json(data: unknown, status = 200, extra?: Record<string, string>) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "content-type": "application/json", ...corsHeaders() },
+    headers: { "content-type": "application/json", "cache-control": "no-store", ...securityHeaders(), ...extra },
   })
 }
 

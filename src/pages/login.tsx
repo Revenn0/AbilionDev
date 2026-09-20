@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { safeAppPath } from "@/lib/safe-path"
 import { useStore } from "@/lib/store"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -33,8 +34,7 @@ export function LoginPage() {
     try {
       await login(cleanEmail, password)
       toast.success("Sessão iniciada.")
-      const next = params.get("next") || "/"
-      navigate(next.startsWith("/") ? next : "/", { replace: true })
+      navigate(safeAppPath(params.get("next")), { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível entrar.")
     } finally {
@@ -62,6 +62,8 @@ export function LoginPage() {
                 autoComplete="email"
                 placeholder="nome@empresa.com"
                 className={AUTH_FIELD}
+                aria-invalid={Boolean(error)}
+                aria-describedby={error ? "login-error" : undefined}
               />
             </div>
             <div className="space-y-1.5">
@@ -76,6 +78,8 @@ export function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   className={cn(AUTH_FIELD, "pr-10")}
                   autoComplete="current-password"
+                  aria-invalid={Boolean(error)}
+                  aria-describedby={error ? "login-error" : undefined}
                 />
                 <button
                   type="button"
@@ -87,7 +91,11 @@ export function LoginPage() {
                 </button>
               </div>
             </div>
-            {error && <p className="text-xs text-destructive">{error}</p>}
+            {error && (
+              <p id="login-error" role="alert" className="text-xs text-destructive">
+                {error}
+              </p>
+            )}
             <Button type="submit" disabled={loading} className={AUTH_SUBMIT}>
               {loading ? <Loader2 className="size-4 animate-spin" /> : null}
               {loading ? "Entrando…" : "Entrar"}

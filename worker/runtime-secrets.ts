@@ -24,6 +24,7 @@ export type RuntimeSecrets = {
   elevenVoiceId?: string
   webhookUrl?: string
   webhookOk?: boolean
+  telegramWebhookSecret?: string
   updatedAt?: string
 }
 

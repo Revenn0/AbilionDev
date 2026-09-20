@@ -25,7 +25,9 @@ function pageTitle(pathname: string) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { ready, state } = useStore()
   const navigate = useNavigate()
-  const pathname = useLocation().pathname
+  const location = useLocation()
+  const pathname = location.pathname
+  const loginNext = `/login?next=${encodeURIComponent(`${pathname}${location.search}`)}`
   const [open, setOpen] = useState(false)
   const [expanded, setExpanded] = useState(true)
   const canvasEditor = isCanvasEditor(pathname)
@@ -35,6 +37,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (stored === "0") setExpanded(false)
     if (stored === "1") setExpanded(true)
   }, [])
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false)
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [open])
 
   const toggleSidebar = () => {
     setExpanded((value) => {
@@ -46,11 +57,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!ready) return
-    if (!state.user) navigate("/login", { replace: true })
-  }, [ready, state.user, navigate])
+    if (!state.user) navigate(loginNext, { replace: true })
+  }, [ready, state.user, navigate, loginNext])
 
   if (!ready) return <div className="min-h-screen bg-background" />
-  if (!state.user) return <Navigate to="/login" replace />
+  if (!state.user) return <Navigate to={loginNext} replace />
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -69,6 +80,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             onClick={() => setOpen(false)}
           />
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menu"
             className={cn(
               "relative h-full w-[240px] border-r border-border bg-sidebar transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
               open ? "translate-x-0" : "-translate-x-[110%]"
@@ -81,7 +95,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         {!canvasEditor && (
           <header className="flex items-center gap-2 border-b border-border bg-card px-3 py-2 md:hidden">
-            <Button variant="ghost" size="icon-sm" className="rounded-full" aria-label="Menu" onClick={() => setOpen((v) => !v)}>
+            <Button variant="ghost" size="icon-sm" className="rounded-full" aria-label={open ? "Fechar menu" : "Abrir menu"} aria-expanded={open} onClick={() => setOpen((v) => !v)}>
               {open ? <X /> : <Menu />}
             </Button>
             <LogoWord compact />

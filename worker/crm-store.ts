@@ -75,6 +75,12 @@ export async function upsertLeadKv(kv: KvLike, lead: Lead) {
   await saveIndex(kv, next)
 }
 
+export async function deleteLeadKv(kv: KvLike, id: string) {
+  const index = await loadIndex(kv)
+  await saveIndex(kv, { entries: index.entries.filter((item) => item.id !== id) })
+  await kv.delete?.(leadKey(id))
+}
+
 export async function dueLeadsKv(kv: KvLike, nowIso: string): Promise<Lead[]> {
   const index = await loadIndex(kv)
   const ids = index.entries.filter((item) => item.waitUntil && item.waitUntil <= nowIso).map((item) => item.id)
