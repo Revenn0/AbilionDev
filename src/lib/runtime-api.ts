@@ -1,4 +1,4 @@
-import { collectLeadPages, LEAD_LIST_PAGES, type LeadListPage } from "./crm"
+import { collectLeadPages, INBOX_LIST_PAGES, LEAD_LIST_PAGES, type LeadListPage } from "./crm"
 import { fetchWithTimeout, fetchWrite } from "./http"
 import { noteUnauthorized } from "./session"
 import type { Lead, SalesFunnel, Settings } from "./types"
@@ -130,14 +130,37 @@ export async function fetchLeadQuery(query: string) {
   }
 }
 
-export async function fetchInbox() {
+async function readInboxPage(cursor: string): Promise<LeadListPage | { failed: true }> {
+  const res = await fetchWithTimeout(cursor ? `/api/inbox?cursor=${encodeURIComponent(cursor)}` : "/api/inbox", {
+    credentials: "include",
+    cache: "no-store",
+  })
+  noteUnauthorized(res)
+  if (!res.ok) return { failed: true }
+  const data = (await res.json()) as { leads?: Lead[]; nextCursor?: string; stale?: boolean }
+  if (!Array.isArray(data.leads)) return { failed: true }
+  return {
+    leads: data.leads,
+    nextCursor: typeof data.nextCursor === "string" ? data.nextCursor.trim() : undefined,
+    stale: data.stale === true,
+  }
+}
+
+export async function fetchInbox(pages = 1) {
   try {
-    const res = await fetchWithTimeout("/api/inbox", { credentials: "include", cache: "no-store" })
-    noteUnauthorized(res)
-    if (!res.ok) return { ok: false as const, leads: [] as Lead[] }
-    const data = (await res.json()) as { leads?: Lead[] }
-    if (!Array.isArray(data.leads)) return { ok: false as const, leads: [] as Lead[] }
-    return { ok: true as const, leads: data.leads }
+    const limit = Math.max(1, pages)
+    const pulled: LeadListPage[] = []
+    let cursor = ""
+    for (let page = 0; page < limit; page++) {
+      const next = await readInboxPage(cursor)
+      if ("failed" in next) {
+        return page === 0 ? { ok: false as const, leads: [] as Lead[] } : collectLeadPages([...pulled, { leads: [], stale: true }])
+      }
+      pulled.push(next)
+      if (next.stale || !next.nextCursor) return collectLeadPages(pulled)
+      cursor = next.nextCursor
+    }
+    return collectLeadPages(pulled, "window")
   } catch {
     return { ok: false as const, leads: [] as Lead[] }
   }

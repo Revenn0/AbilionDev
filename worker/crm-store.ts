@@ -1,5 +1,5 @@
 import { contactLookups } from "../src/lib/capture.ts"
-import { clipRemovedIds, emptySettings, publicSettings } from "../src/lib/crm.ts"
+import { clipRemovedIds, emptySettings, FUNNEL_REMOVED_CAP, LEAD_REMOVED_CAP, publicSettings } from "../src/lib/crm.ts"
 import { leadMatchesQuery } from "../src/lib/lead-name.ts"
 import { migrateLead, migrateSettings, sanitizeIncomingFunnel } from "../src/lib/migrate.ts"
 import type { Lead, SalesFunnel, Settings } from "../src/lib/types.ts"
@@ -13,8 +13,7 @@ export const CRM_REMOVED_FUNNELS = "crm:removed-funnels"
 export const CRM_NAMES = "crm:names"
 export const CRM_CRON_LOCK = "crm:cron-lock"
 
-export const LEAD_REMOVED_CAP = 8000
-const FUNNEL_REMOVED_CAP = 400
+export { LEAD_REMOVED_CAP, FUNNEL_REMOVED_CAP }
 export const LEAD_INDEX_REST_CAP = 4000
 export const LEAD_INDEX_PINNED_CAP = 8000
 

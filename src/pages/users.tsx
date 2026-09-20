@@ -36,7 +36,9 @@ export function UsersPage() {
   const [tokenName, setTokenName] = useState("Claude Code")
   const [freshToken, setFreshToken] = useState("")
   const [busy, setBusy] = useState(false)
+  const [tokenBusy, setTokenBusy] = useState(false)
   const lock = useRef(false)
+  const tokenLock = useRef(false)
 
   const reload = () => {
     void Promise.all([listUsersRequest(), listTokensRequest()])
@@ -213,6 +215,9 @@ export function UsersPage() {
             className="mt-4 flex flex-wrap items-end gap-2"
             onSubmit={(event) => {
               event.preventDefault()
+              if (tokenLock.current || tokenBusy) return
+              tokenLock.current = true
+              setTokenBusy(true)
               void createTokenRequest(tokenName.trim() || "Agente")
                 .then((result) => {
                   setTokens((prev) => [...(prev ?? []), result.item])
@@ -220,14 +225,18 @@ export function UsersPage() {
                   toast.success("Token criado. Copia agora — não volta a aparecer.")
                 })
                 .catch((err: Error) => toast.error(err.message))
+                .finally(() => {
+                  tokenLock.current = false
+                  setTokenBusy(false)
+                })
             }}
           >
             <div className="min-w-[12rem] flex-1 space-y-1.5">
               <Label htmlFor="token-name">Nome do agente</Label>
               <Input id="token-name" value={tokenName} onChange={(event) => setTokenName(event.target.value)} maxLength={60} />
             </div>
-            <Button type="submit" className="rounded-full">
-              Gerar token
+            <Button type="submit" className="rounded-full" disabled={tokenBusy}>
+              {tokenBusy ? "A gerar…" : "Gerar token"}
             </Button>
           </form>
           {freshToken ? (

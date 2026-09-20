@@ -44,8 +44,10 @@ import {
   adoptHydrateSettings,
   canDeleteFunnel,
   canFlushCrm,
+  clipNewestIds,
   clipRemovedIds,
   collectLeadPages,
+  INBOX_LIST_PAGES,
   LEAD_LIST_CAP,
   LEAD_LIST_PAGES,
   LEAD_CACHE_CAP,
@@ -920,6 +922,10 @@ assert(
   "Worker vazio ainda aplica o tombstone local"
 )
 assert(clipRemovedIds(["  ok  ", "", "x".repeat(81), "ok", 12, null]).join(",") === "ok", "ids removidos são cortados")
+assert(clipNewestIds(Array.from({ length: 401 }, (_, i) => `d-${i}`), 400).at(-1) === "d-400", "tombstone local fica com o id mais novo")
+assert(clipNewestIds(Array.from({ length: 401 }, (_, i) => `d-${i}`), 400)[0] === "d-1", "tombstone local larga o id mais velho")
+assert(INBOX_LIST_PAGES === 5, "hydrate da inbox pede até 5 páginas")
+assert(LEAD_REMOVED_CAP === 8000, "teto do tombstone de lead é o mesmo no painel e no Worker")
 assert(
   !adoptRemoteFunnels(
     [{ ...publishedA, updatedAt: "2020-01-01T00:00:00.000Z" }, { ...publishedC, updatedAt: "2026-05-01T00:00:00.000Z" }],

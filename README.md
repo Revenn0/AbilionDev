@@ -65,7 +65,7 @@ URL no ar: [https://www.abilion.lol](https://www.abilion.lol) (apex [https://abi
 
 O Worker `abilion` (conta `73dd2cecfc9c7f0220a36fe999e3edf1`) serve o painel e `/api/*`. O CRM Next antigo saiu do ar. `run_worker_first` faz o HTML (`/` incluído) passar pelo Worker para levar CSP, `X-Frame-Options` e o resto dos headers — o pipeline de assets sozinho não os punha na home. O tema deixa de ser script inline (`/theme.js`); `script-src` fica só `'self'`. Staging (`wrangler.staging.jsonc`) tem o mesmo `run_worker_first` e um KV `AUTH` próprio (`abilion-auth-staging`) — não aponta para o KV de produção. O webhook do Telegram guarda 8000 `update_id` e um piso: ids que saíram do anel não reprocessam.
 
-Login: `victor@abilion.com` e `gabriel@abilion.com` no primeiro acesso (definem a senha). As outras contas só entram depois de um dono as criar em Utilizadores. Login, “Esqueceu a senha?” e troca de senha têm limite por IP (8, 5 e 5 tentativas / 15 min). Cada conta fica com no máximo 5 sessões activas e 20 tokens MCP (`abn_…`). O snapshot de auth no KV une sessões, tokens e contas no gravar. Uma troca de senha marca `passwordUpdatedAt`: um login que ainda tinha o hash velho não reverte a senha nem reabre sessões antigas. Logout e troca de senha gravam tombstone do token de sessão (até 2000). Token do Telegram e chaves de IA **não** entram no git — Configurações → Vincular Telegram grava no mesmo KV e aponta o webhook. Troca de senha: Configurações → Conta. “Esqueceu a senha?” só devolve link fora de produção (não há e-mail). Leads: busca por nome/@user/telefone/campanha (acentos dobrados no painel e no Worker; a caixa também pergunta o Worker se o lead já saiu da lista hidratada), exclusão com confirmação e hidratação até 8000 no login (20 páginas de 400). Tombstone de exclusão guarda 8000 ids. Simular 100 /start pede confirmação.
+Login: `victor@abilion.com` e `gabriel@abilion.com` no primeiro acesso (definem a senha). As outras contas só entram depois de um dono as criar em Utilizadores. Login, “Esqueceu a senha?” e troca de senha têm limite por IP (8, 5 e 5 tentativas / 15 min). Cada conta fica com no máximo 5 sessões activas e 20 tokens MCP (`abn_…`). O snapshot de auth no KV une sessões, tokens e contas no gravar. Uma troca de senha marca `passwordUpdatedAt`: um login que ainda tinha o hash velho não reverte a senha nem reabre sessões antigas. Logout e troca de senha gravam tombstone do token de sessão (até 2000). Token do Telegram e chaves de IA **não** entram no git — Configurações → Vincular Telegram grava no mesmo KV e aponta o webhook. Troca de senha: Configurações → Conta. “Esqueceu a senha?” só devolve link fora de produção (não há e-mail). Leads: busca por nome/@user/telefone/campanha (acentos dobrados no painel e no Worker; a caixa também pergunta o Worker se o lead já saiu da lista hidratada), exclusão com confirmação e hidratação até 8000 no login (20 páginas de 400). Tombstone de exclusão guarda 8000 ids no Worker e no `localStorage` (os mais novos). Simular 100 /start pede confirmação.
 
 `ABILION_OPERATOR_PASSWORD` é opcional: só **cria** as contas que ainda não existem. Sem o secret, o primeiro login de cada operador define a senha. Depois de criadas, a troca em Configurações → Conta fica. Não reescreve o hash em cada `/api/auth/me`.
 
@@ -114,7 +114,7 @@ O anúncio aponta para `https://t.me/BOT?start=fb` (ou `fb_campanha`). O Worker:
 - abre a Sté com o motor determinístico; o papo livre da oferta usa OpenCode (DeepSeek V4.1 Flash) e cai no OpenRouter (Gemma, DeepSeek V4 Flash)
 - reenvia se a API do Telegram devolver 429
 
-O volume Facebook → Telegram corre no Worker/KV. Não corras `003`/`004` no projecto Abilion — essas migrações pertencem ao recorte `001` que nunca existiu aqui. Conversas lista 80 e tem **Carregar mais** a partir dos leads hidratados. O poll da inbox pede as 400 conversas Telegram mais recentes (`nextCursor` se houver mais).
+O volume Facebook → Telegram corre no Worker/KV. Não corras `003`/`004` no projecto Abilion — essas migrações pertencem ao recorte `001` que nunca existiu aqui. Conversas lista 80 e tem **Carregar mais** a partir dos leads hidratados. O poll da inbox pede as 400 conversas Telegram mais recentes; o hydrate e o reconcile de 30 s pedem até 5 páginas (2000).
 
 Pixel da landing — botão **Pixel Ads** no Dashboard, no topo de Telegram e de Configurações → Bot Telegram (`#pixel`). O clique do Dashboard faz scroll até o snippet (`/telegram#pixel`). O snippet que se cola no anúncio é sempre o de produção, mesmo no painel local:
 
@@ -186,7 +186,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `GET/POST/PATCH /api/users` | sessão — lista; POST/PATCH só dono (máx. 40 contas) |
 | `GET/POST/DELETE /api/tokens` | sessão — token `abn_…` (o valor completo só no POST) |
 | `POST /api/funnels/import` | sessão — ManyChat / n8n / Typebot / Abilion / mensagens |
-| `POST /mcp` ou `/api/mcp` | Bearer ou cookie — JSON-RPC para agentes |
+| `POST /mcp` ou `/api/mcp` | Bearer ou cookie — JSON-RPC para agentes (60 / min por conta e IP) |
 | `GET /mcp` | público: `{ ok, name, version }` |
 | `POST /api/telegram` | Telegram; `secret_token` do webhook |
 | `GET /api/cron` | `CRON_SECRET` obrigatório; cada espera corre isolada |

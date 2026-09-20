@@ -11,8 +11,12 @@ import {
   leadsStillOnRemote,
   canDeleteFunnel,
   canFlushCrm,
+  clipNewestIds,
   clipRemovedIds,
+  FUNNEL_REMOVED_CAP,
   hydrateFunnels,
+  INBOX_LIST_PAGES,
+  LEAD_REMOVED_CAP,
   hydrateLeads,
   leftoverPendingFunnelIds,
   LEAD_CACHE_CAP,
@@ -74,17 +78,17 @@ function withSeed(state: AppState, firstVisit: boolean): AppState {
   return { ...state, funnels: [seededOperation()] }
 }
 
-function loadIdSet(key: string): Set<string> {
+function loadIdSet(key: string, cap = FUNNEL_REMOVED_CAP): Set<string> {
   try {
-    return new Set(clipRemovedIds(JSON.parse(localStorage.getItem(key) || "[]"), 400))
+    return new Set(clipRemovedIds(JSON.parse(localStorage.getItem(key) || "[]"), cap))
   } catch {
     return new Set()
   }
 }
 
-function persistIdSet(key: string, ids: Set<string>) {
+function persistIdSet(key: string, ids: Set<string>, cap = FUNNEL_REMOVED_CAP) {
   try {
-    localStorage.setItem(key, JSON.stringify([...ids].slice(0, 400)))
+    localStorage.setItem(key, JSON.stringify(clipNewestIds(ids, cap)))
   } catch {
     /* quota */
   }
@@ -113,7 +117,7 @@ function bootState(): AppState {
   saved.user = readUser()
   return {
     ...saved,
-    leads: applyRemovedLeads(saved.leads, loadIdSet(REMOVED_LEADS)),
+    leads: applyRemovedLeads(saved.leads, loadIdSet(REMOVED_LEADS, LEAD_REMOVED_CAP)),
     funnels: applyRemovedFunnels(saved.funnels, [...loadIdSet(REMOVED_FUNNELS)]),
   }
 }
@@ -169,7 +173,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const pendingLeadWrites = useRef(session.pendingLeads)
   const pendingFunnelIds = useRef(session.pendingFunnels)
   const removedFunnelIds = useRef(loadIdSet(REMOVED_FUNNELS))
-  const removedLeadIds = useRef(loadIdSet(REMOVED_LEADS))
+  const removedLeadIds = useRef(loadIdSet(REMOVED_LEADS, LEAD_REMOVED_CAP))
   const crmHydrated = useRef(false)
   const settingsDirty = useRef(loadFlag(PENDING_SETTINGS))
   const lastGoodFunnels = useRef<SalesFunnel[]>([])
@@ -298,7 +302,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const runHydrate = (force = false) => {
     if (!force && crmHydrated.current) return Promise.resolve()
     if (hydrateLock.current) return hydrateLock.current
-    const pending = Promise.all([fetchCrm(), fetchRuntime(), fetchLeads(), fetchInbox()]).then(
+    const pending = Promise.all([fetchCrm(), fetchRuntime(), fetchLeads(), fetchInbox(INBOX_LIST_PAGES)]).then(
       ([crm, runtime, remoteLeads, inbox]) => {
       setCrmSync(crm.ok ? "ok" : "error")
       setPersistSync(remoteLeads.ok ? "ok" : "error")
@@ -451,7 +455,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!state.user) return
     let cancelled = false
     const reconcile = async () => {
-      const [remoteLeads, inbox] = await Promise.all([fetchLeads(), fetchInbox()])
+      const [remoteLeads, inbox] = await Promise.all([fetchLeads(), fetchInbox(INBOX_LIST_PAGES)])
       if (cancelled) return
       if (!remoteLeads.ok) {
         setPersistSync("error")
@@ -493,14 +497,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
       if (event.key === REMOVED_LEADS) {
-        const ids = loadIdSet(REMOVED_LEADS)
+        const ids = loadIdSet(REMOVED_LEADS, LEAD_REMOVED_CAP)
         let changed = false
         for (const id of ids) {
           if (removedLeadIds.current.has(id)) continue
           removedLeadIds.current.add(id)
           changed = true
         }
-        if (changed) persistIdSet(REMOVED_LEADS, removedLeadIds.current)
+        if (changed) persistIdSet(REMOVED_LEADS, removedLeadIds.current, LEAD_REMOVED_CAP)
         setState((prev) => {
           const leads = applyRemovedLeads(prev.leads, removedLeadIds.current)
           return leads === prev.leads ? prev : { ...prev, leads }
@@ -624,7 +628,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       createLead: (lead) => {
         removedLeadIds.current.delete(lead.id)
-        persistIdSet(REMOVED_LEADS, removedLeadIds.current)
+        persistIdSet(REMOVED_LEADS, removedLeadIds.current, LEAD_REMOVED_CAP)
         pendingLeadWrites.current.set(lead.id, lead)
         persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
         const prev = stateRef.current
@@ -636,7 +640,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           removedLeadIds.current.delete(lead.id)
           pendingLeadWrites.current.set(lead.id, lead)
         }
-        persistIdSet(REMOVED_LEADS, removedLeadIds.current)
+        persistIdSet(REMOVED_LEADS, removedLeadIds.current, LEAD_REMOVED_CAP)
         persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
         const prev = stateRef.current
         commitState({ ...prev, leads: [...leads, ...prev.leads] })
@@ -667,7 +671,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         pendingLeadWrites.current.delete(id)
         persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
         removedLeadIds.current.add(id)
-        persistIdSet(REMOVED_LEADS, removedLeadIds.current)
+        persistIdSet(REMOVED_LEADS, removedLeadIds.current, LEAD_REMOVED_CAP)
         const prev = stateRef.current
         commitState({ ...prev, leads: prev.leads.filter((item) => item.id !== id) })
         return leadFlushRef.current.then(() => removeRemoteLead(id)).then((ok) => {

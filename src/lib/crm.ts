@@ -8,6 +8,9 @@ const CAP = 400
 export const LEAD_LIST_CAP = 8000
 export const LEAD_LIST_PAGES = 20
 export const LEAD_CACHE_CAP = 2000
+export const LEAD_REMOVED_CAP = 8000
+export const FUNNEL_REMOVED_CAP = 400
+export const INBOX_LIST_PAGES = 5
 
 export type LeadListPage = {
   leads: Lead[]
@@ -173,6 +176,11 @@ export function clipRemovedIds(ids: unknown, cap = CAP): string[] {
     if (out.length >= cap) break
   }
   return out
+}
+
+/** O painel acrescenta tombstones no fim do Set — conserva os mais novos. */
+export function clipNewestIds(ids: Iterable<string>, cap: number) {
+  return clipRemovedIds([...ids].reverse(), cap).reverse()
 }
 
 /** A fila do painel manda na ficha: a inbox não pisa nota, nome ou temperatura a meio do debounce. */

@@ -13,6 +13,7 @@ export function ForgotPage() {
   const next = params.get("next")
   const [email, setEmail] = useState("")
   const [done, setDone] = useState("")
+  const [resetHref, setResetHref] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const lock = useRef(false)
@@ -29,11 +30,14 @@ export function ForgotPage() {
     setLoading(true)
     try {
       const data = await forgotPasswordRequest(email.trim().toLowerCase())
-      setDone(
-        data.resetPath
-          ? `Link gerado: ${withSafeNext(data.resetPath, next)}`
-          : "Em produção não enviamos e-mail. Entra e troca a senha em Configurações → Conta."
-      )
+      if (data.resetPath) {
+        const href = withSafeNext(data.resetPath, next)
+        setResetHref(href)
+        setDone("Link gerado. Abre-o para definir a nova senha.")
+      } else {
+        setResetHref("")
+        setDone("Em produção não enviamos e-mail. Entra e troca a senha em Configurações → Conta.")
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível gerar o link.")
     } finally {
@@ -76,7 +80,12 @@ export function ForgotPage() {
             )}
             {done && (
               <p id="forgot-done" role="status" className="text-xs text-emerald-600 dark:text-emerald-400">
-                {done}
+                {done}{" "}
+                {resetHref ? (
+                  <Link to={resetHref} className={AUTH_LINK}>
+                    Definir nova senha
+                  </Link>
+                ) : null}
               </p>
             )}
             <Button type="submit" disabled={loading} className={AUTH_SUBMIT}>
