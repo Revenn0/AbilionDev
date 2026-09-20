@@ -1,4 +1,4 @@
-import { applyRemovedFunnels, clipNewestIds, FUNNEL_CAP, publicSettings } from "../src/lib/crm.ts"
+import { clipNewestIds, FUNNEL_CAP, publicSettings } from "../src/lib/crm.ts"
 import { addLeadCategory, leadFromImport, parseLeadImportText } from "../src/lib/lead-category.ts"
 import { addPageScript, pageInstallManual, pageScriptById, PAGE_SCRIPT_REMOVED_CAP, removePageScript } from "../src/lib/page-script.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
@@ -14,8 +14,8 @@ import {
   type PublicUser,
 } from "./auth.ts"
 import { handleTokens, handleUsers } from "./users.ts"
-import { filterLiveLeads, importOrAdoptLead, listLeadPage, loadFunnelsKv, loadRemovedFunnelIds, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge } from "./crm-store.ts"
-import { loadWorkspaceSettings } from "./workspace-settings.ts"
+import { filterLiveLeads, importOrAdoptLead, listLeadPage, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge } from "./crm-store.ts"
+import { loadWorkspaceFunnels, loadWorkspaceSettings } from "./workspace-settings.ts"
 import { readJsonStrict } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -263,8 +263,7 @@ const TOOLS = [
 ] as const
 
 async function funnelsOf(env: McpEnv): Promise<SalesFunnel[]> {
-  if (!env.AUTH) return []
-  return applyRemovedFunnels(await loadFunnelsKv(env.AUTH), await loadRemovedFunnelIds(env.AUTH))
+  return loadWorkspaceFunnels(env)
 }
 
 async function saveFunnels(env: McpEnv, funnels: SalesFunnel[]) {

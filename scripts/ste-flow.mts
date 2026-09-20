@@ -43,6 +43,7 @@ import {
   applyRemovedLeads,
   leadsStillOnRemote,
   adoptHydrateSettings,
+  adoptFunnelStores,
   adoptSettingsStores,
   canCreateFunnel,
   canDeleteFunnel,
@@ -83,6 +84,7 @@ import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.t
 import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
+import { loadWorkspaceFunnels } from "../worker/workspace-settings.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
@@ -1055,6 +1057,20 @@ assert(
   (await loadAdoptedSettings(adoptedKv, settingsPg)).telegramBotUsername === "@ste_bot",
   "loadAdoptedSettings lê KV oco + Postgres"
 )
+const kvBoard = emptySalesFunnel("Quadro KV")
+const pgBoard = emptySalesFunnel("Quadro PG")
+assert(adoptFunnelStores([], [pgBoard])[0]?.name === "Quadro PG", "KV vazio recupera funis do Postgres")
+assert(adoptFunnelStores([kvBoard], [pgBoard])[0]?.name === "Quadro KV", "KV com quadro ganha ao Postgres")
+assert(adoptFunnelStores([kvBoard], [], [kvBoard.id]).length === 0, "tombstone remove o funil do KV")
+assert(adoptFunnelStores([], [pgBoard], [pgBoard.id]).length === 0, "tombstone remove o funil do Postgres")
+const adoptFunnelKv = memoryKv()
+await saveFunnelsKv(adoptFunnelKv, [kvBoard])
+assert((await loadWorkspaceFunnels({ AUTH: adoptFunnelKv }))[0]?.name === "Quadro KV", "loadWorkspaceFunnels lê o KV")
+assert((await loadWorkspaceFunnels({ AUTH: memoryKv() })).length === 0, "loadWorkspaceFunnels sem KV nem Postgres fica vazio")
+const adoptGoneKv = memoryKv()
+await rememberRemovedFunnels(adoptGoneKv, [kvBoard.id])
+await saveFunnelsKv(adoptGoneKv, [kvBoard])
+assert((await loadWorkspaceFunnels({ AUTH: adoptGoneKv })).length === 0, "loadWorkspaceFunnels aplica tombstone do funil")
 assert(
   !settingsPersistSettled(
     migrateSettings({ telegramBotUsername: "@a", leadCategories: ["VIP"] }),

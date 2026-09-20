@@ -349,6 +349,11 @@ export function hydrateLeads(
   return overlayPendingLeads(next, pending, removed)
 }
 
+/** GET/MCP: KV sem quadro cai no Postgres; KV com funis ganha. Tombstones continuam a valer. */
+export function adoptFunnelStores(kv: SalesFunnel[], remote: SalesFunnel[] = [], removedIds: Iterable<string> = []) {
+  return applyRemovedFunnels(kv.length ? kv : remote, [...removedIds])
+}
+
 /** GET: objecto vazio no KV não esconde username, scripts e categorias que ainda estão no Postgres. */
 export function adoptSettingsStores(kv: Settings, remote?: Settings | null): Settings {
   const local = migrateSettings(kv)

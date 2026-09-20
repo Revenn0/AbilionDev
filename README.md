@@ -178,7 +178,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `POST /api/auth/forgot` | público; em produção não devolve link |
 | `POST /api/auth/reset` | token de reset |
 | `POST /api/auth/password` | sessão |
-| `GET/POST /api/crm` | sessão — funis e settings (sem token). POST aceita `removedFunnelIds`; o KV ganha se já houver quadro. GET de settings une KV com o Postgres: um objecto vazio no KV não esconde username, scripts nem categorias que ainda estão no backup |
+| `GET/POST /api/crm` | sessão — funis e settings (sem token). POST aceita `removedFunnelIds`; o KV ganha se já houver quadro. GET une KV com o Postgres: um objecto vazio no KV não esconde username, scripts, categorias nem funis que ainda estão no backup |
 | `GET/POST/DELETE /api/leads` | sessão — GET pagina 400 (`nextCursor`, `stale` se o cursor sumiu) ou `?q=@user` no alias. A primeira página manda `removed` (tombstones) e `clipped` se o índice está no teto (8000 chats / 4000 sem chat). O hydrate pede até 40 páginas (16000). Página a meio vazia/stale **não** conta como lista; `clipped` ou teto de páginas é janela incompleta e **não** apaga leads locais |
 | `GET /api/inbox` | sessão — página 400 do Telegram (`nextCursor`, `stale` se o cursor sumiu). O poll pede a primeira página e não reabre lead apagado nesta sessão |
 | `GET/POST /api/runtime` | sessão — GET qualquer conta; POST só dono (token, IA, voz) |
@@ -188,7 +188,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `GET/POST/PATCH /api/users` | sessão — lista; POST/PATCH só dono (máx. 40 contas) |
 | `GET/POST/DELETE /api/tokens` | sessão — token `abn_…` (o valor completo só no POST) |
 | `POST /api/funnels/import` | sessão — ManyChat / n8n / Typebot / Abilion / mensagens |
-| `POST /mcp` ou `/api/mcp` | Bearer ou cookie — JSON-RPC para agentes (60 / min por conta e IP). Settings e scripts usam o mesmo merge KV+Postgres do painel |
+| `POST /mcp` ou `/api/mcp` | Bearer ou cookie — JSON-RPC para agentes (60 / min por conta e IP). Settings, scripts e funis usam o mesmo merge KV+Postgres do painel |
 | `GET /mcp` | público: `{ ok, name, version, install }` |
 | `GET /api/install` | público: manual do pixel + snippet (`?s=` para um script) |
 | `POST /api/telegram` | Telegram; `secret_token` do webhook |

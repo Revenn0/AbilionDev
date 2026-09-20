@@ -17,7 +17,6 @@ import {
   adoptLeadStores,
   adoptOperatorLead,
   commitStoredLead,
-  applyRemovedFunnels,
   applyRemovedLeads,
   clipRemovedIds,
   enforceSinglePublished,
@@ -41,8 +40,6 @@ import {
   loadLead,
   claimCronLock,
   renewCronLock,
-  loadFunnelsKv,
-  loadRemovedFunnelIds,
   loadRemovedLeadIds,
   releaseCronLock,
   persistFunnelsMerge,
@@ -65,7 +62,7 @@ import {
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
 import { readJsonObject, readJsonStrict, type JsonFail } from "./json-body.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall } from "./telegram.ts"
-import { loadWorkspaceSettings } from "./workspace-settings.ts"
+import { loadWorkspaceFunnels, loadWorkspaceSettings } from "./workspace-settings.ts"
 import type { KvLike } from "./kv.ts"
 
 type Fetcher = { fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> }
@@ -819,25 +816,7 @@ async function persistSettings(env: Env, settings: Settings) {
 }
 
 async function loadFunnels(env: Env): Promise<SalesFunnel[]> {
-  const kv = env.AUTH ? await loadFunnelsKv(env.AUTH) : []
-  const rows = kv.length
-    ? kv
-    : ((await rest<SalesFunnelRow[]>(env, `funnels?workspace_id=eq.${WORKSPACE}`)) ?? [])
-        .map((row) =>
-          sanitizeIncomingFunnel({
-            id: row.id,
-            name: row.name,
-            mode: row.mode,
-            status: row.status,
-            updatedAt: row.updated_at,
-            nodes: row.nodes ?? [],
-            edges: row.edges ?? [],
-            production: row.production,
-          })
-        )
-        .filter((item): item is SalesFunnel => Boolean(item))
-  if (!env.AUTH) return rows
-  return applyRemovedFunnels(rows, await loadRemovedFunnelIds(env.AUTH))
+  return loadWorkspaceFunnels(env)
 }
 
 async function loadSettings(env: Env): Promise<Settings> {
@@ -1188,17 +1167,6 @@ type TelegramUpdate = {
     chat: { id: number }
     new_chat_member: { status: string; user: TelegramUser }
   }
-}
-
-type SalesFunnelRow = {
-  id: string
-  name: string
-  mode: SalesFunnel["mode"]
-  status: SalesFunnel["status"]
-  updated_at: string
-  nodes: SalesFunnel["nodes"]
-  edges: SalesFunnel["edges"]
-  production: SalesFunnel["production"]
 }
 
 type LeadEventRow = {
