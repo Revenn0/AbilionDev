@@ -132,8 +132,6 @@ export function mergeSecrets(current: RuntimeSecrets, patch: RuntimeSecrets): Ru
     const voice = patch.elevenVoiceId.trim()
     if (!looksMasked(voice)) next.elevenVoiceId = voice
   }
-  if (patch.webhookUrl !== undefined) next.webhookUrl = patch.webhookUrl
-  if (patch.webhookOk !== undefined) next.webhookOk = patch.webhookOk
   next.updatedAt = new Date().toISOString()
   return next
 }

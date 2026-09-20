@@ -53,7 +53,7 @@ import {
 } from "./runtime-secrets.ts"
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
 import { readJsonObject, readJsonStrict, type JsonFail } from "./json-body.ts"
-import { telegramCall } from "./telegram.ts"
+import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall } from "./telegram.ts"
 import type { KvLike } from "./kv.ts"
 
 type Fetcher = { fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> }
@@ -438,9 +438,20 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
 
 async function runTelegram(env: Env, update: TelegramUpdate) {
   const { resolved } = await runtimeOf(env)
-  const token = resolved.telegramBotToken
-  if (!token) return
+  if (!resolved.telegramBotToken) return
+  const updateId = typeof update.update_id === "number" && update.update_id > 0 ? update.update_id : 0
+  const kv = kvOf(env)
+  if (updateId && kv && !(await claimTelegramUpdate(kv, updateId))) return
+  try {
+    await deliverTelegram(env, update, resolved.telegramBotToken)
+  } catch (error) {
+    if (updateId && kv) await forgetTelegramUpdate(kv, updateId)
+    throw error
+  }
+}
 
+async function deliverTelegram(env: Env, update: TelegramUpdate, token: string) {
+  const { resolved } = await runtimeOf(env)
   const joinUser = update.message?.new_chat_members?.[0] ?? (update.chat_member?.new_chat_member?.status === "member" ? update.chat_member.new_chat_member.user : undefined)
   const message = update.message
   const from = joinUser ?? message?.from
@@ -512,6 +523,8 @@ async function runTelegram(env: Env, update: TelegramUpdate) {
   const settings = await loadSettings(env)
   const ste = steRuntimeFromFunnels(funnels, settings)
   const shouldTalk = ste.talking !== false && !joinUser
+  const pending = lead
+  let delivered = !shouldTalk
   if (shouldTalk) {
     const talked = incoming?.trim()
       ? await replySteSmart(lead, incoming, {
@@ -523,11 +536,18 @@ async function runTelegram(env: Env, update: TelegramUpdate) {
           runtime: ste,
         })
       : replySte(lead, incoming, Date.now(), ste)
-    lead = talked.lead
-    await sendSteReplies(env, token, chatId, talked.replies, talked.beat)
+    const sent = await sendSteReplies(env, token, chatId, talked.replies, talked.beat)
+    if (sent.ok) {
+      lead = talked.lead
+      delivered = true
+    } else {
+      lead = pending
+    }
   }
 
   await saveLead(env, lead)
+  const updateId = typeof update.update_id === "number" && update.update_id > 0 ? update.update_id : 0
+  if (!delivered && updateId && env.AUTH) await forgetTelegramUpdate(env.AUTH, updateId)
 }
 
 async function processWaits(env: Env) {
@@ -863,6 +883,7 @@ async function rest<T>(env: Env, path: string, init?: RequestInit): Promise<T | 
 }
 
 async function sendSteReplies(env: Env, token: string, chatId: string, replies: string[], beat?: SteBeat) {
+  if (!replies.length) return { ok: true }
   const clip = beat ? voiceClipFor(beat.kind) : null
   const kv = kvOf(env)
   if (clip && kv) {
@@ -875,14 +896,15 @@ async function sendSteReplies(env: Env, token: string, chatId: string, replies: 
           if (fileId !== stored.fileId) await rememberVoiceFile(kv, clip.id, fileId)
           const links = linkFollowUp(replies)
           if (links) {
-            await telegram(token, "sendMessage", {
+            const sent = await telegram(token, "sendMessage", {
               chat_id: chatId,
               text: toTelegramHtml(links),
               parse_mode: "HTML",
               disable_web_page_preview: true,
             })
+            return { ok: sent.ok }
           }
-          return
+          return { ok: true }
         }
       } catch {
         /* cai no texto */
@@ -890,14 +912,16 @@ async function sendSteReplies(env: Env, token: string, chatId: string, replies: 
     }
   }
   for (const [index, text] of replies.entries()) {
-    await telegram(token, "sendMessage", {
+    const sent = await telegram(token, "sendMessage", {
       chat_id: chatId,
       text: toTelegramHtml(text),
       parse_mode: "HTML",
       disable_web_page_preview: true,
     })
+    if (!sent.ok) return { ok: false }
     if (index < replies.length - 1) await sleep(280)
   }
+  return { ok: true }
 }
 
 async function telegram(token: string, method: string, body: Record<string, unknown>) {

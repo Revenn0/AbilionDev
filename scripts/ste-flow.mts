@@ -60,7 +60,7 @@ import { barShare } from "../src/lib/ops.ts"
 import { mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
 import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, handleAuth, memoryAuthStore, retainUserSessions } from "../worker/auth.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
-import { telegramCall } from "../worker/telegram.ts"
+import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall } from "../worker/telegram.ts"
 import { backgroundCtx, handleRequest, type Env } from "../worker/index.ts"
 import { clearSessionExpired, noteUnauthorized, subscribeSessionExpired } from "../src/lib/session.ts"
 
@@ -256,6 +256,9 @@ assert(counted.clicks === 2, "clique total inclui direto")
 
 const kept = mergeSecrets({ telegramBotToken: "123:abc" }, { telegramBotToken: "•••• abc" })
 assert(kept.telegramBotToken === "123:abc", "mascara nao apaga o token")
+const spoofHook = mergeSecrets({ webhookOk: false, webhookUrl: "https://www.abilion.lol/api/telegram" }, { webhookOk: true, webhookUrl: "https://evil.test/hook" })
+assert(spoofHook.webhookOk !== true, "cliente não marca webhookOk")
+assert(spoofHook.webhookUrl !== "https://evil.test/hook", "cliente não aponta o webhook")
 const swapped = mergeSecrets({ telegramBotToken: "123:abc" }, { telegramBotToken: "999:xyz" })
 assert(swapped.telegramBotToken === "999:xyz", "token novo substitui")
 assert(tokenHint("123:abcd") === "•••• abcd", "hint do token")
@@ -1036,6 +1039,13 @@ const hugeHook = await handleRequest(
   backgroundCtx()
 )
 assert(hugeHook.status === 413, "webhook recusa corpo enorme")
+const prevTelegramFetch = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("api.telegram.org")) {
+    return new Response(JSON.stringify({ ok: true }), { status: 200 })
+  }
+  return prevTelegramFetch(input, init)
+}) as typeof fetch
 const startCtx = backgroundCtx()
 const startEnv = { ...apiEnv, TELEGRAM_WEBHOOK_SECRET: "hook-secret", TELEGRAM_BOT_TOKEN: "000:test" } as Env
 const startHook = await handleRequest(
@@ -1139,6 +1149,89 @@ await joinCtx.flush()
 const joined = (await listLeads(startEnv.AUTH, 20, "all")).find((item) => item.contact === "@joiner")
 assert(joined?.origin === "group_join" || joined?.stage === "group", "join cria lead do grupo")
 assert(!(joined?.messages ?? []).some((item) => item.role === "ste"), "join não dispara a Sté no 1:1")
+globalThis.fetch = prevTelegramFetch
+const denyFetch = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("api.telegram.org")) {
+    return new Response(JSON.stringify({ ok: false, description: "Forbidden: bot was blocked" }), { status: 403 })
+  }
+  return denyFetch(input, init)
+}) as typeof fetch
+const failEnv = { ...apiEnv, TELEGRAM_WEBHOOK_SECRET: "hook-secret", TELEGRAM_BOT_TOKEN: "000:fail" } as Env
+const failCtx = backgroundCtx()
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/telegram", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+        body: JSON.stringify({
+          update_id: 77,
+          message: {
+            chat: { id: 8001 },
+            text: "/start fb_fail",
+            from: { id: 8001, username: "blocked", first_name: "Bia" },
+          },
+        }),
+      }),
+      failEnv,
+      failCtx
+    )
+  ).status === 200,
+  "webhook recusado pelo Telegram ainda é 200"
+)
+await failCtx.flush()
+const blocked = (await listLeads(failEnv.AUTH, 20, "all")).find((item) => item.contact === "@blocked")
+assert(blocked?.telegramChatId === "8001", "lead recusado fica com o chat")
+assert(!(blocked?.messages ?? []).some((item) => item.role === "ste"), "Telegram recusado não grava boas-vindas")
+globalThis.fetch = denyFetch
+const okFetch = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("api.telegram.org")) {
+    return new Response(JSON.stringify({ ok: true }), { status: 200 })
+  }
+  return okFetch(input, init)
+}) as typeof fetch
+const dupEnv = { ...apiEnv, TELEGRAM_WEBHOOK_SECRET: "hook-secret", TELEGRAM_BOT_TOKEN: "000:dup" } as Env
+const dupOnce = backgroundCtx()
+const dupBody = {
+  update_id: 42,
+  message: {
+    chat: { id: 8100 },
+    text: "/start fb_dup",
+    from: { id: 8100, username: "dup", first_name: "Duda" },
+  },
+}
+await handleRequest(
+  new Request("http://local.test/api/telegram", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+    body: JSON.stringify(dupBody),
+  }),
+  dupEnv,
+  dupOnce
+)
+await dupOnce.flush()
+const dudaFirst = (await listLeads(dupEnv.AUTH, 20, "all")).find((item) => item.contact === "@dup")
+const dudaSte = (dudaFirst?.messages ?? []).filter((item) => item.role === "ste").length
+assert(dudaSte > 0, "primeiro update grava as boas-vindas")
+const dupAgain = backgroundCtx()
+await handleRequest(
+  new Request("http://local.test/api/telegram", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+    body: JSON.stringify(dupBody),
+  }),
+  dupEnv,
+  dupAgain
+)
+await dupAgain.flush()
+const duda = (await listLeads(dupEnv.AUTH, 20, "all")).find((item) => item.contact === "@dup")
+assert((duda?.messages ?? []).filter((item) => item.role === "ste").length === dudaSte, "update_id repetido não reenvia")
+assert(await claimTelegramUpdate(dupEnv.AUTH, 42) === false, "update_id já visto não volta a entrar")
+await forgetTelegramUpdate(dupEnv.AUTH, 42)
+assert(await claimTelegramUpdate(dupEnv.AUTH, 42), "esquecer o update permite retry")
+globalThis.fetch = okFetch
 const startLogin = await handleRequest(
   new Request("http://local.test/api/auth/login", {
     method: "POST",

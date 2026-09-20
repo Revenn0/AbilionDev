@@ -1,7 +1,33 @@
+import type { KvLike } from "./kv.ts"
+
+export const TG_UPDATES = "tg:updates"
+const UPDATE_CAP = 400
+
 export type TelegramCallResult = {
   ok: boolean
   status: number
   retryable: boolean
+}
+
+function readUpdateIds(raw: unknown): number[] {
+  if (!raw || typeof raw !== "object") return []
+  const ids = (raw as { ids?: unknown }).ids
+  if (!Array.isArray(ids)) return []
+  return ids.filter((item): item is number => typeof item === "number" && item > 0)
+}
+
+export async function claimTelegramUpdate(kv: KvLike, id: number): Promise<boolean> {
+  if (!Number.isFinite(id) || id < 1) return true
+  const ids = readUpdateIds(await kv.get(TG_UPDATES, "json"))
+  if (ids.includes(id)) return false
+  await kv.put(TG_UPDATES, JSON.stringify({ ids: [id, ...ids].slice(0, UPDATE_CAP) }))
+  return readUpdateIds(await kv.get(TG_UPDATES, "json")).includes(id)
+}
+
+export async function forgetTelegramUpdate(kv: KvLike, id: number) {
+  if (!Number.isFinite(id) || id < 1) return
+  const ids = readUpdateIds(await kv.get(TG_UPDATES, "json")).filter((item) => item !== id)
+  await kv.put(TG_UPDATES, JSON.stringify({ ids }))
 }
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>

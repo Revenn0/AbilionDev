@@ -1,5 +1,6 @@
 import { clipHash, STE_VOICE_CLIPS, type SteVoiceClip } from "../src/lib/ste-voice.ts"
 import type { KvLike } from "./kv.ts"
+import { telegramCall } from "./telegram.ts"
 
 export const VOICE_STORE_KEY = "voice:clips"
 export const ELEVEN_MODEL = "eleven_multilingual_v2"
@@ -129,10 +130,9 @@ export async function prepareVoiceClips(kv: KvLike, apiKey: string, voiceId: str
 
 export async function sendStoredVoice(token: string, chatId: string, stored: StoredVoiceClip) {
   if (stored.fileId) {
-    const reused = await telegramJson(token, stored.mime === "audio/mpeg" ? "sendAudio" : "sendVoice", {
-      chat_id: chatId,
-      [stored.mime === "audio/mpeg" ? "audio" : "voice"]: stored.fileId,
-    })
+    const method = stored.mime === "audio/mpeg" ? "sendAudio" : "sendVoice"
+    const field = stored.mime === "audio/mpeg" ? "audio" : "voice"
+    const reused = await telegramCall(token, method, { chat_id: chatId, [field]: stored.fileId })
     if (reused.ok) return stored.fileId
   }
   if (!stored.audioB64) return ""
@@ -154,15 +154,6 @@ export async function rememberVoiceFile(kv: KvLike, clipId: string, fileId: stri
   saved.updatedAt = new Date().toISOString()
   store[clipId] = saved
   await saveVoiceStore(kv, store)
-}
-
-async function telegramJson(token: string, method: string, body: Record<string, unknown>) {
-  const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  })
-  return (await res.json().catch(() => ({}))) as TelegramMedia
 }
 
 async function telegramUpload(
