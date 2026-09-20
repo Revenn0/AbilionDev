@@ -624,6 +624,7 @@ function LeadDrawer({
   const nameRef = useRef(name)
   const dirtyMemory = useRef(false)
   const dirtyName = useRef(false)
+  const persistTimer = useRef(0)
   const leadRef = useRef(lead)
 
   useEffect(() => {
@@ -656,9 +657,15 @@ function LeadDrawer({
   }
 
   const flushEdits = () => {
+    window.clearTimeout(persistTimer.current)
     persistDraft()
     dirtyName.current = false
     dirtyMemory.current = false
+  }
+
+  const schedulePersist = () => {
+    window.clearTimeout(persistTimer.current)
+    persistTimer.current = window.setTimeout(() => persistDraft(), 400)
   }
   const flushEditsRef = useRef(flushEdits)
   const onFlushRef = useRef(onFlush)
@@ -684,6 +691,7 @@ function LeadDrawer({
 
   useEffect(() => {
     return () => {
+      window.clearTimeout(persistTimer.current)
       if (document.getElementById("lead-memory") || document.getElementById("lead-display-name")) {
         flushEditsRef.current()
       }
@@ -803,7 +811,7 @@ function LeadDrawer({
             dirtyName.current = true
             nameRef.current = event.target.value
             setName(event.target.value)
-            persistDraft()
+            schedulePersist()
           }}
           onBlur={() => {
             if (!dirtyName.current) return
@@ -920,7 +928,7 @@ function LeadDrawer({
             dirtyMemory.current = true
             memoryRef.current = event.target.value
             setMemory(event.target.value)
-            persistDraft()
+            schedulePersist()
           }}
           placeholder="O que esta pessoa já disse. Não misturar com outro chat."
         />

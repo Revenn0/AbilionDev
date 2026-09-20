@@ -15,7 +15,7 @@ import {
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
 import { AlignHorizontalSpaceAround, ArrowLeft, Maximize2, Minus, PanelsTopLeft, Pencil, Plus, SlidersHorizontal } from "lucide-react"
-import { Link } from "react-router-dom"
+import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 import { LogoMark } from "@/components/brand/logo"
 import { Button } from "@/components/ui/button"
@@ -90,6 +90,7 @@ export function SalesCanvas({
   const [mobilePanel, setMobilePanel] = useState<"none" | "blocks" | "props">("none")
   const [publishError, setPublishError] = useState("")
   const [saving, setSaving] = useState(false)
+  const navigate = useNavigate()
   const keepDropSelection = useRef(false)
   const persistLock = useRef(false)
   const didFit = useRef(false)
@@ -242,10 +243,17 @@ export function SalesCanvas({
       <header className="flex min-h-12 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-1.5">
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <LogoMark className="size-6 shrink-0" />
-          <Button asChild variant="ghost" size="sm" className="h-8 rounded-full text-[12px] text-slate-600 -ml-0.5 hover:bg-slate-100">
-            <Link to="/fluxo">
-              <ArrowLeft className="size-3.5" /> Voltar
-            </Link>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 rounded-full text-[12px] text-slate-600 -ml-0.5 hover:bg-slate-100"
+            onClick={() => {
+              if (dirty.current && !readOnlyRef.current) persistRef.current()
+              void (onFlush?.() ?? Promise.resolve()).finally(() => navigate("/fluxo"))
+            }}
+          >
+            <ArrowLeft className="size-3.5" /> Voltar
           </Button>
           <div className="hidden rounded-full border border-slate-200 bg-[#f4f5f7] p-0.5 text-[11px] sm:flex">
             <span className="rounded-full bg-white px-2.5 py-1 text-slate-900 shadow-sm">Visual</span>
@@ -453,7 +461,7 @@ export function SalesCanvas({
             connectionLineStyle={{ stroke: "#93c5fd", strokeWidth: 1.6 }}
             nodesDraggable={!readOnly}
             nodesConnectable={!readOnly}
-            onlyRenderVisibleElements
+            onlyRenderVisibleElements={false}
             elevateNodesOnSelect={false}
             selectNodesOnDrag={false}
             proOptions={{ hideAttribution: true }}
