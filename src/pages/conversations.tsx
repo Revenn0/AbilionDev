@@ -16,7 +16,7 @@ import { factsWithTrack } from "@/lib/geo"
 import { publishedFunnel } from "@/lib/runtime"
 import { advanceSteIfDue, canSimulateSte, canTickSteLocally, replySteLived, splitSteMarkup, steHeardChips, steRuntimeFromFunnels, steStepLabel, steWaitDelayMs } from "@/lib/ste"
 import { useTrackSummary } from "@/lib/use-track-summary"
-import { useRemoteLeadSearch } from "@/lib/use-lead-query"
+import { remoteSearchBlank, useRemoteLeadSearch } from "@/lib/use-lead-query"
 import { timeAgo } from "@/lib/format"
 import { displayContact, leadMatchesQuery } from "@/lib/lead-name"
 import type { Lead } from "@/lib/types"
@@ -61,7 +61,7 @@ export function ConversationsPage() {
   const runtimeKey = publishedFunnel(state.funnels)?.production?.publishedAt ?? ""
   const [filter, setFilter] = useState<FilterId>("waiting")
   const [query, setQuery] = useState("")
-  useRemoteLeadSearch(query)
+  const searchStatus = useRemoteLeadSearch(query)
   const [shown, setShown] = useState(INBOX_CAP)
   const [id, setId] = useState<string | null>(null)
   const [draft, setDraft] = useState("")
@@ -242,7 +242,13 @@ export function ConversationsPage() {
                   placeholder="Nome, @user ou campanha"
                 />
               </div>
-              {rows.length === 0 ? (
+              {remoteSearchBlank(query, rows.length, searchStatus) === "loading" ? (
+                <p className="px-4 py-10 text-center text-[13px] text-muted-foreground">A procurar no Worker…</p>
+              ) : remoteSearchBlank(query, rows.length, searchStatus) === "error" ? (
+                <p className="px-4 py-10 text-center text-[13px] text-destructive" role="alert" data-inbox-search-error>
+                  Não consegui procurar. Isto não é uma inbox vazia.
+                </p>
+              ) : rows.length === 0 ? (
                 <p className="px-4 py-10 text-center text-[13px] text-muted-foreground">
                   Nada neste recorte. Limpa a busca ou escolhe Todas.
                 </p>

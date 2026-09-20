@@ -31,7 +31,7 @@ import { toast } from "sonner"
 import { GeoBadge } from "@/components/crm/geo-badge"
 import { factsWithTrack } from "@/lib/geo"
 import { useTrackSummary } from "@/lib/use-track-summary"
-import { useRemoteLeadSearch } from "@/lib/use-lead-query"
+import { remoteSearchBlank, useRemoteLeadSearch } from "@/lib/use-lead-query"
 
 const FILTERS = [
   { id: "all", label: "Todos" },
@@ -50,7 +50,7 @@ export function LeadsPage() {
   const { summary } = useTrackSummary(8000)
   const [filter, setFilter] = useState<string>("all")
   const [query, setQuery] = useState("")
-  useRemoteLeadSearch(query)
+  const searchStatus = useRemoteLeadSearch(query)
   const [open, setOpen] = useState(false)
   const [importing, setImporting] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
@@ -174,6 +174,15 @@ export function LeadsPage() {
               <p className="text-[14px] font-medium">Não li os leads</p>
               <p className="mt-1 max-w-md text-[13px] text-muted-foreground">
                 O Worker não respondeu. Isto não é uma base vazia — tenta outra vez no aviso acima.
+              </p>
+            </div>
+          ) : remoteSearchBlank(query, rows.length, searchStatus) === "loading" ? (
+            <HydratePanel>A procurar no Worker…</HydratePanel>
+          ) : remoteSearchBlank(query, rows.length, searchStatus) === "error" ? (
+            <div className="grid place-items-center px-6 py-16 text-center" role="alert" data-lead-search-error>
+              <p className="text-[14px] font-medium">Não consegui procurar</p>
+              <p className="mt-1 max-w-md text-[13px] text-muted-foreground">
+                O Worker não respondeu a esta busca. Isto não é “nenhum lead” — tenta outra vez ou limpa a caixa.
               </p>
             </div>
           ) : rows.length === 0 ? (

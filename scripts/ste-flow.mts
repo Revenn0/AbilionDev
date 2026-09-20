@@ -86,6 +86,7 @@ import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, st
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
 import { LEAD_WRITE_BATCH, leadWriteAdopted, leadWriteChunks, leadWriteIds } from "../src/lib/runtime-api.ts"
+import { remoteSearchBlank } from "../src/lib/lead-search.ts"
 import { safeAppPath, withSafeNext } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { contactLookups, normalizeTelegramContact, sameLeadContact, validateCapture } from "../src/lib/capture.ts"
@@ -991,6 +992,12 @@ assert(
   leadPersistSync({ readKnown: true, readOk: true, pendingWrites: 0, writeOk: false }) === "error",
   "DELETE falhou continua erro"
 )
+assert(remoteSearchBlank("ab", 0, "idle") === "local", "busca curta é filtro local")
+assert(remoteSearchBlank("ana", 0, "idle") === "loading", "debounce não é vazio")
+assert(remoteSearchBlank("ana", 0, "loading") === "loading", "pedido em voo")
+assert(remoteSearchBlank("ana", 0, "error") === "error", "GET q= falhou não é vazio")
+assert(remoteSearchBlank("ana", 0, "ok") === "empty", "Worker e local vazios")
+assert(remoteSearchBlank("ana", 1, "error") === "hits", "acerto local não some se o Worker falhar")
 const settingsLive = migrateSettings({ telegramBotUsername: "@ste_bot", plugins: { telegram: true } })
 const settingsStale = migrateSettings({ telegramBotUsername: "", workspaceName: "Abilion" })
 assert(
