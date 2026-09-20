@@ -253,16 +253,22 @@ try {
   assert(pluginsCopy.includes("Exportar CSV"), "plugins exporta CSV")
   assert(!pluginsCopy.includes("Ligar Relatórios") && !pluginsCopy.includes("Ligar Webhooks"), "plugins sem interruptor morto")
 
-  await open(page, "/configuracoes?tab=notificacoes")
+  await open(page, "/configuracoes")
+  await clickNamed(page, "Notificações")
+  await page.waitForFunction(() => document.body.innerText.includes("Ainda não disparam"), { timeout: 8_000 })
   const notifyCopy = await page.evaluate(() => document.body.innerText)
   assert(notifyCopy.includes("Ainda não disparam"), "notificações sem interruptor morto")
   assert(notifyCopy.includes("Em breve"), "notificações em breve")
 
   await open(page, "/conversas")
+  await page.waitForSelector("h1", { timeout: 10_000 })
   const inboxCopy = await page.evaluate(() => document.body.innerText)
   assert(
-    inboxCopy.includes("Nenhuma conversa") || inboxCopy.includes("Simular lead"),
-    "conversas vazias ou simulação explícita"
+    inboxCopy.includes("Nenhuma conversa") ||
+      inboxCopy.includes("Simular lead") ||
+      inboxCopy.includes("Nada neste recorte") ||
+      inboxCopy.includes("Escreve como o lead"),
+    "conversas vazias, filtro vazio ou simulação explícita"
   )
 
   for (const viewport of VIEWPORTS) {
