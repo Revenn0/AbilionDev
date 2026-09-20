@@ -10,14 +10,6 @@ export async function fetchHealth() {
     return (await res.json()) as {
       ok: boolean
       unreachable?: boolean
-      telegram?: boolean
-      supabase?: boolean
-      llm?: boolean
-      local?: boolean
-      persist?: "supabase" | "kv" | "memory"
-      model?: string
-      backup?: string
-      voice?: boolean
       telegramBotUsername?: string
     }
   } catch {

@@ -398,7 +398,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
             defaultEdgeOptions={{ style: { stroke: "#93c5fd", strokeWidth: 1.6 }, type: "default" }}
           >
             <Background id="sales-dots" variant={BackgroundVariant.Dots} gap={22} size={1.1} color="#d4d7de" />
-            <Controls showInteractive={false} />
+            <Controls showInteractive={false} aria-label="Controlos do quadro" />
           </ReactFlow>
           <FlowSimulator
             funnel={{

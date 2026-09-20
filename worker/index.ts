@@ -1,4 +1,4 @@
-import { clientIp, consumeMemoryThrottle, handleAuth, kvAuthStore, randomToken, sessionUser } from "./auth.ts"
+import { clientIp, consumeKvThrottle, consumeMemoryThrottle, handleAuth, kvAuthStore, randomToken, sessionUser } from "./auth.ts"
 import { campaignFor } from "../src/lib/labels.ts"
 import { advanceSteIfDue, isSteWait, replySte, replySteSmart, steRuntimeFromFunnels, toTelegramHtml, type SteBeat } from "../src/lib/ste.ts"
 import { linkFollowUp, voiceClipFor } from "../src/lib/ste-voice.ts"
@@ -129,16 +129,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     const settings = await loadSettings(env)
     return json({
       ok: true,
-      telegram: resolved.telegram,
       telegramBotUsername: cleanBotUsername(resolved.telegramBotUsername || settings.telegramBotUsername),
-      supabase: resolved.supabase,
-      ste: true,
-      llm: resolved.llm,
-      model: resolved.model,
-      backup: resolved.fallbackModel,
-      auth: Boolean(env.AUTH),
-      persist: resolved.persist,
-      voice: resolved.voice,
     })
   }
 
@@ -152,7 +143,11 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   }
 
   if (url.pathname === "/api/track" && request.method === "POST") {
-    if (!consumeMemoryThrottle(`track:${clientIp(request)}`, 60, 60_000)) {
+    const trackKey = `track:${clientIp(request)}`
+    const allowed = env.AUTH
+      ? await consumeKvThrottle(env.AUTH, trackKey, 60, 60_000)
+      : consumeMemoryThrottle(trackKey, 60, 60_000)
+    if (!allowed) {
       return new Response(null, { status: 429, headers: corsHeaders() })
     }
     const body = await readTrackBody(request)
@@ -498,10 +493,34 @@ async function notifyEster(env: Env, token: string, body: string, settings: Sett
 
 async function persistFunnels(env: Env, funnels: SalesFunnel[]) {
   if (env.AUTH) await saveFunnelsKv(env.AUTH, funnels)
+  if (!env.SUPABASE_SERVICE_ROLE || !funnels.length) return
+  await rest(env, "funnels", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates" },
+    body: JSON.stringify(
+      funnels.map((funnel) => ({
+        id: funnel.id,
+        workspace_id: WORKSPACE,
+        name: funnel.name,
+        mode: funnel.mode,
+        status: funnel.status,
+        nodes: funnel.nodes,
+        edges: funnel.edges,
+        production: funnel.production ?? null,
+        updated_at: funnel.updatedAt,
+      }))
+    ),
+  })
 }
 
 async function persistSettings(env: Env, settings: Settings) {
   if (env.AUTH) await saveSettingsKv(env.AUTH, settings)
+  if (!env.SUPABASE_SERVICE_ROLE) return
+  await rest(env, "settings", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates" },
+    body: JSON.stringify({ workspace_id: WORKSPACE, data: publicSettings(settings) }),
+  })
 }
 
 async function loadFunnels(env: Env): Promise<SalesFunnel[]> {
@@ -632,49 +651,54 @@ async function removeLead(env: Env, id: string) {
 }
 
 async function saveLead(env: Env, lead: Lead) {
-  if (env.AUTH) await upsertLeadKv(env.AUTH, lead)
+  const bounded = sanitizeIncomingLead(lead) ?? {
+    ...lead,
+    events: lead.events.slice(-80),
+    messages: (lead.messages ?? []).slice(-80),
+  }
+  if (env.AUTH) await upsertLeadKv(env.AUTH, bounded)
   if (!env.SUPABASE_SERVICE_ROLE) return
   await rest(env, "leads", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates" },
     body: JSON.stringify({
-      id: lead.id,
+      id: bounded.id,
       workspace_id: WORKSPACE,
-      name: lead.name,
-      contact: lead.contact,
-      channel: lead.channel,
-      campaign: lead.campaign,
-      origin: lead.origin,
-      start_payload: lead.startPayload ?? null,
-      visitor_id: lead.visitorId ?? null,
-      temperature: lead.temperature,
-      stage: lead.stage,
-      print_at: lead.printAt ?? null,
-      banca_at: lead.bancaAt ?? null,
-      memory: lead.memory,
-      facts: lead.facts ?? {},
-      last_message: lead.lastMessage ?? null,
-      funnel_id: lead.funnelId ?? null,
-      node_id: lead.nodeId ?? null,
-      wait_until: lead.waitUntil ?? null,
-      paused: lead.paused ?? false,
-      messages: lead.messages ?? [],
-      ste_phase: lead.stePhase ?? null,
-      ste_blocked: lead.steBlocked ?? false,
-      ste_quiet: lead.steQuiet ?? false,
-      telegram_chat_id: lead.telegramChatId ?? null,
-      updated_at: lead.updatedAt,
-      created_at: lead.createdAt,
+      name: bounded.name,
+      contact: bounded.contact,
+      channel: bounded.channel,
+      campaign: bounded.campaign,
+      origin: bounded.origin,
+      start_payload: bounded.startPayload ?? null,
+      visitor_id: bounded.visitorId ?? null,
+      temperature: bounded.temperature,
+      stage: bounded.stage,
+      print_at: bounded.printAt ?? null,
+      banca_at: bounded.bancaAt ?? null,
+      memory: bounded.memory,
+      facts: bounded.facts ?? {},
+      last_message: bounded.lastMessage ?? null,
+      funnel_id: bounded.funnelId ?? null,
+      node_id: bounded.nodeId ?? null,
+      wait_until: bounded.waitUntil ?? null,
+      paused: bounded.paused ?? false,
+      messages: bounded.messages ?? [],
+      ste_phase: bounded.stePhase ?? null,
+      ste_blocked: bounded.steBlocked ?? false,
+      ste_quiet: bounded.steQuiet ?? false,
+      telegram_chat_id: bounded.telegramChatId ?? null,
+      updated_at: bounded.updatedAt,
+      created_at: bounded.createdAt,
     }),
   })
-  if (lead.events.length) {
+  if (bounded.events.length) {
     await rest(env, "lead_events", {
       method: "POST",
       headers: { Prefer: "resolution=merge-duplicates" },
       body: JSON.stringify(
-        lead.events.map((event: LeadEvent) => ({
+        bounded.events.map((event: LeadEvent) => ({
           id: event.id,
-          lead_id: lead.id,
+          lead_id: bounded.id,
           at: event.at,
           kind: event.kind,
           node_id: event.nodeId ?? null,

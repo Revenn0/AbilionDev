@@ -148,6 +148,22 @@ export function clearThrottle(snapshot: AuthSnapshot, key: string): AuthSnapshot
   return { ...snapshot, throttles }
 }
 
+export async function consumeKvThrottle(
+  kv: { get(key: string, type: "json"): Promise<unknown>; put(key: string, value: string): Promise<void> },
+  key: string,
+  limit: number,
+  windowMs: number,
+  now = Date.now(),
+  bucket = "track:throttles"
+) {
+  const raw = await kv.get(bucket, "json")
+  const throttles = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, AuthThrottle>) : {}
+  const gated = consumeThrottle({ users: [], sessions: [], resets: {}, throttles }, key, limit, windowMs, now)
+  const next = Object.fromEntries(Object.entries(gated.snapshot.throttles ?? {}).filter(([, item]) => item.resetAt > now))
+  await kv.put(bucket, JSON.stringify(next))
+  return gated.ok
+}
+
 export function clientIp(request: Request) {
   const forwarded = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for") || ""
   return forwarded.split(",")[0]?.trim() || "local"
@@ -179,8 +195,7 @@ export async function ensureOperatorUsers(store: AuthStore, password: string) {
       changed = true
       continue
     }
-    if (!(await verifyPassword(password, current.passwordHash)) || current.name !== operator.name) {
-      current.passwordHash = await hashPassword(password)
+    if (current.name !== operator.name) {
       current.name = operator.name
       changed = true
     }

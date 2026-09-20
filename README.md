@@ -67,7 +67,7 @@ O Worker `abilion` (conta `73dd2cecfc9c7f0220a36fe999e3edf1`) serve o painel e `
 
 Login: só `victor@abilion.com` ou `gabriel@abilion.com`. O primeiro acesso de cada conta grava a senha no KV `abilion-auth`. Depois, só essa senha entra. Login e “Esqueceu a senha?” têm limite por IP (8 e 5 tentativas / 15 min). Token do Telegram e chaves de IA **não** entram no git — Configurações → Vincular Telegram grava no mesmo KV e aponta o webhook. Troca de senha: Configurações → Conta. “Esqueceu a senha?” só devolve link fora de produção (não há e-mail). Leads: busca por nome/@user, exclusão com confirmação e hidratação até 400 no login. Simular 100 /start pede confirmação.
 
-Para forçar a mesma senha nas duas contas:
+`ABILION_OPERATOR_PASSWORD` só **cria** as contas que ainda não existem. Depois de criadas, a troca em Configurações → Conta fica. Não reescreve o hash em cada `/api/auth/me`.
 
 ```bash
 npx wrangler secret put ABILION_OPERATOR_PASSWORD
@@ -167,7 +167,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 
 | Rota | Quem |
 | --- | --- |
-| `GET /api/health` | público (sem secrets; inclui `telegramBotUsername`) |
+| `GET /api/health` | público: só `{ ok, telegramBotUsername }` |
 | `POST /api/auth/login` | público, 8 tentativas / 15 min por IP |
 | `POST /api/auth/logout` | sessão |
 | `GET /api/auth/me` | sessão |
@@ -192,7 +192,7 @@ Estes itens dependem de credenciais ou de uma decisão humana. O código não in
 - **Telegram em produção** continua desligado até existir `TELEGRAM_BOT_TOKEN` (e, se quiseres fixar, `TELEGRAM_WEBHOOK_SECRET`). Sem isso não há /start reais. A landing `/l` também fica sem CTA até o username estar no Worker.
 - **Voz da Sté** fica em texto até `ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID`. Não há `voice_id` inventado.
 - **Esqueceu a senha?** em produção não envia e-mail. Troca em Configurações → Conta.
-- **Supabase** só entra com `SUPABASE_SERVICE_ROLE`. Sem isso a operação corre no KV `abilion-auth`. Corre `005_worker_only_rls.sql` no SQL editor para fechar as policies anónimas do recorte antigo.
+- **Supabase** só entra com `SUPABASE_SERVICE_ROLE`. Sem isso a operação corre no KV `abilion-auth`. Corre `005_worker_only_rls.sql` no SQL editor do projecto Abilion (`eyjgmkmaixmpmeeahxon`) para fechar as policies anónimas. Não é o projecto alecrim.
 - **Senhas dos operadores** em produção já estão no KV. Não estão neste repositório. Primeiro acesso local define a senha (6+).
 - Plugin **Agenda** e **webhooks de saída** são “Em breve” de propósito. Relatórios exporta CSV da base de leads. Captura abre Leads. Telegram mostra o estado do Worker — sem interruptores que não fazem nada.
 - **Notificações** na conta também são “Em breve”. O aviso da Ester no print continua a sair pelo funil quando há `ESTER_CHAT_ID`.

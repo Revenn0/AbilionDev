@@ -21,7 +21,7 @@ const TelegramPage = lazy(() => import("@/pages/telegram").then((m) => ({ defaul
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { ready, state } = useStore()
-  if (!ready) return <div className="min-h-screen bg-background" />
+  if (!ready) return <PageFallback />
   if (state.user) return <Navigate to="/" replace />
   return children
 }

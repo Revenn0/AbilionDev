@@ -22,7 +22,7 @@ import { downloadLeadsCsv } from "@/lib/leads-export"
 import { cleanBotUsername, cleanTelegramGroupUrl } from "@/lib/migrate"
 import { useStore } from "@/lib/store"
 import { changePasswordRequest } from "@/lib/auth-api"
-import { fetchHealth, workerUrl } from "@/lib/channel"
+import { workerUrl } from "@/lib/channel"
 import { fetchRuntime, prepareVoice, saveRuntime, type RuntimeStatus } from "@/lib/runtime-api"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_LLM_MODELS, normalizeSteModel } from "@/lib/llm"
 import { STE_VOICE_CLIPS } from "@/lib/ste-voice"
@@ -127,6 +127,7 @@ function BotPane() {
   const [token, setToken] = useState("")
   const [group, setGroup] = useState(state.settings.telegramGroupUrl)
   const [glm, setGlm] = useState("")
+  const [opencode, setOpencode] = useState("")
   const [elevenKey, setElevenKey] = useState("")
   const [voiceId, setVoiceId] = useState("")
   const [model, setModel] = useState(STE_LLM_MODEL)
@@ -136,7 +137,6 @@ function BotPane() {
   const [groupError, setGroupError] = useState("")
   const [voiceError, setVoiceError] = useState("")
   const [runtimeLoaded, setRuntimeLoaded] = useState(false)
-  const [health, setHealth] = useState<Awaited<ReturnType<typeof fetchHealth>>>({ ok: false })
   const [runtime, setRuntime] = useState<RuntimeStatus>({ ok: false })
   const origin = workerUrl()
   const hook = runtime.webhook || `${origin}/api/telegram`
@@ -144,8 +144,7 @@ function BotPane() {
   const ads = adsDeepLink(cleanBotUsername(username) || runtime.telegramBotUsername || state.settings.telegramBotUsername)
 
   const refresh = async () => {
-    const [nextHealth, nextRuntime] = await Promise.all([fetchHealth(), fetchRuntime()])
-    setHealth(nextHealth)
+    const nextRuntime = await fetchRuntime()
     setRuntime(nextRuntime)
     setRuntimeLoaded(true)
     if (nextRuntime.telegramBotUsername) setUsername(nextRuntime.telegramBotUsername)
@@ -171,8 +170,8 @@ function BotPane() {
           token não fica no browser nem no git.
         </p>
         <div className="mt-4 flex flex-wrap gap-1.5">
-          <StatusPill tone={runtime.telegram || (runtimeLoaded && health.ok && health.telegram) ? "success" : "muted"}>
-            Telegram · {!runtimeLoaded ? "a verificar" : runtime.telegram || health.telegram ? "ligado" : "à espera do token"}
+          <StatusPill tone={runtime.telegram ? "success" : "muted"}>
+            Telegram · {!runtimeLoaded ? "a verificar" : runtime.telegram ? "ligado" : "à espera do token"}
           </StatusPill>
           <StatusPill tone={runtime.webhookOk ? "success" : "muted"}>
             Webhook · {runtime.webhookOk ? "activo" : "ainda não apontado"}
@@ -183,14 +182,14 @@ function BotPane() {
           <StatusPill tone={runtime.tokenHint ? "success" : "muted"}>
             {runtime.tokenHint ? `Token ${runtime.tokenHint}` : "Sem token no Worker"}
           </StatusPill>
-          <StatusPill tone={runtime.llm || health.llm ? "success" : "muted"}>
-            IA · {runtime.llm || health.llm ? runtime.model || health.model || "deepseek-v4.1-flash" : "script da Sté"}
+          <StatusPill tone={runtime.llm ? "success" : "muted"}>
+            IA · {runtime.llm ? runtime.model || "deepseek-v4.1-flash" : "script da Sté"}
           </StatusPill>
           <StatusPill>
-            Reserva · {runtime.fallbackModel || health.backup || STE_LLM_MODEL}
+            Reserva · {runtime.fallbackModel || STE_LLM_MODEL}
           </StatusPill>
-          <StatusPill tone={health.persist === "kv" || health.persist === "supabase" ? "success" : "muted"}>
-            Leads · {health.persist === "supabase" ? "Supabase" : "Worker"}
+          <StatusPill tone={runtime.persist === "kv" || runtime.persist === "supabase" ? "success" : "muted"}>
+            Leads · {runtime.persist === "supabase" ? "Supabase" : "Worker"}
           </StatusPill>
           <StatusPill tone={runtime.voice ? "success" : "muted"}>
             Voz · {runtime.voice ? runtime.voiceHint || "ElevenLabs" : "texto"}
@@ -228,7 +227,7 @@ function BotPane() {
               setGroupError("O convite tem de ser um link https://t.me/…")
               return
             }
-            if (!cleanUser && !runtime.telegramBotUsername && !token.trim() && !glm.trim() && !cleanGroup) {
+            if (!cleanUser && !runtime.telegramBotUsername && !token.trim() && !glm.trim() && !opencode.trim() && !cleanGroup) {
               setBotError("Informa o username do bot ou cola o token.")
               return
             }
@@ -240,6 +239,7 @@ function BotPane() {
               telegramGroupUrl: cleanGroup,
               ...(token.trim() ? { telegramBotToken: token.trim() } : {}),
               ...(glm.trim() ? { openaiApiKey: glm.trim() } : {}),
+              ...(opencode.trim() ? { opencodeApiKey: opencode.trim() } : {}),
               steModel: model,
               steFallbackModel: STE_LLM_FALLBACK,
             })
@@ -247,13 +247,13 @@ function BotPane() {
                 setRuntime(next)
                 setToken("")
                 setGlm("")
+                setOpencode("")
                 saveSettings({
                   telegramBotUsername: next.telegramBotUsername || cleanUser,
                   telegramGroupUrl: next.telegramGroupUrl || group.trim(),
                   telegramBotToken: "",
                   plugins: { ...state.settings.plugins, telegram: Boolean(next.telegram) },
                 })
-                void fetchHealth().then(setHealth)
                 toast.success(next.telegram ? "Telegram ligado no Worker." : "Username gravado. Falta o token.")
               })
               .catch((error: Error) => {
@@ -332,6 +332,17 @@ function BotPane() {
             </p>
           </div>
           <div className="space-y-1.5">
+            <Label htmlFor="bot-opencode">Chave OpenCode</Label>
+            <Input
+              id="bot-opencode"
+              type="password"
+              autoComplete="off"
+              value={opencode}
+              onChange={(event) => setOpencode(event.target.value)}
+              placeholder={runtime.llm && runtime.model?.includes("deepseek-v4.1") ? "OpenCode já ligada. Cola outra chave oc_sk_… para trocar." : "Cola a chave oc_sk_… (DeepSeek V4.1 Flash)"}
+            />
+          </div>
+          <div className="space-y-1.5">
             <Label htmlFor="bot-glm">Chave OpenRouter</Label>
             <Input
               id="bot-glm"
@@ -339,7 +350,7 @@ function BotPane() {
               autoComplete="off"
               value={glm}
               onChange={(event) => setGlm(event.target.value)}
-              placeholder={runtime.llm ? "IA já ligada. Cola outra chave sk-or-v1… para trocar." : "Cola a chave sk-or-v1…"}
+              placeholder={runtime.llm ? "Reserva já ligada. Cola outra chave sk-or-v1… para trocar." : "Cola a chave sk-or-v1…"}
             />
           </div>
           <p className="text-[12.5px] leading-relaxed text-muted-foreground">

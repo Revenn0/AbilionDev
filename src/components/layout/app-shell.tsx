@@ -84,7 +84,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (!state.user) navigate(loginNext, { replace: true })
   }, [ready, state.user, navigate, loginNext])
 
-  if (!ready) return <div className="min-h-screen bg-background" />
+  if (!ready) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-background" role="status" aria-live="polite">
+        <p className="text-[13px] text-muted-foreground">A carregar…</p>
+      </div>
+    )
+  }
   if (!state.user) return <Navigate to={loginNext} replace />
 
   return (

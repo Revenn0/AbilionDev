@@ -6,6 +6,7 @@ import { SyncBanner } from "@/components/layout/sync-banner"
 import { Button } from "@/components/ui/button"
 import { useStore } from "@/lib/store"
 import { fetchHealth, workerUrl } from "@/lib/channel"
+import { fetchRuntime, type RuntimeStatus } from "@/lib/runtime-api"
 import { adsDeepLink } from "@/lib/telegram-start"
 import { burstFacebookLeads, burstStats } from "@/lib/burst"
 import { toast } from "sonner"
@@ -23,12 +24,16 @@ export function TelegramPage() {
   const hook = `${workerUrl()}/api/telegram`
   const ads = adsDeepLink(settings.telegramBotUsername)
   const [health, setHealth] = useState<Awaited<ReturnType<typeof fetchHealth>> | null>(null)
+  const [runtime, setRuntime] = useState<RuntimeStatus | null>(null)
   const [burstLock, setBurstLock] = useState(false)
 
   useEffect(() => {
-    void fetchHealth().then(setHealth)
+    void Promise.all([fetchHealth(), fetchRuntime()]).then(([nextHealth, nextRuntime]) => {
+      setHealth(nextHealth)
+      setRuntime(nextRuntime)
+    })
   }, [])
-  const healthReady = health !== null
+  const healthReady = health !== null && runtime !== null
 
   return (
     <div className="h-full overflow-y-auto">
@@ -72,11 +77,11 @@ export function TelegramPage() {
             <p className="text-[12.5px] text-muted-foreground">Bot</p>
             <p className="mt-2 text-[18px] font-medium">{settings.telegramBotUsername || "Por configurar"}</p>
             <div className="mt-3 flex flex-wrap gap-1.5">
-              <StatusPill tone={settings.telegramBotUsername || health?.telegram ? "success" : "muted"}>
-                {!healthReady ? "A verificar…" : settings.telegramBotUsername || health?.telegram ? "Configurado" : "Ainda sem bot"}
+              <StatusPill tone={settings.telegramBotUsername || runtime?.telegram ? "success" : "muted"}>
+                {!healthReady ? "A verificar…" : settings.telegramBotUsername || runtime?.telegram ? "Configurado" : "Ainda sem bot"}
               </StatusPill>
-              <StatusPill tone={health?.ok && health.telegram ? "success" : "muted"}>
-                {!healthReady ? "A verificar…" : health?.ok && health.telegram ? "Telegram ligado" : "À espera do token"}
+              <StatusPill tone={runtime?.telegram ? "success" : "muted"}>
+                {!healthReady ? "A verificar…" : runtime?.telegram ? "Telegram ligado" : "À espera do token"}
               </StatusPill>
             </div>
           </article>
