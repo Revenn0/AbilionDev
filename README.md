@@ -195,7 +195,7 @@ Estes itens dependem de credenciais ou de uma decisão humana. O código não in
 - **Supabase** só entra com `SUPABASE_SERVICE_ROLE`. Sem isso a operação corre no KV `abilion-auth`. Corre `005_worker_only_rls.sql` no SQL editor do projecto Abilion (`eyjgmkmaixmpmeeahxon`) para fechar as policies anónimas. Não é o projecto alecrim.
 - **Senhas dos operadores** em produção já estão no KV. Não estão neste repositório. Primeiro acesso local define a senha (6+).
 - Plugin **Agenda** e **webhooks de saída** são “Em breve” de propósito. Relatórios exporta CSV da base de leads (células `= + - @` saem como texto, para o Excel não as tratar como fórmula). Captura abre Leads. Telegram mostra o estado do Worker — sem interruptores que não fazem nada.
-- **Notificações** na conta também são “Em breve”. O aviso da Ester no print só sai com o secret `ESTER_CHAT_ID` no Worker — um POST do CRM não define o chat.
+- **Notificações** na conta também são “Em breve”. O aviso da Ester no print só sai com o secret `ESTER_CHAT_ID` no Worker — um POST do CRM não define o chat. O botão Print no lead só marca o fluxo; o toast já não finge que a Ester foi avisada.
 - **Primeiro login em produção** recusa criar senha se o Worker não tiver `ABILION_OPERATOR_PASSWORD`. Localmente o primeiro acesso ainda define a senha (6+).
 - `ESTER_CHAT_ID` só é preciso se a Ester receber aviso no Telegram. O campo não existe na UI e o GET `/api/crm` não o devolve.
 - Links da Sté (markup e HTML do Telegram) recusam `javascript:` e URLs com userinfo, como o funil.
