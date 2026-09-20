@@ -188,6 +188,7 @@ export function LeadsPage() {
                 <li key={item.id}>
                   <button
                     type="button"
+                    data-lead-name={item.name}
                     onClick={() => setSelected(item.id)}
                     className="grid w-full grid-cols-1 gap-1 border-b border-border px-5 py-3.5 text-left last:border-0 hover:bg-muted/30 md:grid-cols-[1.1fr_150px_80px_80px_130px_80px] md:items-center md:gap-3"
                   >

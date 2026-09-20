@@ -51,6 +51,26 @@ async function overflow(page: Page) {
   })
 }
 
+async function fillField(page: Page, selector: string, value: string) {
+  await page.waitForSelector(selector, { timeout: 5_000 })
+  const ok = await page.$eval(
+    selector,
+    (el, next) => {
+      const input = el as HTMLInputElement | HTMLTextAreaElement
+      input.focus()
+      const proto =
+        input instanceof HTMLTextAreaElement
+          ? Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")
+          : Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")
+      proto?.set?.call(input, next)
+      input.dispatchEvent(new Event("input", { bubbles: true }))
+      return input.value === next
+    },
+    value
+  )
+  assert(ok, `não preenchi ${selector}`)
+}
+
 async function clickNamed(page: Page, text: string) {
   await page.waitForFunction(
     (needle) => [...document.querySelectorAll("button, a")].some((el) => (el.textContent || "").includes(needle)),
@@ -261,12 +281,12 @@ try {
     { timeout: 5_000 },
     auditName
   )
-  await clickNamed(page, auditName)
+  await page.waitForSelector(`[data-lead-name="${auditName}"]`, { timeout: 5_000 })
+  await page.click(`[data-lead-name="${auditName}"]`)
   await page.waitForSelector("#lead-memory", { timeout: 5_000 })
   const closeBackdrop = await page.evaluate(() => Boolean(document.querySelector("[aria-label='Fechar ficha do lead']")))
   assert(closeBackdrop, "fundo da ficha do lead fecha com teclado")
-  await page.click("#lead-memory", { clickCount: 3 })
-  await page.type("#lead-memory", "memoria isolada")
+  await fillField(page, "#lead-memory", "memoria isolada")
   await page.waitForFunction(
     () => (document.querySelector("#lead-memory") as HTMLTextAreaElement | null)?.value.includes("memoria isolada"),
     { timeout: 5_000 }
@@ -278,7 +298,8 @@ try {
   })
   assert(closed, "botão Fechar do lead")
   await page.waitForFunction(() => !document.querySelector("#lead-memory"), { timeout: 5_000 })
-  await clickNamed(page, auditName)
+  await page.waitForSelector(`[data-lead-name="${auditName}"]`, { timeout: 5_000 })
+  await page.click(`[data-lead-name="${auditName}"]`)
   await page.waitForSelector("#lead-memory", { timeout: 5_000 })
   const remembered = await page.$eval("#lead-memory", (el) => (el as HTMLTextAreaElement).value)
   assert(remembered.includes("memoria isolada"), "memória do lead sobrevive ao Fechar")
