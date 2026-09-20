@@ -261,6 +261,19 @@ export function hydrateFunnels(
   return applyRemovedFunnels(adopted, [...removedIds])
 }
 
+export function revertPublishedFunnels(current: SalesFunnel[], lastGood: SalesFunnel[]): SalesFunnel[] {
+  if (!lastGood.length) return current
+  let changed = false
+  const next = current.map((funnel) => {
+    const good = lastGood.find((item) => item.id === funnel.id)
+    if (!good) return funnel
+    if (funnel.status === good.status && funnel.production?.publishedAt === good.production?.publishedAt) return funnel
+    changed = true
+    return { ...funnel, status: good.status, production: good.production }
+  })
+  return changed ? next : current
+}
+
 export function activatePublishedFunnels(funnels: SalesFunnel[], id: string): SalesFunnel[] {
   const target = funnels.find((item) => item.id === id)
   if (!target?.production) return funnels

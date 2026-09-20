@@ -196,7 +196,7 @@ function CaptureDialog({
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onCreate: (lead: Lead) => void
+  onCreate: (lead: Lead) => void | Promise<boolean>
   funnels: SalesFunnel[]
 }) {
   const [name, setName] = useState("")
@@ -214,15 +214,20 @@ function CaptureDialog({
       return
     }
     creating.current = true
-    onCreate(captureAgainstFunnels({ name, contact, channel: "telegram", origin }, funnels))
-    toast.success("Lead no fluxo.")
-    setName("")
-    setContact("")
-    setErrors({})
-    onOpenChange(false)
-    window.setTimeout(() => {
+    const created = captureAgainstFunnels({ name, contact, channel: "telegram", origin }, funnels)
+    void Promise.resolve(onCreate(created)).then((ok) => {
+      if (ok === false) {
+        toast.error("Não gravei o lead no Worker.")
+        creating.current = false
+        return
+      }
+      toast.success("Lead no fluxo.")
+      setName("")
+      setContact("")
+      setErrors({})
+      onOpenChange(false)
       creating.current = false
-    }, 400)
+    })
   }
 
   return (

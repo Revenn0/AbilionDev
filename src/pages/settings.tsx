@@ -262,6 +262,7 @@ function BotPane() {
               })
               .catch((error: Error) => {
                 toast.error(error.message)
+                void fetchRuntime().then(setRuntime)
               })
               .finally(() => {
                 botLock.current = false

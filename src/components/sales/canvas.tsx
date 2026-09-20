@@ -68,7 +68,15 @@ function toRf(funnel: Pick<SalesFunnel, "nodes" | "edges">, cursor?: string): { 
   }
 }
 
-export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (next: SalesFunnel) => void }) {
+export function SalesCanvas({
+  funnel,
+  onSave,
+  onFlush,
+}: {
+  funnel: SalesFunnel
+  onSave: (next: SalesFunnel) => void
+  onFlush?: () => Promise<{ ok: boolean; error?: string; queued?: boolean }>
+}) {
   const initial = useMemo(() => toRf(funnel), [funnel])
   const [nodes, setNodes, onNodesChange] = useNodesState<SalesCanvasNode>(initial.nodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges)
@@ -345,9 +353,25 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
                 nodes: draftNodes,
                 edges: draftEdges,
               }
+              const previous = production
+              const previousStatus = funnel.status
               setProduction(snap)
               persist(snap, "active")
-              toast.success("Fluxo publicado. Isto é o que corre.")
+              const pending = onFlush?.() ?? Promise.resolve({ ok: true, queued: false as boolean | undefined, error: undefined as string | undefined })
+              void pending.then((result) => {
+                if (result.ok && result.queued) {
+                  toast.message("Publicado no painel. A gravar no Worker…")
+                  return
+                }
+                if (result.ok) {
+                  toast.success("Fluxo publicado. Isto é o que corre.")
+                  return
+                }
+                setProduction(previous ?? null)
+                persist(previous ?? null, previousStatus)
+                setPublishError(result.error || "Não publiquei no Worker.")
+                toast.error(result.error || "Não publiquei no Worker.")
+              })
             }}
           >
             Publicar

@@ -43,6 +43,7 @@ import {
   clipRemovedIds,
   hydrateFunnels,
   pendingSeedFunnelIds,
+  revertPublishedFunnels,
   mergeFunnels,
   mergeLeadEvents,
   mergeLeads,
@@ -569,6 +570,17 @@ const newerPub = { ...publishedC, production: { ...publishedC.production!, publi
 assert(publishedFunnel([olderPub, newerPub])?.id === newerPub.id, "Sté usa o quadro publicado mais recente")
 assert(publishedFunnel([newerPub, olderPub])?.id === newerPub.id, "a ordem da lista não manda no runtime")
 assert(activatePublishedFunnels([olderPub, newerPub], newerPub.id).find((item) => item.id === olderPub.id)?.status === "draft", "publicar um funil desce o outro")
+const failedPublish = {
+  ...olderPub,
+  nodes: olderPub.nodes,
+  status: "active" as const,
+  production: { ...olderPub.production!, publishedAt: "2026-09-20T00:00:00.000Z" },
+}
+const revertedPub = revertPublishedFunnels([failedPublish], [olderPub])
+assert(revertedPub[0]?.production?.publishedAt === olderPub.production?.publishedAt, "POST falhado devolve o quadro publicado")
+assert(revertedPub[0]?.nodes === failedPublish.nodes, "o rascunho local não some no revert")
+const samePub = [olderPub]
+assert(revertPublishedFunnels(samePub, [olderPub]) === samePub, "sem mudança o revert não clona")
 assert(
   enforceSinglePublished([olderPub, newerPub]).filter((item) => item.status === "active" && item.production).length === 1,
   "Worker deixa um só quadro publicado"

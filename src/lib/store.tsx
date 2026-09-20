@@ -12,6 +12,7 @@ import {
   clipRemovedIds,
   hydrateFunnels,
   mergeLeads,
+  revertPublishedFunnels,
   pendingSeedFunnelIds,
   reconcileLeads,
 } from "@/lib/crm"
@@ -103,8 +104,9 @@ type Store = {
   logout: () => Promise<void>
   createFunnel: (funnel: SalesFunnel) => void
   saveFunnel: (funnel: SalesFunnel) => void
+  flushCrmNow: () => Promise<{ ok: boolean; error?: string; queued?: boolean }>
   deleteFunnel: (id: string) => boolean
-  createLead: (lead: Lead) => void
+  createLead: (lead: Lead) => Promise<boolean>
   createLeads: (leads: Lead[]) => void
   saveLead: (lead: Lead) => void
   deleteLead: (id: string) => void
@@ -129,6 +131,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const removedLeadIds = useRef(loadIdSet(REMOVED_LEADS))
   const crmHydrated = useRef(false)
   const settingsDirty = useRef(false)
+  const lastGoodFunnels = useRef<SalesFunnel[]>([])
   const stateRef = useRef(state)
 
   const flushLeadWrites = () => {
@@ -159,21 +162,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     stateRef.current = state
   }, [state])
 
-  const flushCrm = () => {
+  const flushCrm = (): Promise<{ ok: boolean; error?: string; queued?: boolean }> => {
     window.clearTimeout(crmTimer.current)
     const current = stateRef.current
-    if (!current.user || !canFlushCrm(crmHydrated.current)) return
-    void saveCrm({
+    if (!current.user) return Promise.resolve({ ok: false, error: "Sessão expirada." })
+    if (!canFlushCrm(crmHydrated.current)) return Promise.resolve({ ok: true, queued: true })
+    return saveCrm({
       funnels: current.funnels,
       settings: { ...current.settings, telegramBotToken: "" },
       removedFunnelIds: [...removedFunnelIds.current],
-    }).then((ok) => {
-      if (ok) {
+    }).then((result) => {
+      if (result.ok) {
         removedFunnelIds.current.clear()
         pendingFunnelIds.current.clear()
         settingsDirty.current = false
+        lastGoodFunnels.current = current.funnels
+      } else {
+        const reverted = revertPublishedFunnels(stateRef.current.funnels, lastGoodFunnels.current)
+        if (reverted !== stateRef.current.funnels) {
+          setState((prev) => {
+            const next = { ...prev, funnels: reverted }
+            stateRef.current = next
+            return next
+          })
+        }
+        toast.error(result.error || "Não gravei o CRM no Worker.")
       }
-      setCrmSync(ok ? "ok" : "error")
+      setCrmSync(result.ok ? "ok" : "error")
+      return result
     })
   }
 
@@ -203,6 +219,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const expire = () => {
       crmHydrated.current = false
+      lastGoodFunnels.current = []
       setCrmSync("idle")
       setInboxSync("idle")
       setPersistSync("idle")
@@ -275,6 +292,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           },
         }
         stateRef.current = next
+        if (crm.ok) lastGoodFunnels.current = funnels
         return next
       })
       if (crm.ok) {
@@ -411,6 +429,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         flushLeadWrites()
         flushCrm()
         crmHydrated.current = false
+        lastGoodFunnels.current = []
         await logoutRequest().catch(() => undefined)
         setCrmSync("idle")
         setInboxSync("idle")
@@ -435,9 +454,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         pushWorker()
       },
       saveFunnel: (funnel) => {
+        pendingFunnelIds.current.add(funnel.id)
         setState((prev) => {
           const exists = prev.funnels.some((item) => item.id === funnel.id)
-          if (!exists) pendingFunnelIds.current.add(funnel.id)
           const nextFunnels = exists
             ? prev.funnels.map((item) => (item.id === funnel.id ? funnel : item))
             : [funnel, ...prev.funnels]
@@ -450,6 +469,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         })
         pushWorker()
       },
+      flushCrmNow: () => flushCrm(),
       deleteFunnel: (id) => {
         const gate = canDeleteFunnel(stateRef.current.funnels, id)
         if (!gate.ok) {
@@ -472,12 +492,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         persistIdSet(REMOVED_LEADS, removedLeadIds.current)
         pendingLeadWrites.current.set(lead.id, lead)
         setState((prev) => ({ ...prev, leads: [lead, ...prev.leads] }))
-        void persistLeads([lead]).then((ok) => {
+        return persistLeads([lead]).then((ok) => {
           if (ok) {
             const latest = pendingLeadWrites.current.get(lead.id)
             if (latest && latest.updatedAt === lead.updatedAt) pendingLeadWrites.current.delete(lead.id)
           }
           setPersistSync(ok ? "ok" : "error")
+          return ok
         })
       },
       createLeads: (leads) => {

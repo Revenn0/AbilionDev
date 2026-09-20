@@ -107,13 +107,22 @@ export async function fetchCrm() {
   }
 }
 
+export type WriteResult = { ok: boolean; error?: string }
+
 async function writeOk(run: () => Promise<Response>) {
+  const result = await writeResult(run)
+  return result.ok
+}
+
+async function writeResult(run: () => Promise<Response>): Promise<WriteResult> {
   try {
     const res = await run()
     noteUnauthorized(res)
-    return res.ok
+    if (res.ok) return { ok: true }
+    const data = (await res.json().catch(() => ({}))) as { error?: string }
+    return { ok: false, error: typeof data.error === "string" && data.error ? data.error : "Não foi possível gravar." }
   } catch {
-    return false
+    return { ok: false, error: "Sem rede. Tenta outra vez." }
   }
 }
 
@@ -139,7 +148,7 @@ export async function removeRemoteLead(id: string) {
 }
 
 export async function saveCrm(body: { funnels?: SalesFunnel[]; settings?: Settings; removedFunnelIds?: string[] }) {
-  return writeOk(() =>
+  return writeResult(() =>
     fetch("/api/crm", {
       method: "POST",
       credentials: "include",
