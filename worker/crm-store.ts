@@ -555,7 +555,8 @@ export async function loadFunnelsKv(kv: KvLike): Promise<SalesFunnel[]> {
 }
 
 export async function saveFunnelsKv(kv: KvLike, funnels: SalesFunnel[]) {
-  const clean = funnels.map(sanitizeIncomingFunnel).filter((item): item is SalesFunnel => Boolean(item)).slice(0, 20)
+  const clean = funnels.map(sanitizeIncomingFunnel).filter((item): item is SalesFunnel => Boolean(item))
+  if (clean.length > FUNNEL_CAP) throw new Error(`O estúdio aceita no máximo ${FUNNEL_CAP} funis.`)
   await kv.put(CRM_FUNNELS, JSON.stringify(clean))
 }
 

@@ -45,6 +45,7 @@ import {
   adoptHydrateSettings,
   canCreateFunnel,
   canDeleteFunnel,
+  cacheLeadsForStorage,
   canFlushCrm,
   clipNewestIds,
   clipRemovedIds,
@@ -939,6 +940,24 @@ assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }, { leads: [pageB] 
 assert(LEAD_LIST_PAGES === 40, "hydrate lê até 40 páginas")
 assert(LEAD_LIST_CAP === 16_000, "lista hidratada cabe o índice (8000 chats + 4000 resto + esperas)")
 assert(LEAD_CACHE_CAP === 2000, "localStorage só guarda os 2000 mais novos")
+const agedCache = ["old-a", "old-b", "old-c"].map((id, index) => ({
+  ...lead(id, `@${id}`),
+  updatedAt: `2020-01-0${index + 1}T00:00:00.000Z`,
+}))
+const freshCache = { ...lead("fresh", "@fresh"), updatedAt: "2026-09-20T00:00:00.000Z" }
+const storedCache = cacheLeadsForStorage([freshCache, ...agedCache], ["old-c"], 2)
+assert(storedCache.some((item) => item.id === "old-c"), "cache do browser segura o lead ainda por gravar")
+assert(storedCache.some((item) => item.id === "fresh"), "cache do browser ainda guarda o mais novo")
+assert(!storedCache.some((item) => item.id === "old-a"), "cache do browser larga o velho já gravado")
+try {
+  await saveFunnelsKv(
+    memoryKv(),
+    Array.from({ length: 21 }, () => emptySalesFunnel("extra"))
+  )
+  assert(false, "saveFunnelsKv 21 não pode cortar em silêncio")
+} catch (error) {
+  assert(error instanceof Error && error.message.includes("20"), "saveFunnelsKv recusa o 21.º")
+}
 assert(steWaitDelayMs(undefined) === null, "sem espera não agenda tick")
 assert(steWaitDelayMs(new Date(Date.now() + 1000).toISOString(), Date.now()) === 1050, "espera futura agenda com folga")
 assert(steWaitDelayMs(new Date(Date.now() - 1000).toISOString(), Date.now()) === 50, "espera atrasada dispara já")

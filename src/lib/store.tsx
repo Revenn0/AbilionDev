@@ -11,6 +11,7 @@ import {
   leadsStillOnRemote,
   canCreateFunnel,
   canDeleteFunnel,
+  cacheLeadsForStorage,
   canFlushCrm,
   clipNewestIds,
   clipRemovedIds,
@@ -20,7 +21,6 @@ import {
   LEAD_REMOVED_CAP,
   hydrateLeads,
   leftoverPendingFunnelIds,
-  LEAD_CACHE_CAP,
   mergeLeads,
   overlayPendingLeads,
   revertPublishedFunnels,
@@ -551,7 +551,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     window.clearTimeout(persistTimer.current)
     persistTimer.current = window.setTimeout(() => {
-      const recent = [...state.leads].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, LEAD_CACHE_CAP)
+      const recent = cacheLeadsForStorage(state.leads, pendingLeadWrites.current.keys())
       localStorage.setItem(KEY, JSON.stringify({ ...state, user: null, leads: recent, settings: { ...state.settings, telegramBotToken: "" } }))
       if (state.user) localStorage.setItem(SESSION, JSON.stringify(state.user))
       else localStorage.removeItem(SESSION)

@@ -10,6 +10,22 @@ const CAP = 400
 export const LEAD_LIST_CAP = 16_000
 export const LEAD_LIST_PAGES = 40
 export const LEAD_CACHE_CAP = 2000
+
+/** localStorage: os leads ainda por gravar não saem do recorte dos 2000 mais novos. */
+export function cacheLeadsForStorage(leads: Lead[], pendingIds: Iterable<string> = [], cap = LEAD_CACHE_CAP) {
+  const pin = new Set([...pendingIds].filter(Boolean))
+  const pinned: Lead[] = []
+  const rest: Lead[] = []
+  const seen = new Set<string>()
+  for (const lead of leads) {
+    if (!lead?.id || seen.has(lead.id)) continue
+    seen.add(lead.id)
+    ;(pin.has(lead.id) ? pinned : rest).push(lead)
+  }
+  rest.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  if (pinned.length >= cap) return pinned
+  return [...pinned, ...rest.slice(0, cap - pinned.length)]
+}
 export const LEAD_REMOVED_CAP = 8000
 export const FUNNEL_REMOVED_CAP = 400
 export const FUNNEL_CAP = 20
