@@ -31,10 +31,20 @@ export function TelegramPage() {
   const ads = adsDeepLink(botName)
 
   useEffect(() => {
-    void Promise.all([fetchHealth(), fetchRuntime()]).then(([nextHealth, nextRuntime]) => {
-      setHealth(nextHealth)
-      setRuntime(nextRuntime)
-    })
+    let cancelled = false
+    const pull = () => {
+      void Promise.all([fetchHealth(), fetchRuntime()]).then(([nextHealth, nextRuntime]) => {
+        if (cancelled) return
+        setHealth(nextHealth)
+        setRuntime(nextRuntime)
+      })
+    }
+    pull()
+    const timer = window.setInterval(pull, 15_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
   }, [])
   const healthReady = health !== null && runtime !== null
 
@@ -61,16 +71,22 @@ export function TelegramPage() {
               setBurstLock(true)
               const batch = burstFacebookLeads(state.funnels, 100)
               const stats = burstStats(batch)
-              void createLeads(batch).then((ok) => {
-                if (ok) {
-                  toast.success(
-                    `${stats.facebook} /start Facebook. ${stats.talking} responderam. ${stats.blocked} encerrados. ${stats.offered} na oferta.`
-                  )
-                } else {
+              void createLeads(batch)
+                .then((ok) => {
+                  if (ok) {
+                    toast.success(
+                      `${stats.facebook} /start Facebook. ${stats.talking} responderam. ${stats.blocked} encerrados. ${stats.offered} na oferta.`
+                    )
+                  } else {
+                    toast.error("Não gravei o lote no Worker.")
+                  }
+                })
+                .catch(() => {
                   toast.error("Não gravei o lote no Worker.")
-                }
-                setBurstLock(false)
-              })
+                })
+                .finally(() => {
+                  setBurstLock(false)
+                })
             }}
           >
             {burstLock ? "A simular…" : "Simular 100 /start"}

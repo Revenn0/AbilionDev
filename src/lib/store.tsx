@@ -140,6 +140,7 @@ type Store = {
   saveFunnel: (funnel: SalesFunnel) => void
   flushCrmNow: () => Promise<{ ok: boolean; error?: string; queued?: boolean }>
   flushLeadNow: () => Promise<boolean>
+  retryHydrate: () => Promise<void>
   deleteFunnel: (id: string) => Promise<boolean>
   createLead: (lead: Lead) => Promise<boolean>
   createLeads: (leads: Lead[]) => Promise<boolean>
@@ -170,6 +171,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const lastGoodFunnels = useRef<SalesFunnel[]>([])
   const stateRef = useRef(state)
   const leadFlushRef = useRef(Promise.resolve(true))
+  const hydrateLock = useRef<Promise<void> | null>(null)
 
   const flushLeadWrites = (): Promise<boolean> => {
     window.clearTimeout(leadWriteTimer.current)
@@ -262,6 +264,63 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     crmTimer.current = window.setTimeout(flushCrm, 400)
   }
 
+  const runHydrate = (force = false) => {
+    if (!force && crmHydrated.current) return Promise.resolve()
+    if (hydrateLock.current) return hydrateLock.current
+    const pending = Promise.all([fetchCrm(), fetchRuntime(), fetchLeads()]).then(([crm, runtime, remoteLeads]) => {
+      setCrmSync(crm.ok ? "ok" : "error")
+      setPersistSync(remoteLeads.ok ? "ok" : "error")
+      setRemote(runtime.persist === "supabase" ? "cloud" : runtime.ok ? "local" : "off")
+      setState((prev) => {
+        const remoteFunnels = crm.ok ? crm.funnels.map(migrateFunnel) : []
+        const funnels = crm.ok
+          ? hydrateFunnels(prev.funnels, remoteFunnels, pendingFunnelIds.current, removedFunnelIds.current)
+          : prev.funnels
+        if (crm.ok) {
+          for (const id of pendingSeedFunnelIds(remoteFunnels, funnels)) pendingFunnelIds.current.add(id)
+          for (const id of recoverPendingFunnelIds(funnels, remoteFunnels)) pendingFunnelIds.current.add(id)
+        }
+        const remoteSettings =
+          crm.ok && crm.settings && !settingsDirty.current ? migrateSettings({ ...crm.settings, telegramBotToken: "" }) : undefined
+        const next = {
+          ...prev,
+          funnels,
+          leads: overlayPendingLeads(
+            remoteLeads.ok
+              ? remoteLeads.leads.length
+                ? reconcileLeads(
+                    prev.leads,
+                    applyRemovedLeads(remoteLeads.leads.map(migrateLead), removedLeadIds.current),
+                    pendingLeadWrites.current.keys()
+                  )
+                : prev.leads.filter((lead) => pendingLeadWrites.current.has(lead.id))
+              : prev.leads,
+            pendingLeadWrites.current,
+            removedLeadIds.current
+          ),
+          settings: adoptHydrateSettings(prev.settings, remoteSettings, settingsDirty.current, runtime),
+        }
+        stateRef.current = next
+        if (crm.ok) lastGoodFunnels.current = funnels
+        return next
+      })
+      if (crm.ok) {
+        persistIdSet(PENDING_FUNNELS, pendingFunnelIds.current)
+        crmHydrated.current = true
+        if (pendingFunnelIds.current.size || removedFunnelIds.current.size || settingsDirty.current) pushWorker()
+        if (pendingLeadWrites.current.size) void flushLeadWrites()
+      }
+      if (remoteLeads.ok) {
+        const retry = leadsStillOnRemote(removedLeadIds.current, remoteLeads.leads)
+        if (retry.length) void flushRemovedLeads(retry)
+      }
+    }).finally(() => {
+      if (hydrateLock.current === pending) hydrateLock.current = null
+    })
+    hydrateLock.current = pending
+    return pending
+  }
+
   useEffect(() => {
     let cancelled = false
     meRequest()
@@ -313,58 +372,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!state.user) return
-    let cancelled = false
-    void Promise.all([fetchCrm(), fetchRuntime(), fetchLeads()]).then(([crm, runtime, remoteLeads]) => {
-      if (cancelled) return
-      setCrmSync(crm.ok ? "ok" : "error")
-      setPersistSync(remoteLeads.ok ? "ok" : "error")
-      setRemote(runtime.persist === "supabase" ? "cloud" : runtime.ok ? "local" : "off")
-      setState((prev) => {
-        const remoteFunnels = crm.ok ? crm.funnels.map(migrateFunnel) : []
-        const funnels = crm.ok
-          ? hydrateFunnels(prev.funnels, remoteFunnels, pendingFunnelIds.current, removedFunnelIds.current)
-          : prev.funnels
-        if (crm.ok) {
-          for (const id of pendingSeedFunnelIds(remoteFunnels, funnels)) pendingFunnelIds.current.add(id)
-          for (const id of recoverPendingFunnelIds(funnels, remoteFunnels)) pendingFunnelIds.current.add(id)
-        }
-        const remoteSettings =
-          crm.ok && crm.settings && !settingsDirty.current ? migrateSettings({ ...crm.settings, telegramBotToken: "" }) : undefined
-        const next = {
-          ...prev,
-          funnels,
-          leads: overlayPendingLeads(
-            remoteLeads.ok
-              ? remoteLeads.leads.length
-                ? reconcileLeads(
-                    prev.leads,
-                    applyRemovedLeads(remoteLeads.leads.map(migrateLead), removedLeadIds.current),
-                    pendingLeadWrites.current.keys()
-                  )
-                : prev.leads.filter((lead) => pendingLeadWrites.current.has(lead.id))
-              : prev.leads,
-            pendingLeadWrites.current,
-            removedLeadIds.current
-          ),
-          settings: adoptHydrateSettings(prev.settings, remoteSettings, settingsDirty.current, runtime),
-        }
-        stateRef.current = next
-        if (crm.ok) lastGoodFunnels.current = funnels
-        return next
-      })
-      if (crm.ok) {
-        persistIdSet(PENDING_FUNNELS, pendingFunnelIds.current)
-        crmHydrated.current = true
-        if (pendingFunnelIds.current.size || removedFunnelIds.current.size || settingsDirty.current) pushWorker()
-        if (pendingLeadWrites.current.size) void flushLeadWrites()
-      }
-      if (remoteLeads.ok) {
-        const retry = leadsStillOnRemote(removedLeadIds.current, remoteLeads.leads)
-        if (retry.length) void flushRemovedLeads(retry)
-      }
-    })
+    void runHydrate()
+    const retry = () => {
+      if (!crmHydrated.current) void runHydrate()
+    }
+    const timer = window.setInterval(retry, 8_000)
+    window.addEventListener("focus", retry)
     return () => {
-      cancelled = true
+      window.clearInterval(timer)
+      window.removeEventListener("focus", retry)
     }
   }, [state.user])
 
@@ -546,6 +562,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       flushCrmNow: () => flushCrm({ silent: true }),
       flushLeadNow: () => flushLeadWrites(),
+      retryHydrate: () => runHydrate(true),
       deleteFunnel: (id) => {
         const gate = canDeleteFunnel(stateRef.current.funnels, id)
         if (!gate.ok) {
