@@ -53,14 +53,15 @@ async function overflow(page: Page) {
 
 async function fillField(page: Page, selector: string, value: string) {
   await page.waitForSelector(selector, { timeout: 5_000 })
-  await page.focus(selector)
-  await page.keyboard.down("ControlLeft")
-  await page.keyboard.press("KeyA")
-  await page.keyboard.up("ControlLeft")
-  await page.keyboard.type(value, { delay: 8 })
+  await page.$eval(selector, (el) => {
+    const input = el as HTMLTextAreaElement | HTMLInputElement
+    input.focus()
+    if ("select" in input) input.select()
+  })
+  await page.keyboard.type(value, { delay: 15 })
   await page.waitForFunction(
     (sel, expected) => (document.querySelector(sel) as HTMLTextAreaElement | HTMLInputElement | null)?.value === expected,
-    { timeout: 5_000 },
+    { timeout: 8_000 },
     selector,
     value
   )

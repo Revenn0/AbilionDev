@@ -219,8 +219,8 @@ assert(
   "o painel pode tirar a categoria"
 )
 assert(leadMatchesQuery({ id: "c1", name: "Ana", contact: "@ana", category: "Grupo" }, "grupo", 1), "busca local pela categoria")
-assert(draftLeadField("", "", true, "memoria isolada") === "memoria isolada", "rascunho da ficha lê o input visível")
-assert(draftLeadField("guarda", "", true) === "", "rascunho dirty sem input usa o ref")
+assert(draftLeadField("ste:remarketing", "memoria isolada", true, "ste:remarketing") === "memoria isolada", "dirty ganha do input revertido")
+assert(draftLeadField("ste:remarketing", "ste:remarketing", false, "memoria isolada") === "memoria isolada", "sem dirty o input visível ganha")
 assert(draftLeadField("guarda", "rascunho", false) === "guarda", "sem dirty nem input mantém o gravado")
 assert(bob.lead.facts.hasSuperbet === false, "fato do Bob")
 

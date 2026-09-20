@@ -638,8 +638,6 @@ function LeadDrawer({
     const current = leadRef.current
     if (!current) return
     const live = liveLeadDraft()
-    if (live.name !== undefined) nameRef.current = live.name
-    if (live.memory !== undefined) memoryRef.current = live.memory
     const nextName = draftLeadField(current.name, nameRef.current, dirtyName.current, live.name)
     const nextMemory = draftLeadField(current.memory, memoryRef.current, dirtyMemory.current, live.memory)
     const resolvedName = dirtyName.current || live.name !== undefined ? resolvePersonName(nextName) || current.name : current.name
@@ -663,8 +661,6 @@ function LeadDrawer({
 
   const commit = (next: Lead) => {
     const live = liveLeadDraft()
-    if (live.name !== undefined) nameRef.current = live.name
-    if (live.memory !== undefined) memoryRef.current = live.memory
     onSave({
       ...next,
       name: dirtyName.current ? resolvePersonName(nameRef.current) || next.name : next.name,
@@ -910,12 +906,9 @@ function LeadDrawer({
           className="mt-1.5 min-h-28"
           value={memory}
           onChange={(event) => {
-            const next = event.target.value
             dirtyMemory.current = true
-            memoryRef.current = next
-            setMemory(next)
-            const current = leadRef.current
-            if (current) onSave({ ...current, memory: next, updatedAt: new Date().toISOString() })
+            memoryRef.current = event.target.value
+            setMemory(event.target.value)
           }}
           placeholder="O que esta pessoa já disse. Não misturar com outro chat."
         />

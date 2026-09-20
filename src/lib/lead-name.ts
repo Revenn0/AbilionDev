@@ -176,8 +176,9 @@ export function preferLeadName(primary: string, fallback: string, contact?: stri
   return resolveLeadName(primary || fallback, contact, extra)
 }
 
-/** Rascunho da ficha: o valor visível no input ganha ao ref que ainda não correu o efeito. */
+/** Rascunho da ficha: o onChange (dirty) ganha; se o React não ouviu, o input visível ganha. */
 export function draftLeadField(stored: string, draft: string, dirty: boolean, live?: string) {
-  if (live !== undefined) return live
-  return dirty ? draft : stored
+  if (dirty) return draft
+  if (live !== undefined && live !== stored) return live
+  return stored
 }
