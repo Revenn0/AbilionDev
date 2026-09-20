@@ -26,6 +26,7 @@ import {
   resolveLeadLookup,
 } from "../src/lib/crm.ts"
 import { cleanBotUsername, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
+import { isResolvedPersonName, preferLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
 import { resolveClientGeo } from "./geo-lookup.ts"
 import { kvTrackStore, memoryTrackStore, readTrackBody, recordTrack, summaryFromStore, type TrackStore } from "./track-store.ts"
 import {
@@ -503,7 +504,8 @@ async function deliverTelegram(env: Env, update: TelegramUpdate, token: string) 
   if (!from) return
 
   const contact = from.username ? `@${from.username}` : `tg:${from.id}`
-  const name = [from.first_name, from.last_name].filter(Boolean).join(" ") || contact
+  const telegramName = resolvePersonName([from.first_name, from.last_name].filter(Boolean).join(" "))
+  const name = isResolvedPersonName(telegramName) ? telegramName : contact
   const chatId = String(message?.chat.id ?? update.chat_member?.chat.id ?? from.id)
   const start = parseTelegramStart(joinUser ? "" : message?.text)
   const origin: LeadOrigin = joinUser ? "group_join" : start.isStart ? originFromStart(start.payload) : "private"
@@ -516,6 +518,9 @@ async function deliverTelegram(env: Env, update: TelegramUpdate, token: string) 
   let lead: Lead
   if (existing) {
     lead = existing
+    if (isResolvedPersonName(telegramName)) {
+      lead.name = preferLeadName(lead.name, telegramName, contact, { email: lead.facts?.email, messages: lead.messages })
+    }
     if (start.isStart && start.payload) {
       lead.origin = origin
       lead.campaign = campaign

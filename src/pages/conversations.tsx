@@ -18,6 +18,7 @@ import { advanceSteIfDue, canSimulateSte, canTickSteLocally, replySteLived, spli
 import { useTrackSummary } from "@/lib/use-track-summary"
 import { useRemoteLeadSearch } from "@/lib/use-lead-query"
 import { timeAgo } from "@/lib/format"
+import { displayContact } from "@/lib/lead-name"
 import type { Lead } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -92,7 +93,9 @@ export function ConversationsPage() {
     const pool = needle ? all : all.filter((lead) => matchesFilter(lead, filter))
     if (!needle) return pool
     return pool.filter((lead) =>
-      [lead.name, lead.contact, lead.campaign, lead.lastMessage].some((value) => (value ?? "").toLowerCase().includes(needle))
+      [lead.name, lead.contact, displayContact(lead.contact), lead.contact.replace(/\D/g, ""), lead.campaign, lead.lastMessage].some((value) =>
+        (value ?? "").toLowerCase().includes(needle)
+      )
     )
   }, [all, filter, query])
 
@@ -289,7 +292,7 @@ export function ConversationsPage() {
                     <p className="text-[15px] font-medium">{lead.name}</p>
                     <p className="flex flex-wrap items-center gap-1.5 text-[12.5px] text-muted-foreground">
                       <span>
-                        Sté · {steStepLabel(lead)} · {lead.contact} · {ORIGIN_LABEL[lead.origin]}
+                        Sté · {steStepLabel(lead)} · {displayContact(lead.contact)} · {ORIGIN_LABEL[lead.origin]}
                       </span>
                       <GeoBadge facts={factsWithTrack(lead, summary.geos)} />
                     </p>

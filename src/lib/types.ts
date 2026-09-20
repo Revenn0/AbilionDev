@@ -147,6 +147,7 @@ export type LeadFacts = {
   regionCode?: string
   device?: string
   language?: string
+  email?: string
 }
 
 export type Lead = {

@@ -81,7 +81,7 @@ import { LEAD_WRITE_BATCH, leadWriteChunks, leadWriteIds } from "../src/lib/runt
 import { safeAppPath, withSafeNext } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { contactLookups, normalizeTelegramContact, validateCapture } from "../src/lib/capture.ts"
-import { displayContact, formatPhoneContact, isPhoneLikeName, resolveLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
+import { displayContact, formatPhoneContact, isPhoneLikeName, isResolvedPersonName, nameFromMessages, preferLeadName, resolveLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, migrateLeadOrigin, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
@@ -532,6 +532,16 @@ assert(resolvePersonName("lucas mota de araujo") === "Lucas Mota de Araujo", "pa
 assert(resolvePersonName("JARSON DOS SANTOS") === "Jarson dos Santos", "dos fica minúsculo")
 assert(resolveLeadName("5511987654321", "5511987654321") === "+55 11 98765-4321", "nome-telefone fica legível")
 assert(resolveLeadName("ana.souza@exemplo.com", "5511987654321") === "Ana Souza", "e-mail no nome vira pessoa")
+assert(resolveLeadName("5511987654321", "5511987654321", { email: "ana.souza@exemplo.com" }) === "Ana Souza", "e-mail no facto resolve nome-telefone")
+assert(resolveLeadName("Joao", "5511987654321", { email: "ana.souza@exemplo.com" }) === "Ana Souza", "e-mail mais completo ganha do nome curto")
+assert(
+  resolveLeadName("5511987654321", "5511987654321", { messages: [{ role: "lead", text: "Meu nome é Carla Mendes" }] }) === "Carla Mendes",
+  "fala do lead resolve o nome"
+)
+assert(nameFromMessages([{ role: "ste", text: "Meu nome é Sté" }]) === "", "fala da Sté não inventa o nome do lead")
+assert(resolveLeadName("MARIA SILVA 11987654321", "5511987654321") === "Maria Silva", "telefone embutido no nome sai")
+assert(!isResolvedPersonName("Lead"), "placeholder Lead não conta como pessoa")
+assert(preferLeadName("+55 11 98765-4321", "PAULO SERGIO", "5511987654321") === "Paulo Sergio", "pessoa ganha do telefone no merge")
 assert(migrateLead({ id: "n1", name: "PAULO SERGIO DE SOUZA", contact: "5511987654321" }).name === "Paulo Sergio de Souza", "migrateLead resolve o nome")
 assert(migrateLead({ id: "n2", name: "5511987654321", contact: "5511987654321" }).name === "+55 11 98765-4321", "migrateLead formata nome-telefone")
 assert(migrateLead({ id: "n2", name: "5511987654321", contact: "5511987654321" }).contact === "5511987654321", "migrateLead não pisa o contacto")
@@ -1127,6 +1137,9 @@ const operatorRename = adoptStoredLead(afterOperator, {
   temperature: "morno" as const,
 })
 assert(operatorRename.name === "Ana Quente" && operatorRename.temperature === "morno", "POST só de operador ainda troca nome e temperatura")
+const phoneNamed = { ...afterOperator, name: "+55 11 98765-4321", contact: "5511987654321" }
+const archivedPerson = { ...phoneNamed, name: "PAULO SERGIO", updatedAt: "2019-01-01T00:00:00.000Z" }
+assert(adoptStoredLead(phoneNamed, archivedPerson).name === "Paulo Sergio", "nome de pessoa mais velho ganha do telefone")
 assert(mergeLeadMessages([{ id: "m-1", at: "1", role: "ste", text: "a" }], [{ id: "m-2", at: "2", role: "lead", text: "b" }]).map((item) => item.id).join(",") === "m-1,m-2", "merge de falas une por id")
 assert(waitHours(Number("x")) === 84, "espera NaN cai nas 84h")
 assert(waitHours(-3) === 84, "espera negativa cai nas 84h")

@@ -23,7 +23,7 @@ import { isImportedLead, needsEster } from "@/lib/ops"
 import { applyEvent, nodeTitle, publishedSnapshot, type RuntimeEvent } from "@/lib/runtime"
 import { canTickSteLocally } from "@/lib/ste"
 import { timeAgo } from "@/lib/format"
-import { displayContact, resolvePersonName } from "@/lib/lead-name"
+import { displayContact, isPhoneLikeName, resolvePersonName } from "@/lib/lead-name"
 import type { Lead, LeadOrigin, LeadTemp, SalesFunnel } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -526,6 +526,9 @@ function LeadDrawer({
           }}
           placeholder="Nome da pessoa"
         />
+        {isPhoneLikeName(name || lead.name) ? (
+          <p className="mt-1 text-[12px] text-muted-foreground">Este import não tinha nome de pessoa. Escreve o nome aqui.</p>
+        ) : null}
         <p className="mt-2 text-[13.5px] font-medium">
           <GeoBadge facts={factsWithTrack(lead, geos)} empty="Estado ainda sem rastreio" />
         </p>

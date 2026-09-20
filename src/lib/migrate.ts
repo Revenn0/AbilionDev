@@ -1,5 +1,5 @@
 import { normalizeTelegramContact } from "./capture.ts"
-import { resolveLeadName } from "./lead-name.ts"
+import { isEmailName, resolveLeadName } from "./lead-name.ts"
 import { defaultSettings, isFlowKind, isMapKind, type Lead, type LeadOrigin, type SalesFunnel, type SalesKind, type SalesSnapshot, type Settings } from "./types.ts"
 
 export function migrateLeadOrigin(value?: string): LeadOrigin {
@@ -64,9 +64,11 @@ export function migrateFunnel(raw: SalesFunnel): SalesFunnel {
 
 export function migrateLead(raw: Partial<Lead> & { id: string }): Lead {
   const now = new Date().toISOString()
+  const facts = raw.facts && typeof raw.facts === "object" ? raw.facts : {}
+  const email = typeof facts.email === "string" && isEmailName(facts.email) ? facts.email.trim() : undefined
   return {
     id: raw.id,
-    name: resolveLeadName(raw.name, raw.contact),
+    name: resolveLeadName(raw.name, raw.contact, { email, messages: raw.messages }),
     contact: normalizeTelegramContact(raw.contact ?? "") || (raw.contact ?? ""),
     channel: raw.channel === "whatsapp" ? "whatsapp" : "telegram",
     campaign: raw.campaign ?? "",
@@ -78,7 +80,7 @@ export function migrateLead(raw: Partial<Lead> & { id: string }): Lead {
     printAt: raw.printAt,
     bancaAt: raw.bancaAt,
     memory: raw.memory ?? "",
-    facts: raw.facts && typeof raw.facts === "object" ? raw.facts : {},
+    facts,
     lastMessage: raw.lastMessage,
     funnelId: raw.funnelId,
     nodeId: raw.nodeId,
@@ -254,6 +256,7 @@ export function sanitizeIncomingLead(raw: unknown): Lead | null {
       regionCode: lead.facts.regionCode?.slice(0, 8),
       device: lead.facts.device?.slice(0, 40),
       language: lead.facts.language?.slice(0, 16),
+      email: lead.facts.email && isEmailName(lead.facts.email) ? lead.facts.email.trim().slice(0, 80) : undefined,
     }
   }
   if (lead.messages.length > 80) lead.messages = lead.messages.slice(-80)

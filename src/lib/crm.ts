@@ -1,6 +1,7 @@
 import { publishedFunnel } from "./runtime.ts"
 import { migrateSettings } from "./migrate.ts"
 import { isOperatorLockedLead } from "./ops.ts"
+import { preferLeadName } from "./lead-name.ts"
 import { defaultSettings, type ChatMessage, type Lead, type LeadEvent, type LeadFacts, type SalesFunnel, type Settings } from "./types.ts"
 
 const CAP = 400
@@ -66,6 +67,9 @@ export function adoptStoredLead(prev: Lead, incoming: Lead): Lead {
   const facts = fillFacts(newer.facts, older.facts)
   const telegramChatId = newer.telegramChatId || older.telegramChatId
   const visitorId = newer.visitorId || older.visitorId
+  const contact = newer.contact || older.contact
+  const extra = { email: facts.email, messages }
+  const nextName = preferLeadName(newer.name, older.name, contact, extra)
   if (incomingOlder) {
     const prevMessages = prev.messages ?? []
     const sameMessages = messages.length === prevMessages.length && messages.every((msg, index) => msg.id === prevMessages[index]?.id)
@@ -74,10 +78,12 @@ export function adoptStoredLead(prev: Lead, incoming: Lead): Lead {
       memory === prev.memory &&
       telegramChatId === prev.telegramChatId &&
       visitorId === prev.visitorId &&
+      nextName === prev.name &&
       JSON.stringify(facts ?? {}) === JSON.stringify(prev.facts ?? {})
     if (sameMessages && sameEvents && sameExtra) return prev
     return {
       ...prev,
+      name: nextName,
       events,
       messages,
       memory,
@@ -100,7 +106,7 @@ export function adoptStoredLead(prev: Lead, incoming: Lead): Lead {
     printAt: incoming.printAt || prev.printAt,
     bancaAt: incoming.bancaAt || prev.bancaAt,
     temperature: addedChat ? prev.temperature : incoming.temperature,
-    name: addedChat ? prev.name : incoming.name,
+    name: addedChat ? preferLeadName(prev.name, incoming.name, contact, extra) : nextName,
     contact: addedChat ? prev.contact : incoming.contact,
   }
 }

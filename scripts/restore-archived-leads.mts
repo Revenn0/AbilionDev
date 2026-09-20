@@ -86,7 +86,7 @@ function toLead(item: Archived, messages: ArchivedMessage[] = []): Lead | null {
     temperature: temperatureOf(item.temperature || item.category),
     stage: "capture",
     memory: "",
-    facts: {},
+    facts: item.email && item.email.includes("@") ? { email: item.email.trim() } : {},
     lastMessage: item.lastMessage || chat.at(-1)?.text,
     funnelId: item.funnelId || undefined,
     events: [
