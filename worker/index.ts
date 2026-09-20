@@ -1,4 +1,4 @@
-import { clientIp, consumeKvThrottle, consumeMemoryThrottle, handleAuth, kvAuthStore, randomToken, requestHasAuth, sessionUser } from "./auth.ts"
+import { clientIp, consumeKvThrottle, consumeMemoryThrottle, handleAuth, isOwner, kvAuthStore, randomToken, requestHasAuth, sessionUser } from "./auth.ts"
 import { handleMcp, handleFunnelImport } from "./mcp.ts"
 import { handleTokens, handleUsers } from "./users.ts"
 import { campaignFor } from "../src/lib/labels.ts"
@@ -340,6 +340,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
+    if (!isOwner(user)) return json({ error: "Só o dono gera a voz da Sté." }, 403)
     if (!(await consumeKvThrottle(env.AUTH, `voice:${user.id}:${clientIp(request)}`, 5, 15 * 60_000))) {
       return json({ error: "Demasiados pedidos de voz. Espera um pouco." }, 429)
     }
@@ -358,6 +359,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
+    if (!isOwner(user)) return json({ error: "Só o dono liga o bot e as chaves." }, 403)
     if (!(await consumeKvThrottle(env.AUTH, `runtime:${user.id}:${clientIp(request)}`, 10, 15 * 60_000))) {
       return json({ error: "Demasiados pedidos ao runtime. Espera um pouco." }, 429)
     }

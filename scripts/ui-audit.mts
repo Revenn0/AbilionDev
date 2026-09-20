@@ -211,6 +211,7 @@ try {
   await page.waitForSelector("#login-error", { timeout: 8_000 })
 
   await login(page)
+  assert(!(await page.$("[data-session-error]")), "sessão confirmada não mostra falha")
 
   await page.setOfflineMode(true)
   await page.waitForFunction(() => document.body.innerText.includes("Sem rede"), { timeout: 4_000 })

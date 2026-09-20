@@ -4183,6 +4183,39 @@ const anaForbidden = await handleRequest(
   backgroundCtx()
 )
 assert(anaForbidden.status === 403, "operador não cria contas")
+assert(
+  (await handleRequest(new Request("http://local.test/api/runtime", { headers: { cookie: anaCookie } }), teamEnv, backgroundCtx()))
+    .status === 200,
+  "operador lê o runtime"
+)
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/runtime", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: anaCookie, "x-forwarded-for": "203.0.113.202" },
+        body: JSON.stringify({ telegramBotToken: "999:stolen" }),
+      }),
+      teamEnv,
+      backgroundCtx()
+    )
+  ).status === 403,
+  "operador não grava o token do bot"
+)
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/runtime/voice", {
+        method: "POST",
+        headers: { cookie: anaCookie, "x-forwarded-for": "203.0.113.202" },
+      }),
+      teamEnv,
+      backgroundCtx()
+    )
+  ).status === 403,
+  "operador não gera a voz"
+)
+assert(!(await loadSecrets(teamEnv.AUTH)).telegramBotToken, "POST recusado não grava token")
 
 const minted = await handleRequest(
   new Request("http://local.test/api/tokens", {

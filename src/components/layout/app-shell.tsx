@@ -3,6 +3,7 @@ import { Navigate, useLocation, useNavigate } from "react-router-dom"
 import { Menu, X } from "lucide-react"
 import { Sidebar } from "./sidebar"
 import { Button } from "@/components/ui/button"
+import { SyncBanner } from "./sync-banner"
 import { useStore } from "@/lib/store"
 import { withSafeNext } from "@/lib/safe-path"
 import { LogoWord } from "@/components/brand/logo"
@@ -25,7 +26,7 @@ function pageTitle(pathname: string) {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { ready, state } = useStore()
+  const { ready, sessionSync, state } = useStore()
   const navigate = useNavigate()
   const location = useLocation()
   const pathname = location.pathname
@@ -142,6 +143,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </header>
         )}
         <main id="conteudo" tabIndex={-1} className="min-h-0 flex-1 overflow-hidden" aria-label={pageTitle(pathname)}>
+          {sessionSync === "error" ? (
+            <div className="px-3 pt-3 md:px-6" data-session-error>
+              <SyncBanner
+                items={[
+                  {
+                    ok: false,
+                    message: "Não confirmei a sessão no Worker. O painel local pode estar desactualizado.",
+                  },
+                ]}
+              />
+            </div>
+          ) : null}
           {children}
         </main>
       </div>

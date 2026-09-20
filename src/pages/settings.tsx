@@ -146,6 +146,7 @@ export function SettingsPage() {
 
 function BotPane() {
   const { state, saveSettings } = useStore()
+  const owner = state.user?.role === "owner"
   const [username, setUsername] = useState(state.settings.telegramBotUsername)
   const [token, setToken] = useState("")
   const [group, setGroup] = useState(state.settings.telegramGroupUrl)
@@ -271,7 +272,7 @@ function BotPane() {
           className="mt-5 space-y-4"
           onSubmit={(event) => {
             event.preventDefault()
-            if (botLock.current || busy) return
+            if (!owner || botLock.current || busy) return
             const cleanUser = cleanBotUsername(username)
             const cleanGroup = cleanTelegramGroupUrl(group)
             if (username.trim() && !cleanUser) {
@@ -332,6 +333,7 @@ function BotPane() {
               })
           }}
         >
+          <fieldset disabled={!owner} className="min-w-0 space-y-4 border-0 p-0">
           <div className="space-y-1.5">
             <Label htmlFor="bot-user">Username</Label>
             <Input
@@ -438,9 +440,15 @@ function BotPane() {
           <p className="break-all text-[12px] text-muted-foreground">Anúncio Facebook · {landing}</p>
           {ads ? <p className="break-all text-[12px] text-muted-foreground">Botão da landing · {ads}</p> : null}
           <p className="break-all text-[12px] text-muted-foreground">Webhook · {hook}</p>
-          <Button type="submit" className="rounded-full" disabled={busy}>
+          <Button type="submit" className="rounded-full" disabled={busy || !owner}>
             {busy ? "A ligar…" : "Vincular Telegram"}
           </Button>
+          </fieldset>
+          {!owner ? (
+            <p data-runtime-owner-hint className="text-[12.5px] text-muted-foreground">
+              Só o dono liga o token, as chaves e o webhook. O operador vê o estado e o pixel.
+            </p>
+          ) : null}
         </form>
       </section>
       <section className="surface p-6">
@@ -468,7 +476,7 @@ function BotPane() {
           className="mt-5 space-y-4"
           onSubmit={(event) => {
             event.preventDefault()
-            if (voiceLock.current || voiceBusy) return
+            if (!owner || voiceLock.current || voiceBusy) return
             if (!elevenKey.trim() && !voiceId.trim() && !runtime.voice) {
               setVoiceError("Cola o voice id e a chave da ElevenLabs.")
               return
@@ -493,6 +501,7 @@ function BotPane() {
               })
           }}
         >
+          <fieldset disabled={!owner} className="min-w-0 space-y-4 border-0 p-0">
           <div className="space-y-1.5">
             <Label htmlFor="ste-voice-id">Voice id da Sté</Label>
             <Input
@@ -528,16 +537,16 @@ function BotPane() {
             ) : null}
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button type="submit" className="rounded-full" disabled={voiceBusy}>
+            <Button type="submit" className="rounded-full" disabled={voiceBusy || !owner}>
               {voiceBusy ? "A gravar…" : "Guardar voz"}
             </Button>
             <Button
               type="button"
               variant="outline"
               className="rounded-full"
-              disabled={voiceBusy || !runtime.voice}
+              disabled={voiceBusy || !owner || !runtime.voice}
               onClick={() => {
-                if (voiceLock.current || voiceBusy) return
+                if (!owner || voiceLock.current || voiceBusy) return
                 voiceLock.current = true
                 setVoiceBusy(true)
                 void prepareVoice()
@@ -556,6 +565,7 @@ function BotPane() {
               Gerar áudios do funil
             </Button>
           </div>
+          </fieldset>
         </form>
         <div className="mt-4 flex flex-wrap gap-1.5">
           {STE_VOICE_CLIPS.map((clip) => {

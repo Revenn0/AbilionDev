@@ -144,6 +144,7 @@ type Store = {
   crmSync: SyncState
   inboxSync: SyncState
   persistSync: SyncState
+  sessionSync: SyncState
   state: AppState
   login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
@@ -169,6 +170,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [crmSync, setCrmSync] = useState<SyncState>("idle")
   const [inboxSync, setInboxSync] = useState<SyncState>("idle")
   const [persistSync, setPersistSync] = useState<SyncState>("idle")
+  const [sessionSync, setSessionSync] = useState<SyncState>("idle")
   const session = useState(bootSession)[0]
   const [state, setState] = useState(session.state)
   const persistTimer = useRef(0)
@@ -430,9 +432,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     meRequest()
       .then((data) => {
         if (cancelled) return
+        setSessionSync("ok")
         commitState({ ...stateRef.current, user: data.user })
       })
-      .catch(() => undefined)
+      .catch(() => {
+        if (!cancelled) setSessionSync("error")
+      })
       .finally(() => {
         if (!cancelled) setReady(true)
       })
@@ -447,6 +452,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       lastGoodFunnels.current = []
       setCrmSync("idle")
       setInboxSync("idle")
+      setSessionSync("idle")
       resetLeadPersist()
       setState((prev) => {
         if (!prev.user) return prev
@@ -462,9 +468,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const check = () => {
       void meRequest()
         .then((data) => {
+          setSessionSync("ok")
           if (!data.user) noteSessionExpired()
+          else commitState({ ...stateRef.current, user: data.user })
         })
-        .catch(() => undefined)
+        .catch(() => setSessionSync("error"))
     }
     const timer = window.setInterval(check, 15_000)
     window.addEventListener("focus", check)
@@ -631,10 +639,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       crmSync,
       inboxSync,
       persistSync,
+      sessionSync,
       state,
       login: async (email, password) => {
         const data = await loginRequest(email, password)
         clearSessionExpired()
+        setSessionSync("ok")
         commitState({ ...stateRef.current, user: data.user })
       },
       logout: async () => {
@@ -645,6 +655,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         await logoutRequest().catch(() => undefined)
         setCrmSync("idle")
         setInboxSync("idle")
+        setSessionSync("idle")
         resetLeadPersist()
         commitState({ ...stateRef.current, user: null })
       },
@@ -692,7 +703,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       flushCrmNow: () => flushCrm({ silent: true }),
       flushLeadNow: () => flushLeadWrites(),
-      retryHydrate: () => runHydrate(true),
+      retryHydrate: () => {
+        void meRequest()
+          .then((data) => {
+            setSessionSync("ok")
+            if (!data.user) noteSessionExpired()
+            else commitState({ ...stateRef.current, user: data.user })
+          })
+          .catch(() => setSessionSync("error"))
+        return runHydrate(true)
+      },
       deleteFunnel: (id) => {
         const gate = canDeleteFunnel(stateRef.current.funnels, id)
         if (!gate.ok) {
@@ -790,7 +810,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         pushWorker()
       },
     }),
-    [ready, remote, crmSync, inboxSync, persistSync, state]
+    [ready, remote, crmSync, inboxSync, persistSync, sessionSync, state]
   )
 
   return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>
