@@ -25,7 +25,7 @@ export function AuthSplit({
       )}
     >
       {visual ? <div className="relative hidden min-h-screen lg:block">{visual}</div> : null}
-      <main className="relative flex min-h-screen items-center justify-center bg-muted/40 px-4 py-12">
+      <main id="conteudo" tabIndex={-1} className="relative flex min-h-screen items-center justify-center bg-muted/40 px-4 py-12">
         <div className="absolute right-4 top-4 z-10 sm:right-6 sm:top-6">
           <ThemeToggle expanded className="border border-border bg-card text-foreground hover:bg-accent" />
         </div>

@@ -20,7 +20,6 @@ import {
   revertPublishedFunnels,
   pendingSeedFunnelIds,
   recoverPendingFunnelIds,
-  reconcileLeads,
   settingsWriteFingerprint,
 } from "@/lib/crm"
 import { migrateFunnel, migrateLead, migrateSettings } from "@/lib/migrate"
@@ -293,31 +292,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     crmTimer.current = window.setTimeout(flushCrm, 400)
   }
 
-  const applyInbox = (inbox: { ok: boolean; leads: Lead[] }) => {
-    setInboxSync(inbox.ok ? "ok" : "error")
-    if (!inbox.ok) return
-    setState((prev) => {
-      const leads = hydrateLeads(
-        prev.leads,
-        { ok: false, leads: [] },
-        { ok: true, leads: inbox.leads.map(migrateLead) },
-        pendingLeadWrites.current,
-        removedLeadIds.current
-      )
-      if (leads === prev.leads) return prev
-      const next = { ...prev, leads }
-      stateRef.current = next
-      return next
-    })
-  }
-
   const runHydrate = (force = false) => {
     if (!force && crmHydrated.current) return Promise.resolve()
-    void fetchInbox().then(applyInbox)
     if (hydrateLock.current) return hydrateLock.current
-    const pending = Promise.all([fetchCrm(), fetchRuntime(), fetchLeads()]).then(([crm, runtime, remoteLeads]) => {
+    const pending = Promise.all([fetchCrm(), fetchRuntime(), fetchLeads(), fetchInbox()]).then(
+      ([crm, runtime, remoteLeads, inbox]) => {
       setCrmSync(crm.ok ? "ok" : "error")
       setPersistSync(remoteLeads.ok ? "ok" : "error")
+      setInboxSync(inbox.ok ? "ok" : "error")
       setRemote(runtime.persist === "supabase" ? "cloud" : runtime.ok ? "local" : "off")
       setState((prev) => {
         const remoteFunnels = crm.ok ? crm.funnels.map(migrateFunnel) : []
@@ -339,7 +321,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               ok: remoteLeads.ok,
               leads: remoteLeads.leads.map(migrateLead),
             },
-            { ok: false, leads: [] },
+            {
+              ok: inbox.ok,
+              leads: inbox.leads.map(migrateLead),
+            },
             pendingLeadWrites.current,
             removedLeadIds.current
           ),
@@ -359,7 +344,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const retry = leadsStillOnRemote(removedLeadIds.current, remoteLeads.leads)
         if (retry.length) void flushRemovedLeads(retry)
       }
-    }).finally(() => {
+    }
+    ).finally(() => {
       if (hydrateLock.current === pending) hydrateLock.current = null
     })
     hydrateLock.current = pending
@@ -462,19 +448,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!state.user) return
     let cancelled = false
     const reconcile = async () => {
-      const remoteLeads = await fetchLeads()
+      const [remoteLeads, inbox] = await Promise.all([fetchLeads(), fetchInbox()])
       if (cancelled) return
       if (!remoteLeads.ok) {
         setPersistSync("error")
+        if (inbox.ok) setInboxSync("ok")
+        else setInboxSync("error")
         return
       }
       setPersistSync("ok")
+      setInboxSync(inbox.ok ? "ok" : "error")
       setState((prev) => {
-        const incoming = applyRemovedLeads(remoteLeads.leads.map(migrateLead), removedLeadIds.current)
-        const leads = overlayPendingLeads(
-          remoteLeads.leads.length
-            ? reconcileLeads(prev.leads, incoming, pendingLeadWrites.current.keys())
-            : prev.leads.filter((lead) => pendingLeadWrites.current.has(lead.id)),
+        const leads = hydrateLeads(
+          prev.leads,
+          {
+            ok: true,
+            leads: applyRemovedLeads(remoteLeads.leads.map(migrateLead), removedLeadIds.current),
+          },
+          {
+            ok: inbox.ok,
+            leads: inbox.leads.map(migrateLead),
+          },
           pendingLeadWrites.current,
           removedLeadIds.current
         )

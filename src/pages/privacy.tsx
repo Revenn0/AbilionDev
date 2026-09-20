@@ -3,7 +3,7 @@ import { LogoWord } from "@/components/brand/logo"
 
 export function PrivacyPage() {
   return (
-    <main className="min-h-screen bg-background">
+    <main id="conteudo" tabIndex={-1} className="min-h-screen bg-background">
       <div className="page-shell max-w-2xl">
         <LogoWord />
         <h1 className="page-title mt-8">Política de privacidade</h1>

@@ -4,6 +4,7 @@ import { Menu, X } from "lucide-react"
 import { Sidebar } from "./sidebar"
 import { Button } from "@/components/ui/button"
 import { useStore } from "@/lib/store"
+import { withSafeNext } from "@/lib/safe-path"
 import { LogoWord } from "@/components/brand/logo"
 import { ThemeToggle } from "@/components/theme/toggle"
 import { cn } from "@/lib/utils"
@@ -27,7 +28,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
   const location = useLocation()
   const pathname = location.pathname
-  const loginNext = `/login?next=${encodeURIComponent(`${pathname}${location.search}`)}`
+  const loginNext = withSafeNext("/login", `${pathname}${location.search}`)
   const [open, setOpen] = useState(false)
   const [expanded, setExpanded] = useState(true)
   const canvasEditor = isCanvasEditor(pathname)
@@ -136,7 +137,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <ThemeToggle />
           </header>
         )}
-        <main className="min-h-0 flex-1 overflow-hidden" aria-label={pageTitle(pathname)}>
+        <main id="conteudo" tabIndex={-1} className="min-h-0 flex-1 overflow-hidden" aria-label={pageTitle(pathname)}>
           {children}
         </main>
       </div>

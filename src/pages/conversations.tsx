@@ -158,8 +158,8 @@ export function ConversationsPage() {
   }
 
   return (
-    <div className="h-full overflow-hidden">
-      <div className="page-shell h-full !space-y-4">
+    <div className="h-full overflow-y-auto md:overflow-hidden">
+      <div className="page-shell min-h-full !space-y-4 md:h-full md:min-h-0 md:flex md:flex-col">
         <SyncBanner
           items={[
             { ok: inboxSync !== "error", message: "A inbox do Telegram não sincronizou. Conversas novas podem faltar." },
@@ -216,7 +216,7 @@ export function ConversationsPage() {
             </Button>
           </section>
         ) : (
-          <section className="surface grid min-h-[520px] overflow-hidden md:grid-cols-[280px_1fr]">
+          <section className="surface grid min-h-[520px] overflow-hidden md:min-h-0 md:flex-1 md:grid-cols-[280px_1fr]">
             <div className="flex min-h-0 flex-col border-b border-border md:border-b-0 md:border-r">
               <div className="border-b border-border p-3">
                 <Label htmlFor="inbox-search" className="sr-only">

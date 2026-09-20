@@ -269,6 +269,8 @@ function BotPane() {
               ...(token.trim() ? { telegramBotToken: token.trim() } : {}),
               ...(glm.trim() ? { openaiApiKey: glm.trim() } : {}),
               ...(opencode.trim() ? { opencodeApiKey: opencode.trim() } : {}),
+              ...(elevenKey.trim() ? { elevenApiKey: elevenKey.trim() } : {}),
+              ...(voiceId.trim() ? { elevenVoiceId: voiceId.trim() } : {}),
               steModel: model,
               steFallbackModel: STE_LLM_FALLBACK,
             })
@@ -277,6 +279,8 @@ function BotPane() {
                 setToken("")
                 setGlm("")
                 setOpencode("")
+                setElevenKey("")
+                setVoiceId("")
                 userDirty.current = false
                 groupDirty.current = false
                 modelDirty.current = false

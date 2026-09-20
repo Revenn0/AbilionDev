@@ -92,7 +92,7 @@ export default function App() {
         Ir para o conteúdo
       </a>
       <OfflineBanner />
-      <div id="conteudo" tabIndex={-1}>
+      <div>
         <AppRoutes />
       </div>
     </BrowserRouter>

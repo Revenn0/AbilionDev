@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { adsDeepLink } from "@/lib/telegram-start"
 import { fetchHealth } from "@/lib/channel"
-import { readVisitorId } from "@/lib/tracker-script"
+import { PIXEL_VERSION, readVisitorId } from "@/lib/tracker-script"
 
 export function LandingPage() {
   const [username, setUsername] = useState("")
@@ -15,7 +15,7 @@ export function LandingPage() {
     setVisitorId(readVisitorId())
     if (document.querySelector("script[data-abilion-pixel]")) return
     const script = document.createElement("script")
-    script.src = "/t.js"
+    script.src = `/t.js?v=${PIXEL_VERSION}`
     script.async = true
     script.dataset.abilionPixel = "1"
     script.dataset.cta = "[data-abilion-cta]"
@@ -41,7 +41,7 @@ export function LandingPage() {
   }, [])
 
   return (
-    <main className="min-h-screen bg-[#0b0d12] text-zinc-100">
+    <main id="conteudo" tabIndex={-1} className="min-h-screen bg-[#0b0d12] text-zinc-100">
       <div className="mx-auto flex min-h-screen max-w-lg flex-col px-5 py-8 sm:max-w-xl">
         <p className="text-[12px] font-medium tracking-[0.18em] text-sky-400 uppercase">Minicurso gratuito</p>
         <h1 className="mt-3 text-[34px] font-semibold leading-[1.05] tracking-[-0.04em] sm:text-[42px]">

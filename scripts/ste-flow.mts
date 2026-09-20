@@ -746,6 +746,17 @@ assert(
   ),
   "inbox entra depois do wipe ok+[]"
 )
+const phased = hydrateLeads([lead("local-1")], { ok: false, leads: [] }, { ok: true, leads: [inboxOnly] }, new Map(), [])
+assert(
+  !hydrateLeads(phased, { ok: true, leads: [] }, { ok: false, leads: [] }, new Map(), []).some((item) => item.id === "inbox-1"),
+  "dois setState (inbox e depois GET vazio) apagariam a inbox — o hydrate tem de ir junto"
+)
+assert(
+  hydrateLeads(phased, { ok: true, leads: [] }, { ok: true, leads: [inboxOnly] }, new Map(), []).some((item) => item.id === "inbox-1"),
+  "o mesmo GET vazio com a inbox no mesmo hydrate conserva o Telegram"
+)
+assert(withSafeNext("/login", "/pagina-inexistente") === "/login", "404 do painel não vira next")
+assert(withSafeNext("/login", "/conversas?q=ana") === "/login?next=%2Fconversas%3Fq%3Dana", "next leva a query da rota")
 assert(
   !hydrateLeads([inboxOnly], { ok: false, leads: [] }, { ok: true, leads: [inboxOnly] }, new Map(), ["inbox-1"]).some(
     (item) => item.id === "inbox-1"

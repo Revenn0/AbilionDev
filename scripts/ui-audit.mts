@@ -125,6 +125,7 @@ try {
   assert((await page.evaluate(() => document.body.innerText)).includes("privacidade"), "página de privacidade")
 
   await open(page, "/l")
+  assert(await page.$("main#conteudo"), "landing tem o alvo do skip-link")
   assert(await page.$('a[href="/privacidade"]'), "landing liga privacidade")
   const landingCopy = await page.evaluate(() => document.body.innerText)
   assert(
@@ -165,6 +166,7 @@ try {
     await open(page, route)
     assert(!page.url().includes("/login"), `${route} ficou autenticada`)
     await page.waitForSelector("h1", { timeout: 10_000 })
+    assert(await page.$("main#conteudo"), `${route} tem o alvo do skip-link no main`)
   }
 
   await open(page, "/telegram")
