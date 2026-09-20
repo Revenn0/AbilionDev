@@ -6,7 +6,7 @@ import { advanceSteIfDue, isSteWait, replySte, replySteSmart, safeHttpUrl, steRu
 import { linkFollowUp, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { campaignFromStart, originFromStart, parseTelegramStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
-import { applyEvent, canAdvanceRemoteWait, dueWaits, publishedSnapshot } from "../src/lib/runtime.ts"
+import { applyEvent, canAdvanceRemoteWait, dueWaits, pickLiveDueLead, publishedSnapshot } from "../src/lib/runtime.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { BANCA_FIXED, type Lead, type LeadEvent, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types.ts"
 import { compactGeo, factsFromGeo } from "../src/lib/geo.ts"
@@ -677,12 +677,16 @@ async function processWaits(env: Env) {
     const token = resolved.telegramBotToken
     const due = dueWaits([...byId.values()])
     let advanced = 0
-    for (const lead of due) {
+    for (const queued of due) {
       try {
         if (env.AUTH && lockOwner !== "local" && !(await renewCronLock(env.AUTH, lockOwner))) break
+        const live = env.AUTH ? await loadLead(env.AUTH, queued.id) : queued
+        const lead = pickLiveDueLead(queued, live)
+        if (!lead) continue
         if (!canAdvanceRemoteWait(lead, Boolean(token))) continue
         if (isSteWait(lead)) {
           const talked = advanceSteIfDue(lead, Date.now(), ste)
+          if (!talked.replies.length && talked.lead.waitUntil === lead.waitUntil) continue
           if (!(await saveLead(env, talked.lead))) continue
           if (token && lead.telegramChatId && talked.replies.length) {
             await sendSteReplies(env, token, lead.telegramChatId, talked.replies, talked.beat)

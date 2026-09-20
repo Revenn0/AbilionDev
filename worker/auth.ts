@@ -766,7 +766,7 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     }
     const user = snapshot.users.find((item) => item.email === email)
     let resetToken = ""
-    if (user) {
+    if (user && !user.disabled) {
       for (const [key, rec] of Object.entries(snapshot.resets)) {
         if (rec.userId === user.id) delete snapshot.resets[key]
       }
@@ -835,7 +835,9 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
       return json({ error: "Link expirado ou inválido." }, 400)
     }
     const user = snapshot.users.find((item) => item.id === rec.userId)
-    if (!user) {
+    if (!user || user.disabled) {
+      snapshot.spentResets = clipAuthTokens([token, ...(snapshot.spentResets ?? [])], AUTH_SPENT_RESET_CAP)
+      delete snapshot.resets[token]
       await store.save(snapshot)
       return json({ error: "Link expirado ou inválido." }, 400)
     }

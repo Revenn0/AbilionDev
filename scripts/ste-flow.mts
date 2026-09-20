@@ -69,7 +69,7 @@ import {
   resolveLeadLookup,
   settingsWriteFingerprint,
 } from "../src/lib/crm.ts"
-import { applyEvent, canAdvanceRemoteWait, eventFromOrigin, publishedFunnel, publishedSnapshot, waitHours } from "../src/lib/runtime.ts"
+import { applyEvent, canAdvanceRemoteWait, eventFromOrigin, pickLiveDueLead, publishedFunnel, publishedSnapshot, waitHours } from "../src/lib/runtime.ts"
 import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
@@ -92,7 +92,7 @@ import { campaignFor } from "../src/lib/labels.ts"
 import { barShare, hasConversation, isImportedLead, isOperatorLockedLead, leadsHydrating } from "../src/lib/ops.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
-import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, handleAuth, hashApiToken, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
+import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, handleAuth, hashApiToken, hashPassword, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTelegramClaims, telegramCall } from "../worker/telegram.ts"
@@ -1650,6 +1650,69 @@ const resetAttempt = () =>
 for (let i = 0; i < 5; i++) assert((await resetAttempt()).status === 400, `reset ${i + 1} passa no throttle`)
 assert((await resetAttempt()).status === 429, "reset bloqueia na sexta")
 
+const disabledResetStore = memoryAuthStore()
+const disabledHash = await hashPassword("senhaok")
+await disabledResetStore.save({
+  users: [
+    {
+      id: "rita-off",
+      email: "rita@abilion.com",
+      name: "Rita",
+      passwordHash: disabledHash,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      role: "operator",
+      disabled: false,
+    },
+  ],
+  sessions: [],
+  resets: {},
+})
+const forgotRitaOn = (await (
+  await handleAuth(
+    new Request("http://local.test/api/auth/forgot", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.61" },
+      body: JSON.stringify({ email: "rita@abilion.com" }),
+    }),
+    disabledResetStore,
+    { ABILION_ENV: "development" }
+  )
+).json()) as { resetPath?: string }
+const ritaResetToken = forgotRitaOn.resetPath?.split("token=")[1] || ""
+assert(ritaResetToken, "forgot de conta ligada devolve link")
+const ritaSnap = await disabledResetStore.load()
+const ritaUser = ritaSnap.users.find((item) => item.email === "rita@abilion.com")
+assert(ritaUser, "Rita existe")
+ritaUser.disabled = true
+ritaUser.accountUpdatedAt = Date.now()
+await disabledResetStore.save(ritaSnap)
+const forgotRitaOff = (await (
+  await handleAuth(
+    new Request("http://local.test/api/auth/forgot", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.62" },
+      body: JSON.stringify({ email: "rita@abilion.com" }),
+    }),
+    disabledResetStore,
+    { ABILION_ENV: "development" }
+  )
+).json()) as { ok?: boolean; resetPath?: string }
+assert(forgotRitaOff.ok === true && !forgotRitaOff.resetPath, "conta desligada não recebe link")
+const resetRitaOff = await handleAuth(
+  new Request("http://local.test/api/auth/reset", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.63" },
+    body: JSON.stringify({ token: ritaResetToken, password: "novasenha" }),
+  }),
+  disabledResetStore,
+  { ABILION_ENV: "development" }
+)
+assert(resetRitaOff.status === 400, "reset de conta desligada é 400")
+const ritaAfter = await disabledResetStore.load()
+assert(!ritaAfter.resets[ritaResetToken], "token de conta desligada gasta-se")
+assert(ritaAfter.spentResets?.includes(ritaResetToken), "token gasto fica no tombstone")
+assert(ritaAfter.users.find((item) => item.id === "rita-off")?.passwordHash === disabledHash, "senha da conta desligada não muda")
+
 const gone = lead("gone", "@gone")
 gone.telegramChatId = "9"
 await upsertLeadKv(kv, gone)
@@ -3107,6 +3170,10 @@ await upsertLeadKv(cronEnv.AUTH, {
 const cronRes = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), cronEnv, backgroundCtx())
 const cronBody = (await cronRes.json()) as { ok?: boolean; advanced?: number }
 assert(cronRes.status === 200 && cronBody.ok && (cronBody.advanced ?? 0) >= 2, "cron avança cada espera vencida")
+const afterFirstDue = (await loadLead(cronEnv.AUTH, "due-cron"))?.waitUntil
+const cronAgain = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), cronEnv, backgroundCtx())
+assert(cronAgain.status === 200, "segundo cron corre")
+assert((await loadLead(cronEnv.AUTH, "due-cron"))?.waitUntil === afterFirstDue, "segundo cron não remói a espera já avançada")
 assert(canAdvanceRemoteWait(lead("sim-wait"), false), "espera simulada avança sem token")
 assert(canAdvanceRemoteWait({ ...lead("tg-wait"), telegramChatId: "8800" }, true), "espera Telegram avança com token")
 assert(!canAdvanceRemoteWait({ ...lead("tg-hold"), telegramChatId: "8800" }, false), "espera Telegram sem token não avança")
@@ -3114,6 +3181,11 @@ assert(
   !canAdvanceRemoteWait({ ...lead("imp-wait"), channel: "whatsapp", origin: "import" }, true),
   "cron não avança import mesmo com token"
 )
+const dueQueued = { ...lead("due-live"), waitUntil: new Date(Date.now() - 2000).toISOString() }
+const dueFuture = { ...dueQueued, waitUntil: new Date(Date.now() + 86_400_000).toISOString() }
+assert(pickLiveDueLead(dueQueued, dueQueued)?.id === "due-live", "espera ainda vencida segue")
+assert(pickLiveDueLead(dueQueued, dueFuture) === null, "outro cron já comeu a espera")
+assert(pickLiveDueLead(dueQueued, null)?.id === "due-live", "sem KV usa a cópia da fila")
 await upsertLeadKv(cronEnv.AUTH, {
   ...lead("hold-tg", "@hold"),
   telegramChatId: "8800",
@@ -3504,6 +3576,19 @@ const anaLogin = await handleRequest(
   backgroundCtx()
 )
 assert(anaLogin.status === 200, "operador criado entra")
+const anaForgotOn = (await (
+  await handleRequest(
+    new Request("http://local.test/api/auth/forgot", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.221" },
+      body: JSON.stringify({ email: "ana@abilion.com" }),
+    }),
+    teamEnv,
+    backgroundCtx()
+  )
+).json()) as { resetPath?: string }
+const anaResetToken = anaForgotOn.resetPath?.split("token=")[1] || ""
+assert(anaResetToken, "forgot da Ana ligada devolve link")
 const anaCookie = anaLogin.headers.get("set-cookie") || ""
 const anaMinted = await handleRequest(
   new Request("http://local.test/api/tokens", {
@@ -3899,6 +3984,28 @@ const anaDisabledLogin = await handleRequest(
   backgroundCtx()
 )
 assert(anaDisabledLogin.status === 401, "conta desligada não entra")
+const anaForgotOff = (await (
+  await handleRequest(
+    new Request("http://local.test/api/auth/forgot", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.222" },
+      body: JSON.stringify({ email: "ana@abilion.com" }),
+    }),
+    teamEnv,
+    backgroundCtx()
+  )
+).json()) as { ok?: boolean; resetPath?: string }
+assert(anaForgotOff.ok === true && !anaForgotOff.resetPath, "forgot da Ana desligada não devolve link")
+const anaResetOff = await handleRequest(
+  new Request("http://local.test/api/auth/reset", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.223" },
+    body: JSON.stringify({ token: anaResetToken, password: "outrasenha" }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+assert(anaResetOff.status === 400, "reset da Ana desligada é 400")
 const anaBearerDead = await sessionUser(
   new Request("http://local.test/api/crm", { headers: { authorization: `Bearer ${anaMintedBody.token}` } }),
   kvAuthStore(teamEnv.AUTH!)
