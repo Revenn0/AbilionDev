@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import {
   Background,
   BackgroundVariant,
@@ -68,6 +68,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
   const dirty = useRef(false)
   const persistRef = useRef<() => void>(() => undefined)
   const readOnlyRef = useRef(false)
+  const draftRef = useRef({ nodes, edges, name, production, funnel })
 
   useEffect(() => {
     if (!rf || didFit.current) return
@@ -101,25 +102,27 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
   const displayed = version === "production" && production ? toRf(production, cursor) : { nodes, edges }
 
   const persist = (
-    prod = production,
-    status: SalesFunnel["status"] = funnel.status,
-    nextName = name
+    prod?: SalesSnapshot | null,
+    status?: SalesFunnel["status"],
+    nextName?: string
   ) => {
+    const draft = draftRef.current
     const next: SalesFunnel = {
-      ...funnel,
-      name: nextName,
-      status,
-      production: prod ?? null,
+      ...draft.funnel,
+      name: nextName ?? draft.name,
+      status: status ?? draft.funnel.status,
+      production: (prod !== undefined ? prod : draft.production) ?? null,
       updatedAt: new Date().toISOString(),
-      nodes: nodes.map((n) => ({ id: n.id, type: (n.type as SalesKind) || "message", position: n.position, data: n.data })),
-      edges: edges.map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle ?? undefined })),
+      nodes: draft.nodes.map((n) => ({ id: n.id, type: (n.type as SalesKind) || "message", position: n.position, data: n.data })),
+      edges: draft.edges.map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle ?? undefined })),
     }
     dirty.current = false
     onSave(next)
     return next
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    draftRef.current = { nodes, edges, name, production, funnel }
     persistRef.current = () => persist()
     readOnlyRef.current = readOnly
   })
@@ -149,8 +152,11 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
     }
     keepDropSelection.current = true
     dirty.current = true
-    setNodes((nds) => [...nds.map((n) => ({ ...n, selected: false })), node])
+    const nextNodes = [...nodes.map((n) => ({ ...n, selected: false })), node]
+    draftRef.current = { ...draftRef.current, nodes: nextNodes }
+    setNodes(nextNodes)
     setSelected(node)
+    persist()
     if (window.innerWidth < 768) setMobilePanel("props")
   }
 

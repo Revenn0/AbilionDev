@@ -217,13 +217,23 @@ try {
   assert(labelledTitle, "inspector associa o título ao input")
   await clickNamed(page, "Voltar")
   await page.waitForFunction(() => location.pathname === "/fluxo" || location.pathname.endsWith("/fluxo"), { timeout: 8_000 })
-  await clickNamed(page, "Abrir")
+  const reopened = await page.evaluate(() => {
+    const article = [...document.querySelectorAll("article")].find((el) => (el.textContent || "").includes("Novo funil"))
+    const open = article ? [...article.querySelectorAll("a")].find((item) => (item.textContent || "").includes("Abrir")) : null
+    if (!open) return false
+    ;(open as HTMLElement).click()
+    return true
+  })
+  assert(reopened, "reabri o funil novo")
   await page.waitForFunction(() => location.pathname.includes("/fluxo/funil/"), { timeout: 8_000 })
+  await page.waitForFunction(
+    () => [...document.querySelectorAll(".react-flow__node span")].some((el) => (el.textContent || "").trim() === "Landing"),
+    { timeout: 8_000 }
+  )
   const persistedLanding = await page.evaluate(() => {
-    const node = [...document.querySelectorAll(".react-flow__node")].find((el) => {
-      const text = (el.textContent || "").replace(/\s+/g, " ")
-      return text.includes("Landing") && !text.includes("mini curso")
-    })
+    const node = [...document.querySelectorAll(".react-flow__node")].find((el) =>
+      [...el.querySelectorAll("span")].some((span) => (span.textContent || "").trim() === "Landing")
+    )
     if (node) (node as HTMLElement).click()
     return Boolean(node)
   })
@@ -234,8 +244,8 @@ try {
   )
   const editorPath = new URL(page.url()).pathname
 
-  await open(page, "/configuracoes")
-  await clickNamed(page, "Plugins")
+  await open(page, "/configuracoes?tab=plugins")
+  await page.waitForFunction(() => document.body.innerText.includes("Exportar CSV"), { timeout: 8_000 })
   const pluginsCopy = await page.evaluate(() => document.body.innerText)
   assert(pluginsCopy.includes("Exportar CSV"), "plugins exporta CSV")
   assert(!pluginsCopy.includes("Ligar Relatórios") && !pluginsCopy.includes("Ligar Webhooks"), "plugins sem interruptor morto")

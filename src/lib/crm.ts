@@ -30,6 +30,17 @@ export function emptySettings(): Settings {
   return { ...defaultSettings, plugins: { ...defaultSettings.plugins } }
 }
 
+export function mergeFunnels(current: SalesFunnel[], incoming: SalesFunnel[]): SalesFunnel[] {
+  if (!incoming.length) return current
+  const incomingIds = new Set(incoming.map((item) => item.id))
+  const localOnly = current.filter((item) => !incomingIds.has(item.id))
+  const merged = incoming.map((funnel) => {
+    const prev = current.find((item) => item.id === funnel.id)
+    return prev && prev.updatedAt > funnel.updatedAt ? prev : funnel
+  })
+  return [...localOnly, ...merged]
+}
+
 export function canDeleteFunnel(
   funnels: SalesFunnel[],
   id: string

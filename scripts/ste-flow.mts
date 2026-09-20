@@ -23,7 +23,7 @@ import {
   toTelegramHtml,
 } from "../src/lib/ste.ts"
 import { emptySalesFunnel } from "../src/lib/templates.ts"
-import { canDeleteFunnel, mergeLeads } from "../src/lib/crm.ts"
+import { canDeleteFunnel, mergeFunnels, mergeLeads } from "../src/lib/crm.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import type { Lead } from "../src/lib/types.ts"
 import { deleteLeadKv, findLeadInKv, listLeads, loadLead, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
@@ -404,6 +404,11 @@ const publishedC = emptySalesFunnel("C")
 publishedC.status = "active"
 publishedC.production = { name: "C", publishedAt: publishedC.updatedAt, nodes: publishedC.nodes, edges: publishedC.edges }
 assert(canDeleteFunnel([publishedA, publishedC], publishedA.id).ok, "publicado extra apaga")
+const localNew = emptySalesFunnel("local")
+const older = { ...publishedA, name: "servidor", updatedAt: "2020-01-01T00:00:00.000Z" }
+const newerLocal = { ...publishedA, name: "local-novo", updatedAt: "2026-01-01T00:00:00.000Z" }
+assert(mergeFunnels([localNew, newerLocal], [older]).some((item) => item.id === localNew.id), "hydrate conserva funil local")
+assert(mergeFunnels([newerLocal], [older])[0]?.name === "local-novo", "hydrate não pisa rascunho mais novo")
 assert(csvCell("a,b") === '"a,b"', "csv cita vírgula")
 assert(csvCell('diz "oi"') === '"diz ""oi"""', "csv escapa aspas")
 assert(leadsToCsv([lead()]).includes("lead-1"), "csv inclui o id")

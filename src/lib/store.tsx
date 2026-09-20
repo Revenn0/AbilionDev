@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { loginRequest, logoutRequest, meRequest } from "@/lib/auth-api"
 import { clearSessionExpired, noteSessionExpired, subscribeSessionExpired } from "@/lib/session"
 import { toast } from "sonner"
-import { canDeleteFunnel, mergeLeads } from "@/lib/crm"
+import { canDeleteFunnel, mergeFunnels, mergeLeads } from "@/lib/crm"
 import { migrateFunnel, migrateLead, migrateSettings } from "@/lib/migrate"
 import { pullRemote, pushRemote, supabaseEnabled } from "@/lib/persist"
 import { fetchCrm, fetchInbox, fetchLeads, fetchRuntime, persistLeads, removeRemoteLead, saveCrm } from "@/lib/runtime-api"
@@ -184,7 +184,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setPersistSync(remoteLeads.ok ? "ok" : "error")
       setState((prev) => ({
         ...prev,
-        funnels: crm.ok && crm.funnels.length ? crm.funnels.map(migrateFunnel) : prev.funnels,
+        funnels: crm.ok && crm.funnels.length ? mergeFunnels(prev.funnels, crm.funnels.map(migrateFunnel)) : prev.funnels,
         leads: remoteLeads.ok && remoteLeads.leads.length ? mergeLeads(prev.leads, remoteLeads.leads.map(migrateLead)) : prev.leads,
         settings: {
           ...prev.settings,
@@ -237,12 +237,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       setRemote("cloud")
       setState((prev) => {
-        const funnels = bundle.funnels.length ? bundle.funnels : prev.funnels
+        const funnels = bundle.funnels.length ? mergeFunnels(prev.funnels, bundle.funnels.map(migrateFunnel)) : prev.funnels
         const leads = mergeLeads(prev.leads, bundle.leads.map((lead) => migrateLead(lead)))
         const remoteSettings = migrateSettings({ ...bundle.settings, telegramBotToken: "" })
         return {
           ...prev,
-          funnels: funnels.length ? funnels.map(migrateFunnel) : prev.funnels,
+          funnels,
           leads,
           settings: {
             ...remoteSettings,
@@ -313,10 +313,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         pushWorker()
       },
       saveFunnel: (funnel) => {
-        setState((prev) => ({
-          ...prev,
-          funnels: prev.funnels.map((item) => (item.id === funnel.id ? funnel : item)),
-        }))
+        setState((prev) => {
+          const exists = prev.funnels.some((item) => item.id === funnel.id)
+          return {
+            ...prev,
+            funnels: exists
+              ? prev.funnels.map((item) => (item.id === funnel.id ? funnel : item))
+              : [funnel, ...prev.funnels],
+          }
+        })
         pushWorker()
       },
       deleteFunnel: (id) => {
