@@ -2,7 +2,7 @@ import { hasConversation } from "./ops.ts"
 import type { Lead } from "./types.ts"
 import { coordsFromGeo } from "./geo-coords.ts"
 import { formatGeo, leadGeo } from "./geo.ts"
-import { facebookOf, type TrackGeo, type TrackPoint, type TrackSummary } from "./track.ts"
+import { facebookOf, formatPercent, type TrackGeo, type TrackPoint, type TrackSummary } from "./track.ts"
 
 export type FunnelStepId = "ads" | "landing" | "button" | "chat"
 
@@ -89,6 +89,13 @@ export function pixelFigure(status: "loading" | "ok" | "error", hasData: boolean
   if (!hasData && status === "loading") return "…"
   if (!hasData && status === "error") return "—"
   return value
+}
+
+export function pixelDropFigure(status: "loading" | "ok" | "error", hasData: boolean, drop: number | null): string {
+  if (!hasData && status === "loading") return "…"
+  if (!hasData && status === "error") return "—"
+  if (drop === null) return "—"
+  return formatPercent(drop)
 }
 
 export type GlobePulseMarker = {

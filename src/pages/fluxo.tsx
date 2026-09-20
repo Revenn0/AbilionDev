@@ -27,11 +27,15 @@ export function FluxoPage() {
     const funnel = emptySalesFunnel("Novo funil")
     createFunnel(funnel)
     navigate(`/fluxo/funil/${funnel.id}`)
-    void flushCrmNow().then((result) => {
-      if (result.ok && result.queued) toast.message("Funil criado. A gravar no Worker…")
-      else if (result.ok) toast.success("Funil criado.")
-      creating.current = false
-    })
+    void flushCrmNow()
+      .then((result) => {
+        if (result.ok && result.queued) toast.message("Funil criado. A gravar no Worker…")
+        else if (result.ok) toast.success("Funil criado.")
+        else toast.error(result.error || "Não gravei o funil no Worker.")
+      })
+      .finally(() => {
+        creating.current = false
+      })
   }
 
   return (
@@ -100,6 +104,7 @@ export function FluxoPage() {
                       if (!confirm("Remover este funil? Isto não se desfaz.")) return
                       void deleteFunnel(funnel.id).then((ok) => {
                         if (ok) toast.success("Funil removido.")
+                        else toast.error("Não removi o funil no Worker.")
                       })
                     }}
                   >
@@ -125,6 +130,7 @@ export function FluxoPage() {
           void flushCrmNow().then((result) => {
             if (result.ok && result.queued) toast.message("Nome no painel. A gravar no Worker…")
             else if (result.ok) toast.success("Nome actualizado.")
+            else toast.error(result.error || "Não gravei o nome no Worker.")
           })
         }}
       />

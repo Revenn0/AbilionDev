@@ -322,6 +322,7 @@ export function SalesCanvas({
                 (result) => {
                   if (result.ok && result.queued) toast.message("Rascunho no painel. A gravar no Worker…")
                   else if (result.ok) toast.success("Rascunho salvo.")
+                  else toast.error(result.error || "Não gravei o rascunho no Worker.")
                 }
               )
             }}
@@ -507,6 +508,7 @@ export function SalesCanvas({
             (result) => {
               if (result.ok && result.queued) toast.message("Nome no painel. A gravar no Worker…")
               else if (result.ok) toast.success("Nome actualizado.")
+              else toast.error(result.error || "Não gravei o nome no Worker.")
             }
           )
         }}

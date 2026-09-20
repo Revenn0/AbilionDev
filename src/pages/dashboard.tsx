@@ -5,7 +5,7 @@ import { SyncBanner } from "@/components/layout/sync-banner"
 import { SparkBars, TrendLine } from "@/components/ui/spark"
 import { useStore } from "@/lib/store"
 import { pixelFigure } from "@/lib/analytics-view"
-import { barShare, deriveOps, seriesLast30 } from "@/lib/ops"
+import { barShare, deriveOps, leadsHydrating, seriesLast30 } from "@/lib/ops"
 import { facebookOf } from "@/lib/track"
 import { useTrackSummary } from "@/lib/use-track-summary"
 
@@ -14,7 +14,7 @@ export function DashboardPage() {
   const { summary, status, hasData } = useTrackSummary(8000)
   const facebook = facebookOf(summary)
   const ops = deriveOps(state.leads)
-  const hydrating = persistSync === "idle"
+  const hydrating = leadsHydrating(persistSync, state.leads.length)
   const empty = !hydrating && ops.leads === 0
   const facebookTotal = Math.max(facebook.adClicks, facebook.pageViews, facebook.buttonClicks)
   const line = seriesLast30(state.leads, () => true)

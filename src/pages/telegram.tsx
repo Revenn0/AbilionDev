@@ -9,12 +9,13 @@ import { fetchHealth, workerUrl } from "@/lib/channel"
 import { fetchRuntime, type RuntimeStatus } from "@/lib/runtime-api"
 import { adsDeepLink } from "@/lib/telegram-start"
 import { burstFacebookLeads, burstStats } from "@/lib/burst"
+import { leadsHydrating } from "@/lib/ops"
 import { toast } from "sonner"
 
 export function TelegramPage() {
   const { state, createLeads, persistSync } = useStore()
   const { settings, leads } = state
-  const hydrating = persistSync === "idle"
+  const hydrating = leadsHydrating(persistSync, leads.length)
   const inGroup = leads.filter((lead) => lead.channel === "telegram" && (lead.origin === "group_join" || lead.stage === "group")).length
   const facebookToday = leads.filter((lead) => {
     if (lead.origin !== "facebook") return false

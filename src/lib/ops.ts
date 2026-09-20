@@ -43,6 +43,10 @@ export function deriveOps(leads: Lead[]) {
   }
 }
 
+export function leadsHydrating(persistSync: "idle" | "ok" | "error", leadCount: number) {
+  return persistSync === "idle" && leadCount === 0
+}
+
 export function barShare(value: number, total: number) {
   if (total <= 0) return 0
   return Math.round((value / total) * 100)

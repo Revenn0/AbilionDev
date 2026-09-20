@@ -274,7 +274,7 @@ export function migrateSettings(raw: Partial<Settings> | undefined): Settings {
     steRemarketingLines: (Array.isArray(merged.steRemarketingLines) ? merged.steRemarketingLines.filter(Boolean) : [])
       .map((line) => String(line).slice(0, 400))
       .slice(0, 8),
-    esterTelegramChatId: String(merged.esterTelegramChatId || "").slice(0, 32),
+    esterTelegramChatId: "",
     steDieAfterRemarketing: merged.steDieAfterRemarketing !== false,
   }
 }

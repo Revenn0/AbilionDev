@@ -1,4 +1,4 @@
-import { chatStarted, funnelFrom, markersFromGeos, mergeGlobeGeos, periodDelta, pixelFigure, stepDrop } from "../src/lib/analytics-view.ts"
+import { chatStarted, funnelFrom, markersFromGeos, mergeGlobeGeos, periodDelta, pixelDropFigure, pixelFigure, stepDrop } from "../src/lib/analytics-view.ts"
 import { coordsFromGeo } from "../src/lib/geo-coords.ts"
 import { flagEmoji, formatGeo, mergeGeo, normalizeRegionCode, stateLabel } from "../src/lib/geo.ts"
 import { emptySummary, isFacebookTraffic, summarizeTrack, type TrackEvent } from "../src/lib/track.ts"
@@ -69,7 +69,7 @@ import { validateCapture } from "../src/lib/capture.ts"
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink } from "../src/lib/telegram-start.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
-import { barShare } from "../src/lib/ops.ts"
+import { barShare, leadsHydrating } from "../src/lib/ops.ts"
 import { loadSecrets, mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
 import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, handleAuth, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeThrottles, retainUserSessions } from "../worker/auth.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
@@ -195,6 +195,7 @@ assert(!toTelegramHtml("[x](https://user:pass@evil.test/)").includes("href"), "h
 const published = publicSettings({ ...defaultSettings, telegramBotToken: "123:abc", esterTelegramChatId: "999001" })
 assert(published.telegramBotToken === "", "settings públicas não levam o token")
 assert(published.esterTelegramChatId === "", "settings públicas não levam o chat da Ester")
+assert(migrateSettings({ esterTelegramChatId: "999001" }).esterTelegramChatId === "", "persist não guarda o chat da Ester")
 
 assert(flagEmoji("BR") === "🇧🇷", "bandeira BR")
 assert(stateLabel("São Paulo", "SP", "BR") === "São Paulo (SP)", "estado SP")
@@ -2498,6 +2499,13 @@ assert(pixelFigure("loading", false, 0) === "…", "pixel a carregar nao finge z
 assert(pixelFigure("error", false, 0) === "—", "pixel falhou nao finge zero")
 assert(pixelFigure("error", true, 12) === 12, "pixel falhou depois guarda a ultima leitura")
 assert(pixelFigure("ok", true, 0) === 0, "pixel vazio de verdade continua zero")
+assert(pixelDropFigure("loading", false, 0.4) === "…", "seta do funil a carregar nao finge conversao")
+assert(pixelDropFigure("error", false, 0.4) === "—", "seta do funil sem leitura nao finge conversao")
+assert(pixelDropFigure("ok", true, null) === "—", "seta sem taxa fica em dash")
+assert(pixelDropFigure("ok", true, 0.5) === "50%", "seta com taxa formata")
+assert(leadsHydrating("idle", 0), "KPI espera o GET se a lista está vazia")
+assert(!leadsHydrating("idle", 3), "KPI com cache local não esconde o número")
+assert(!leadsHydrating("ok", 0), "KPI vazio depois do GET é zero de verdade")
 
 const telegramOk = await telegramCall(
   "tok",
