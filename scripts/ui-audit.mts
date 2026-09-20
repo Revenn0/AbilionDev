@@ -83,28 +83,38 @@ async function clickNamed(page: Page, text: string) {
 }
 
 async function createAuditFunnel(page: Page) {
-  for (let attempt = 0; attempt < 6; attempt++) {
+  await page.waitForFunction(
+    () => document.querySelectorAll("article").length > 0 || document.body.innerText.includes("Nenhum funil"),
+    { timeout: 10_000 }
+  )
+  for (let attempt = 0; attempt < 8; attempt++) {
     const ready = await page.evaluate(() => {
-      const btn = document.querySelector<HTMLButtonElement>("[data-new-funnel]")
-      return Boolean(btn && !btn.disabled)
+      const marked = document.querySelector<HTMLButtonElement>("[data-new-funnel]")
+      if (marked) return !marked.disabled
+      return [...document.querySelectorAll("button")].some(
+        (el) => (el.textContent || "").includes("Novo funil") && !(el as HTMLButtonElement).disabled
+      )
     })
     if (ready) {
-      await page.click("[data-new-funnel]")
+      const clicked = await page.evaluate(() => {
+        const marked = document.querySelector<HTMLButtonElement>("[data-new-funnel]")
+        const fallback = [...document.querySelectorAll("button")].find((el) => (el.textContent || "").includes("Novo funil"))
+        const btn = marked ?? fallback
+        btn?.click()
+        return Boolean(btn)
+      })
+      assert(clicked, "não achei Novo funil")
       await page.waitForFunction(() => location.pathname.includes("/fluxo/funil/"), { timeout: 8_000 })
       return
     }
     const count = await page.$$eval("article", (els) => els.length)
     page.once("dialog", (dialog) => dialog.accept())
     const deleted = await page.evaluate(() => {
-      const draft = [...document.querySelectorAll("article")].find((el) => {
-        const text = el.textContent || ""
-        return text.includes("Rascunho") && Boolean(el.querySelector('[aria-label="Excluir funil"]:not([disabled])'))
-      })
-      const trash = draft?.querySelector<HTMLButtonElement>('[aria-label="Excluir funil"]')
+      const trash = [...document.querySelectorAll<HTMLButtonElement>('[aria-label="Excluir funil"]')].find((el) => !el.disabled)
       trash?.click()
       return Boolean(trash)
     })
-    assert(deleted, "estúdio cheio e sem rascunho para libertar")
+    assert(deleted, "estúdio cheio e sem funil que se possa apagar")
     await page.waitForFunction((prev) => document.querySelectorAll("article").length < prev, { timeout: 8_000 }, count)
   }
   throw new Error("não criei o funil de auditoria")
