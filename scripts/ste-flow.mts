@@ -80,7 +80,7 @@ import { applyEvent, canAdvanceRemoteWait, eventFromOrigin, pickLiveDueLead, pub
 import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
-import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
@@ -1050,6 +1050,11 @@ assert(settingsAdopted.telegramBotUsername === "@ste_bot", "KV vazio recupera o 
 assert(settingsAdopted.pageScripts[0]?.id === scriptKept.script.id, "KV vazio recupera os scripts do Postgres")
 assert(settingsAdopted.leadCategories.includes("VIP"), "KV vazio recupera as categorias do Postgres")
 assert(adoptSettingsStores(settingsLive, settingsKvEmpty).telegramBotUsername === "@ste_bot", "KV vivo ganha a um Postgres vazio")
+const adoptedKv = memoryKv()
+assert(
+  (await loadAdoptedSettings(adoptedKv, settingsPg)).telegramBotUsername === "@ste_bot",
+  "loadAdoptedSettings lê KV oco + Postgres"
+)
 assert(
   !settingsPersistSettled(
     migrateSettings({ telegramBotUsername: "@a", leadCategories: ["VIP"] }),

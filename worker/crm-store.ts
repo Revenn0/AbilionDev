@@ -1,6 +1,7 @@
 import { contactLookups } from "../src/lib/capture.ts"
 import {
   adoptOperatorLead,
+  adoptSettingsStores,
   applyRemovedFunnels,
   clipRemovedIds,
   commitCrmFunnels,
@@ -679,6 +680,10 @@ export async function loadSettingsKv(kv: KvLike): Promise<Settings> {
   const raw = await kv.get(CRM_SETTINGS, "json")
   if (!raw || typeof raw !== "object") return emptySettings()
   return migrateSettings(raw as Settings)
+}
+
+export async function loadAdoptedSettings(kv: KvLike, remote?: Settings | null) {
+  return adoptSettingsStores(await loadSettingsKv(kv), remote)
 }
 
 export async function saveSettingsKv(kv: KvLike, settings: Settings) {

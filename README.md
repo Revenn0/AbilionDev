@@ -188,7 +188,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `GET/POST/PATCH /api/users` | sessão — lista; POST/PATCH só dono (máx. 40 contas) |
 | `GET/POST/DELETE /api/tokens` | sessão — token `abn_…` (o valor completo só no POST) |
 | `POST /api/funnels/import` | sessão — ManyChat / n8n / Typebot / Abilion / mensagens |
-| `POST /mcp` ou `/api/mcp` | Bearer ou cookie — JSON-RPC para agentes (60 / min por conta e IP) |
+| `POST /mcp` ou `/api/mcp` | Bearer ou cookie — JSON-RPC para agentes (60 / min por conta e IP). Settings e scripts usam o mesmo merge KV+Postgres do painel |
 | `GET /mcp` | público: `{ ok, name, version, install }` |
 | `GET /api/install` | público: manual do pixel + snippet (`?s=` para um script) |
 | `POST /api/telegram` | Telegram; `secret_token` do webhook |

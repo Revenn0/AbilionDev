@@ -16,13 +16,11 @@ import {
   adoptDueLeads,
   adoptLeadStores,
   adoptOperatorLead,
-  adoptSettingsStores,
   commitStoredLead,
   applyRemovedFunnels,
   applyRemovedLeads,
   clipRemovedIds,
   enforceSinglePublished,
-  emptySettings,
   mergeLeadEvents,
   publicSettings,
   FUNNEL_CAP,
@@ -46,7 +44,6 @@ import {
   loadFunnelsKv,
   loadRemovedFunnelIds,
   loadRemovedLeadIds,
-  loadSettingsKv,
   releaseCronLock,
   persistFunnelsMerge,
   persistSettingsMerge,
@@ -68,6 +65,7 @@ import {
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
 import { readJsonObject, readJsonStrict, type JsonFail } from "./json-body.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall } from "./telegram.ts"
+import { loadWorkspaceSettings } from "./workspace-settings.ts"
 import type { KvLike } from "./kv.ts"
 
 type Fetcher = { fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> }
@@ -843,10 +841,7 @@ async function loadFunnels(env: Env): Promise<SalesFunnel[]> {
 }
 
 async function loadSettings(env: Env): Promise<Settings> {
-  const settingsRow = await rest<{ data: Settings }[]>(env, `settings?workspace_id=eq.${WORKSPACE}`)
-  const remote = settingsRow?.[0]?.data ? migrateSettings(settingsRow[0].data) : undefined
-  if (env.AUTH) return adoptSettingsStores(await loadSettingsKv(env.AUTH), remote)
-  return remote ?? emptySettings()
+  return loadWorkspaceSettings(env)
 }
 
 async function findLead(env: Env, contact: string, telegramId: number, chatId: string): Promise<Lead | null> {

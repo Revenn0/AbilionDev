@@ -14,7 +14,8 @@ import {
   type PublicUser,
 } from "./auth.ts"
 import { handleTokens, handleUsers } from "./users.ts"
-import { filterLiveLeads, importOrAdoptLead, listLeadPage, loadFunnelsKv, loadRemovedFunnelIds, loadSettingsKv, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge } from "./crm-store.ts"
+import { filterLiveLeads, importOrAdoptLead, listLeadPage, loadFunnelsKv, loadRemovedFunnelIds, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge } from "./crm-store.ts"
+import { loadWorkspaceSettings } from "./workspace-settings.ts"
 import { readJsonStrict } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -27,6 +28,8 @@ type RpcReq = { jsonrpc?: string; id?: RpcId; method?: string; params?: unknown 
 type McpEnv = {
   AUTH?: KvLike
   TELEGRAM_BOT_TOKEN?: string
+  SUPABASE_URL?: string
+  SUPABASE_SERVICE_ROLE?: string
 }
 
 function json(data: unknown, status = 200) {
@@ -314,7 +317,7 @@ async function callHttp(
 
 async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name: string, args: Record<string, unknown>) {
   if (name === "abilion_health") {
-    const settings = env.AUTH ? await loadSettingsKv(env.AUTH) : null
+    const settings = env.AUTH ? await loadWorkspaceSettings(env) : null
     return {
       ok: true,
       telegramBotUsername: cleanBotUsername(settings?.telegramBotUsername),
@@ -405,7 +408,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
   }
   if (name === "abilion_get_settings") {
     if (!env.AUTH) throw new Error("Auth ainda sem KV.")
-    return { ok: true, settings: publicSettings(await loadSettingsKv(env.AUTH)) }
+    return { ok: true, settings: publicSettings(await loadWorkspaceSettings(env)) }
   }
   if (name === "abilion_create_token") {
     const res = await callHttp(request, env, actor, "/api/tokens", "POST", { name: str(args.name) || "MCP" })
@@ -426,7 +429,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
   }
   if (name === "abilion_list_page_scripts") {
     if (!env.AUTH) throw new Error("Auth ainda sem KV.")
-    const settings = await loadSettingsKv(env.AUTH)
+    const settings = await loadWorkspaceSettings(env)
     const funnels = await funnelsOf(env)
     return {
       ok: true,
@@ -442,7 +445,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     const funnels = await funnelsOf(env)
     const funnel = funnels.find((item) => item.id === str(args.funnelId).trim())
     if (!funnel?.production) throw new Error("Publica este funil antes de criar o script da página.")
-    const settings = await loadSettingsKv(env.AUTH)
+    const settings = await loadWorkspaceSettings(env)
     const made = addPageScript(
       settings.pageScripts,
       {
@@ -460,7 +463,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     if (!env.AUTH) throw new Error("Auth ainda sem KV.")
     const id = str(args.id).trim()
     if (!id) throw new Error("Falta o id do script.")
-    const settings = await loadSettingsKv(env.AUTH)
+    const settings = await loadWorkspaceSettings(env)
     const next = removePageScript(settings.pageScripts, id)
     if (next.length === settings.pageScripts.length) throw new Error("Este script já não está no estúdio.")
     await persistSettingsMerge(env.AUTH, {
@@ -474,7 +477,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     if (!env.AUTH) throw new Error("Auth ainda sem KV.")
     const parsed = parseLeadImportText(str(args.text))
     if (parsed.error) throw new Error(parsed.error)
-    const settings = await loadSettingsKv(env.AUTH)
+    const settings = await loadWorkspaceSettings(env)
     const toGroup = args.toGroup === true
     const named = addLeadCategory(settings.leadCategories, str(args.category) || (toGroup ? "Grupo" : ""))
     const category = named.ok ? named.category : ""
@@ -495,7 +498,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
 
 async function installManualOf(env: McpEnv, scriptId?: string) {
   if (!env.AUTH) throw new Error("Auth ainda sem KV.")
-  const settings = await loadSettingsKv(env.AUTH)
+  const settings = await loadWorkspaceSettings(env)
   const script = pageScriptById(settings.pageScripts, scriptId)
   const funnel = script ? (await funnelsOf(env)).find((item) => item.id === script.funnelId) : undefined
   return pageInstallManual({ botUsername: settings.telegramBotUsername, script, funnelName: funnel?.name })
