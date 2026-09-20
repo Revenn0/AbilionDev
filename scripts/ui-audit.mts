@@ -266,6 +266,13 @@ try {
   assert(labelledTitle, "inspector associa o título ao input")
   await clickNamed(page, "Voltar")
   await page.waitForFunction(() => location.pathname === "/fluxo" || location.pathname.endsWith("/fluxo"), { timeout: 8_000 })
+  await page.waitForFunction(
+    () =>
+      [...document.querySelectorAll("article")].some(
+        (el) => (el.textContent || "").includes("Novo funil") && [...el.querySelectorAll("a")].some((item) => (item.textContent || "").includes("Abrir"))
+      ),
+    { timeout: 8_000 }
+  )
   const reopened = await page.evaluate(() => {
     const article = [...document.querySelectorAll("article")].find((el) => (el.textContent || "").includes("Novo funil"))
     const open = article ? [...article.querySelectorAll("a")].find((item) => (item.textContent || "").includes("Abrir")) : null

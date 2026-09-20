@@ -419,26 +419,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         pendingFunnelIds.current.add(funnel.id)
         removedFunnelIds.current.delete(funnel.id)
         persistIdSet(REMOVED_FUNNELS, removedFunnelIds.current)
-        setState((prev) => ({
-          ...prev,
-          funnels:
-            funnel.status === "active" && funnel.production
-              ? activatePublishedFunnels([funnel, ...prev.funnels], funnel.id)
-              : [funnel, ...prev.funnels],
-        }))
+        setState((prev) => {
+          const next = {
+            ...prev,
+            funnels:
+              funnel.status === "active" && funnel.production
+                ? activatePublishedFunnels([funnel, ...prev.funnels], funnel.id)
+                : [funnel, ...prev.funnels],
+          }
+          stateRef.current = next
+          return next
+        })
         pushWorker()
       },
       saveFunnel: (funnel) => {
         setState((prev) => {
           const exists = prev.funnels.some((item) => item.id === funnel.id)
           if (!exists) pendingFunnelIds.current.add(funnel.id)
-          const next = exists
+          const nextFunnels = exists
             ? prev.funnels.map((item) => (item.id === funnel.id ? funnel : item))
             : [funnel, ...prev.funnels]
-          return {
+          const next = {
             ...prev,
-            funnels: funnel.status === "active" && funnel.production ? activatePublishedFunnels(next, funnel.id) : next,
+            funnels: funnel.status === "active" && funnel.production ? activatePublishedFunnels(nextFunnels, funnel.id) : nextFunnels,
           }
+          stateRef.current = next
+          return next
         })
         pushWorker()
       },
@@ -451,7 +457,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         pendingFunnelIds.current.delete(id)
         removedFunnelIds.current.add(id)
         persistIdSet(REMOVED_FUNNELS, removedFunnelIds.current)
-        setState((prev) => ({ ...prev, funnels: prev.funnels.filter((item) => item.id !== id) }))
+        setState((prev) => {
+          const next = { ...prev, funnels: prev.funnels.filter((item) => item.id !== id) }
+          stateRef.current = next
+          return next
+        })
         pushWorker()
         return true
       },
@@ -504,10 +514,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         void removeRemoteLead(id).then((ok) => setPersistSync(ok ? "ok" : "error"))
       },
       saveSettings: (patch) => {
-        setState((prev) => ({
-          ...prev,
-          settings: { ...prev.settings, ...patch, telegramBotToken: "", plugins: patch.plugins ?? prev.settings.plugins },
-        }))
+        setState((prev) => {
+          const next = {
+            ...prev,
+            settings: { ...prev.settings, ...patch, telegramBotToken: "", plugins: patch.plugins ?? prev.settings.plugins },
+          }
+          stateRef.current = next
+          return next
+        })
         pushWorker()
       },
     }),
