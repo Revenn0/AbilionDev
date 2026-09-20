@@ -70,7 +70,7 @@ import { applyEvent, canAdvanceRemoteWait, publishedFunnel, publishedSnapshot, w
 import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
-import { CRM_CRON_LOCK, CRM_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, deleteLeadKv, dueLeadsKv, findLeadInKv, isLeadPageCursor, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadRemovedFunnelIds, loadRemovedLeadIds, releaseCronLock, renewCronLock, reserveLeadIdentity, saveFunnelsKv, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_CRON_LOCK, CRM_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, deleteLeadKv, dueLeadsKv, findLeadInKv, isLeadPageCursor, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadRemovedFunnelIds, loadRemovedLeadIds, mergeIndexEntries, releaseCronLock, renewCronLock, reserveLeadIdentity, saveFunnelsKv, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
@@ -1532,6 +1532,28 @@ await upsertLeadKv(lookKv, lookLead)
 assert((await lookupLeadsByQuery(lookKv, "@lookme"))[0]?.id === "look-me", "busca pelo @user usa o alias")
 assert((await lookupLeadsByQuery(lookKv, "look-me"))[0]?.id === "look-me", "busca pelo id do lead")
 assert((await lookupLeadsByQuery(lookKv, "ab")).length === 0, "busca curta não varre o índice")
+const olderIdx = { id: "a", contact: "@a", updatedAt: "2020-01-01T00:00:00.000Z", channel: "telegram" as const }
+const newerIdx = { id: "a", contact: "@a", updatedAt: "2026-01-01T00:00:00.000Z", channel: "telegram" as const }
+const otherIdx = { id: "b", contact: "@b", updatedAt: "2026-01-02T00:00:00.000Z", channel: "telegram" as const }
+assert(mergeIndexEntries([olderIdx], [newerIdx, otherIdx]).length === 2, "índice une ids distintos")
+assert(mergeIndexEntries([newerIdx], [olderIdx]).find((item) => item.id === "a")?.updatedAt === newerIdx.updatedAt, "índice fica com o updatedAt mais novo")
+const indexRaceKv = memoryKv()
+await Promise.all(
+  Array.from({ length: 30 }, (_, i) => {
+    const row = lead(`idx-${i}`, `@idx${i}`)
+    row.telegramChatId = String(2000 + i)
+    row.waitUntil = new Date(Date.now() - 1000).toISOString()
+    return upsertLeadKv(indexRaceKv, row)
+  })
+)
+assert((await listLeads(indexRaceKv, 40, "all")).length === 30, "índice une upserts em paralelo")
+assert((await dueLeadsKv(indexRaceKv, new Date().toISOString())).length === 30, "cron vê esperas dos upserts em paralelo")
+const indexDeleteKv = memoryKv()
+await upsertLeadKv(indexDeleteKv, lead("keep-me", "@keep"))
+await upsertLeadKv(indexDeleteKv, lead("drop-me", "@drop"))
+await deleteLeadKv(indexDeleteKv, "drop-me")
+assert((await listLeads(indexDeleteKv, 10, "all")).some((item) => item.id === "keep-me"), "DELETE não apaga o outro do índice")
+assert(!(await listLeads(indexDeleteKv, 10, "all")).some((item) => item.id === "drop-me"), "DELETE tira o lead do índice")
 const simKv = memoryKv()
 for (let i = 0; i < 401; i++) {
   const row = lead(`sim-${i}`, `@sim${i}`)

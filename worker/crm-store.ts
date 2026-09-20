@@ -44,6 +44,15 @@ export async function loadIndex(kv: KvLike): Promise<CrmIndex> {
   return { entries: Array.isArray(value.entries) ? value.entries : [] }
 }
 
+export function mergeIndexEntries(left: CrmIndexEntry[], right: CrmIndexEntry[]): CrmIndexEntry[] {
+  const byId = new Map(left.map((item) => [item.id, item]))
+  for (const item of right) {
+    const prev = byId.get(item.id)
+    if (!prev || item.updatedAt >= prev.updatedAt) byId.set(item.id, item)
+  }
+  return [...byId.values()]
+}
+
 export function clipCrmIndex(entries: CrmIndexEntry[]): CrmIndexEntry[] {
   const byId = new Map(entries.map((item) => [item.id, item]))
   const all = [...byId.values()]
@@ -63,6 +72,25 @@ export function clipCrmIndex(entries: CrmIndexEntry[]): CrmIndexEntry[] {
 
 async function saveIndex(kv: KvLike, index: CrmIndex) {
   await kv.put(CRM_INDEX, JSON.stringify({ entries: clipCrmIndex(index.entries) }))
+}
+
+async function commitIndex(kv: KvLike, extra: CrmIndexEntry[] = [], removeIds: string[] = []) {
+  const drop = new Set(removeIds)
+  for (let attempt = 0; attempt < 16; attempt++) {
+    if (attempt) await new Promise((resolve) => setTimeout(resolve, attempt * 2))
+    const before = await loadIndex(kv)
+    const merged = mergeIndexEntries(
+      before.entries.filter((item) => !drop.has(item.id)),
+      extra.filter((item) => !drop.has(item.id))
+    )
+    const next = clipCrmIndex(merged)
+    await saveIndex(kv, { entries: next })
+    const after = await loadIndex(kv)
+    const afterIds = new Set(after.entries.map((item) => item.id))
+    if (extra.some((item) => !drop.has(item.id) && !afterIds.has(item.id))) continue
+    if (removeIds.some((id) => afterIds.has(id))) continue
+    if (next.every((item) => afterIds.has(item.id))) return
+  }
 }
 
 export function leadPageCursor(entry: Pick<CrmIndexEntry, "updatedAt" | "id">) {
@@ -233,7 +261,6 @@ export async function forgetRemovedLead(kv: KvLike, id: string) {
 
 export async function upsertLeadKv(kv: KvLike, lead: Lead) {
   await forgetRemovedLead(kv, lead.id)
-  const index = await loadIndex(kv)
   const entry: CrmIndexEntry = {
     id: lead.id,
     contact: lead.contact,
@@ -242,10 +269,9 @@ export async function upsertLeadKv(kv: KvLike, lead: Lead) {
     updatedAt: lead.updatedAt,
     channel: lead.channel,
   }
-  const next = { entries: [entry, ...index.entries.filter((item) => item.id !== lead.id)] }
   await kv.put(leadKey(lead.id), JSON.stringify(lead))
   await writeAliases(kv, lead)
-  await saveIndex(kv, next)
+  await commitIndex(kv, [entry])
 }
 
 export async function deleteLeadKv(kv: KvLike, id: string) {
@@ -254,8 +280,8 @@ export async function deleteLeadKv(kv: KvLike, id: string) {
   const entry = index.entries.find((item) => item.id === id)
   await rememberRemovedLead(kv, id)
   await clearAliases(kv, prev, entry)
-  await saveIndex(kv, { entries: index.entries.filter((item) => item.id !== id) })
   await kv.delete?.(leadKey(id))
+  await commitIndex(kv, [], [id])
 }
 
 export async function loadRemovedFunnelIds(kv: KvLike): Promise<string[]> {
