@@ -511,7 +511,7 @@ function LeadDrawer({
         )}
 
         <div className="mt-auto flex flex-wrap gap-2 pt-6">
-          <Button variant="ghost" className="rounded-full" onClick={close}>
+          <Button variant="ghost" className="rounded-full" data-lead-close onClick={close}>
             Fechar
           </Button>
           <Button

@@ -17,6 +17,7 @@ import {
   dueLeadsKv,
   findLeadInKv,
   listLeads,
+  loadLead,
   CRM_SETTINGS,
   loadFunnelsKv,
   loadSettingsKv,
@@ -716,7 +717,11 @@ async function saveLead(env: Env, lead: Lead) {
     events: lead.events.slice(-80),
     messages: (lead.messages ?? []).slice(-80),
   }
-  if (env.AUTH) await upsertLeadKv(env.AUTH, bounded)
+  if (env.AUTH) {
+    const prev = await loadLead(env.AUTH, bounded.id)
+    if (prev && prev.updatedAt > bounded.updatedAt) return
+    await upsertLeadKv(env.AUTH, bounded)
+  }
   if (!env.SUPABASE_SERVICE_ROLE) return
   await rest(env, "leads", {
     method: "POST",

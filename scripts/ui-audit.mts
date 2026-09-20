@@ -195,23 +195,31 @@ try {
   await page.click('button[type="submit"]')
   await page.waitForSelector("#lead-name-error", { timeout: 3_000 })
   assert(await page.$("#lead-contact-error"), "captura mostra os dois erros")
-  await page.type("#lead-name", "Lead Auditoria")
-  await page.type("#lead-contact", "@auditoria")
+  const auditName = `Lead Auditoria ${Date.now()}`
+  await page.type("#lead-name", auditName)
+  await page.type("#lead-contact", `@auditoria${Date.now().toString().slice(-6)}`)
   await page.click('button[type="submit"]')
   await page.waitForFunction(() => !document.querySelector("#lead-name"), { timeout: 5_000 })
   await page.waitForSelector("#lead-search", { timeout: 5_000 })
-  await page.type("#lead-search", "Auditoria")
+  await page.click("#lead-search", { clickCount: 3 })
+  await page.type("#lead-search", auditName)
   await page.waitForFunction(
-    () => [...document.querySelectorAll("button")].some((el) => (el.textContent || "").includes("Lead Auditoria")),
-    { timeout: 5_000 }
+    (name) => [...document.querySelectorAll("button")].some((el) => (el.textContent || "").includes(name)),
+    { timeout: 5_000 },
+    auditName
   )
-  await clickNamed(page, "Lead Auditoria")
+  await clickNamed(page, auditName)
   await page.waitForSelector("#lead-memory", { timeout: 5_000 })
   await page.click("#lead-memory", { clickCount: 3 })
   await page.type("#lead-memory", "memoria isolada")
-  await clickNamed(page, "Fechar")
+  const closed = await page.evaluate(() => {
+    const el = document.querySelector<HTMLButtonElement>("[data-lead-close]")
+    el?.click()
+    return Boolean(el)
+  })
+  assert(closed, "botão Fechar do lead")
   await page.waitForFunction(() => !document.querySelector("#lead-memory"), { timeout: 5_000 })
-  await clickNamed(page, "Lead Auditoria")
+  await clickNamed(page, auditName)
   await page.waitForSelector("#lead-memory", { timeout: 5_000 })
   const remembered = await page.$eval("#lead-memory", (el) => (el as HTMLTextAreaElement).value)
   assert(remembered.includes("memoria isolada"), "memória do lead sobrevive ao Fechar")
@@ -222,8 +230,9 @@ try {
   page.once("dialog", (dialog) => dialog.accept())
   await clickNamed(page, "Excluir lead")
   await page.waitForFunction(
-    () => ![...document.querySelectorAll("button")].some((el) => (el.textContent || "").includes("Lead Auditoria")),
-    { timeout: 5_000 }
+    (name) => ![...document.querySelectorAll("button")].some((el) => (el.textContent || "").includes(name)),
+    { timeout: 5_000 },
+    auditName
   )
 
   await open(page, "/fluxo")

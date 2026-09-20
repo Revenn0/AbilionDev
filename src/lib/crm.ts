@@ -22,6 +22,7 @@ export function mergeLeads(current: Lead[], incoming: Lead[]): Lead[] {
         ...lead,
         events: lead.events.length ? lead.events : prev.events,
         messages: lead.messages?.length ? lead.messages : prev.messages,
+        memory: lead.memory.trim() ? lead.memory : prev.memory,
       })
       changed = true
     }

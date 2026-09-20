@@ -535,10 +535,12 @@ const olderLead = lead("merge-1")
 olderLead.updatedAt = "2020-01-01T00:00:00.000Z"
 olderLead.events = [{ id: "ev-1", at: olderLead.updatedAt, kind: "entered", title: "entrou" }]
 olderLead.messages = [{ id: "m-1", at: olderLead.updatedAt, role: "ste", text: "oi" }]
-const newerEmpty = { ...olderLead, updatedAt: "2026-01-01T00:00:00.000Z", events: [], messages: [] }
+olderLead.memory = "local"
+const newerEmpty = { ...olderLead, updatedAt: "2026-01-01T00:00:00.000Z", events: [], messages: [], memory: "" }
 const mergedNewer = mergeLeads([olderLead], [newerEmpty])[0]
 assert(mergedNewer?.events[0]?.id === "ev-1", "hydrate remoto vazio conserva eventos")
 assert(mergedNewer?.messages?.[0]?.id === "m-1", "hydrate remoto vazio conserva mensagens")
+assert(mergedNewer?.memory === "local", "hydrate remoto vazio conserva memória")
 const staleLead = lead("stale")
 staleLead.updatedAt = "2020-01-01T00:00:00.000Z"
 const liveLead = lead("live")
@@ -1152,6 +1154,39 @@ assert(
   ).status === 400,
   "CRM recusa ficar sem funil"
 )
+const freshMemory = lead("mem-1")
+freshMemory.memory = "guarda"
+freshMemory.updatedAt = "2026-06-02T00:00:00.000Z"
+const staleCreate = { ...freshMemory, memory: "", updatedAt: "2026-06-01T00:00:00.000Z" }
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/leads", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: liveCookie },
+        body: JSON.stringify({ lead: freshMemory }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 200,
+  "POST lead com memória"
+)
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/leads", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: liveCookie },
+        body: JSON.stringify({ lead: staleCreate }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 200,
+  "POST lead atrasado é 200"
+)
+assert((await loadLead(liveEnv.AUTH, "mem-1"))?.memory === "guarda", "POST antigo não apaga a memória")
 assert((await handleRequest(new Request("http://local.test/api/leads?id=", { method: "DELETE", headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())).status === 400, "DELETE sem id é 400")
 assert(
   (
