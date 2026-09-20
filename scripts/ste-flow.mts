@@ -45,10 +45,10 @@ import {
   reconcileLeads,
   resolveLeadLookup,
 } from "../src/lib/crm.ts"
-import { publishedFunnel } from "../src/lib/runtime.ts"
+import { applyEvent, publishedFunnel, publishedSnapshot } from "../src/lib/runtime.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
-import { defaultSettings, type Lead } from "../src/lib/types.ts"
-import { CRM_CRON_LOCK, CRM_FUNNELS, aliasKey, claimCronLock, deleteLeadKv, dueLeadsKv, findLeadInKv, listLeads, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, releaseCronLock, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
+import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
+import { CRM_CRON_LOCK, CRM_FUNNELS, aliasKey, claimCronLock, deleteLeadKv, dueLeadsKv, findLeadInKv, listLeads, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, releaseCronLock, saveFunnelsKv, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
@@ -1733,6 +1733,79 @@ await upsertLeadKv(cronEnv.AUTH, {
 const cronRes = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), cronEnv, backgroundCtx())
 const cronBody = (await cronRes.json()) as { ok?: boolean; advanced?: number }
 assert(cronRes.status === 200 && cronBody.ok && (cronBody.advanced ?? 0) >= 2, "cron avança cada espera vencida")
+
+const waitId = "w-html"
+const msgId = "m-html"
+const offerId = "o-html"
+const nowBoard = new Date().toISOString()
+const htmlBoard: SalesFunnel = {
+  id: "funil-cron-html",
+  name: "Cron HTML",
+  mode: "sales",
+  status: "active",
+  updatedAt: nowBoard,
+  nodes: [
+    { id: "e-start", type: "entry", position: { x: 0, y: 0 }, data: { title: "Start", entryTrigger: "start" } },
+    { id: waitId, type: "wait", position: { x: 0, y: 0 }, data: { title: "Espera", delayHours: 1 } },
+    { id: msgId, type: "message", position: { x: 0, y: 0 }, data: { title: "Texto", body: "veja [curso](https://mundoaviator.com.br/mini-curso/)" } },
+    { id: offerId, type: "offer", position: { x: 0, y: 0 }, data: { title: "Oferta", body: "abre [app](https://app.mundoaviator.com.br/)", url: "https://app.mundoaviator.com.br/" } },
+  ],
+  edges: [
+    { id: "e1", source: "e-start", target: waitId },
+    { id: "e2", source: waitId, target: msgId },
+    { id: "e3", source: msgId, target: offerId },
+  ],
+}
+htmlBoard.production = { name: htmlBoard.name, publishedAt: nowBoard, nodes: htmlBoard.nodes, edges: htmlBoard.edges }
+const htmlSnap = publishedSnapshot([htmlBoard])
+const htmlDue = {
+  ...lead("due-html", "@html"),
+  telegramChatId: "9100",
+  nodeId: waitId,
+  waitUntil: new Date(Date.now() - 2000).toISOString(),
+}
+const htmlFired = applyEvent(htmlSnap, htmlDue, { type: "timer" }, Date.now())
+assert(htmlFired.effects.some((item) => item.kind === "send_message"), "espera do quadro gera send_message")
+assert(htmlFired.effects.some((item) => item.kind === "offer"), "espera do quadro gera oferta")
+await saveFunnelsKv(cronEnv.AUTH, [htmlBoard])
+await upsertLeadKv(cronEnv.AUTH, htmlDue)
+const telegramBodies: string[] = []
+const prevCronFetch = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("api.telegram.org")) {
+    telegramBodies.push(String(init?.body ?? ""))
+    return new Response(JSON.stringify({ ok: true }), { status: 200 })
+  }
+  return prevCronFetch(input, init)
+}) as typeof fetch
+const htmlCron = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), cronEnv, backgroundCtx())
+assert(htmlCron.status === 200, "cron da oferta do quadro corre")
+const sentHtml = telegramBodies.filter((body) => body.includes("parse_mode") && body.includes("<a href="))
+assert(sentHtml.length >= 2, "cron manda mensagem e oferta em HTML")
+assert(telegramBodies.some((body) => body.includes("mundoaviator.com.br/mini-curso")), "cron envia o send_message")
+assert(telegramBodies.some((body) => body.includes("app.mundoaviator.com.br")), "cron envia a oferta")
+globalThis.fetch = prevCronFetch
+
+const hugePixel = await handleRequest(
+  new Request("http://local.test/api/track", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind: "view", visitorId: "aabbcc", extra: "x".repeat(9000) }),
+  }),
+  liveEnv,
+  backgroundCtx()
+)
+assert(hugePixel.status === 413, "pixel recusa corpo enorme")
+const badPixel = await handleRequest(
+  new Request("http://local.test/api/track", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{",
+  }),
+  liveEnv,
+  backgroundCtx()
+)
+assert(badPixel.status === 400, "pixel recusa JSON inválido")
 
 const inboxLead = simulateOpenLead([emptySalesFunnel("inbox")])
 assert(!inboxLead.steBlocked && !inboxLead.steQuiet, "simular conversa não encerra")

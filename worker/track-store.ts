@@ -113,11 +113,15 @@ export function geoFromRequest(request: Request) {
 
 export async function readTrackBody(request: Request) {
   const text = await request.text()
-  if (!text) return {}
-  if (text.length > 8192) return {}
+  if (!text) return { ok: true as const, value: {} }
+  if (text.length > 8192) return { ok: false as const, status: 413 as const }
   try {
-    return JSON.parse(text) as Record<string, unknown>
+    const parsed = JSON.parse(text) as unknown
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { ok: false as const, status: 400 as const }
+    }
+    return { ok: true as const, value: parsed as Record<string, unknown> }
   } catch {
-    return {}
+    return { ok: false as const, status: 400 as const }
   }
 }

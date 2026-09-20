@@ -1,6 +1,6 @@
 import { clientIp, consumeKvThrottle, consumeMemoryThrottle, handleAuth, kvAuthStore, randomToken, sessionUser } from "./auth.ts"
 import { campaignFor } from "../src/lib/labels.ts"
-import { advanceSteIfDue, isSteWait, replySte, replySteSmart, steRuntimeFromFunnels, toTelegramHtml, type SteBeat } from "../src/lib/ste.ts"
+import { advanceSteIfDue, isSteWait, replySte, replySteSmart, safeHttpUrl, steRuntimeFromFunnels, toTelegramHtml, type SteBeat } from "../src/lib/ste.ts"
 import { linkFollowUp, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { campaignFromStart, originFromStart, parseTelegramStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
@@ -197,7 +197,9 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!allowed) {
       return new Response(null, { status: 429, headers: corsHeaders() })
     }
-    const body = await readTrackBody(request)
+    const parsedTrack = await readTrackBody(request)
+    if (!parsedTrack.ok) return new Response(null, { status: parsedTrack.status, headers: corsHeaders() })
+    const body = parsedTrack.value
     const geo = await resolveClientGeo(request, typeof body.timezone === "string" ? body.timezone : undefined, {
       country: typeof body.country === "string" ? body.country : undefined,
       countryCode: typeof body.countryCode === "string" ? body.countryCode : undefined,
@@ -583,8 +585,8 @@ async function processWaits(env: Env) {
           const result = applyEvent(snapshot, lead, { type: "timer" }, Date.now())
           await saveLead(env, result.lead)
           for (const effect of result.effects) {
-            if (effect.kind === "offer" && token && lead.telegramChatId) {
-              await telegram(token, "sendMessage", { chat_id: lead.telegramChatId, text: effect.body || "Oferta do produto" })
+            if ((effect.kind === "offer" || effect.kind === "send_message") && token && lead.telegramChatId) {
+              await sendTelegramMarkup(token, lead.telegramChatId, effect.body || "", effect.url)
             }
             if (effect.kind === "notify_ester" && token) {
               await notifyEster(env, token, effect.body)
@@ -606,7 +608,7 @@ async function processWaits(env: Env) {
 async function notifyEster(env: Env, token: string, body: string) {
   const chat = env.ESTER_CHAT_ID
   if (!chat) return
-  await telegram(token, "sendMessage", { chat_id: chat, text: body || BANCA_FIXED })
+  await sendTelegramMarkup(token, chat, body || BANCA_FIXED)
 }
 
 async function persistFunnels(env: Env, funnels: SalesFunnel[]) {
@@ -900,12 +902,7 @@ async function sendSteReplies(env: Env, token: string, chatId: string, replies: 
           if (fileId !== stored.fileId) await rememberVoiceFile(kv, clip.id, fileId)
           const links = linkFollowUp(replies)
           if (links) {
-            const sent = await telegram(token, "sendMessage", {
-              chat_id: chatId,
-              text: toTelegramHtml(links),
-              parse_mode: "HTML",
-              disable_web_page_preview: true,
-            })
+            const sent = await sendTelegramMarkup(token, chatId, links)
             return { ok: sent.ok }
           }
           return { ok: true }
@@ -916,16 +913,22 @@ async function sendSteReplies(env: Env, token: string, chatId: string, replies: 
     }
   }
   for (const [index, text] of replies.entries()) {
-    const sent = await telegram(token, "sendMessage", {
-      chat_id: chatId,
-      text: toTelegramHtml(text),
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    })
+    const sent = await sendTelegramMarkup(token, chatId, text)
     if (!sent.ok) return { ok: false }
     if (index < replies.length - 1) await sleep(280)
   }
   return { ok: true }
+}
+
+async function sendTelegramMarkup(token: string, chatId: string, text: string, extraUrl?: string) {
+  const href = extraUrl ? safeHttpUrl(extraUrl) : null
+  const body = href && !text.includes(href) ? `${text.trim()}\n[abrir](${href})` : text
+  return telegram(token, "sendMessage", {
+    chat_id: chatId,
+    text: toTelegramHtml(body || "Oferta do produto"),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  })
 }
 
 async function telegram(token: string, method: string, body: Record<string, unknown>) {

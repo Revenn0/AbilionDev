@@ -170,6 +170,19 @@ async function telegramUpload(
   const copy = new ArrayBuffer(bytes.byteLength)
   new Uint8Array(copy).set(bytes)
   form.set(field, new Blob([copy], { type: mime }), filename)
-  const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, { method: "POST", body: form })
-  return (await res.json().catch(() => ({}))) as TelegramMedia
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, { method: "POST", body: form })
+      if (res.status === 429 || res.status >= 500) {
+        if (attempt === 2) return { ok: false }
+        const retryAfter = Number(res.headers.get("retry-after") ?? "1")
+        await new Promise((resolve) => setTimeout(resolve, Math.min(Math.max(Number.isFinite(retryAfter) ? retryAfter : 1, 1), 8) * 1000))
+        continue
+      }
+      return (await res.json().catch(() => ({}))) as TelegramMedia
+    } catch {
+      if (attempt === 2) return { ok: false }
+    }
+  }
+  return { ok: false }
 }
