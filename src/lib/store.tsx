@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { loginRequest, logoutRequest, meRequest } from "@/lib/auth-api"
 import { clearSessionExpired, noteSessionExpired, subscribeSessionExpired } from "@/lib/session"
 import { toast } from "sonner"
-import { adoptRemoteFunnels, applyRemovedLeads, canDeleteFunnel, mergeLeads, reconcileLeads } from "@/lib/crm"
+import { activatePublishedFunnels, adoptRemoteFunnels, applyRemovedLeads, canDeleteFunnel, mergeLeads, reconcileLeads } from "@/lib/crm"
 import { migrateFunnel, migrateLead, migrateSettings } from "@/lib/migrate"
 import { fetchCrm, fetchInbox, fetchLeads, fetchRuntime, persistLeads, removeRemoteLead, saveCrm } from "@/lib/runtime-api"
 import { seededOperation } from "@/lib/templates"
@@ -123,23 +123,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     stateRef.current = state
   }, [state])
 
+  const flushCrm = () => {
+    window.clearTimeout(crmTimer.current)
+    const current = stateRef.current
+    if (!current.user) return
+    void saveCrm({
+      funnels: current.funnels,
+      settings: { ...current.settings, telegramBotToken: "" },
+      removedFunnelIds: [...removedFunnelIds.current],
+    }).then((ok) => {
+      if (ok) {
+        removedFunnelIds.current.clear()
+        pendingFunnelIds.current.clear()
+      }
+      setCrmSync(ok ? "ok" : "error")
+    })
+  }
+
   const pushWorker = () => {
     window.clearTimeout(crmTimer.current)
-    crmTimer.current = window.setTimeout(() => {
-      const current = stateRef.current
-      if (!current.user) return
-      void saveCrm({
-        funnels: current.funnels,
-        settings: { ...current.settings, telegramBotToken: "" },
-        removedFunnelIds: [...removedFunnelIds.current],
-      }).then((ok) => {
-        if (ok) {
-          removedFunnelIds.current.clear()
-          pendingFunnelIds.current.clear()
-        }
-        setCrmSync(ok ? "ok" : "error")
-      })
-    }, 400)
+    crmTimer.current = window.setTimeout(flushCrm, 400)
   }
 
   useEffect(() => {
@@ -256,11 +259,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [state.user])
 
   useEffect(() => {
-    const onHide = () => flushLeadWrites()
+    const onHide = () => {
+      flushLeadWrites()
+      flushCrm()
+    }
     window.addEventListener("pagehide", onHide)
     return () => {
       window.removeEventListener("pagehide", onHide)
       flushLeadWrites()
+      flushCrm()
     }
   }, [])
 
@@ -290,6 +297,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       logout: async () => {
         flushLeadWrites()
+        flushCrm()
         await logoutRequest().catch(() => undefined)
         setCrmSync("idle")
         setInboxSync("idle")
@@ -299,18 +307,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       createFunnel: (funnel) => {
         pendingFunnelIds.current.add(funnel.id)
         removedFunnelIds.current.delete(funnel.id)
-        setState((prev) => ({ ...prev, funnels: [funnel, ...prev.funnels] }))
+        setState((prev) => ({
+          ...prev,
+          funnels:
+            funnel.status === "active" && funnel.production
+              ? activatePublishedFunnels([funnel, ...prev.funnels], funnel.id)
+              : [funnel, ...prev.funnels],
+        }))
         pushWorker()
       },
       saveFunnel: (funnel) => {
         setState((prev) => {
           const exists = prev.funnels.some((item) => item.id === funnel.id)
           if (!exists) pendingFunnelIds.current.add(funnel.id)
+          const next = exists
+            ? prev.funnels.map((item) => (item.id === funnel.id ? funnel : item))
+            : [funnel, ...prev.funnels]
           return {
             ...prev,
-            funnels: exists
-              ? prev.funnels.map((item) => (item.id === funnel.id ? funnel : item))
-              : [funnel, ...prev.funnels],
+            funnels: funnel.status === "active" && funnel.production ? activatePublishedFunnels(next, funnel.id) : next,
           }
         })
         pushWorker()

@@ -67,8 +67,8 @@ export function FluxoPage() {
                 <div className="min-w-0">
                   <p className="truncate text-[14px] font-medium">{funnel.name}</p>
                   <p className="mt-1.5 flex items-center gap-2 text-[12px] text-muted-foreground">
-                    <StatusPill tone={funnel.status === "active" ? "success" : "muted"}>
-                      {funnel.status === "active" ? "Publicado" : "Rascunho"}
+                    <StatusPill tone={funnel.status === "active" && funnel.production ? "success" : "muted"}>
+                      {funnel.status === "active" && funnel.production ? "Publicado" : "Rascunho"}
                     </StatusPill>
                     {timeAgo(funnel.updatedAt)}
                   </p>

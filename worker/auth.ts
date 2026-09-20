@@ -350,6 +350,9 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     const user = snapshot.users.find((item) => item.email === email)
     let resetToken = ""
     if (user) {
+      for (const [key, rec] of Object.entries(snapshot.resets)) {
+        if (rec.userId === user.id) delete snapshot.resets[key]
+      }
       resetToken = randomToken()
       snapshot.resets[resetToken] = { userId: user.id, expiresAt: Date.now() + RESET_TTL_MS }
     }

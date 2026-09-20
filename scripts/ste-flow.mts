@@ -27,6 +27,7 @@ import {
 } from "../src/lib/ste.ts"
 import { emptySalesFunnel } from "../src/lib/templates.ts"
 import {
+  activatePublishedFunnels,
   adoptLeadStores,
   adoptRemoteFunnels,
   applyRemovedFunnels,
@@ -38,6 +39,7 @@ import {
   reconcileFunnels,
   reconcileLeads,
 } from "../src/lib/crm.ts"
+import { publishedFunnel } from "../src/lib/runtime.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import type { Lead } from "../src/lib/types.ts"
 import { CRM_FUNNELS, deleteLeadKv, findLeadInKv, listLeads, loadFunnelsKv, loadLead, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
@@ -394,6 +396,8 @@ try {
 const emptyCapture = validateCapture("  ", "")
 assert(!emptyCapture.ok && emptyCapture.errors.name && emptyCapture.errors.contact, "captura vazia falha com os dois campos")
 assert(validateCapture("Ana", "@ana").ok, "captura valida passa")
+assert(validateCapture("Ana", "tg:9001").ok, "captura aceita tg:id")
+assert(!validateCapture("Ana", "???").ok, "captura recusa contacto inválido")
 
 assert(cleanBotUsername("@ste_bot") === "@ste_bot", "username válido fica")
 assert(cleanBotUsername("steaviator") === "@steaviator", "username sem @ ganha @")
@@ -490,6 +494,11 @@ const publishedC = emptySalesFunnel("C")
 publishedC.status = "active"
 publishedC.production = { name: "C", publishedAt: publishedC.updatedAt, nodes: publishedC.nodes, edges: publishedC.edges }
 assert(canDeleteFunnel([publishedA, publishedC], publishedA.id).ok, "publicado extra apaga")
+const olderPub = { ...publishedA, production: { ...publishedA.production!, publishedAt: "2026-01-01T00:00:00.000Z" } }
+const newerPub = { ...publishedC, production: { ...publishedC.production!, publishedAt: "2026-06-01T00:00:00.000Z" } }
+assert(publishedFunnel([olderPub, newerPub])?.id === newerPub.id, "Sté usa o quadro publicado mais recente")
+assert(publishedFunnel([newerPub, olderPub])?.id === newerPub.id, "a ordem da lista não manda no runtime")
+assert(activatePublishedFunnels([olderPub, newerPub], newerPub.id).find((item) => item.id === olderPub.id)?.status === "draft", "publicar um funil desce o outro")
 const localNew = emptySalesFunnel("local")
 const older = { ...publishedA, name: "servidor", updatedAt: "2020-01-01T00:00:00.000Z" }
 const newerLocal = { ...publishedA, name: "local-novo", updatedAt: "2026-01-01T00:00:00.000Z" }
@@ -541,6 +550,12 @@ const mergedNewer = mergeLeads([olderLead], [newerEmpty])[0]
 assert(mergedNewer?.events[0]?.id === "ev-1", "hydrate remoto vazio conserva eventos")
 assert(mergedNewer?.messages?.[0]?.id === "m-1", "hydrate remoto vazio conserva mensagens")
 assert(mergedNewer?.memory === "local", "hydrate remoto vazio conserva memória")
+olderLead.facts = { regionCode: "SP" }
+olderLead.telegramChatId = "9001"
+const newerBare = { ...newerEmpty, facts: {}, telegramChatId: undefined }
+const mergedFacts = mergeLeads([olderLead], [newerBare])[0]
+assert(mergedFacts?.facts.regionCode === "SP", "hydrate remoto vazio conserva factos")
+assert(mergedFacts?.telegramChatId === "9001", "hydrate remoto vazio conserva o chat Telegram")
 const staleLead = lead("stale")
 staleLead.updatedAt = "2020-01-01T00:00:00.000Z"
 const liveLead = lead("live")
@@ -1072,6 +1087,45 @@ const liveLogin = await handleRequest(
 )
 assert(liveLogin.status === 200, "login pelo handleRequest")
 const liveCookie = liveLogin.headers.get("set-cookie") || ""
+const forgotOnce = (await (
+  await handleRequest(
+    new Request("http://local.test/api/auth/forgot", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.44" },
+      body: JSON.stringify({ email: "victor@abilion.com" }),
+    }),
+    liveEnv,
+    backgroundCtx()
+  )
+).json()) as { resetPath?: string }
+const forgotTwice = (await (
+  await handleRequest(
+    new Request("http://local.test/api/auth/forgot", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.44" },
+      body: JSON.stringify({ email: "victor@abilion.com" }),
+    }),
+    liveEnv,
+    backgroundCtx()
+  )
+).json()) as { resetPath?: string }
+const oldReset = forgotOnce.resetPath?.split("token=")[1] || ""
+const newReset = forgotTwice.resetPath?.split("token=")[1] || ""
+assert(oldReset && newReset && oldReset !== newReset, "forgot novo substitui o token")
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/auth/reset", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.44" },
+        body: JSON.stringify({ token: oldReset, password: "outrasenha" }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 400,
+  "token antigo de reset já não entra"
+)
 const persistFunnel = emptySalesFunnel("persistido")
 const crmPost = await handleRequest(
   new Request("http://local.test/api/crm", {

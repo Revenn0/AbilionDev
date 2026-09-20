@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { resetPasswordRequest } from "@/lib/auth-api"
+import { toast } from "sonner"
 
 export function ResetPage() {
   const [params] = useSearchParams()
@@ -28,6 +29,7 @@ export function ResetPage() {
     setLoading(true)
     try {
       await resetPasswordRequest(token, password)
+      toast.success("Senha actualizada. Entra com a nova senha.")
       navigate("/login", { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível redefinir a senha.")

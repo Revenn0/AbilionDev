@@ -53,14 +53,7 @@ function AppRoutes() {
           </AuthGate>
         }
       />
-      <Route
-        path="/reset"
-        element={
-          <AuthGate>
-            <ResetPage />
-          </AuthGate>
-        }
-      />
+      <Route path="/reset" element={<ResetPage />} />
       <Route path="/privacidade" element={<PrivacyPage />} />
       <Route path="/l" element={<LandingPage />} />
       <Route

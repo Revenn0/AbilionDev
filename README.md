@@ -10,7 +10,7 @@ Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / M
 - Leads no passo do fluxo (print, banca, espera, oferta só se o grafo deixar)
 - Conversas Telegram: a Sté segue o funil publicado (boas-vindas, minicurso, Superbet, App/Premium, remarketing). A voz muda conforme o que o lead falou; o passo, os links e a próxima fase não mudam. Sem inbox, “Simular conversa” cria um lead Facebook a meio do funil (não o encerrado do lote). A caixa “Simular lead” corre o motor no painel — não envia Telegram. A IA começa no OpenCode (DeepSeek V4.1 Flash). Se falhar, cai no OpenRouter: Gemma 4 31B e depois DeepSeek V4 Flash. Sem chave, a voz local ainda reconhece o lead.
 - Áudio: mensagens grandes do funil saem como áudio da ElevenLabs. Cada clip é gerado uma vez, guardado e reutilizado. Os links continuam no texto.
-- Funil com mapa e fluxo executável, no estúdio visual claro (catálogo, quadro e propriedades). O rascunho grava sozinho e também ao sair (Voltar / fechar o separador). No telemóvel, toca num bloco da paleta para o adicionar. O último funil publicado não se apaga.
+- Funil com mapa e fluxo executável, no estúdio visual claro (catálogo, quadro e propriedades). O rascunho grava sozinho e também ao sair (Voltar / fechar o separador). Publicar um funil torna-o o único quadro activo — a Sté segue o `publishedAt` mais recente. No telemóvel, toca num bloco da paleta para o adicionar. O último funil publicado não se apaga.
 - Telegram: webhook no Worker (`/api/telegram`) — /start abre a Sté
 - Facebook → Telegram: `https://t.me/BOT?start=fb` (500–1000 /start por dia)
 - Configurações: Telegram, webhook, pixel `/t.js`. A cópia da Sté edita-se no funil publicado

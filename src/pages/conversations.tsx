@@ -206,7 +206,7 @@ export function ConversationsPage() {
                 </ul>
               )}
             </div>
-            {lead && (
+            {lead ? (
               <div className="flex min-h-0 flex-col">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-5 py-4">
                   <div>
@@ -278,6 +278,13 @@ export function ConversationsPage() {
                     Simular lead
                   </Button>
                 </form>
+              </div>
+            ) : (
+              <div className="grid place-items-center px-6 py-16 text-center">
+                <p className="text-[14px] font-medium">Nada neste recorte</p>
+                <p className="mt-1 max-w-sm text-[13px] text-muted-foreground">
+                  A lista à esquerda está vazia neste filtro. Limpa a busca ou escolhe Todas.
+                </p>
               </div>
             )}
           </section>

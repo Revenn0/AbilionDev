@@ -77,7 +77,7 @@ export function ForgotPage() {
               </p>
             )}
             <Button type="submit" disabled={loading} className={AUTH_SUBMIT}>
-              {loading ? "A enviar…" : "Continuar"}
+              {loading ? "A processar…" : "Continuar"}
             </Button>
             <p className="text-center text-[13px]">
               <Link to="/login" className={AUTH_LINK}>

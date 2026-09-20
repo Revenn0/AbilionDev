@@ -32,8 +32,15 @@ export function eventFromOrigin(origin: LeadOrigin): RuntimeEvent {
   return { type: "start" }
 }
 
+function publishedAt(funnel: SalesFunnel) {
+  return funnel.production?.publishedAt ?? funnel.updatedAt
+}
+
 export function publishedFunnel(funnels: SalesFunnel[]): SalesFunnel | undefined {
-  return funnels.find((item) => item.status === "active" && item.production) ?? funnels.find((item) => item.production)
+  const live = funnels.filter((item) => item.status === "active" && item.production)
+  const pool = live.length ? live : funnels.filter((item) => item.production)
+  if (!pool.length) return undefined
+  return pool.slice().sort((a, b) => publishedAt(b).localeCompare(publishedAt(a)))[0]
 }
 
 export function publishedSnapshot(funnels: SalesFunnel[]): SalesSnapshot | null {

@@ -1,6 +1,7 @@
 import { uid } from "./format.ts"
 import { llmHeaders, steLlmAttempts, type SteLlmProvider, STE_LLM_BASE_URL, STE_LLM_FALLBACK, STE_LLM_MODEL } from "./llm.ts"
-import type { ChatMessage, FlowNode, Lead, LeadFacts, SalesSnapshot, Settings, SteLine, StePhase } from "./types.ts"
+import { publishedFunnel } from "./runtime.ts"
+import type { ChatMessage, FlowNode, Lead, LeadFacts, SalesFunnel, SalesSnapshot, Settings, SteLine, StePhase } from "./types.ts"
 
 export { STE_LLM_BASE_URL, STE_LLM_FALLBACK, STE_LLM_MODEL }
 
@@ -300,8 +301,8 @@ export function steRuntimeFromSettings(settings?: Partial<Settings> | null): Ste
   }
 }
 
-export function steRuntimeFromFunnels(funnels?: Array<{ production?: SalesSnapshot | null; status?: string }>, settings?: Partial<Settings> | null) {
-  const published = funnels?.find((item) => item.status === "active" && item.production)?.production ?? funnels?.find((item) => item.production)?.production
+export function steRuntimeFromFunnels(funnels?: SalesFunnel[], settings?: Partial<Settings> | null) {
+  const published = publishedFunnel(funnels ?? [])?.production
   const fromFunnel = steRuntimeFromSnapshot(published)
   if (published && (fromFunnel.welcome || fromFunnel.remarketing || published.nodes.some((node) => node.data.steLine || node.type === "handoff"))) {
     return fromFunnel

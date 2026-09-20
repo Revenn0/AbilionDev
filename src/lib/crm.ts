@@ -23,6 +23,9 @@ export function mergeLeads(current: Lead[], incoming: Lead[]): Lead[] {
         events: lead.events.length ? lead.events : prev.events,
         messages: lead.messages?.length ? lead.messages : prev.messages,
         memory: lead.memory.trim() ? lead.memory : prev.memory,
+        facts: lead.facts && Object.keys(lead.facts).length ? lead.facts : prev.facts,
+        telegramChatId: lead.telegramChatId || prev.telegramChatId,
+        visitorId: lead.visitorId || prev.visitorId,
       })
       changed = true
     }
@@ -124,6 +127,25 @@ export function reconcileFunnels(server: SalesFunnel[], incoming: SalesFunnel[])
     if (funnel.updatedAt > newestIncoming) next.push(funnel)
   }
   return next.slice(0, 20)
+}
+
+export function activatePublishedFunnels(funnels: SalesFunnel[], id: string): SalesFunnel[] {
+  const target = funnels.find((item) => item.id === id)
+  if (!target?.production) return funnels
+  let changed = false
+  const next = funnels.map((item) => {
+    if (item.id === id) {
+      if (item.status === "active") return item
+      changed = true
+      return { ...item, status: "active" as const }
+    }
+    if (item.status === "active" && item.production) {
+      changed = true
+      return { ...item, status: "draft" as const, updatedAt: target.updatedAt }
+    }
+    return item
+  })
+  return changed ? next : funnels
 }
 
 export function canDeleteFunnel(
