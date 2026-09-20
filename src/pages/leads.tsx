@@ -169,7 +169,6 @@ export function LeadsPage() {
       <CaptureDialog open={open} onOpenChange={setOpen} onCreate={createLead} funnels={state.funnels} />
       <LeadDrawer
         lead={lead}
-        esterNotify={state.settings.esterNotify}
         funnels={state.funnels}
         geos={summary.geos}
         onClose={() => setSelected(null)}
@@ -313,7 +312,6 @@ function Field({
 
 function LeadDrawer({
   lead,
-  esterNotify,
   funnels,
   geos,
   onClose,
@@ -321,7 +319,6 @@ function LeadDrawer({
   onDelete,
 }: {
   lead: Lead | null
-  esterNotify: boolean
   funnels: SalesFunnel[]
   geos?: Record<string, { country?: string; countryCode?: string; city?: string; region?: string; regionCode?: string }>
   onClose: () => void
@@ -457,7 +454,7 @@ function LeadDrawer({
             size="sm"
             variant="outline"
             className="rounded-full"
-            onClick={() => run({ type: "print" }, esterNotify ? "Aviso para a Ester: enviar a banca." : "Print no fluxo. A Sté não inventa banca.")}
+            onClick={() => run({ type: "print" }, "Print no fluxo. A Ester só é avisada se o Worker tiver ESTER_CHAT_ID.")}
           >
             Print do cadastro
           </Button>
