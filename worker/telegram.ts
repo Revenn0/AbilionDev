@@ -74,12 +74,18 @@ export async function claimTelegramUpdate(kv: KvLike, id: number): Promise<boole
   return readTelegramUpdates(await kv.get(TG_UPDATES, "json")).owners[String(id)] === owner
 }
 
+export function forgetTelegramId(store: TelegramUpdateStore, id: number): TelegramUpdateStore {
+  const owners = { ...store.owners }
+  delete owners[String(id)]
+  return { ids: store.ids.filter((item) => item !== id), owners }
+}
+
 export async function forgetTelegramUpdate(kv: KvLike, id: number) {
   if (!Number.isFinite(id) || id < 1) return
   const current = readTelegramUpdates(await kv.get(TG_UPDATES, "json"))
-  const owners = { ...current.owners }
-  delete owners[String(id)]
-  await kv.put(TG_UPDATES, JSON.stringify({ ids: current.ids.filter((item) => item !== id), owners }))
+  const next = forgetTelegramId(current, id)
+  const latest = readTelegramUpdates(await kv.get(TG_UPDATES, "json"))
+  await kv.put(TG_UPDATES, JSON.stringify(forgetTelegramId(mergeTelegramClaims(latest, next), id)))
 }
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>

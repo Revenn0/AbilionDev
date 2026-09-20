@@ -62,7 +62,7 @@ import { barShare } from "../src/lib/ops.ts"
 import { mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
 import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, handleAuth, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, retainUserSessions } from "../worker/auth.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
-import { claimTelegramUpdate, forgetTelegramUpdate, mergeTelegramClaims, telegramCall } from "../worker/telegram.ts"
+import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTelegramClaims, telegramCall } from "../worker/telegram.ts"
 import { backgroundCtx, handleRequest, type Env } from "../worker/index.ts"
 import { clearSessionExpired, noteUnauthorized, subscribeSessionExpired } from "../src/lib/session.ts"
 
@@ -267,6 +267,13 @@ assert(kept.telegramBotToken === "123:abc", "mascara nao apaga o token")
 const spoofHook = mergeSecrets({ webhookOk: false, webhookUrl: "https://www.abilion.lol/api/telegram" }, { webhookOk: true, webhookUrl: "https://evil.test/hook" })
 assert(spoofHook.webhookOk !== true, "cliente não marca webhookOk")
 assert(spoofHook.webhookUrl !== "https://evil.test/hook", "cliente não aponta o webhook")
+const spoofLlm = mergeSecrets(
+  { openaiBaseUrl: "https://openrouter.ai/api/v1" },
+  { openaiBaseUrl: "http://169.254.169.254/latest/meta-data" }
+)
+assert(!spoofLlm.openaiBaseUrl, "cliente não aponta o endpoint da IA")
+const envLlm = resolveRuntime({ OPENAI_BASE_URL: "https://openrouter.ai/api/v1", AUTH: {} }, { openaiBaseUrl: "http://127.0.0.1:9" })
+assert(envLlm.baseUrl.includes("openrouter.ai"), "IA só usa URL do Worker")
 const swapped = mergeSecrets({ telegramBotToken: "123:abc" }, { telegramBotToken: "999:xyz" })
 assert(swapped.telegramBotToken === "999:xyz", "token novo substitui")
 assert(tokenHint("123:abcd") === "•••• abcd", "hint do token")
@@ -642,6 +649,10 @@ assert(
 assert(adoptLeadStores([], [freshLead]).some((item) => item.id === "fresh"), "KV vazio recupera do remoto")
 assert(csvCell("a,b") === '"a,b"', "csv cita vírgula")
 assert(csvCell('diz "oi"') === '"diz ""oi"""', "csv escapa aspas")
+assert(csvCell("=1+1") === '"\'=1+1"', "csv não executa fórmula")
+assert(csvCell("+cmd") === '"\'+cmd"', "csv não executa mais")
+assert(csvCell("@fb1") === '"\'@fb1"', "arroba do Telegram não vira fórmula")
+assert(csvCell("-2+3") === '"\'-2+3"', "csv não executa menos")
 assert(leadsToCsv([lead()]).includes("lead-1"), "csv inclui o id")
 
 assert(safeAppPath("/leads") === "/leads", "rota interna passa")
@@ -1305,6 +1316,13 @@ assert(claimedOnce.owners["88"] === "first", "primeiro dono do update_id fica")
 const raceTg = memoryKv()
 const racedClaims = await Promise.all([claimTelegramUpdate(raceTg, 88), claimTelegramUpdate(raceTg, 88)])
 assert(racedClaims.filter(Boolean).length === 1, "só um claim do mesmo update_id ganha")
+const keepOther = forgetTelegramId({ ids: [10, 11], owners: { "10": "a", "11": "b" } }, 10)
+assert(keepOther.ids.includes(11) && !keepOther.ids.includes(10), "esquecer um update_id não apaga o outro")
+const forgetRace = memoryKv()
+assert(await claimTelegramUpdate(forgetRace, 10), "claim 10")
+await Promise.all([forgetTelegramUpdate(forgetRace, 10), claimTelegramUpdate(forgetRace, 11)])
+assert(await claimTelegramUpdate(forgetRace, 11) === false, "forget concorrente não apaga outro update_id")
+assert(await claimTelegramUpdate(forgetRace, 10), "id esquecido pode voltar")
 globalThis.fetch = okFetch
 const startLogin = await handleRequest(
   new Request("http://local.test/api/auth/login", {

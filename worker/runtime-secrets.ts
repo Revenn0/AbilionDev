@@ -120,10 +120,7 @@ export function mergeSecrets(current: RuntimeSecrets, patch: RuntimeSecrets): Ru
     const key = patch.opencodeApiKey.trim()
     if (!looksMasked(key)) next.opencodeApiKey = key
   }
-  if (patch.openaiBaseUrl !== undefined) {
-    const url = patch.openaiBaseUrl.trim().replace(/\/$/, "")
-    if (url) next.openaiBaseUrl = url
-  }
+  delete next.openaiBaseUrl
   if (patch.elevenApiKey !== undefined) {
     const key = patch.elevenApiKey.trim()
     if (!looksMasked(key)) next.elevenApiKey = key
@@ -168,7 +165,7 @@ export function resolveRuntime(env: RuntimeEnv, secrets: RuntimeSecrets, webhook
     baseUrl: (
       opencodeApiKey
         ? env.OPENCODE_BASE_URL || OPENCODE_GO_BASE_URL
-        : secrets.openaiBaseUrl || env.OPENAI_BASE_URL || baseUrlOf(model) || OPENROUTER_BASE_URL
+        : env.OPENAI_BASE_URL || baseUrlOf(model) || OPENROUTER_BASE_URL
     ).replace(/\/$/, ""),
   }
 }

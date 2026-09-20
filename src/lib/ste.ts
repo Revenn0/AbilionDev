@@ -803,7 +803,6 @@ export async function replySteSmart(
     apiKey?: string
     openCodeKey?: string
     openRouterKey?: string
-    baseUrl?: string
     model?: string
     fallbackModel?: string
     runtime?: SteRuntime

@@ -3,7 +3,9 @@ import type { Lead } from "./types"
 const COLS = ["id", "name", "contact", "channel", "campaign", "origin", "temperature", "stage", "createdAt", "updatedAt"] as const
 
 export function csvCell(value: string) {
-  if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`
+  const formula = /^[=+\-@\t\r]/.test(value)
+  const escaped = (formula ? `'${value}` : value).replace(/"/g, '""')
+  if (formula || /[",\n\r]/.test(value)) return `"${escaped}"`
   return value
 }
 
