@@ -222,7 +222,7 @@ try {
   await page.waitForSelector("#user-password", { timeout: 8_000 })
   const showInitial = await page.$("[aria-label='Mostrar senha inicial']")
   assert(showInitial, "criar conta mostra a senha")
-  await showInitial.click()
+  await showInitial!.click()
   const revealed = await page.$eval("#user-password", (el) => (el as HTMLInputElement).type)
   assert(revealed === "text", "toggle revela a senha inicial")
 
