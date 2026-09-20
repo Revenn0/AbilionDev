@@ -724,6 +724,10 @@ assert(
   "inbox do retry respeita tombstone"
 )
 assert(
+  overlayPendingLeads([inboxOnly], new Map(), ["inbox-1"]).length === 0,
+  "overlay sem fila ainda aplica tombstone"
+)
+assert(
   settingsWriteFingerprint({ ...defaultSettings, telegramBotToken: "secret" }) ===
     settingsWriteFingerprint({ ...defaultSettings, telegramBotToken: "" }),
   "fingerprint do settings ignora o token"

@@ -143,10 +143,11 @@ export function overlayPendingLeads(
 ): Lead[] {
   const queued = pending instanceof Map ? pending : new Map([...pending].map((lead) => [lead.id, lead]))
   for (const id of removedIds) queued.delete(id)
-  if (!queued.size) return leads
-  let changed = false
+  const base = applyRemovedLeads(leads, removedIds)
+  if (!queued.size) return base
+  let changed = base !== leads
   const seen = new Set<string>()
-  const next = leads.map((lead) => {
+  const next = base.map((lead) => {
     const draft = queued.get(lead.id)
     seen.add(lead.id)
     if (!draft) return lead
@@ -217,7 +218,7 @@ export function hydrateLeads(
   pending: Map<string, Lead>,
   removed: Iterable<string>
 ): Lead[] {
-  let next = local
+  let next = applyRemovedLeads(local, removed)
   if (remote.ok) {
     const incoming = applyRemovedLeads(remote.leads, removed)
     next = remote.leads.length ? reconcileLeads(local, incoming, pending.keys()) : local.filter((lead) => pending.has(lead.id))
