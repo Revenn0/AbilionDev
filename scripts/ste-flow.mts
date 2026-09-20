@@ -96,7 +96,7 @@ import { leadFromImport, parseLeadImportLine, parseLeadImportText } from "../src
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
-import { barShare, hasConversation, isImportedLead, isOperatorLockedLead, leadsHydrating } from "../src/lib/ops.ts"
+import { barShare, hasConversation, isImportedLead, isOperatorLockedLead, leadsHydrating, leadsLoadFailed } from "../src/lib/ops.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
 import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, handleAuth, hashApiToken, hashPassword, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
@@ -1012,6 +1012,13 @@ assert(
     migrateSettings({ telegramBotUsername: "@a", leadCategories: ["Outro"] })
   ),
   "categorias diferentes não fecham o persist"
+)
+assert(
+  !settingsPersistSettled(
+    migrateSettings({ telegramBotUsername: "@a", steWelcomeLines: ["Um", "Dois", "Três"] }),
+    migrateSettings({ telegramBotUsername: "@a", steWelcomeLines: ["Outro", "Dois", "Três"] })
+  ),
+  "falas da Sté diferentes não fecham o persist"
 )
 const setKv = memoryKv()
 await saveSettingsKv(setKv, migrateSettings({ telegramBotUsername: "@ste_bot", leadCategories: ["VIP"] }))
@@ -3704,6 +3711,9 @@ assert(pixelDropFigure("ok", true, 0.5) === "50%", "seta com taxa formata")
 assert(leadsHydrating("idle", 0), "KPI espera o GET se a lista está vazia")
 assert(!leadsHydrating("idle", 3), "KPI com cache local não esconde o número")
 assert(!leadsHydrating("ok", 0), "KPI vazio depois do GET é zero de verdade")
+assert(leadsLoadFailed("error", 0), "GET falhou sem cache não é lista vazia")
+assert(!leadsLoadFailed("error", 3), "GET falhou com cache local ainda mostra os números")
+assert(!leadsLoadFailed("ok", 0), "GET vazio de verdade não é falha")
 
 const telegramOk = await telegramCall(
   "tok",

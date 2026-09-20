@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { SparkBars, TrendLine } from "@/components/ui/spark"
 import { useStore } from "@/lib/store"
 import { pixelFigure } from "@/lib/analytics-view"
-import { barShare, deriveOps, leadsHydrating, seriesLast30 } from "@/lib/ops"
+import { barShare, deriveOps, leadsHydrating, leadsLoadFailed, seriesLast30 } from "@/lib/ops"
 import { facebookOf } from "@/lib/track"
 import { useTrackSummary } from "@/lib/use-track-summary"
 
@@ -16,7 +16,9 @@ export function DashboardPage() {
   const facebook = facebookOf(summary)
   const ops = deriveOps(state.leads)
   const hydrating = leadsHydrating(persistSync, state.leads.length)
-  const empty = !hydrating && ops.leads === 0
+  const failed = leadsLoadFailed(persistSync, state.leads.length)
+  const empty = !hydrating && !failed && ops.leads === 0
+  const pending = hydrating || failed
   const facebookTotal = Math.max(facebook.adClicks, facebook.pageViews, facebook.buttonClicks)
   const line = seriesLast30(state.leads, () => true)
   const spark = line.slice(-12)
@@ -48,26 +50,26 @@ export function DashboardPage() {
         </PageChrome>
 
         <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
-          <Kpi href="/leads" label="Leads" value={hydrating ? "…" : ops.leads} hint={hydrating ? "a carregar" : empty ? "à espera de captura" : "na base"} bars={spark} />
+          <Kpi href="/leads" label="Leads" value={pending ? "…" : ops.leads} hint={hydrating ? "a carregar" : failed ? "sem leitura" : empty ? "à espera de captura" : "na base"} bars={spark} />
           <Kpi
             href="/conversas"
             label="Conversas"
-            value={hydrating ? "…" : ops.conversations}
-            hint={hydrating ? "a carregar" : empty ? "nenhuma iniciada" : "eventos do fluxo"}
+            value={pending ? "…" : ops.conversations}
+            hint={hydrating ? "a carregar" : failed ? "sem leitura" : empty ? "nenhuma iniciada" : "eventos do fluxo"}
             bars={spark}
           />
           <Kpi href="/analytics" label="Anúncio" value={pixelFigure(status, hasData, facebook.adClicks)} hint="clique no ads" bars={pixelBars("facebookAds")} />
           <Kpi href="/analytics" label="Page views" value={pixelFigure(status, hasData, facebook.pageViews)} hint="landing do Facebook" bars={pixelBars("facebookViews")} />
           <Kpi href="/analytics" label="Botão TG" value={pixelFigure(status, hasData, facebook.buttonClicks)} hint="clique no Telegram" bars={pixelBars("facebookClicks")} />
-          <Kpi href="/leads" label="Aguardando" value={hydrating ? "…" : ops.waiting} hint={hydrating ? "a carregar" : "espera do fluxo"} bars={waitSpark} />
-          <Kpi href="/leads" label="Ofertas" value={hydrating ? "…" : ops.offered} hint={hydrating ? "a carregar" : "disparadas pelo quadro"} bars={offerSpark} />
+          <Kpi href="/leads" label="Aguardando" value={pending ? "…" : ops.waiting} hint={hydrating ? "a carregar" : failed ? "sem leitura" : "espera do fluxo"} bars={waitSpark} />
+          <Kpi href="/leads" label="Ofertas" value={pending ? "…" : ops.offered} hint={hydrating ? "a carregar" : failed ? "sem leitura" : "disparadas pelo quadro"} bars={offerSpark} />
         </section>
 
         <section className="surface p-6">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <p className="text-[12.5px] text-muted-foreground">Capturas ao longo do tempo</p>
-              <p className="mt-2 text-[32px] font-medium tracking-[-0.04em]">{hydrating ? "…" : ops.leads}</p>
+              <p className="mt-2 text-[32px] font-medium tracking-[-0.04em]">{pending ? "…" : ops.leads}</p>
             </div>
             <div className="flex items-center gap-4 text-[12px] text-muted-foreground">
               <span className="inline-flex items-center gap-1.5">
@@ -86,20 +88,24 @@ export function DashboardPage() {
             <span>Dia 21</span>
             <span>Dia 30</span>
           </div>
-          {empty && (
+          {failed ? (
+            <p role="alert" className="mt-4 text-[12.5px] text-muted-foreground">
+              Sem leitura dos leads. Os zeros acima não são a base — o Worker não respondeu.
+            </p>
+          ) : empty ? (
             <p className="mt-4 text-[12.5px] text-muted-foreground">
               Sem movimento. Os números vêm da captura — não inventamos leads.
             </p>
-          )}
+          ) : null}
         </section>
 
         <section className="grid gap-3 lg:grid-cols-2">
           <div className="surface p-6">
             <p className="text-[12.5px] text-muted-foreground">Campanha · Telegram</p>
             <div className="mt-5 space-y-5">
-              <ChannelRow label="Telegram · convite" value={hydrating ? "…" : ops.telegram} total={ops.leads} />
-              <ChannelRow label="Facebook → Telegram" value={hydrating ? "…" : ops.facebook} total={ops.leads} />
-              <ChannelRow label="WhatsApp · importado" value={hydrating ? "…" : ops.imported} total={ops.leads} />
+              <ChannelRow label="Telegram · convite" value={pending ? "…" : ops.telegram} total={ops.leads} />
+              <ChannelRow label="Facebook → Telegram" value={pending ? "…" : ops.facebook} total={ops.leads} />
+              <ChannelRow label="WhatsApp · importado" value={pending ? "…" : ops.imported} total={ops.leads} />
               <ChannelRow label="Clique no anúncio" value={pixelFigure(status, hasData, facebook.adClicks)} total={facebookTotal} />
               <ChannelRow label="Page views Facebook" value={pixelFigure(status, hasData, facebook.pageViews)} total={facebookTotal} />
               <ChannelRow label="Clique no botão" value={pixelFigure(status, hasData, facebook.buttonClicks)} total={facebookTotal} />
@@ -108,9 +114,9 @@ export function DashboardPage() {
           <div className="surface p-6">
             <p className="text-[12.5px] text-muted-foreground">Temperatura</p>
             <div className="mt-5 grid grid-cols-3 gap-3">
-              <Heat label="Novos" value={hydrating ? "…" : ops.novo} />
-              <Heat label="Mornos" value={hydrating ? "…" : ops.morno} />
-              <Heat label="Quentes" value={hydrating ? "…" : ops.quente} />
+              <Heat label="Novos" value={pending ? "…" : ops.novo} />
+              <Heat label="Mornos" value={pending ? "…" : ops.morno} />
+              <Heat label="Quentes" value={pending ? "…" : ops.quente} />
             </div>
             <Link to="/leads" className="mt-5 inline-flex text-[12.5px] text-muted-foreground hover:text-foreground">
               Abrir leads

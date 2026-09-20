@@ -169,30 +169,37 @@ export function ConversationsPage() {
         <SyncBanner
           items={[
             { ok: inboxSync !== "error", message: "A inbox do Telegram não sincronizou. Conversas novas podem faltar." },
-            { ok: persistSync !== "error", message: "Não consegui gravar a simulação no Worker." },
+            { ok: persistSync !== "error", message: "Não consegui ler ou gravar conversas no Worker." },
           ]}
         />
         <PageChrome icon={MessagesSquare} title="Conversas">
           {FILTERS.map((item) => (
             <FilterChip key={item.id} active={filter === item.id} onClick={() => setFilter(item.id)}>
-              {item.label} {hydrating && all.length === 0 ? "…" : counts[item.id]}
+              {item.label} {(hydrating || persistSync === "error") && all.length === 0 ? "…" : counts[item.id]}
             </FilterChip>
           ))}
         </PageChrome>
         <FlowStrip
           page={pixelFigure(status, hasData, summary.visitors)}
           click={pixelFigure(status, hasData, summary.clicks)}
-          telegram={hydrating && all.length === 0 ? "…" : all.length}
+          telegram={(hydrating || persistSync === "error") && all.length === 0 ? "…" : all.length}
           talking={
-            hydrating && all.length === 0
+            (hydrating || persistSync === "error") && all.length === 0
               ? "…"
               : all.filter((item) => (item.messages ?? []).some((msg) => msg.role === "lead") && !item.steBlocked && !item.steQuiet).length
           }
-          premium={hydrating && all.length === 0 ? "…" : all.filter((item) => item.stePhase === "offer" || item.steQuiet).length}
+          premium={(hydrating || persistSync === "error") && all.length === 0 ? "…" : all.filter((item) => item.stePhase === "offer" || item.steQuiet).length}
         />
         {all.length === 0 && hydrating ? (
           <section className="surface">
             <HydratePanel>A carregar as conversas…</HydratePanel>
+          </section>
+        ) : all.length === 0 && persistSync === "error" ? (
+          <section className="surface grid place-items-center px-6 py-16 text-center" role="alert">
+            <p className="text-[14px] font-medium">Não li as conversas</p>
+            <p className="mt-1 max-w-md text-[13px] text-muted-foreground">
+              O Worker não respondeu. Isto não é uma inbox vazia — tenta outra vez no aviso acima.
+            </p>
           </section>
         ) : all.length === 0 ? (
           <section className="surface grid place-items-center px-6 py-16 text-center">

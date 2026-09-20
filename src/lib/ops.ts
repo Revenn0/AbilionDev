@@ -51,6 +51,11 @@ export function leadsHydrating(persistSync: "idle" | "ok" | "error", leadCount: 
   return persistSync === "idle" && leadCount === 0
 }
 
+/** GET falhou e ainda não há cache — não é lista vazia. */
+export function leadsLoadFailed(persistSync: "idle" | "ok" | "error", leadCount: number) {
+  return persistSync === "error" && leadCount === 0
+}
+
 export function barShare(value: number, total: number) {
   if (total <= 0) return 0
   return Math.round((value / total) * 100)

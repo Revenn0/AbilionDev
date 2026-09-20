@@ -169,6 +169,13 @@ export function LeadsPage() {
 
           {rows.length === 0 && persistSync === "idle" && !query.trim() && filter === "all" ? (
             <HydratePanel>A carregar os leads…</HydratePanel>
+          ) : rows.length === 0 && persistSync === "error" && !query.trim() && filter === "all" ? (
+            <div className="grid place-items-center px-6 py-16 text-center" role="alert">
+              <p className="text-[14px] font-medium">Não li os leads</p>
+              <p className="mt-1 max-w-md text-[13px] text-muted-foreground">
+                O Worker não respondeu. Isto não é uma base vazia — tenta outra vez no aviso acima.
+              </p>
+            </div>
           ) : rows.length === 0 ? (
             <div className="grid place-items-center px-6 py-16 text-center">
               <p className="text-[14px] font-medium">

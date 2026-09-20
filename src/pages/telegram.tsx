@@ -11,13 +11,15 @@ import { fetchHealth, workerUrl } from "@/lib/channel"
 import { fetchRuntime, type RuntimeStatus } from "@/lib/runtime-api"
 import { adsDeepLink } from "@/lib/telegram-start"
 import { burstFacebookLeads, burstStats } from "@/lib/burst"
-import { leadsHydrating } from "@/lib/ops"
+import { leadsHydrating, leadsLoadFailed } from "@/lib/ops"
 import { toast } from "sonner"
 
 export function TelegramPage() {
   const { state, createLeads, persistSync } = useStore()
   const { settings, leads } = state
   const hydrating = leadsHydrating(persistSync, leads.length)
+  const failed = leadsLoadFailed(persistSync, leads.length)
+  const pending = hydrating || failed
   const inGroup = leads.filter((lead) => lead.channel === "telegram" && (lead.origin === "group_join" || lead.stage === "group")).length
   const facebookToday = leads.filter((lead) => {
     if (lead.origin !== "facebook") return false
@@ -62,6 +64,10 @@ export function TelegramPage() {
       <div className="page-shell">
         <SyncBanner
           items={[
+            {
+              ok: persistSync !== "error",
+              message: "Não consegui ler os leads do Worker. Os números de joins e Facebook hoje podem estar vazios.",
+            },
             {
               ok: !health?.unreachable,
               message: "O Worker não respondeu. Confere se o painel está a falar com /api/health.",
@@ -131,12 +137,12 @@ export function TelegramPage() {
           </article>
           <article className="surface p-5">
             <p className="text-[12.5px] text-muted-foreground">Joins no grupo</p>
-            <p className="mt-2 text-[18px] font-medium">{hydrating ? "…" : inGroup}</p>
+            <p className="mt-2 text-[18px] font-medium">{pending ? "…" : inGroup}</p>
             <p className="mt-2 text-[12.5px] text-muted-foreground">Join cria lead da campanha Telegram.</p>
           </article>
           <article className="surface p-5">
             <p className="text-[12.5px] text-muted-foreground">Facebook hoje</p>
-            <p className="mt-2 text-[18px] font-medium">{hydrating ? "…" : facebookToday}</p>
+            <p className="mt-2 text-[18px] font-medium">{pending ? "…" : facebookToday}</p>
             <p className="mt-2 text-[12.5px] text-muted-foreground">/start=fb no anúncio. Pico de 500–1000/dia.</p>
           </article>
         </section>

@@ -14,14 +14,14 @@ import { facebookOf, formatPercent, formatSession } from "@/lib/track"
 import { useTrackSummary } from "@/lib/use-track-summary"
 
 export function AnalyticsPage() {
-  const { state, persistSync } = useStore()
+  const { state, persistSync, inboxSync } = useStore()
   const { summary, status, hasData, retry } = useTrackSummary(4000)
   const facebook = facebookOf(summary)
   const pixelReady = status === "ok" || hasData
-  const leadsReady = !(persistSync === "idle" && state.leads.length === 0)
+  const leadsReady = state.leads.length > 0 || persistSync === "ok"
   const empty =
     pixelReady &&
-    leadsReady &&
+    persistSync === "ok" &&
     summary.visitors === 0 &&
     summary.clicks === 0 &&
     summary.telegrams === 0 &&
@@ -42,6 +42,14 @@ export function AnalyticsPage() {
       <div className="page-shell">
         <SyncBanner
           items={[
+            {
+              ok: persistSync !== "error",
+              message: "Não consegui ler os leads do Worker. O passo Chat do funil pode estar desactualizado.",
+            },
+            {
+              ok: inboxSync !== "error",
+              message: "A inbox do Telegram não sincronizou. Conversas novas podem faltar no funil.",
+            },
             {
               ok: status !== "error",
               message: "Não consegui ler o pixel. Recarrega ou confere a sessão — os números abaixo podem estar vazios.",

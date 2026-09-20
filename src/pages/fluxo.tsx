@@ -72,6 +72,13 @@ export function FluxoPage() {
         <div className="grid gap-3 md:grid-cols-2">
           {funnels.length === 0 && crmSync === "idle" ? (
             <HydratePanel className="surface md:col-span-2">A carregar os funis…</HydratePanel>
+          ) : funnels.length === 0 && crmSync === "error" ? (
+            <div className="surface px-6 py-16 text-center md:col-span-2" role="alert">
+              <p className="text-[14px] font-medium">Não carreguei os funis</p>
+              <p className="mx-auto mt-1 max-w-md text-[13.5px] text-muted-foreground">
+                O Worker não respondeu. Criar um funil agora pode gravar só neste browser.
+              </p>
+            </div>
           ) : funnels.length === 0 ? (
             <div className="surface px-6 py-16 text-center md:col-span-2">
               <p className="text-[14px] font-medium">Nenhum funil</p>

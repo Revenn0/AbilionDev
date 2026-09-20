@@ -280,6 +280,11 @@ export function settingsPersistSettled(after: Settings, again: Settings) {
   return (
     after.telegramBotUsername === again.telegramBotUsername &&
     after.telegramGroupUrl === again.telegramGroupUrl &&
+    after.steWelcome === again.steWelcome &&
+    after.steLinkedTelegram === again.steLinkedTelegram &&
+    after.steDieAfterRemarketing === again.steDieAfterRemarketing &&
+    JSON.stringify(after.steWelcomeLines ?? []) === JSON.stringify(again.steWelcomeLines ?? []) &&
+    JSON.stringify(after.steRemarketingLines ?? []) === JSON.stringify(again.steRemarketingLines ?? []) &&
     JSON.stringify(after.pageScripts ?? []) === JSON.stringify(again.pageScripts ?? []) &&
     JSON.stringify(after.removedPageScripts ?? []) === JSON.stringify(again.removedPageScripts ?? []) &&
     JSON.stringify(after.leadCategories ?? []) === JSON.stringify(again.leadCategories ?? [])
