@@ -169,6 +169,12 @@ try {
     assert(await page.$("main#conteudo"), `${route} tem o alvo do skip-link no main`)
   }
 
+  await open(page, "/")
+  assert(
+    Boolean(await page.$('a[href="/telegram#pixel"]')),
+    "dashboard aponta para o snippet do ads"
+  )
+
   await open(page, "/telegram")
   await page.waitForSelector("#pixel", { timeout: 8_000 })
   const pixelCopy = await page.$eval("#pixel", (el) => el.textContent || "")

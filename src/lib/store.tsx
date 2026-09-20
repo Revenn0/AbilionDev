@@ -186,7 +186,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const batch = [...pendingLeadWrites.current.values()]
       if (!batch.length) return true
       const result = await persistLeads(batch, opts)
-      const sent = batch.slice(0, result.saved)
+      const savedIds = new Set(result.ids)
+      const sent = batch.filter((lead) => savedIds.has(lead.id))
       const raced = sent.filter((lead) => removedLeadIds.current.has(lead.id))
       if (raced.length) await Promise.all(raced.map((lead) => removeRemoteLead(lead.id)))
       for (const lead of sent) {
@@ -195,8 +196,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (latest && latest.updatedAt === lead.updatedAt) pendingLeadWrites.current.delete(lead.id)
       }
       persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
-      setPersistSync(result.ok ? "ok" : "error")
-      return result.ok
+      const complete = batch.every((lead) => savedIds.has(lead.id) || removedLeadIds.current.has(lead.id))
+      setPersistSync(result.ok && complete ? "ok" : "error")
+      return result.ok && complete
     }
     const pending = leadFlushRef.current.then(run, run)
     leadFlushRef.current = pending.then(

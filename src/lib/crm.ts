@@ -3,6 +3,7 @@ import { defaultSettings, type ChatMessage, type Lead, type LeadEvent, type Lead
 
 const CAP = 400
 export const LEAD_LIST_CAP = 2000
+export const LEAD_LIST_PAGES = 25
 
 export type LeadListPage = {
   leads: Lead[]
@@ -10,7 +11,7 @@ export type LeadListPage = {
   stale?: boolean
 }
 
-/** Junta páginas do GET /api/leads. Cursor velho no meio não conta como lista completa. */
+/** Junta páginas do GET /api/leads. Cursor velho ou lista cortada não conta como completa. */
 export function collectLeadPages(pages: LeadListPage[]): { ok: boolean; leads: Lead[]; retry: boolean } {
   const leads: Lead[] = []
   for (let index = 0; index < pages.length; index++) {
@@ -21,7 +22,8 @@ export function collectLeadPages(pages: LeadListPage[]): { ok: boolean; leads: L
     leads.push(...page.leads)
     if (!page.nextCursor) return { ok: true, leads, retry: false }
   }
-  return { ok: true, leads, retry: false }
+  if (!pages.length) return { ok: true, leads: [], retry: false }
+  return { ok: false, leads: [], retry: true }
 }
 
 export function publicSettings(settings: Settings): Settings {

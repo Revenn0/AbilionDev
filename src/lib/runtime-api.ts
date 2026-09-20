@@ -1,4 +1,4 @@
-import { collectLeadPages, type LeadListPage } from "./crm"
+import { collectLeadPages, LEAD_LIST_PAGES, type LeadListPage } from "./crm"
 import { fetchWithTimeout, fetchWrite } from "./http"
 import { noteUnauthorized } from "./session"
 import type { Lead, SalesFunnel, Settings } from "./types"
@@ -92,14 +92,13 @@ export async function fetchLeads() {
     const pull = async () => {
       const pages: LeadListPage[] = []
       let cursor = ""
-      for (let page = 0; page < 5; page++) {
+      for (let page = 0; page < LEAD_LIST_PAGES; page++) {
         const next = await readLeadPage(cursor)
         if ("failed" in next) {
           return page === 0 ? { ok: false as const, leads: [] as Lead[], retry: false } : collectLeadPages([...pages, { leads: [], stale: true }])
         }
         pages.push(next)
-        const folded = collectLeadPages(pages)
-        if (folded.retry || !next.nextCursor) return folded
+        if (next.stale || !next.nextCursor) return collectLeadPages(pages)
         cursor = next.nextCursor
       }
       return collectLeadPages(pages)
@@ -167,12 +166,31 @@ export function leadWriteChunks(leads: Lead[], keepalive = false) {
   return chunks
 }
 
+/** Só tira da fila o que o Worker gravou. Sem `ids`, só um `saved` igual ao lote inteiro conta. */
+export function leadWriteIds(data: unknown, chunk: Lead[]): string[] {
+  const allowed = new Set(chunk.map((lead) => lead.id))
+  if (!data || typeof data !== "object") return []
+  const raw = data as { saved?: unknown; ids?: unknown }
+  if (Array.isArray(raw.ids)) {
+    const out: string[] = []
+    const seen = new Set<string>()
+    for (const id of raw.ids) {
+      if (typeof id !== "string" || !allowed.has(id) || seen.has(id)) continue
+      seen.add(id)
+      out.push(id)
+    }
+    return out
+  }
+  if (raw.saved === chunk.length) return chunk.map((lead) => lead.id)
+  return []
+}
+
 export async function persistLeads(leads: Lead[], opts?: { keepalive?: boolean }) {
-  if (!leads.length) return { ok: true, saved: 0 }
-  let saved = 0
+  if (!leads.length) return { ok: true, saved: 0, ids: [] as string[] }
+  const ids: string[] = []
   for (const chunk of leadWriteChunks(leads, Boolean(opts?.keepalive))) {
-    const ok = await writeOk(() =>
-      fetchWrite(
+    try {
+      const res = await fetchWrite(
         "/api/leads",
         {
           method: "POST",
@@ -182,11 +200,15 @@ export async function persistLeads(leads: Lead[], opts?: { keepalive?: boolean }
         },
         opts
       )
-    )
-    if (!ok) return { ok: false, saved }
-    saved += chunk.length
+      noteUnauthorized(res)
+      if (!res.ok) return { ok: false, saved: ids.length, ids }
+      const data = (await res.json().catch(() => ({}))) as unknown
+      ids.push(...leadWriteIds(data, chunk))
+    } catch {
+      return { ok: false, saved: ids.length, ids }
+    }
   }
-  return { ok: true, saved }
+  return { ok: true, saved: ids.length, ids }
 }
 
 export async function removeRemoteLead(id: string, opts?: { keepalive?: boolean }) {

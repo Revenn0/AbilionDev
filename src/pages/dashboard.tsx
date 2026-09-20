@@ -2,6 +2,7 @@ import { Link } from "react-router-dom"
 import { LayoutDashboard, Radio } from "lucide-react"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
 import { SyncBanner } from "@/components/layout/sync-banner"
+import { Button } from "@/components/ui/button"
 import { SparkBars, TrendLine } from "@/components/ui/spark"
 import { useStore } from "@/lib/store"
 import { pixelFigure } from "@/lib/analytics-view"
@@ -41,6 +42,9 @@ export function DashboardPage() {
           <StatusPill tone={status === "error" ? "danger" : status === "ok" ? "success" : "muted"}>
             {status === "ok" ? "Pixel ao vivo" : status === "error" ? "Pixel falhou" : "A carregar pixel"}
           </StatusPill>
+          <Button asChild variant="outline" className="h-8 rounded-full px-3.5">
+            <Link to="/telegram#pixel">Pixel Ads</Link>
+          </Button>
         </PageChrome>
 
         <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">

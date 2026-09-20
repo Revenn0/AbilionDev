@@ -407,14 +407,14 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     const body = parsed.value
     const rows = (body.leads?.length ? body.leads : body.lead ? [body.lead] : []).slice(0, 120)
     const removed = await loadRemovedLeadIds(env.AUTH)
-    let saved = 0
+    const ids: string[] = []
     for (const row of rows) {
       const lead = sanitizeIncomingLead(row)
       if (!lead || removed.includes(lead.id)) continue
       const prev = await loadLead(env.AUTH, lead.id)
-      if (await saveLead(env, adoptOperatorLead(prev, lead))) saved += 1
+      if (await saveLead(env, adoptOperatorLead(prev, lead))) ids.push(lead.id)
     }
-    return json({ ok: true, saved })
+    return json({ ok: true, saved: ids.length, ids })
   }
 
   if (url.pathname === "/api/leads" && request.method === "DELETE") {
@@ -844,6 +844,7 @@ async function saveLead(env: Env, lead: Lead) {
     const removed = await loadRemovedLeadIds(env.AUTH)
     if (removed.includes(bounded.id)) return false
     const prev = await loadLead(env.AUTH, bounded.id)
+    bounded = commitStoredLead(prev, bounded)
     const latest = await loadLead(env.AUTH, bounded.id)
     bounded = commitStoredLead(prev, bounded, latest)
     await upsertLeadKv(env.AUTH, bounded)

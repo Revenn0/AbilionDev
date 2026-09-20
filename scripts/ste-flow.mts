@@ -46,6 +46,7 @@ import {
   canFlushCrm,
   clipRemovedIds,
   collectLeadPages,
+  LEAD_LIST_PAGES,
   commitCrmFunnels,
   hydrateFunnels,
   hydrateLeads,
@@ -73,7 +74,7 @@ import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
-import { LEAD_WRITE_BATCH, leadWriteChunks } from "../src/lib/runtime-api.ts"
+import { LEAD_WRITE_BATCH, leadWriteChunks, leadWriteIds } from "../src/lib/runtime-api.ts"
 import { safeAppPath, withSafeNext } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { contactLookups, normalizeTelegramContact, validateCapture } from "../src/lib/capture.ts"
@@ -776,6 +777,9 @@ assert(collectLeadPages([{ leads: [] }]).ok && collectLeadPages([{ leads: [] }])
 assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }, { leads: [], stale: true }]).retry, "cursor velho pede retry")
 assert(!collectLeadPages([{ leads: [pageA], nextCursor: "c1" }, { leads: [], stale: true }]).ok, "cursor velho não finge lista completa")
 assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }, { leads: [] }]).retry, "página seguinte vazia sem stale também retenta")
+assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }]).retry, "ainda há cursor, lista incompleta")
+assert(!collectLeadPages([{ leads: [pageA], nextCursor: "c1" }]).ok, "lista cortada não reconcilia")
+assert(LEAD_LIST_PAGES === 25, "hydrate lê até 25 páginas antes de recusar")
 assert(steWaitDelayMs(undefined) === null, "sem espera não agenda tick")
 assert(steWaitDelayMs(new Date(Date.now() + 1000).toISOString(), Date.now()) === 1050, "espera futura agenda com folga")
 assert(steWaitDelayMs(new Date(Date.now() - 1000).toISOString(), Date.now()) === 50, "espera atrasada dispara já")
@@ -1469,6 +1473,12 @@ assert((await listLeads(capKv, 400, "all")).length === 400, "lista pagina 400 de
 assert(LEAD_WRITE_BATCH === 120, "POST de leads corta em 120")
 assert(leadWriteChunks(Array.from({ length: 250 }, (_, i) => lead(`w-${i}`, `@w${i}`))).length === 3, "250 leads vão em 3 POSTs")
 assert(leadWriteChunks(Array.from({ length: 250 }, (_, i) => lead(`k-${i}`, `@k${i}`)), true).length === 1, "pagehide só manda o primeiro lote")
+const writeChunk = [lead("a", "@a"), lead("b", "@b"), lead("c", "@c")]
+assert(leadWriteIds({ ok: true, saved: 3, ids: ["a", "c"] }, writeChunk).join() === "a,c", "flush só tira os ids que o Worker gravou")
+assert(leadWriteIds({ ok: true, saved: 2 }, writeChunk).length === 0, "saved parcial sem ids não esvazia a fila")
+assert(leadWriteIds({ ok: true, saved: 3 }, writeChunk).join() === "a,b,c", "Worker velho com saved completo ainda devolve o lote")
+assert(leadWriteIds({ ok: true, ids: ["a", "ghost", "a"] }, writeChunk).join() === "a", "id de outro lote e repetido não entram")
+assert(leadWriteIds({}, writeChunk).length === 0, "200 sem saved não finge que gravou")
 assert(LEAD_INDEX_REST_CAP === 2000, "simulação sem chat cabe até 2000 no índice")
 const simKv = memoryKv()
 for (let i = 0; i < 401; i++) {
@@ -2505,20 +2515,17 @@ assert(
 )
 const zombie = lead("zombie", "@zombie")
 zombie.memory = "apagar"
-assert(
-  (
-    await handleRequest(
-      new Request("http://local.test/api/leads", {
-        method: "POST",
-        headers: { "content-type": "application/json", cookie: liveCookie },
-        body: JSON.stringify({ lead: zombie }),
-      }),
-      liveEnv,
-      backgroundCtx()
-    )
-  ).status === 200,
-  "POST cria o lead que vai ser apagado"
+const zombieCreate = await handleRequest(
+  new Request("http://local.test/api/leads", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: liveCookie },
+    body: JSON.stringify({ lead: zombie }),
+  }),
+  liveEnv,
+  backgroundCtx()
 )
+const zombieCreated = (await zombieCreate.json()) as { ok?: boolean; saved?: number; ids?: string[] }
+assert(zombieCreate.status === 200 && zombieCreated.saved === 1 && zombieCreated.ids?.join() === "zombie", "POST cria o lead e devolve o id gravado")
 assert(
   (
     await handleRequest(
@@ -2550,8 +2557,8 @@ const zombieBack = await handleRequest(
   liveEnv,
   backgroundCtx()
 )
-const zombieSaved = (await zombieBack.json()) as { ok?: boolean; saved?: number }
-assert(zombieBack.status === 200 && zombieSaved.saved === 0, "POST depois do DELETE não conta o lead apagado")
+const zombieSaved = (await zombieBack.json()) as { ok?: boolean; saved?: number; ids?: string[] }
+assert(zombieBack.status === 200 && zombieSaved.saved === 0 && (zombieSaved.ids?.length ?? 1) === 0, "POST depois do DELETE não conta o lead apagado")
 assert((await loadLead(liveEnv.AUTH, "zombie")) === null, "POST atrasado não ressuscita lead apagado")
 assert((await loadRemovedLeadIds(liveEnv.AUTH)).includes("zombie"), "POST atrasado não limpa o tombstone")
 const listedAfterZombie = (await (
