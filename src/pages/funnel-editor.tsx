@@ -5,8 +5,16 @@ import { useStore } from "@/lib/store"
 
 export function FunnelEditorPage() {
   const { id } = useParams()
-  const { state, saveFunnel } = useStore()
+  const { state, saveFunnel, crmSync } = useStore()
   const funnel = state.funnels.find((item) => item.id === id)
+
+  if (!funnel && crmSync === "idle") {
+    return (
+      <div className="grid h-full place-items-center bg-background" role="status" aria-live="polite">
+        <p className="text-[13px] text-muted-foreground">A carregar o quadro…</p>
+      </div>
+    )
+  }
 
   if (!funnel) {
     return (

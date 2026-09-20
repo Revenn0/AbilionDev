@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react"
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom"
 import { AppShell } from "@/components/layout/app-shell"
 import { OfflineBanner } from "@/components/layout/offline-banner"
+import { RouteError } from "@/components/layout/route-error"
 import { DashboardPage } from "@/pages/dashboard"
 import { ForgotPage } from "@/pages/forgot"
 import { LoginPage } from "@/pages/login"
@@ -60,19 +61,21 @@ function AppRoutes() {
         path="/*"
         element={
           <AppShell>
-            <Suspense fallback={<PageFallback />}>
-              <Routes>
-                <Route path="/" element={<DashboardPage />} />
-                <Route path="/analytics" element={<AnalyticsPage />} />
-                <Route path="/fluxo" element={<FluxoPage />} />
-                <Route path="/fluxo/funil/:id" element={<FunnelEditorPage />} />
-                <Route path="/leads" element={<LeadsPage />} />
-                <Route path="/conversas" element={<ConversationsPage />} />
-                <Route path="/telegram" element={<TelegramPage />} />
-                <Route path="/configuracoes" element={<SettingsPage />} />
-                <Route path="*" element={<NotFoundPage />} />
-              </Routes>
-            </Suspense>
+            <RouteError>
+              <Suspense fallback={<PageFallback />}>
+                <Routes>
+                  <Route path="/" element={<DashboardPage />} />
+                  <Route path="/analytics" element={<AnalyticsPage />} />
+                  <Route path="/fluxo" element={<FluxoPage />} />
+                  <Route path="/fluxo/funil/:id" element={<FunnelEditorPage />} />
+                  <Route path="/leads" element={<LeadsPage />} />
+                  <Route path="/conversas" element={<ConversationsPage />} />
+                  <Route path="/telegram" element={<TelegramPage />} />
+                  <Route path="/configuracoes" element={<SettingsPage />} />
+                  <Route path="*" element={<NotFoundPage />} />
+                </Routes>
+              </Suspense>
+            </RouteError>
           </AppShell>
         }
       />

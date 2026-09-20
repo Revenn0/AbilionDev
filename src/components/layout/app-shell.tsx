@@ -111,8 +111,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           />
           <div
             ref={menu}
-            role="dialog"
-            aria-modal="true"
+            role={open ? "dialog" : undefined}
+            aria-modal={open ? true : undefined}
+            aria-hidden={open ? undefined : true}
+            inert={!open}
             aria-label="Menu"
             className={cn(
               "relative h-full w-[240px] border-r border-border bg-sidebar transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",

@@ -225,7 +225,7 @@ npm run build
 npx tsx scripts/ui-audit.mts
 ```
 
-`scripts/ui-audit.mts` percorre login, rotas do painel, 404, skip-link, teclado das tabs, captura, logout → forgot/reset e as larguras 320 / 375 / 768 / 1024 / 1440. Precisa do `npm run dev` em `http://127.0.0.1:43173`.
+`scripts/ui-audit.mts` percorre login, rotas do painel, 404, funil inexistente, skip-link, teclado das tabs, captura, logout → forgot/reset e as larguras 320 / 375 / 768 / 1024 / 1440. Precisa do `npm run dev` em `http://127.0.0.1:43173`.
 
 `scripts/ste-flow.mts` cobre o webhook assinado (`/start fb`, segundo `/start` sem spam, fala do lead, join no grupo), recusa do Telegram que não grava boas-vindas, `update_id` repetido (incluindo dois claims ao mesmo tempo e forget que não apaga outro id), inbox autenticada, runtime sem vazar o token, DELETE do lead, cron com duas esperas, cron que manda oferta/`send_message` em HTML, recusa de JSON enorme (413) inclusive no pixel, hydrate que não ressuscita lead/funil apagado, tombstone de funil e de lead (KV ganha do Supabase no webhook e no cron), a regra de que simulação/lote não inventam `telegramChatId`, o pixel que não finge zero quando a leitura falha, o envio Telegram que não trata 403 como sucesso, o lock do cron com dono, a união de eventos do lead, a corrida login/troca de senha, a memória que sobrevive a um POST mais novo vazio, o HSTS do `/t.js`, links da Sté sem userinfo, settings sem chat da Ester, CSV sem fórmula, endpoint da IA só no Worker, e os limites de escrita do CRM/leads.
 

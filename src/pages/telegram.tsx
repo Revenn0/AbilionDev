@@ -22,10 +22,11 @@ export function TelegramPage() {
     return new Date(lead.createdAt).getTime() >= day.getTime()
   }).length
   const hook = `${workerUrl()}/api/telegram`
-  const ads = adsDeepLink(settings.telegramBotUsername)
   const [health, setHealth] = useState<Awaited<ReturnType<typeof fetchHealth>> | null>(null)
   const [runtime, setRuntime] = useState<RuntimeStatus | null>(null)
   const [burstLock, setBurstLock] = useState(false)
+  const botName = runtime?.telegramBotUsername || settings.telegramBotUsername
+  const ads = adsDeepLink(botName)
 
   useEffect(() => {
     void Promise.all([fetchHealth(), fetchRuntime()]).then(([nextHealth, nextRuntime]) => {
@@ -75,10 +76,10 @@ export function TelegramPage() {
         <section className="grid gap-3 md:grid-cols-4">
           <article className="surface p-5">
             <p className="text-[12.5px] text-muted-foreground">Bot</p>
-            <p className="mt-2 text-[18px] font-medium">{settings.telegramBotUsername || "Por configurar"}</p>
+            <p className="mt-2 text-[18px] font-medium">{botName || "Por configurar"}</p>
             <div className="mt-3 flex flex-wrap gap-1.5">
-              <StatusPill tone={settings.telegramBotUsername || runtime?.telegram ? "success" : "muted"}>
-                {!healthReady ? "A verificar…" : settings.telegramBotUsername || runtime?.telegram ? "Configurado" : "Ainda sem bot"}
+              <StatusPill tone={botName || runtime?.telegram ? "success" : "muted"}>
+                {!healthReady ? "A verificar…" : botName || runtime?.telegram ? "Configurado" : "Ainda sem bot"}
               </StatusPill>
               <StatusPill tone={runtime?.telegram ? "success" : "muted"}>
                 {!healthReady ? "A verificar…" : runtime?.telegram ? "Telegram ligado" : "À espera do token"}
