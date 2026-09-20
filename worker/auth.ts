@@ -359,12 +359,36 @@ export function mergeAuthSnapshots(left: AuthSnapshot, right: AuthSnapshot): Aut
     if (allowed && !allowed.has(session.token)) continue
     sessions.set(session.token, { ...session, userId })
   }
-  const revoked = clipAuthTokens([...(left.revoked ?? []), ...(right.revoked ?? [])], AUTH_REVOKED_CAP)
-  const revokedApi = clipAuthTokens([...(left.revokedApi ?? []), ...(right.revokedApi ?? [])], AUTH_REVOKED_API_CAP)
-  const spentResets = clipAuthTokens([...(left.spentResets ?? []), ...(right.spentResets ?? [])], AUTH_SPENT_RESET_CAP)
+  const now = Date.now()
+  const liveSessions = [...left.sessions, ...right.sessions].filter((item) => item?.token && item.expiresAt > now).map((item) => item.token)
+  const liveApi = [...left.users, ...right.users].flatMap((user) => (user.tokens ?? []).map((item) => item.id))
+  const liveResets = [...Object.keys(left.resets ?? {}), ...Object.keys(right.resets ?? {})]
+  const revoked = clipAuthTokens(
+    [
+      ...liveSessions.filter((token) => (left.revoked ?? []).includes(token) || (right.revoked ?? []).includes(token)),
+      ...(right.revoked ?? []),
+      ...(left.revoked ?? []),
+    ],
+    AUTH_REVOKED_CAP
+  )
+  const revokedApi = clipAuthTokens(
+    [
+      ...liveApi.filter((id) => (left.revokedApi ?? []).includes(id) || (right.revokedApi ?? []).includes(id)),
+      ...(right.revokedApi ?? []),
+      ...(left.revokedApi ?? []),
+    ],
+    AUTH_REVOKED_API_CAP
+  )
+  const spentResets = clipAuthTokens(
+    [
+      ...liveResets.filter((token) => (left.spentResets ?? []).includes(token) || (right.spentResets ?? []).includes(token)),
+      ...(right.spentResets ?? []),
+      ...(left.spentResets ?? []),
+    ],
+    AUTH_SPENT_RESET_CAP
+  )
   const drop = new Set(revoked)
   const dropApi = new Set(revokedApi)
-  const now = Date.now()
   const resetByUser = new Map<string, { token: string; rec: ResetRecord }>()
   for (const [token, rec] of [...Object.entries(left.resets ?? {}), ...Object.entries(right.resets ?? {})]) {
     if (!rec || typeof rec.userId !== "string" || spentResets.includes(token)) continue

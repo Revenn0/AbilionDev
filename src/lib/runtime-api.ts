@@ -95,7 +95,9 @@ export async function fetchLeads() {
       for (let page = 0; page < LEAD_LIST_PAGES; page++) {
         const next = await readLeadPage(cursor)
         if ("failed" in next) {
-          return page === 0 ? { ok: false as const, leads: [] as Lead[], retry: false } : collectLeadPages([...pages, { leads: [], stale: true }])
+          return page === 0
+            ? { ok: false as const, leads: [] as Lead[], retry: false, complete: false }
+            : collectLeadPages([...pages, { leads: [], stale: true }])
         }
         pages.push(next)
         if (next.stale || !next.nextCursor) return collectLeadPages(pages)
@@ -104,11 +106,11 @@ export async function fetchLeads() {
       return collectLeadPages(pages, "window")
     }
     const first = await pull()
-    if (first.ok || !first.retry) return { ok: first.ok as boolean, leads: first.leads }
+    if (first.ok || !first.retry) return { ok: first.ok as boolean, leads: first.leads, complete: first.complete }
     const second = await pull()
-    return { ok: second.ok, leads: second.leads }
+    return { ok: second.ok, leads: second.leads, complete: second.complete }
   } catch {
-    return { ok: false as const, leads: [] as Lead[] }
+    return { ok: false as const, leads: [] as Lead[], complete: false }
   }
 }
 
@@ -154,7 +156,9 @@ export async function fetchInbox(pages = 1) {
     for (let page = 0; page < limit; page++) {
       const next = await readInboxPage(cursor)
       if ("failed" in next) {
-        return page === 0 ? { ok: false as const, leads: [] as Lead[] } : collectLeadPages([...pulled, { leads: [], stale: true }])
+        return page === 0
+          ? { ok: false as const, leads: [] as Lead[], complete: false }
+          : collectLeadPages([...pulled, { leads: [], stale: true }])
       }
       pulled.push(next)
       if (next.stale || !next.nextCursor) return collectLeadPages(pulled)

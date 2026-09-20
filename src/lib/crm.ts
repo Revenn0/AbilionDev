@@ -5,8 +5,8 @@ import { preferLeadName } from "./lead-name.ts"
 import { defaultSettings, type ChatMessage, type Lead, type LeadEvent, type LeadFacts, type SalesFunnel, type Settings } from "./types.ts"
 
 const CAP = 400
-export const LEAD_LIST_CAP = 8000
-export const LEAD_LIST_PAGES = 20
+export const LEAD_LIST_CAP = 16_000
+export const LEAD_LIST_PAGES = 40
 export const LEAD_CACHE_CAP = 2000
 export const LEAD_REMOVED_CAP = 8000
 export const FUNNEL_REMOVED_CAP = 400
@@ -21,19 +21,22 @@ export type LeadListPage = {
 export type LeadPageFold = "strict" | "window"
 
 /** Junta páginas do GET /api/leads. Cursor velho no meio pede retry. Janela cheia (teto do hydrate) conta. */
-export function collectLeadPages(pages: LeadListPage[], fold: LeadPageFold = "strict"): { ok: boolean; leads: Lead[]; retry: boolean } {
+export function collectLeadPages(
+  pages: LeadListPage[],
+  fold: LeadPageFold = "strict"
+): { ok: boolean; leads: Lead[]; retry: boolean; complete: boolean } {
   const leads: Lead[] = []
   for (let index = 0; index < pages.length; index++) {
     const page = pages[index]
     if (page.stale || (index > 0 && page.leads.length === 0)) {
-      return { ok: false, leads: [], retry: true }
+      return { ok: false, leads: [], retry: true, complete: false }
     }
     leads.push(...page.leads)
-    if (!page.nextCursor) return { ok: true, leads, retry: false }
+    if (!page.nextCursor) return { ok: true, leads, retry: false, complete: true }
   }
-  if (!pages.length) return { ok: true, leads: [], retry: false }
-  if (fold === "window") return { ok: true, leads, retry: false }
-  return { ok: false, leads: [], retry: true }
+  if (!pages.length) return { ok: true, leads: [], retry: false, complete: true }
+  if (fold === "window") return { ok: true, leads, retry: false, complete: false }
+  return { ok: false, leads: [], retry: true, complete: false }
 }
 
 export function publicSettings(settings: Settings): Settings {
@@ -211,9 +214,15 @@ export function overlayPendingLeads(
   return changed ? next : leads
 }
 
-export function reconcileLeads(current: Lead[], incoming: Lead[], pendingIds: Iterable<string> = []): Lead[] {
+export function reconcileLeads(
+  current: Lead[],
+  incoming: Lead[],
+  pendingIds: Iterable<string> = [],
+  complete = true
+): Lead[] {
   if (!incoming.length) return current
   const merged = mergeLeads(current, incoming)
+  if (!complete) return merged
   const remoteIds = new Set(incoming.map((lead) => lead.id))
   const pending = new Set(pendingIds)
   const next = merged.filter((lead) => remoteIds.has(lead.id) || pending.has(lead.id))
@@ -261,7 +270,7 @@ export function leadsStillOnRemote(removedIds: Iterable<string>, remote: Array<{
 /** GET de leads + inbox no hydrate: lista vazia limpa o local; inbox vazia não. */
 export function hydrateLeads(
   local: Lead[],
-  remote: { ok: boolean; leads: Lead[] },
+  remote: { ok: boolean; leads: Lead[]; complete?: boolean },
   inbox: { ok: boolean; leads: Lead[] },
   pending: Map<string, Lead>,
   removed: Iterable<string>
@@ -269,7 +278,9 @@ export function hydrateLeads(
   let next = applyRemovedLeads(local, removed)
   if (remote.ok) {
     const incoming = applyRemovedLeads(remote.leads, removed)
-    next = remote.leads.length ? reconcileLeads(local, incoming, pending.keys()) : local.filter((lead) => pending.has(lead.id))
+    next = remote.leads.length
+      ? reconcileLeads(local, incoming, pending.keys(), remote.complete !== false)
+      : local.filter((lead) => pending.has(lead.id))
   }
   if (inbox.ok && inbox.leads.length) {
     next = mergeLeads(next, applyRemovedLeads(inbox.leads, removed))

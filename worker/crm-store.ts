@@ -393,11 +393,23 @@ export async function claimCronLock(
   holdMs = 90_000,
   owner = crypto.randomUUID()
 ): Promise<string | null> {
-  const current = readCronLock(await kv.get(CRM_CRON_LOCK, "json"))
-  if (current && current.until > new Date(now).toISOString()) return null
-  await kv.put(CRM_CRON_LOCK, JSON.stringify({ until: new Date(now + holdMs).toISOString(), owner }))
-  const stored = readCronLock(await kv.get(CRM_CRON_LOCK, "json"))
-  return stored?.owner === owner ? owner : null
+  const nowIso = new Date(now).toISOString()
+  for (let attempt = 0; attempt < 16; attempt++) {
+    if (attempt) await new Promise((resolve) => setTimeout(resolve, attempt * 2))
+    const current = readCronLock(await kv.get(CRM_CRON_LOCK, "json"))
+    if (current && current.until > nowIso) return current.owner === owner ? owner : null
+    const until = new Date(now + holdMs).toISOString()
+    await kv.put(CRM_CRON_LOCK, JSON.stringify({ until, owner }))
+    const stored = readCronLock(await kv.get(CRM_CRON_LOCK, "json"))
+    if (stored?.owner === owner) {
+      const confirm = readCronLock(await kv.get(CRM_CRON_LOCK, "json"))
+      if (confirm?.owner === owner) return owner
+      if (confirm && confirm.until > nowIso && confirm.owner !== owner) return null
+      continue
+    }
+    if (stored && stored.until > nowIso && stored.owner !== owner) return null
+  }
+  return null
 }
 
 export async function renewCronLock(
@@ -406,11 +418,16 @@ export async function renewCronLock(
   now = Date.now(),
   holdMs = 90_000
 ): Promise<boolean> {
-  const stored = readCronLock(await kv.get(CRM_CRON_LOCK, "json"))
-  if (!stored || stored.owner !== owner) return false
-  await kv.put(CRM_CRON_LOCK, JSON.stringify({ until: new Date(now + holdMs).toISOString(), owner }))
-  const verify = readCronLock(await kv.get(CRM_CRON_LOCK, "json"))
-  return verify?.owner === owner
+  for (let attempt = 0; attempt < 16; attempt++) {
+    if (attempt) await new Promise((resolve) => setTimeout(resolve, attempt * 2))
+    const stored = readCronLock(await kv.get(CRM_CRON_LOCK, "json"))
+    if (!stored || stored.owner !== owner) return false
+    await kv.put(CRM_CRON_LOCK, JSON.stringify({ until: new Date(now + holdMs).toISOString(), owner }))
+    const verify = readCronLock(await kv.get(CRM_CRON_LOCK, "json"))
+    if (verify?.owner === owner) return true
+    if (verify && verify.owner !== owner) return false
+  }
+  return false
 }
 
 export async function releaseCronLock(kv: KvLike, owner?: string) {

@@ -327,6 +327,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             {
               ok: remoteLeads.ok,
               leads: remoteLeads.leads.map(migrateLead),
+              complete: remoteLeads.complete,
             },
             {
               ok: inbox.ok,
@@ -471,6 +472,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           {
             ok: true,
             leads: applyRemovedLeads(remoteLeads.leads.map(migrateLead), removedLeadIds.current),
+            complete: remoteLeads.complete,
           },
           {
             ok: inbox.ok,

@@ -92,7 +92,7 @@ import { campaignFor } from "../src/lib/labels.ts"
 import { barShare, hasConversation, isImportedLead, isOperatorLockedLead, leadsHydrating } from "../src/lib/ops.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
-import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, handleAuth, hashApiToken, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
+import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, handleAuth, hashApiToken, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTelegramClaims, telegramCall } from "../worker/telegram.ts"
@@ -853,8 +853,10 @@ assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }]).retry, "ainda h�
 assert(!collectLeadPages([{ leads: [pageA], nextCursor: "c1" }]).ok, "lista cortada não reconcilia")
 assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }], "window").ok, "janela cheia do hydrate conta")
 assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }], "window").leads[0]?.id === "page-a", "janela cheia conserva os leads")
-assert(LEAD_LIST_PAGES === 20, "hydrate lê até 20 páginas")
-assert(LEAD_LIST_CAP === 8000, "lista hidratada cabe 8 dias a 1000 /start")
+assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }], "window").complete === false, "janela cheia não é lista completa")
+assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }, { leads: [pageB] }]).complete, "sem cursor residual a lista está completa")
+assert(LEAD_LIST_PAGES === 40, "hydrate lê até 40 páginas")
+assert(LEAD_LIST_CAP === 16_000, "lista hidratada cabe o índice (8000 chats + 4000 resto + esperas)")
 assert(LEAD_CACHE_CAP === 2000, "localStorage só guarda os 2000 mais novos")
 assert(steWaitDelayMs(undefined) === null, "sem espera não agenda tick")
 assert(steWaitDelayMs(new Date(Date.now() + 1000).toISOString(), Date.now()) === 1050, "espera futura agenda com folga")
@@ -1195,6 +1197,30 @@ assert(
   reconcileLeads([freshLead, liveLead], [liveLead], ["fresh"]).some((item) => item.id === "fresh"),
   "pending local sobrevive ao hydrate"
 )
+assert(
+  reconcileLeads([freshLead, liveLead], [liveLead], [], false).some((item) => item.id === "fresh"),
+  "janela incompleta não apaga lead local"
+)
+assert(
+  hydrateLeads(
+    [freshLead, liveLead],
+    { ok: true, leads: [liveLead], complete: false },
+    { ok: true, leads: [] },
+    new Map(),
+    []
+  ).some((item) => item.id === "fresh"),
+  "hydrate incompleto conserva o lead fora da janela"
+)
+assert(
+  !hydrateLeads(
+    [freshLead, liveLead],
+    { ok: true, leads: [liveLead], complete: true },
+    { ok: true, leads: [] },
+    new Map(),
+    []
+  ).some((item) => item.id === "fresh"),
+  "hydrate completo ainda dropa o lead que o Worker já não tem"
+)
 const crowd = Array.from({ length: LEAD_LIST_CAP }, (_, i) => {
   const row = lead(`cap-${i}`, `@cap${i}`)
   row.updatedAt = new Date(1_800_000_000_000 + i).toISOString()
@@ -1387,6 +1413,13 @@ const revokedSnap = {
 assert((await findUserByApiToken(revokedSnap, mintedApi.token)) === null, "token no revokedApi não autentica")
 const liveSnap = { ...revokedSnap, revokedApi: [] }
 assert((await findUserByApiToken(liveSnap, mintedApi.token))?.user.email === "ana-merge@abilion.com", "token vivo ainda autentica")
+const overflowRevoked = Array.from({ length: AUTH_REVOKED_CAP }, (_, i) => `old-rev-${i}`)
+const overflowMerge = mergeAuthSnapshots(
+  { users: [victorUser], sessions: [staleSession], resets: {}, revoked: overflowRevoked },
+  { users: [victorUser], sessions: [], resets: {}, revoked: ["tok-stale"] }
+)
+assert(overflowMerge.revoked?.includes("tok-stale"), "tombstone novo ganha do tecto cheio")
+assert(!overflowMerge.sessions.some((item) => item.token === "tok-stale"), "sessão ainda viva no snapshot velho não volta")
 
 const authStore = memoryAuthStore()
 const loginAttempt = (password: string) =>
@@ -1804,6 +1837,17 @@ const racedLock = {
   async put() {},
 }
 assert(!(await claimCronLock(racedLock, Date.now(), 90_000, "eu")), "lock perde a corrida no verify")
+let retryReads = 0
+const retryLock = {
+  async get(key: string) {
+    if (key !== CRM_CRON_LOCK) return null
+    retryReads += 1
+    if (retryReads <= 2) return null
+    return { until: new Date(Date.now() + 90_000).toISOString(), owner: "eu" }
+  },
+  async put() {},
+}
+assert((await claimCronLock(retryLock, Date.now(), 90_000, "eu")) === "eu", "lock retenta se o verify ainda veio vazio")
 const badJsonReq = new Request("http://local.test/api/crm", { method: "POST", headers: { "content-type": "application/json" }, body: "{bad" })
 assert((await readJsonObject(badJsonReq, 1000)).ok === false, "JSON inválido não passa a objeto vazio")
 
