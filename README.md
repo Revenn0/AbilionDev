@@ -111,7 +111,7 @@ O anúncio aponta para `https://t.me/BOT?start=fb` (ou `fb_campanha`). O Worker:
 
 - responde 200 na hora (`waitUntil`) para o Telegram não reenviar
 - procura **um** lead por contacto / chat, sem carregar a base
-- abre a Sté com o motor determinístico; o papo livre da oferta usa OpenRouter (Gemma, DeepSeek de reserva)
+- abre a Sté com o motor determinístico; o papo livre da oferta usa OpenCode (DeepSeek V4.1 Flash) e cai no OpenRouter (Gemma, DeepSeek V4 Flash)
 - reenvia se a API do Telegram devolver 429
 
 Correr [`supabase/migrations/003_facebook_scale.sql`](supabase/migrations/003_facebook_scale.sql) e [`supabase/migrations/004_track_and_facts.sql`](supabase/migrations/004_track_and_facts.sql) no SQL editor. A inbox mostra no máximo 80 conversas (aguardando / hoje / Facebook).

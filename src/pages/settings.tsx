@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { useTheme } from "@/components/theme/provider"
 import {
@@ -138,6 +138,8 @@ function BotPane() {
   const [voiceError, setVoiceError] = useState("")
   const [runtimeLoaded, setRuntimeLoaded] = useState(false)
   const [runtime, setRuntime] = useState<RuntimeStatus>({ ok: false })
+  const botLock = useRef(false)
+  const voiceLock = useRef(false)
   const origin = workerUrl()
   const hook = runtime.webhook || `${origin}/api/telegram`
   const pixel = `<script src="${origin}/t.js" data-cta="[data-abilion-cta]"></script>`
@@ -217,6 +219,7 @@ function BotPane() {
           className="mt-5 space-y-4"
           onSubmit={(event) => {
             event.preventDefault()
+            if (botLock.current || busy) return
             const cleanUser = cleanBotUsername(username)
             const cleanGroup = cleanTelegramGroupUrl(group)
             if (username.trim() && !cleanUser) {
@@ -233,6 +236,7 @@ function BotPane() {
             }
             setBotError("")
             setGroupError("")
+            botLock.current = true
             setBusy(true)
             void saveRuntime({
               telegramBotUsername: cleanUser,
@@ -259,7 +263,10 @@ function BotPane() {
               .catch((error: Error) => {
                 toast.error(error.message)
               })
-              .finally(() => setBusy(false))
+              .finally(() => {
+                botLock.current = false
+                setBusy(false)
+              })
           }}
         >
           <div className="space-y-1.5">
@@ -392,11 +399,13 @@ function BotPane() {
           className="mt-5 space-y-4"
           onSubmit={(event) => {
             event.preventDefault()
+            if (voiceLock.current || voiceBusy) return
             if (!elevenKey.trim() && !voiceId.trim() && !runtime.voice) {
               setVoiceError("Cola o voice id e a chave da ElevenLabs.")
               return
             }
             setVoiceError("")
+            voiceLock.current = true
             setVoiceBusy(true)
             void saveRuntime({
               ...(elevenKey.trim() ? { elevenApiKey: elevenKey.trim() } : {}),
@@ -409,7 +418,10 @@ function BotPane() {
                 toast.success(next.voice ? "Voz gravada no Worker." : "Falta a chave ou o voice id.")
               })
               .catch((error: Error) => toast.error(error.message))
-              .finally(() => setVoiceBusy(false))
+              .finally(() => {
+                voiceLock.current = false
+                setVoiceBusy(false)
+              })
           }}
         >
           <div className="space-y-1.5">
@@ -521,6 +533,7 @@ function AccountPane() {
   const [next, setNext] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
+  const lock = useRef(false)
 
   return (
     <section className="surface max-w-3xl p-6">
@@ -542,6 +555,7 @@ function AccountPane() {
         className="mt-5 space-y-4"
         onSubmit={(event) => {
           event.preventDefault()
+          if (lock.current || busy) return
           if (!current.trim()) {
             setError("Informa a senha actual.")
             return
@@ -551,6 +565,7 @@ function AccountPane() {
             return
           }
           setError("")
+          lock.current = true
           setBusy(true)
           void changePasswordRequest(current, next)
             .then(() => {
@@ -562,7 +577,10 @@ function AccountPane() {
               setError(err.message)
               toast.error(err.message)
             })
-            .finally(() => setBusy(false))
+            .finally(() => {
+              lock.current = false
+              setBusy(false)
+            })
         }}
       >
         <div className="space-y-1.5">

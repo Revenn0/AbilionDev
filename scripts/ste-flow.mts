@@ -791,6 +791,32 @@ const pixel = await handleRequest(
   backgroundCtx()
 )
 assert(pixel.status === 204, "pixel público grava")
+const pixelPlain = await handleRequest(
+  new Request("http://local.test/api/track", {
+    method: "POST",
+    headers: { "content-type": "text/plain" },
+    body: JSON.stringify({ kind: "click", visitorId: "aabbcc" }),
+  }),
+  liveEnv,
+  backgroundCtx()
+)
+assert(pixelPlain.status === 204, "pixel text/plain grava")
+const boom = await handleRequest(
+  new Request("http://local.test/"),
+  {
+    ...liveEnv,
+    ASSETS: {
+      fetch: async () => {
+        throw new Error("assets down")
+      },
+    },
+  } as Env,
+  backgroundCtx()
+)
+assert(boom.status === 500, "assets a falhar devolve 500")
+const boomBody = (await boom.json()) as { error?: string }
+assert(boomBody.error === "Falha interna.", "500 sem stack")
+assert(!JSON.stringify(boomBody).includes("assets down"), "500 sem detalhe interno")
 const downEnv = {
   ...liveEnv,
   SUPABASE_URL: "https://invalid.invalid",

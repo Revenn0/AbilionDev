@@ -1,17 +1,16 @@
-# OpenRouter — Sté
+# Sté — motor e IA
 
-A Sté chama o OpenRouter (`https://openrouter.ai/api/v1`). O token vai em Configurações, nunca no git.
+A Sté corre o quadro publicado. A IA só entra no papo livre depois da oferta. Tokens vão em Configurações, nunca no git.
 
 | | Valor |
 |---|---|
-| Provider | OpenRouter |
-| Modelo desta lista | `google/gemma-4-31b-it:free` |
-| Reserva | `deepseek/deepseek-v4-flash-0731:free` (entra sozinha se o Gemma falhar) |
-| Porquê | Melhor português e tom de conversa entre os free. Embedding, TTS e Ultra não servem. |
-| Volume pago | `z-ai/glm-5.3-flash` no mesmo OpenRouter |
-| Secret | chave `sk-or-v1…` no KV do Worker |
+| Principal | OpenCode Go · `deepseek-v4.1-flash` · chave `oc_sk_…` |
+| Reserva 1 | OpenRouter · `google/gemma-4-31b-it:free` · chave `sk-or-v1…` |
+| Reserva 2 | OpenRouter · `deepseek/deepseek-v4-flash-0731:free` |
+| Volume pago | `z-ai/glm-5.3-flash` no OpenRouter |
+| Sem chave | Script do quadro + voz local |
 
-Free no OpenRouter tem limite diário (~200 pedidos). O funil inteiro corre sem IA. A IA só entra no papo livre depois da oferta.
+O funil inteiro (boas-vindas, minicurso, Superbet, lives, oferta, remarketing, ofensa) corre sem IA.
 
 ## Quando o modelo corre
 
@@ -21,5 +20,5 @@ Free no OpenRouter tem limite diário (~200 pedidos). O funil inteiro corre sem 
 | Minicurso / Superbet / lives / oferta | Prompt interno. Sem IA. |
 | Follow-up 5–10 min e remarketing 7h | Cron + `replySteTick`. Sem IA. |
 | Ofensa | Uma desculpa e silêncio. Sem IA. |
-| Papo livre depois da oferta | Gemma 4 31B; se 429/erro, DeepSeek V4 Flash |
+| Papo livre depois da oferta | OpenCode DeepSeek V4.1 Flash; se falhar, Gemma 4 31B e depois DeepSeek V4 Flash |
 | API falha / vazio | Script da Sté (App / Premium / checkout) |

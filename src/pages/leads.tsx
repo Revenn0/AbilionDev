@@ -194,20 +194,26 @@ function CaptureDialog({
   const [contact, setContact] = useState("")
   const [origin, setOrigin] = useState<LeadOrigin>("popup")
   const [errors, setErrors] = useState<{ name?: string; contact?: string }>({})
+  const creating = useRef(false)
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
+    if (creating.current) return
     const check = validateCapture(name, contact)
     if (!check.ok) {
       setErrors(check.errors)
       return
     }
+    creating.current = true
     onCreate(captureAgainstFunnels({ name, contact, channel: "telegram", origin }, funnels))
     toast.success("Lead no fluxo.")
     setName("")
     setContact("")
     setErrors({})
     onOpenChange(false)
+    window.setTimeout(() => {
+      creating.current = false
+    }, 400)
   }
 
   return (

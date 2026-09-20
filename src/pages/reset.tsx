@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { AUTH_FIELD, AUTH_HINT, AUTH_LABEL, AUTH_LINK, AUTH_SUBMIT, AuthBrand, AuthSplit } from "@/components/brand/auth-split"
 import { Button } from "@/components/ui/button"
@@ -14,14 +14,17 @@ export function ResetPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const lock = useRef(false)
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (lock.current) return
     if (password.length < 6) {
       setError("A senha precisa de 6+ caracteres.")
       return
     }
     setError("")
+    lock.current = true
     setLoading(true)
     try {
       await resetPasswordRequest(token, password)
@@ -29,6 +32,7 @@ export function ResetPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível redefinir a senha.")
     } finally {
+      lock.current = false
       setLoading(false)
     }
   }

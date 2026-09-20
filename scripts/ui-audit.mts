@@ -83,6 +83,8 @@ try {
   await open(page, "/login")
   await waitAuthPage(page)
   assert(page.url().includes("/login"), "login público sem sessão")
+  const description = await page.$eval("meta[name=description]", (el) => el.getAttribute("content") || "")
+  assert(description.includes("Abilion"), "meta description")
   assert(await page.$(".skip-link"), "skip-link no login")
   assert(await page.$("#conteudo"), "landmark #conteudo no login")
   assert(await page.$("#email"), "campo e-mail")

@@ -102,11 +102,28 @@ export default {
     return handleRequest(request, env, ctx)
   },
   async scheduled(_event: ScheduledEvent, env: Env) {
-    await processWaits(env)
+    try {
+      await processWaits(env)
+    } catch {
+      return
+    }
   },
 }
 
 export async function handleRequest(request: Request, env: Env, ctx: ExecutionContext) {
+  try {
+    return await routeRequest(request, env, ctx)
+  } catch {
+    return withSecurityHeaders(
+      new Response(JSON.stringify({ error: "Falha interna." }), {
+        status: 500,
+        headers: { "content-type": "application/json", "cache-control": "no-store" },
+      })
+    )
+  }
+}
+
+async function routeRequest(request: Request, env: Env, ctx: ExecutionContext) {
   const url = new URL(request.url)
   if (url.pathname === "/t.js") {
     return new Response(TRACKER_JS, {
@@ -114,6 +131,7 @@ export async function handleRequest(request: Request, env: Env, ctx: ExecutionCo
         "content-type": "text/javascript; charset=utf-8",
         "access-control-allow-origin": "*",
         "cache-control": "public, max-age=300",
+        "x-content-type-options": "nosniff",
       },
     })
   }
@@ -356,6 +374,14 @@ function webhookUrl(request: Request, env: Env) {
 }
 
 async function handleTelegram(env: Env, update: TelegramUpdate) {
+  try {
+    await runTelegram(env, update)
+  } catch {
+    return
+  }
+}
+
+async function runTelegram(env: Env, update: TelegramUpdate) {
   const { resolved } = await runtimeOf(env)
   const token = resolved.telegramBotToken
   if (!token) return

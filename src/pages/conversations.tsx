@@ -56,6 +56,7 @@ export function ConversationsPage() {
   const [id, setId] = useState<string | null>(null)
   const [draft, setDraft] = useState("")
   const end = useRef<HTMLDivElement>(null)
+  const sending = useRef(false)
 
   const all = useMemo(
     () =>
@@ -103,12 +104,17 @@ export function ConversationsPage() {
 
   const send = (event: React.FormEvent) => {
     event.preventDefault()
+    if (sending.current) return
     if (!lead || lead.steBlocked || lead.steQuiet) return
     const text = draft.trim()
     if (!text) return
+    sending.current = true
     const result = replySteLived(lead, text, Date.now(), runtime)
     saveLead(result.lead)
     setDraft("")
+    window.setTimeout(() => {
+      sending.current = false
+    }, 250)
   }
 
   return (

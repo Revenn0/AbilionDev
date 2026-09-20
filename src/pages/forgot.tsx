@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import { AUTH_FIELD, AUTH_HINT, AUTH_LABEL, AUTH_LINK, AUTH_SUBMIT, AuthBrand, AuthSplit } from "@/components/brand/auth-split"
 import { Button } from "@/components/ui/button"
@@ -12,14 +12,17 @@ export function ForgotPage() {
   const [done, setDone] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const lock = useRef(false)
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (lock.current) return
     if (!email.trim()) {
       setError("Informe o e-mail.")
       return
     }
     setError("")
+    lock.current = true
     setLoading(true)
     try {
       const data = await forgotPasswordRequest(email.trim().toLowerCase())
@@ -31,6 +34,7 @@ export function ForgotPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível gerar o link.")
     } finally {
+      lock.current = false
       setLoading(false)
     }
   }
