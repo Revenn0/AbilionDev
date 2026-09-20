@@ -793,6 +793,11 @@ export function canTickSteLocally(lead: Lead) {
   return !lead.telegramChatId
 }
 
+/** Simular no painel só para leads sem chat real — senão o CRM e o Telegram dessincronizam. */
+export function canSimulateSte(lead: Lead) {
+  return canTickSteLocally(lead) && !lead.steBlocked && !lead.steQuiet
+}
+
 export function advanceSteIfDue(lead: Lead, now = Date.now(), runtime?: SteRuntime): SteResult {
   const due = lead.waitUntil ? new Date(lead.waitUntil).getTime() : 0
   if (!due || due > now || !isSteWait(lead)) return pack(lead, [])

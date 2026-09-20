@@ -412,7 +412,12 @@ function LeadDrawer({
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
-      <div className="absolute inset-0 bg-black/40" onClick={close} />
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/40"
+        aria-label="Fechar ficha do lead"
+        onClick={close}
+      />
       <aside
         ref={panel}
         role="dialog"

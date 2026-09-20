@@ -5,6 +5,7 @@ import { emptySummary, isFacebookTraffic, summarizeTrack, type TrackEvent } from
 import {
   isolateLead,
   canTickSteLocally,
+  canSimulateSte,
   replySte,
   replySteLived,
   replySteSmart,
@@ -2066,7 +2067,11 @@ assert((inboxLead.messages ?? []).some((item) => item.role === "ste"), "simular 
 assert(inboxLead.stePhase !== "closed", "simular conversa fica no funil")
 assert(!inboxLead.telegramChatId, "simular conversa não inventa chat id")
 assert(canTickSteLocally(inboxLead), "simulação avança no painel")
+assert(canSimulateSte(inboxLead), "simulação no painel só para lead sem chat")
 assert(!canTickSteLocally({ ...inboxLead, telegramChatId: "9001" }), "lead real do Telegram não avança no painel")
+assert(!canSimulateSte({ ...inboxLead, telegramChatId: "9001" }), "lead real do Telegram não simula no painel")
+assert(!canSimulateSte({ ...inboxLead, steBlocked: true }), "lead encerrado não simula")
+assert(!canSimulateSte({ ...inboxLead, steQuiet: true }), "lead quieto não simula")
 const burstOne = burstFacebookLeads([emptySalesFunnel("lote-um")], 1)[0]
 assert(burstOne?.steBlocked, "o primeiro do lote de 100 ainda testa ofensa")
 assert(!burstOne?.telegramChatId, "lote não inventa chat id")

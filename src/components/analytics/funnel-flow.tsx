@@ -10,9 +10,20 @@ const META: Record<FunnelStep["id"], { icon: typeof Megaphone; tone: StudioTone 
   chat: { icon: MessagesSquare, tone: "emerald" },
 }
 
-export function FunnelFlow({ steps, pixelReady = true }: { steps: FunnelStep[]; pixelReady?: boolean }) {
+export function FunnelFlow({
+  steps,
+  pixelReady = true,
+  leadsReady = true,
+}: {
+  steps: FunnelStep[]
+  pixelReady?: boolean
+  leadsReady?: boolean
+}) {
   const peak = Math.max(...steps.map((item) => item.value), 1)
-  const figure = (step: FunnelStep) => (pixelReady || step.id === "chat" ? step.value : "—")
+  const figure = (step: FunnelStep) => {
+    if (step.id === "chat") return leadsReady ? step.value : "…"
+    return pixelReady ? step.value : "—"
+  }
   return (
     <StudioPanel
       eyebrow="Funil Facebook"

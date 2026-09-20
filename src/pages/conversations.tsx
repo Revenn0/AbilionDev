@@ -14,7 +14,7 @@ import { ORIGIN_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { GeoBadge } from "@/components/crm/geo-badge"
 import { factsWithTrack } from "@/lib/geo"
 import { publishedFunnel } from "@/lib/runtime"
-import { advanceSteIfDue, canTickSteLocally, replySteLived, splitSteMarkup, steHeardChips, steRuntimeFromFunnels, steStepLabel } from "@/lib/ste"
+import { advanceSteIfDue, canSimulateSte, canTickSteLocally, replySteLived, splitSteMarkup, steHeardChips, steRuntimeFromFunnels, steStepLabel } from "@/lib/ste"
 import { useTrackSummary } from "@/lib/use-track-summary"
 import { timeAgo } from "@/lib/format"
 import type { Lead } from "@/lib/types"
@@ -111,7 +111,7 @@ export function ConversationsPage() {
   const send = (event: React.FormEvent) => {
     event.preventDefault()
     if (sending.current) return
-    if (!lead || lead.steBlocked || lead.steQuiet) return
+    if (!lead || !canSimulateSte(lead)) return
     const text = draft.trim()
     if (!text) return
     sending.current = true
@@ -135,7 +135,7 @@ export function ConversationsPage() {
         <PageChrome icon={MessagesSquare} title="Conversas">
           {FILTERS.map((item) => (
             <FilterChip key={item.id} active={filter === item.id} onClick={() => setFilter(item.id)}>
-              {item.label} {counts[item.id]}
+              {item.label} {hydrating && all.length === 0 ? "…" : counts[item.id]}
             </FilterChip>
           ))}
         </PageChrome>
@@ -282,13 +282,15 @@ export function ConversationsPage() {
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
                     placeholder={
-                      lead.steQuiet || lead.steBlocked
-                        ? "Esta instância já silenciou."
-                        : "Escreve como o lead. Isto não manda Telegram — só simula a Sté."
+                      lead.telegramChatId
+                        ? "Esta conversa corre no Telegram. Simular aqui dessincroniza o CRM."
+                        : lead.steQuiet || lead.steBlocked
+                          ? "Esta instância já silenciou."
+                          : "Escreve como o lead. Isto não manda Telegram — só simula a Sté."
                     }
-                    disabled={lead.steBlocked || lead.steQuiet}
+                    disabled={!canSimulateSte(lead)}
                   />
-                  <Button type="submit" className="rounded-full" disabled={lead.steBlocked || lead.steQuiet || !draft.trim()}>
+                  <Button type="submit" className="rounded-full" disabled={!canSimulateSte(lead) || !draft.trim()}>
                     Simular lead
                   </Button>
                 </form>

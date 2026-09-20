@@ -212,6 +212,8 @@ try {
   )
   await clickNamed(page, auditName)
   await page.waitForSelector("#lead-memory", { timeout: 5_000 })
+  const closeBackdrop = await page.evaluate(() => Boolean(document.querySelector("[aria-label='Fechar ficha do lead']")))
+  assert(closeBackdrop, "fundo da ficha do lead fecha com teclado")
   await page.click("#lead-memory", { clickCount: 3 })
   await page.type("#lead-memory", "memoria isolada")
   const closed = await page.evaluate(() => {

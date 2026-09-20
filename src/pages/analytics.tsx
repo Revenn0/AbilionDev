@@ -14,12 +14,14 @@ import { facebookOf, formatPercent, formatSession } from "@/lib/track"
 import { useTrackSummary } from "@/lib/use-track-summary"
 
 export function AnalyticsPage() {
-  const { state } = useStore()
+  const { state, persistSync } = useStore()
   const { summary, status, hasData } = useTrackSummary(4000)
   const facebook = facebookOf(summary)
   const pixelReady = status === "ok" || hasData
+  const leadsReady = !(persistSync === "idle" && state.leads.length === 0)
   const empty =
     pixelReady &&
+    leadsReady &&
     summary.visitors === 0 &&
     summary.clicks === 0 &&
     summary.telegrams === 0 &&
@@ -65,7 +67,7 @@ export function AnalyticsPage() {
           }}
         />
 
-        <FunnelFlow steps={funnel} pixelReady={pixelReady} />
+        <FunnelFlow steps={funnel} pixelReady={pixelReady} leadsReady={leadsReady} />
 
         <VisitorGlobe geos={summary.geos} leads={state.leads} />
 
