@@ -111,6 +111,19 @@ function emptySnapshot(): AuthSnapshot {
   return { users: [], sessions: [], resets: {}, throttles: {} }
 }
 
+const memoryThrottles = new Map<string, AuthThrottle>()
+
+export function consumeMemoryThrottle(key: string, limit: number, windowMs: number, now = Date.now()) {
+  const current = memoryThrottles.get(key)
+  if (!current || current.resetAt <= now) {
+    memoryThrottles.set(key, { count: 1, resetAt: now + windowMs })
+    return true
+  }
+  if (current.count >= limit) return false
+  memoryThrottles.set(key, { ...current, count: current.count + 1 })
+  return true
+}
+
 export function consumeThrottle(
   snapshot: AuthSnapshot,
   key: string,

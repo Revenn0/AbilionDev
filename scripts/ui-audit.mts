@@ -105,7 +105,11 @@ try {
   assert((await page.evaluate(() => document.body.innerText)).includes("privacidade"), "página de privacidade")
 
   await open(page, "/l")
-  assert(await page.$("[data-abilion-cta]"), "landing tem CTA")
+  const landingCopy = await page.evaluate(() => document.body.innerText)
+  assert(
+    Boolean(await page.$("[data-abilion-cta]")) || landingCopy.includes("ainda não está ligado") || landingCopy.includes("A carregar o botão"),
+    "landing tem CTA ou empty state"
+  )
 
   if (PUBLIC_ONLY) {
     for (const viewport of VIEWPORTS) {
@@ -145,6 +149,14 @@ try {
   await page.waitForFunction(() => location.pathname.includes("/login"), { timeout: 8_000 })
   assert(page.url().includes("/login"), "cookie apagado volta ao login")
   await login(page)
+
+  await open(page, "/configuracoes")
+  await page.waitForSelector("#bot-user", { timeout: 8_000 })
+  await page.click("#bot-user", { clickCount: 3 })
+  await page.keyboard.press("Backspace")
+  await page.type("#bot-user", "ab")
+  await clickNamed(page, "Vincular Telegram")
+  await page.waitForSelector("#bot-user-error", { timeout: 4_000 })
 
   await open(page, "/pagina-inexistente")
   const notFound = await page.evaluate(() => document.body.innerText)

@@ -1,3 +1,4 @@
+import { cleanBotUsername } from "./migrate"
 import type { LeadOrigin } from "./types"
 
 export function parseTelegramStart(text?: string | null) {
@@ -32,7 +33,7 @@ export function campaignFromStart(payload: string) {
 }
 
 export function adsDeepLink(username: string, payload = "fb") {
-  const handle = username.replace(/^@/, "").trim()
+  const handle = cleanBotUsername(username).replace(/^@/, "")
   if (!handle) return ""
   return `https://t.me/${handle}?start=${encodeURIComponent(payload)}`
 }

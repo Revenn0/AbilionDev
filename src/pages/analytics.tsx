@@ -100,7 +100,11 @@ export function AnalyticsPage() {
           hint="Anúncio, page view e clique no Telegram — linhas do Facebook, sem misturar /start."
         >
           <p className="mb-4 text-[32px] font-medium tracking-[-0.04em] tabular-nums">{facebook.pageViews || summary.views}</p>
-          {empty ? (
+          {status === "loading" ? (
+            <p role="status" className="text-[13px] leading-relaxed text-muted-foreground">
+              A carregar o pixel…
+            </p>
+          ) : empty ? (
             <p className="text-[13px] leading-relaxed text-muted-foreground">
               Sem visitas ainda. Abre /l com fbclid ou cola o pixel. O Facebook conta anúncio, page view e botão à parte.
             </p>

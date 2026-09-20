@@ -222,7 +222,7 @@ export function ConversationsPage() {
                               key={`${item.id}-${index}`}
                               href={part.url}
                               target="_blank"
-                              rel="noreferrer"
+                              rel="noopener noreferrer"
                               className="text-primary underline underline-offset-2"
                             >
                               {part.text}

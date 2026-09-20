@@ -31,8 +31,10 @@ import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, st
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { safeAppPath } from "../src/lib/safe-path.ts"
 import { validateCapture } from "../src/lib/capture.ts"
+import { cleanBotUsername, cleanTelegramGroupUrl, sanitizeIncomingLead } from "../src/lib/migrate.ts"
+import { adsDeepLink } from "../src/lib/telegram-start.ts"
 import { mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
-import { consumeThrottle, clearThrottle, handleAuth, memoryAuthStore } from "../worker/auth.ts"
+import { consumeThrottle, consumeMemoryThrottle, clearThrottle, handleAuth, memoryAuthStore } from "../worker/auth.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
 import { backgroundCtx, handleRequest, type Env } from "../worker/index.ts"
 import { clearSessionExpired, noteUnauthorized, subscribeSessionExpired } from "../src/lib/session.ts"
@@ -371,6 +373,20 @@ const emptyCapture = validateCapture("  ", "")
 assert(!emptyCapture.ok && emptyCapture.errors.name && emptyCapture.errors.contact, "captura vazia falha com os dois campos")
 assert(validateCapture("Ana", "@ana").ok, "captura valida passa")
 
+assert(cleanBotUsername("@ste_bot") === "@ste_bot", "username válido fica")
+assert(cleanBotUsername("steaviator") === "@steaviator", "username sem @ ganha @")
+assert(cleanBotUsername("ab") === "", "username curto cai")
+assert(cleanBotUsername("foo/bar") === "", "username com barra cai")
+assert(cleanBotUsername("foo?x=1") === "", "username com query cai")
+assert(adsDeepLink("foo/bar") === "", "deep link recusa handle inválido")
+assert(adsDeepLink("@good_bot") === "https://t.me/good_bot?start=fb", "deep link usa handle limpo")
+assert(cleanTelegramGroupUrl("https://t.me/+abc123").includes("t.me"), "convite t.me passa")
+assert(cleanTelegramGroupUrl("https://evil.com/x") === "", "url alheia cai")
+assert(cleanTelegramGroupUrl("javascript:alert(1)") === "", "javascript: cai")
+assert(sanitizeIncomingLead({ id: " lead-1 ", name: " Ana ", contact: "@ana" })?.name === "Ana", "lead incoming corta espaços")
+assert(sanitizeIncomingLead({ id: "" }) === null, "lead sem id cai")
+assert(sanitizeIncomingLead({ id: "x".repeat(81) }) === null, "lead com id longo cai")
+
 assert(safeAppPath("/leads") === "/leads", "rota interna passa")
 assert(safeAppPath("/configuracoes?tab=conta") === "/configuracoes?tab=conta", "query da conta passa")
 assert(safeAppPath("//evil.com") === "/", "protocol-relative nao redireciona")
@@ -387,6 +403,9 @@ gated = consumeThrottle(gated.snapshot, "login:1:a", 2, 60_000, 1002)
 assert(!gated.ok, "terceira tentativa bloqueia")
 const unlocked = consumeThrottle(clearThrottle(gated.snapshot, "login:1:a"), "login:1:a", 2, 60_000, 1003)
 assert(unlocked.ok, "sucesso limpa o bloqueio")
+assert(consumeMemoryThrottle("track:test-ip", 2, 60_000, 2000), "pixel primeira passa")
+assert(consumeMemoryThrottle("track:test-ip", 2, 60_000, 2001), "pixel segunda passa")
+assert(!consumeMemoryThrottle("track:test-ip", 2, 60_000, 2002), "pixel terceira bloqueia")
 
 const authStore = memoryAuthStore()
 const loginAttempt = (password: string) =>
@@ -459,5 +478,8 @@ const deniedLeads = await handleRequest(
 assert(deniedLeads.status === 401, "leads sem sessão é 401")
 const deniedSummary = await handleRequest(new Request("http://local.test/api/track/summary"), apiEnv, backgroundCtx())
 assert(deniedSummary.status === 401, "analytics sem sessão é 401")
+const health = await handleRequest(new Request("http://local.test/api/health"), apiEnv, backgroundCtx())
+const healthBody = (await health.json()) as { ok?: boolean; telegramBotUsername?: string }
+assert(health.status === 200 && healthBody.ok && healthBody.telegramBotUsername === "", "health público expõe username vazio")
 
 console.log("ste-flow ok")

@@ -1,4 +1,4 @@
-import { handleAuth, kvAuthStore, randomToken, sessionUser } from "./auth.ts"
+import { clientIp, consumeMemoryThrottle, handleAuth, kvAuthStore, randomToken, sessionUser } from "./auth.ts"
 import { campaignFor } from "../src/lib/labels.ts"
 import { advanceSteIfDue, isSteWait, replySte, replySteSmart, steRuntimeFromFunnels, toTelegramHtml, type SteBeat } from "../src/lib/ste.ts"
 import { linkFollowUp, voiceClipFor } from "../src/lib/ste-voice.ts"
@@ -9,7 +9,7 @@ import { BANCA_FIXED, type Lead, type LeadEvent, type LeadOrigin, type SalesFunn
 import { compactGeo, factsFromGeo } from "../src/lib/geo.ts"
 import { parseDevice } from "../src/lib/track.ts"
 import { emptySettings, publicSettings } from "../src/lib/crm.ts"
-import { migrateLead, migrateSettings } from "../src/lib/migrate.ts"
+import { cleanBotUsername, migrateSettings, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { resolveClientGeo } from "./geo-lookup.ts"
 import { ingestTrack, kvTrackStore, memoryTrackStore, readTrackBody, summaryFromStore, type TrackStore } from "./track-store.ts"
 import {
@@ -128,6 +128,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     return json({
       ok: true,
       telegram: resolved.telegram,
+      telegramBotUsername: cleanBotUsername(resolved.telegramBotUsername),
       supabase: resolved.supabase,
       ste: true,
       llm: resolved.llm,
@@ -149,6 +150,9 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   }
 
   if (url.pathname === "/api/track" && request.method === "POST") {
+    if (!consumeMemoryThrottle(`track:${clientIp(request)}`, 60, 60_000)) {
+      return new Response(null, { status: 429, headers: corsHeaders() })
+    }
     const body = await readTrackBody(request)
     const geo = await resolveClientGeo(request, typeof body.timezone === "string" ? body.timezone : undefined, {
       country: typeof body.country === "string" ? body.country : undefined,
@@ -290,11 +294,14 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!user) return json({ error: "Sessão expirada." }, 401)
     const body = (await request.json().catch(() => ({}))) as { lead?: Lead; leads?: Lead[] }
     const rows = (body.leads?.length ? body.leads : body.lead ? [body.lead] : []).slice(0, 120)
+    let saved = 0
     for (const row of rows) {
-      if (!row || typeof row !== "object" || !row.id) continue
-      await upsertLeadKv(env.AUTH, migrateLead(row))
+      const lead = sanitizeIncomingLead(row)
+      if (!lead) continue
+      await upsertLeadKv(env.AUTH, lead)
+      saved += 1
     }
-    return json({ ok: true, saved: rows.length })
+    return json({ ok: true, saved })
   }
 
   if (url.pathname === "/api/leads" && request.method === "DELETE") {
@@ -316,7 +323,9 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
         env,
         `leads?workspace_id=eq.${WORKSPACE}&channel=eq.telegram&select=*&order=updated_at.desc&limit=80`
       )) ?? []
-    const leads = rows.length ? rows.map(rowToLead) : env.AUTH ? await listLeads(env.AUTH) : []
+    const leads = (rows.length ? rows.map(rowToLead) : env.AUTH ? await listLeads(env.AUTH) : []).filter(
+      (item) => item.channel === "telegram"
+    )
     return json({ ok: true, leads })
   }
 
@@ -703,6 +712,8 @@ function securityHeaders() {
     "referrer-policy": "strict-origin-when-cross-origin",
     "x-frame-options": "DENY",
     "permissions-policy": "camera=(), microphone=(), geolocation=()",
+    "content-security-policy":
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://*.supabase.co; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
   }
 }
 

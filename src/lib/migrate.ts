@@ -84,11 +84,45 @@ export function migrateLead(raw: Partial<Lead> & { id: string }): Lead {
 }
 
 const PLACEHOLDER_BOT = /@vjungerfka/i
+const TELEGRAM_USER = /^[A-Za-z][A-Za-z0-9_]{4,31}$/
+const TELEGRAM_HOSTS = new Set(["t.me", "www.t.me", "telegram.me", "www.telegram.me"])
 
 export function cleanBotUsername(value?: string) {
   const next = (value ?? "").trim()
   if (!next || PLACEHOLDER_BOT.test(next)) return ""
-  return next.startsWith("@") ? next : `@${next}`
+  const handle = next.replace(/^@/, "")
+  if (!TELEGRAM_USER.test(handle)) return ""
+  return `@${handle}`
+}
+
+export function cleanTelegramGroupUrl(value?: string) {
+  const next = (value ?? "").trim()
+  if (!next) return ""
+  try {
+    const url = new URL(next)
+    if (url.protocol !== "https:") return ""
+    if (!TELEGRAM_HOSTS.has(url.hostname.toLowerCase())) return ""
+    if (url.username || url.password) return ""
+    return url.toString()
+  } catch {
+    return ""
+  }
+}
+
+export function sanitizeIncomingLead(raw: unknown): Lead | null {
+  if (!raw || typeof raw !== "object") return null
+  const row = raw as Partial<Lead>
+  if (typeof row.id !== "string") return null
+  const id = row.id.trim()
+  if (!id || id.length > 80) return null
+  const lead = migrateLead({ ...row, id })
+  lead.name = lead.name.trim().slice(0, 80) || "Lead"
+  lead.contact = lead.contact.trim().slice(0, 80)
+  lead.campaign = lead.campaign.trim().slice(0, 120)
+  lead.memory = lead.memory.slice(0, 4000)
+  if (lead.messages.length > 80) lead.messages = lead.messages.slice(-80)
+  if (lead.events.length > 80) lead.events = lead.events.slice(-80)
+  return lead
 }
 
 export function migrateSettings(raw: Partial<Settings> | undefined): Settings {
@@ -103,6 +137,7 @@ export function migrateSettings(raw: Partial<Settings> | undefined): Settings {
   return {
     ...merged,
     telegramBotUsername: cleanBotUsername(merged.telegramBotUsername),
+    telegramGroupUrl: cleanTelegramGroupUrl(merged.telegramGroupUrl),
     steWelcomeLines: [
       welcomeLines[0] || defaultSettings.steWelcomeLines[0],
       welcomeLines[1] || defaultSettings.steWelcomeLines[1],

@@ -7,6 +7,7 @@ import {
   STE_LLM_MODEL,
   STE_OPENCODE_MODEL,
 } from "../src/lib/llm.ts"
+import { cleanBotUsername, cleanTelegramGroupUrl } from "../src/lib/migrate.ts"
 import type { KvLike } from "./kv.ts"
 
 export const RUNTIME_KEY = "runtime:secrets"
@@ -111,8 +112,8 @@ export function mergeSecrets(current: RuntimeSecrets, patch: RuntimeSecrets): Ru
     const key = patch.openaiApiKey.trim()
     if (!looksMasked(key)) next.openaiApiKey = key
   }
-  if (patch.telegramBotUsername !== undefined) next.telegramBotUsername = patch.telegramBotUsername.trim()
-  if (patch.telegramGroupUrl !== undefined) next.telegramGroupUrl = patch.telegramGroupUrl.trim()
+  if (patch.telegramBotUsername !== undefined) next.telegramBotUsername = cleanBotUsername(patch.telegramBotUsername)
+  if (patch.telegramGroupUrl !== undefined) next.telegramGroupUrl = cleanTelegramGroupUrl(patch.telegramGroupUrl)
   if (patch.steModel !== undefined) next.steModel = normalizeSteModel(patch.steModel)
   if (patch.steFallbackModel !== undefined) next.steFallbackModel = normalizeSteModel(patch.steFallbackModel)
   if (patch.opencodeApiKey !== undefined) {
@@ -152,8 +153,8 @@ export function resolveRuntime(env: RuntimeEnv, secrets: RuntimeSecrets, webhook
     telegramBotToken,
     openaiApiKey,
     opencodeApiKey,
-    telegramBotUsername: (secrets.telegramBotUsername || "").trim(),
-    telegramGroupUrl: (secrets.telegramGroupUrl || "").trim(),
+    telegramBotUsername: cleanBotUsername(secrets.telegramBotUsername),
+    telegramGroupUrl: cleanTelegramGroupUrl(secrets.telegramGroupUrl),
     webhookUrl: secrets.webhookUrl || webhookFallback,
     webhookOk: Boolean(secrets.webhookOk),
     llm: Boolean(openaiApiKey || opencodeApiKey) && env.STE_USE_LLM !== "0",

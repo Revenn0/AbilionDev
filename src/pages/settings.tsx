@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { cleanBotUsername } from "@/lib/migrate"
+import { cleanBotUsername, cleanTelegramGroupUrl } from "@/lib/migrate"
 import { useStore } from "@/lib/store"
 import { changePasswordRequest } from "@/lib/auth-api"
 import { fetchHealth, workerUrl } from "@/lib/channel"
@@ -78,13 +78,27 @@ export function SettingsPage() {
         <PageChrome icon={SettingsIcon} title="Configurações" />
 
         <div role="tablist" aria-label="Secções de configurações" className="flex w-fit flex-wrap gap-1 rounded-full bg-card p-1">
-          {TABS.map((item) => (
+          {TABS.map((item, index) => (
             <button
               key={item.id}
+              id={`settings-tab-${item.id}`}
               type="button"
               role="tab"
               aria-selected={tab === item.id}
+              aria-controls={`settings-panel-${item.id}`}
+              tabIndex={tab === item.id ? 0 : -1}
               onClick={() => go(item.id)}
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowRight" && event.key !== "ArrowLeft" && event.key !== "Home" && event.key !== "End") return
+                event.preventDefault()
+                const last = TABS.length - 1
+                const nextIndex =
+                  event.key === "Home" ? 0 : event.key === "End" ? last : event.key === "ArrowRight" ? (index + 1) % TABS.length : (index - 1 + TABS.length) % TABS.length
+                const next = TABS[nextIndex]
+                if (!next) return
+                go(next.id)
+                window.requestAnimationFrame(() => document.getElementById(`settings-tab-${next.id}`)?.focus())
+              }}
               className={cn(
                 "h-8 rounded-full px-3.5 text-[12.5px] font-medium",
                 tab === item.id ? "bg-background text-foreground" : "text-muted-foreground hover:text-foreground"
@@ -95,11 +109,13 @@ export function SettingsPage() {
           ))}
         </div>
 
-        {tab === "bot" && <BotPane />}
-        {tab === "conta" && <AccountPane />}
-        {tab === "plugins" && <PluginsPane />}
-        {tab === "notificacoes" && <NotifyPane />}
-        {tab === "aparencia" && <ThemePane />}
+        <div role="tabpanel" id={`settings-panel-${tab}`} aria-labelledby={`settings-tab-${tab}`}>
+          {tab === "bot" && <BotPane />}
+          {tab === "conta" && <AccountPane />}
+          {tab === "plugins" && <PluginsPane />}
+          {tab === "notificacoes" && <NotifyPane />}
+          {tab === "aparencia" && <ThemePane />}
+        </div>
       </div>
     </div>
   )
@@ -116,6 +132,9 @@ function BotPane() {
   const [model, setModel] = useState(STE_LLM_MODEL)
   const [busy, setBusy] = useState(false)
   const [voiceBusy, setVoiceBusy] = useState(false)
+  const [botError, setBotError] = useState("")
+  const [groupError, setGroupError] = useState("")
+  const [voiceError, setVoiceError] = useState("")
   const [runtimeLoaded, setRuntimeLoaded] = useState(false)
   const [health, setHealth] = useState<Awaited<ReturnType<typeof fetchHealth>>>({ ok: false })
   const [runtime, setRuntime] = useState<RuntimeStatus>({ ok: false })
@@ -199,11 +218,26 @@ function BotPane() {
           className="mt-5 space-y-4"
           onSubmit={(event) => {
             event.preventDefault()
-            setBusy(true)
             const cleanUser = cleanBotUsername(username)
+            const cleanGroup = cleanTelegramGroupUrl(group)
+            if (username.trim() && !cleanUser) {
+              setBotError("Username inválido. Usa 5–32 caracteres: letra inicial, depois letras, números ou _.")
+              return
+            }
+            if (group.trim() && !cleanGroup) {
+              setGroupError("O convite tem de ser um link https://t.me/…")
+              return
+            }
+            if (!cleanUser && !runtime.telegramBotUsername && !token.trim() && !glm.trim() && !cleanGroup) {
+              setBotError("Informa o username do bot ou cola o token.")
+              return
+            }
+            setBotError("")
+            setGroupError("")
+            setBusy(true)
             void saveRuntime({
               telegramBotUsername: cleanUser,
-              telegramGroupUrl: group.trim(),
+              telegramGroupUrl: cleanGroup,
               ...(token.trim() ? { telegramBotToken: token.trim() } : {}),
               ...(glm.trim() ? { openaiApiKey: glm.trim() } : {}),
               steModel: model,
@@ -233,10 +267,20 @@ function BotPane() {
             <Input
               id="bot-user"
               value={username}
-              onChange={(event) => setUsername(event.target.value)}
+              onChange={(event) => {
+                setUsername(event.target.value)
+                setBotError("")
+              }}
               placeholder="@teu_bot"
               autoComplete="off"
+              aria-invalid={Boolean(botError)}
+              aria-describedby={botError ? "bot-user-error" : undefined}
             />
+            {botError ? (
+              <p id="bot-user-error" role="alert" className="text-[12px] text-destructive">
+                {botError}
+              </p>
+            ) : null}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="bot-token">Token do bot</Label>
@@ -254,9 +298,19 @@ function BotPane() {
             <Input
               id="bot-group"
               value={group}
-              onChange={(event) => setGroup(event.target.value)}
+              onChange={(event) => {
+                setGroup(event.target.value)
+                setGroupError("")
+              }}
               placeholder="https://t.me/..."
+              aria-invalid={Boolean(groupError)}
+              aria-describedby={groupError ? "bot-group-error" : undefined}
             />
+            {groupError ? (
+              <p id="bot-group-error" role="alert" className="text-[12px] text-destructive">
+                {groupError}
+              </p>
+            ) : null}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="bot-model">Modelo OpenRouter</Label>
@@ -327,6 +381,11 @@ function BotPane() {
           className="mt-5 space-y-4"
           onSubmit={(event) => {
             event.preventDefault()
+            if (!elevenKey.trim() && !voiceId.trim() && !runtime.voice) {
+              setVoiceError("Cola o voice id e a chave da ElevenLabs.")
+              return
+            }
+            setVoiceError("")
             setVoiceBusy(true)
             void saveRuntime({
               ...(elevenKey.trim() ? { elevenApiKey: elevenKey.trim() } : {}),
@@ -347,9 +406,14 @@ function BotPane() {
             <Input
               id="ste-voice-id"
               value={voiceId}
-              onChange={(event) => setVoiceId(event.target.value)}
               placeholder={runtime.voiceHint ? `Já gravado ${runtime.voiceHint}. Cola outro para trocar.` : "Cola o voice id do clone"}
               autoComplete="off"
+              onChange={(event) => {
+                setVoiceId(event.target.value)
+                setVoiceError("")
+              }}
+              aria-invalid={Boolean(voiceError)}
+              aria-describedby={voiceError ? "ste-voice-error" : undefined}
             />
           </div>
           <div className="space-y-1.5">
@@ -359,9 +423,17 @@ function BotPane() {
               type="password"
               autoComplete="off"
               value={elevenKey}
-              onChange={(event) => setElevenKey(event.target.value)}
+              onChange={(event) => {
+                setElevenKey(event.target.value)
+                setVoiceError("")
+              }}
               placeholder={runtime.voice ? "Chave já ligada. Cola outra para trocar." : "Cola a chave sk_… da ElevenLabs"}
             />
+            {voiceError ? (
+              <p id="ste-voice-error" role="alert" className="text-[12px] text-destructive">
+                {voiceError}
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="submit" className="rounded-full" disabled={voiceBusy}>
@@ -419,8 +491,10 @@ function BotPane() {
           variant="outline"
           className="mt-3 rounded-full"
           onClick={() => {
-            void navigator.clipboard.writeText(pixel)
-            toast.success("Snippet copiado.")
+            void navigator.clipboard
+              .writeText(pixel)
+              .then(() => toast.success("Snippet copiado."))
+              .catch(() => toast.error("Não consegui copiar. Selecciona o snippet."))
           }}
         >
           Copiar snippet

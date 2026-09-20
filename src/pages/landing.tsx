@@ -1,13 +1,11 @@
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { adsDeepLink } from "@/lib/telegram-start"
-import { useStore } from "@/lib/store"
-
-const FALLBACK_BOT = "steaviator"
+import { fetchHealth } from "@/lib/channel"
 
 export function LandingPage() {
-  const { state } = useStore()
-  const username = state.settings.telegramBotUsername
-  const href = adsDeepLink(username || FALLBACK_BOT, "fb") || `https://t.me/${FALLBACK_BOT}?start=fb`
+  const [username, setUsername] = useState("")
+  const [ready, setReady] = useState(false)
+  const href = adsDeepLink(username, "fb")
 
   useEffect(() => {
     if (document.querySelector("script[data-abilion-pixel]")) return
@@ -17,6 +15,18 @@ export function LandingPage() {
     script.dataset.abilionPixel = "1"
     script.dataset.cta = "[data-abilion-cta]"
     document.head.appendChild(script)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void fetchHealth().then((health) => {
+      if (cancelled) return
+      setUsername(health.telegramBotUsername || "")
+      setReady(true)
+    })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   return (
@@ -35,15 +45,31 @@ export function LandingPage() {
           <li>Cadastro Superbet com o bônus certo</li>
           <li>Grupo Premium só se fizer sentido</li>
         </ul>
-        <a
-          data-abilion-cta
-          href={href}
-          className="mt-8 inline-flex h-12 items-center justify-center rounded-full bg-sky-400 px-6 text-[15px] font-semibold text-sky-950"
-        >
-          Falar com a Sté no Telegram
-        </a>
+        {!ready ? (
+          <p role="status" className="mt-8 text-[14px] text-zinc-400">
+            A carregar o botão do Telegram…
+          </p>
+        ) : href ? (
+          <a
+            data-abilion-cta
+            href={href}
+            className="mt-8 inline-flex h-12 items-center justify-center rounded-full bg-sky-400 px-6 text-[15px] font-semibold text-sky-950"
+          >
+            Falar com a Sté no Telegram
+          </a>
+        ) : (
+          <p role="status" className="mt-8 text-[14px] text-zinc-400">
+            O Telegram desta campanha ainda não está ligado. Volta daqui a pouco.
+          </p>
+        )}
         <p className="mt-4 text-[12px] text-zinc-500">
-          O botão vira <code className="text-zinc-300">t.me/...?start=fb_vid</code>. Sem cadastro nesta página.
+          {href ? (
+            <>
+              O botão vira <code className="text-zinc-300">t.me/...?start=fb_vid</code>. Sem cadastro nesta página.
+            </>
+          ) : (
+            <>Sem cadastro nesta página. O clique só abre quando o bot estiver ligado.</>
+          )}
         </p>
         <p className="mt-auto pt-16 text-[11px] text-zinc-600">Abilion · landing de teste do pixel</p>
       </div>

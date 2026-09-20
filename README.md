@@ -146,7 +146,7 @@ Públicas:
 - `/forgot` — localmente gera link de reset. Em produção não envia e-mail.
 - `/reset?token=` — nova senha a partir do link local.
 - `/privacidade` — política do CRM interno.
-- `/l` — landing de teste do pixel + CTA Telegram.
+- `/l` — landing de teste do pixel + CTA Telegram. O botão só aponta para o username gravado no Worker (`GET /api/health`). Sem username, mostra empty state — não inventa um bot.
 
 Autenticadas:
 
@@ -167,7 +167,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 
 | Rota | Quem |
 | --- | --- |
-| `GET /api/health` | público (sem secrets) |
+| `GET /api/health` | público (sem secrets; inclui `telegramBotUsername`) |
 | `POST /api/auth/login` | público, 8 tentativas / 15 min por IP |
 | `POST /api/auth/logout` | sessão |
 | `GET /api/auth/me` | sessão |
@@ -189,7 +189,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 
 Estes itens dependem de credenciais ou de uma decisão humana. O código não inventa valores.
 
-- **Telegram em produção** continua desligado até existir `TELEGRAM_BOT_TOKEN` (e, se quiseres fixar, `TELEGRAM_WEBHOOK_SECRET`). Sem isso não há /start reais.
+- **Telegram em produção** continua desligado até existir `TELEGRAM_BOT_TOKEN` (e, se quiseres fixar, `TELEGRAM_WEBHOOK_SECRET`). Sem isso não há /start reais. A landing `/l` também fica sem CTA até o username estar no Worker.
 - **Voz da Sté** fica em texto até `ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID`. Não há `voice_id` inventado.
 - **Esqueceu a senha?** em produção não envia e-mail. Troca em Configurações → Conta.
 - **Supabase** só entra com `SUPABASE_SERVICE_ROLE`. Sem isso a operação corre no KV `abilion-auth`.

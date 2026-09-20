@@ -114,6 +114,7 @@ export function geoFromRequest(request: Request) {
 export async function readTrackBody(request: Request) {
   const text = await request.text()
   if (!text) return {}
+  if (text.length > 8192) return {}
   try {
     return JSON.parse(text) as Record<string, unknown>
   } catch {

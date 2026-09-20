@@ -18,6 +18,7 @@ export async function fetchHealth() {
       model?: string
       backup?: string
       voice?: boolean
+      telegramBotUsername?: string
     }
   } catch {
     return { ok: false as const, unreachable: true }
