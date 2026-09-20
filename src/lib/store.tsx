@@ -13,12 +13,14 @@ import {
   canFlushCrm,
   clipRemovedIds,
   hydrateFunnels,
+  leftoverPendingFunnelIds,
   mergeLeads,
   overlayPendingLeads,
   revertPublishedFunnels,
   pendingSeedFunnelIds,
   recoverPendingFunnelIds,
   reconcileLeads,
+  settingsWriteFingerprint,
 } from "@/lib/crm"
 import { migrateFunnel, migrateLead, migrateSettings } from "@/lib/migrate"
 import { fetchCrm, fetchInbox, fetchLeads, fetchRuntime, persistLeads, removeRemoteLead, saveCrm } from "@/lib/runtime-api"
@@ -171,6 +173,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const lastGoodFunnels = useRef<SalesFunnel[]>([])
   const stateRef = useRef(state)
   const leadFlushRef = useRef(Promise.resolve(true))
+  const crmFlushRef = useRef(Promise.resolve<{ ok: boolean; error?: string; queued?: boolean }>({ ok: true }))
   const hydrateLock = useRef<Promise<void> | null>(null)
 
   const flushLeadWrites = (): Promise<boolean> => {
@@ -228,22 +231,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const flushCrm = (opts?: { silent?: boolean }): Promise<{ ok: boolean; error?: string; queued?: boolean }> => {
     window.clearTimeout(crmTimer.current)
-    const current = stateRef.current
-    if (!current.user) return Promise.resolve({ ok: false, error: "Sessão expirada." })
-    if (!canFlushCrm(crmHydrated.current)) return Promise.resolve({ ok: true, queued: true })
-    return saveCrm({
-      funnels: current.funnels,
-      settings: { ...current.settings, telegramBotToken: "" },
-      removedFunnelIds: [...removedFunnelIds.current],
-    }).then((result) => {
+    const run = async (): Promise<{ ok: boolean; error?: string; queued?: boolean }> => {
+      const current = stateRef.current
+      if (!current.user) return { ok: false, error: "Sessão expirada." }
+      if (!canFlushCrm(crmHydrated.current)) return { ok: true, queued: true }
+      const sentRemoved = [...removedFunnelIds.current]
+      const sentSettings = settingsWriteFingerprint(current.settings)
+      const result = await saveCrm({
+        funnels: current.funnels,
+        settings: { ...current.settings, telegramBotToken: "" },
+        removedFunnelIds: sentRemoved,
+      })
       if (result.ok) {
-        removedFunnelIds.current.clear()
-        pendingFunnelIds.current.clear()
-        persistIdSet(PENDING_FUNNELS, pendingFunnelIds.current)
+        for (const id of sentRemoved) {
+          if (!stateRef.current.funnels.some((item) => item.id === id)) removedFunnelIds.current.delete(id)
+        }
         persistIdSet(REMOVED_FUNNELS, removedFunnelIds.current)
-        settingsDirty.current = false
-        persistFlag(PENDING_SETTINGS, false)
-        lastGoodFunnels.current = current.funnels
+        const leftover = leftoverPendingFunnelIds(pendingFunnelIds.current, current.funnels, stateRef.current.funnels)
+        pendingFunnelIds.current.clear()
+        for (const id of leftover) pendingFunnelIds.current.add(id)
+        persistIdSet(PENDING_FUNNELS, pendingFunnelIds.current)
+        lastGoodFunnels.current = applyRemovedFunnels(current.funnels, sentRemoved)
+        if (settingsWriteFingerprint(stateRef.current.settings) === sentSettings) {
+          settingsDirty.current = false
+          persistFlag(PENDING_SETTINGS, false)
+        }
+        if (pendingFunnelIds.current.size || removedFunnelIds.current.size || settingsDirty.current) pushWorker()
       } else {
         const reverted = revertPublishedFunnels(stateRef.current.funnels, lastGoodFunnels.current)
         if (reverted !== stateRef.current.funnels) {
@@ -257,7 +270,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       setCrmSync(result.ok ? "ok" : "error")
       return result
-    })
+    }
+    const pending = crmFlushRef.current.then(run, run)
+    crmFlushRef.current = pending.then(
+      (result) => result,
+      () => ({ ok: false, error: "Não gravei o CRM no Worker." })
+    )
+    return pending
   }
 
   const pushWorker = () => {

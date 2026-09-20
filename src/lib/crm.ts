@@ -295,6 +295,51 @@ export function reconcileFunnels(server: SalesFunnel[], incoming: SalesFunnel[])
   return next.slice(0, 20)
 }
 
+/** POST do CRM: une o snapshot lido no início com o KV no instante do persist. */
+export function commitCrmFunnels(
+  stored: SalesFunnel[],
+  incoming: SalesFunnel[],
+  storedRemoved: string[],
+  incomingRemoved: string[],
+  latest: SalesFunnel[] = stored,
+  latestRemoved: string[] = storedRemoved
+): SalesFunnel[] {
+  const first = applyRemovedFunnels(
+    reconcileFunnels(stored, incoming),
+    clipRemovedIds([...storedRemoved, ...incomingRemoved], 400)
+  )
+  if (latest === stored && latestRemoved === storedRemoved) return first
+  return applyRemovedFunnels(
+    reconcileFunnels(latest, first),
+    clipRemovedIds([...latestRemoved, ...incomingRemoved], 400)
+  )
+}
+
+/** Funis editados ou criados a meio do POST — o sucesso do snapshot velho não os tira da fila. */
+export function leftoverPendingFunnelIds(
+  pendingIds: Iterable<string>,
+  flushed: SalesFunnel[],
+  live: SalesFunnel[]
+): string[] {
+  const flushedAt = new Map(flushed.map((item) => [item.id, item.updatedAt]))
+  const leftover: string[] = []
+  const seen = new Set<string>()
+  for (const id of pendingIds) {
+    if (seen.has(id)) continue
+    seen.add(id)
+    const local = live.find((item) => item.id === id)
+    if (!local) continue
+    const remote = flushedAt.get(id)
+    if (!remote || local.updatedAt > remote) leftover.push(id)
+  }
+  return leftover
+}
+
+export function settingsWriteFingerprint(settings: Settings): string {
+  const { telegramBotToken: _token, esterTelegramChatId: _ester, ...rest } = settings
+  return JSON.stringify(rest)
+}
+
 /** Sem hydrate, um POST do seed local criava um quadro a mais ou, no reconcile antigo, apagava os outros. */
 export function canFlushCrm(hydrated: boolean) {
   return hydrated

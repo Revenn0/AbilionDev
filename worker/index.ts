@@ -21,7 +21,7 @@ import {
   emptySettings,
   mergeLeadEvents,
   publicSettings,
-  reconcileFunnels,
+  commitCrmFunnels,
   resolveLeadLookup,
 } from "../src/lib/crm.ts"
 import { cleanBotUsername, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
@@ -368,10 +368,9 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
         }
         return json({ error: issue.message }, 400)
       }
-      const funnels = applyRemovedFunnels(
-        reconcileFunnels(stored, incoming),
-        clipRemovedIds([...storedRemoved, ...incomingRemoved], 400)
-      )
+      const latest = await loadFunnels(env)
+      const latestRemoved = env.AUTH ? await loadRemovedFunnelIds(env.AUTH) : storedRemoved
+      const funnels = commitCrmFunnels(stored, incoming, storedRemoved, incomingRemoved, latest, latestRemoved)
       if (!funnels.length) return json({ error: "Mantém pelo menos um funil." }, 400)
       await persistFunnels(env, funnels)
       if (env.AUTH && incomingRemoved.length) await rememberRemovedFunnels(env.AUTH, incomingRemoved)

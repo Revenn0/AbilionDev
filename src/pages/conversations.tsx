@@ -63,6 +63,7 @@ export function ConversationsPage() {
   const [draft, setDraft] = useState("")
   const end = useRef<HTMLDivElement>(null)
   const sending = useRef(false)
+  const simulating = useRef(false)
 
   const all = useMemo(
     () =>
@@ -172,12 +173,18 @@ export function ConversationsPage() {
               type="button"
               className="mt-5 rounded-full"
               onClick={() => {
+                if (simulating.current) return
+                simulating.current = true
                 const lead = simulateOpenLead(state.funnels)
-                void createLead(lead).then((ok) => {
-                  setFilter("all")
-                  setId(lead.id)
-                  if (!ok) toast.error("Não gravei a conversa no Worker.")
-                })
+                void createLead(lead)
+                  .then((ok) => {
+                    setFilter("all")
+                    setId(lead.id)
+                    if (!ok) toast.error("Não gravei a conversa no Worker.")
+                  })
+                  .finally(() => {
+                    simulating.current = false
+                  })
               }}
             >
               Simular conversa

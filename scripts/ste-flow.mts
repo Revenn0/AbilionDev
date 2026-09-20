@@ -43,7 +43,9 @@ import {
   canDeleteFunnel,
   canFlushCrm,
   clipRemovedIds,
+  commitCrmFunnels,
   hydrateFunnels,
+  leftoverPendingFunnelIds,
   pendingSeedFunnelIds,
   recoverPendingFunnelIds,
   revertPublishedFunnels,
@@ -55,6 +57,7 @@ import {
   reconcileFunnels,
   reconcileLeads,
   resolveLeadLookup,
+  settingsWriteFingerprint,
 } from "../src/lib/crm.ts"
 import { applyEvent, canAdvanceRemoteWait, publishedFunnel, publishedSnapshot, waitHours } from "../src/lib/runtime.ts"
 import { isTelegramAdsHref, TRACKER_JS } from "../src/lib/tracker-script.ts"
@@ -654,6 +657,50 @@ const staleTab = reconcileFunnels(
   [{ ...publishedA, name: "separador-velho", updatedAt: "2026-04-01T00:00:00.000Z" }]
 )
 assert(staleTab.some((item) => item.id === publishedC.id), "separador velho não apaga o funil do outro")
+const staleAfterDelete = commitCrmFunnels(
+  [
+    { ...publishedA, updatedAt: "2026-01-01T00:00:00.000Z" },
+    { ...publishedC, updatedAt: "2026-03-01T00:00:00.000Z" },
+  ],
+  [
+    { ...publishedA, updatedAt: "2026-01-01T00:00:00.000Z" },
+    { ...publishedC, updatedAt: "2026-03-01T00:00:00.000Z" },
+  ],
+  [],
+  [],
+  [{ ...publishedA, updatedAt: "2026-01-01T00:00:00.000Z" }],
+  [publishedC.id]
+)
+assert(!staleAfterDelete.some((item) => item.id === publishedC.id), "POST velho não ressuscita o funil já tombstonado")
+assert(staleAfterDelete.some((item) => item.id === publishedA.id), "POST velho conserva o funil que ficou")
+const newerDuringFlush = { ...publishedA, name: "editado", updatedAt: "2026-09-20T12:00:00.000Z" }
+assert(
+  leftoverPendingFunnelIds([publishedA.id], [{ ...publishedA, updatedAt: "2026-09-20T11:00:00.000Z" }], [newerDuringFlush]).includes(
+    publishedA.id
+  ),
+  "rascunho a meio do POST fica na fila"
+)
+assert(
+  leftoverPendingFunnelIds([publishedA.id], [newerDuringFlush], [newerDuringFlush]).length === 0,
+  "snapshot já gravado sai da fila"
+)
+assert(
+  leftoverPendingFunnelIds([publishedA.id, publishedC.id], [publishedA, publishedC], [publishedA]).length === 0,
+  "funil apagado a meio do POST sai da fila"
+)
+assert(
+  leftoverPendingFunnelIds([publishedC.id], [publishedA], [publishedA, publishedC]).includes(publishedC.id),
+  "funil criado a meio do POST fica na fila"
+)
+assert(
+  settingsWriteFingerprint({ ...defaultSettings, telegramBotToken: "secret" }) ===
+    settingsWriteFingerprint({ ...defaultSettings, telegramBotToken: "" }),
+  "fingerprint do settings ignora o token"
+)
+assert(
+  settingsWriteFingerprint({ ...defaultSettings, telegramBotUsername: "novo" }) !== settingsWriteFingerprint(defaultSettings),
+  "fingerprint muda quando o username muda"
+)
 assert(!canFlushCrm(false), "sem hydrate o painel não grava CRM")
 assert(canFlushCrm(true), "depois do GET o painel pode gravar")
 assert(pendingSeedFunnelIds([], [{ ...emptySalesFunnel("seed"), id: "seed-1" }]).includes("seed-1"), "Worker vazio adopta o seed")
