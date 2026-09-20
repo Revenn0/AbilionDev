@@ -107,11 +107,23 @@ export function clipCrmIndex(entries: CrmIndexEntry[]): CrmIndexEntry[] {
   return [...keep.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 }
 
+/** Índice no teto: o GET já não é o universo — o painel não pode reconciliar como lista completa. */
+export function crmIndexClipped(entries: CrmIndexEntry[]): boolean {
+  let chats = 0
+  let rest = 0
+  for (const item of entries) {
+    if (item.waitUntil) continue
+    if (item.chatId) chats += 1
+    else rest += 1
+  }
+  return chats >= LEAD_INDEX_PINNED_CAP || rest >= LEAD_INDEX_REST_CAP
+}
+
 async function saveIndex(kv: KvLike, index: CrmIndex) {
   await kv.put(CRM_INDEX, JSON.stringify({ entries: clipCrmIndex(index.entries) }))
 }
 
-async function commitIndex(kv: KvLike, extra: CrmIndexEntry[] = [], removeIds: string[] = []) {
+async function commitIndex(kv: KvLike, extra: CrmIndexEntry[] = [], removeIds: string[] = []): Promise<boolean> {
   const drop = new Set(removeIds)
   for (let attempt = 0; attempt < 16; attempt++) {
     if (attempt) await new Promise((resolve) => setTimeout(resolve, attempt * 2))
@@ -124,10 +136,12 @@ async function commitIndex(kv: KvLike, extra: CrmIndexEntry[] = [], removeIds: s
     await saveIndex(kv, { entries: next })
     const after = await loadIndex(kv)
     const afterIds = new Set(after.entries.map((item) => item.id))
-    if (extra.some((item) => !drop.has(item.id) && !afterIds.has(item.id))) continue
+    const extraKept = extra.filter((item) => !drop.has(item.id) && next.some((row) => row.id === item.id))
+    if (extraKept.some((item) => !afterIds.has(item.id))) continue
     if (removeIds.some((id) => afterIds.has(id))) continue
-    if (next.every((item) => afterIds.has(item.id))) return
+    if (next.every((item) => afterIds.has(item.id))) return true
   }
+  return false
 }
 
 export function leadPageCursor(entry: Pick<CrmIndexEntry, "updatedAt" | "id">) {
@@ -146,14 +160,15 @@ export async function listLeadPage(
   limit = 80,
   channel: Lead["channel"] | "all" = "telegram",
   cursor = ""
-): Promise<{ leads: Lead[]; nextCursor?: string; stale?: boolean }> {
+): Promise<{ leads: Lead[]; nextCursor?: string; stale?: boolean; clipped?: boolean }> {
   const index = await loadIndex(kv)
+  const clipped = crmIndexClipped(index.entries)
   const rows = channel === "all" ? index.entries : index.entries.filter((item) => item.channel === channel)
   let start = 0
   const mark = cursor.trim()
   if (mark) {
     const at = rows.findIndex((item) => leadPageCursor(item) === mark)
-    if (at < 0) return { leads: [], stale: true }
+    if (at < 0) return { leads: [], stale: true, clipped }
     start = at + 1
   }
   const slice = rows.slice(start, start + Math.max(1, limit))
@@ -164,6 +179,7 @@ export async function listLeadPage(
   return {
     leads,
     nextCursor: slice.length === limit && last ? leadPageCursor(last) : undefined,
+    clipped,
   }
 }
 
@@ -345,7 +361,7 @@ export async function rememberSentLead(kv: KvLike, lead: Lead) {
   }
   await writeAliases(kv, lead)
   await rememberLeadNames(kv, [lead])
-  await commitIndex(kv, [indexEntryFromLead(lead)])
+  if (!(await commitIndex(kv, [indexEntryFromLead(lead)]))) throw new Error("crm:index")
 }
 
 export async function forgetSentLead(kv: KvLike, id: string) {
@@ -515,7 +531,7 @@ export async function upsertLeadKv(kv: KvLike, lead: Lead) {
   await kv.put(leadKey(lead.id), JSON.stringify(lead))
   await writeAliases(kv, lead)
   await rememberLeadNames(kv, [lead])
-  await commitIndex(kv, [indexEntryFromLead(lead)])
+  if (!(await commitIndex(kv, [indexEntryFromLead(lead)]))) return false
   await forgetSentLead(kv, lead.id)
   return true
 }

@@ -78,12 +78,22 @@ async function readLeadPage(cursor: string): Promise<LeadListPage | { failed: tr
   })
   noteUnauthorized(res)
   if (!res.ok) return { failed: true }
-  const data = (await res.json()) as { leads?: Lead[]; nextCursor?: string; stale?: boolean }
+  const data = (await res.json()) as {
+    leads?: Lead[]
+    nextCursor?: string
+    stale?: boolean
+    clipped?: boolean
+    removed?: string[]
+  }
   if (!Array.isArray(data.leads)) return { failed: true }
   return {
     leads: data.leads,
     nextCursor: typeof data.nextCursor === "string" ? data.nextCursor.trim() : undefined,
     stale: data.stale === true,
+    clipped: data.clipped === true,
+    removed: Array.isArray(data.removed)
+      ? data.removed.filter((id): id is string => typeof id === "string" && Boolean(id.trim())).map((id) => id.trim())
+      : undefined,
   }
 }
 
@@ -92,25 +102,29 @@ export async function fetchLeads() {
     const pull = async () => {
       const pages: LeadListPage[] = []
       let cursor = ""
+      let removed: string[] = []
       for (let page = 0; page < LEAD_LIST_PAGES; page++) {
         const next = await readLeadPage(cursor)
         if ("failed" in next) {
           return page === 0
-            ? { ok: false as const, leads: [] as Lead[], retry: false, complete: false }
-            : collectLeadPages([...pages, { leads: [], stale: true }])
+            ? { ok: false as const, leads: [] as Lead[], retry: false, complete: false, removed: [] as string[] }
+            : { ...collectLeadPages([...pages, { leads: [], stale: true }]), removed }
         }
+        if (next.removed?.length) removed = next.removed
         pages.push(next)
-        if (next.stale || !next.nextCursor) return collectLeadPages(pages)
+        if (next.stale || !next.nextCursor) return { ...collectLeadPages(pages), removed }
         cursor = next.nextCursor
       }
-      return collectLeadPages(pages, "window")
+      return { ...collectLeadPages(pages, "window"), removed }
     }
     const first = await pull()
-    if (first.ok || !first.retry) return { ok: first.ok as boolean, leads: first.leads, complete: first.complete }
+    if (first.ok || !first.retry) {
+      return { ok: first.ok as boolean, leads: first.leads, complete: first.complete, removed: first.removed }
+    }
     const second = await pull()
-    return { ok: second.ok, leads: second.leads, complete: second.complete }
+    return { ok: second.ok, leads: second.leads, complete: second.complete, removed: second.removed }
   } catch {
-    return { ok: false as const, leads: [] as Lead[], complete: false }
+    return { ok: false as const, leads: [] as Lead[], complete: false, removed: [] as string[] }
   }
 }
 
@@ -139,12 +153,13 @@ async function readInboxPage(cursor: string): Promise<LeadListPage | { failed: t
   })
   noteUnauthorized(res)
   if (!res.ok) return { failed: true }
-  const data = (await res.json()) as { leads?: Lead[]; nextCursor?: string; stale?: boolean }
+  const data = (await res.json()) as { leads?: Lead[]; nextCursor?: string; stale?: boolean; clipped?: boolean }
   if (!Array.isArray(data.leads)) return { failed: true }
   return {
     leads: data.leads,
     nextCursor: typeof data.nextCursor === "string" ? data.nextCursor.trim() : undefined,
     stale: data.stale === true,
+    clipped: data.clipped === true,
   }
 }
 

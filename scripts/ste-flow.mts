@@ -79,7 +79,7 @@ import { applyEvent, canAdvanceRemoteWait, eventFromOrigin, pickLiveDueLead, pub
 import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
-import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
@@ -957,6 +957,9 @@ assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }], "window").ok, "j
 assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }], "window").leads[0]?.id === "page-a", "janela cheia conserva os leads")
 assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }], "window").complete === false, "janela cheia não é lista completa")
 assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }, { leads: [pageB] }]).complete, "sem cursor residual a lista está completa")
+assert(collectLeadPages([{ leads: [pageA], clipped: true }]).ok, "índice no teto ainda entrega a página")
+assert(collectLeadPages([{ leads: [pageA], clipped: true }]).complete === false, "índice no teto não é lista completa")
+assert(collectLeadPages([{ leads: [], clipped: true }]).complete === false, "página vazia no teto não é lista completa")
 assert(LEAD_LIST_PAGES === 40, "hydrate lê até 40 páginas")
 assert(LEAD_LIST_CAP === 16_000, "lista hidratada cabe o índice (8000 chats + 4000 resto + esperas)")
 assert(LEAD_CACHE_CAP === 2000, "localStorage só guarda os 2000 mais novos")
@@ -1423,6 +1426,26 @@ assert(
     []
   ).some((item) => item.id === "fresh"),
   "hydrate completo ainda dropa o lead que o Worker já não tem"
+)
+assert(
+  hydrateLeads(
+    [freshLead, liveLead],
+    { ok: true, leads: [liveLead], complete: false },
+    { ok: true, leads: [] },
+    new Map(),
+    ["fresh"]
+  ).every((item) => item.id !== "fresh"),
+  "tombstone remoto ainda dropa na janela incompleta"
+)
+assert(
+  hydrateLeads(
+    [freshLead],
+    { ok: true, leads: [], complete: false },
+    { ok: true, leads: [] },
+    new Map(),
+    []
+  ).some((item) => item.id === "fresh"),
+  "GET vazio incompleto não limpa o local"
 )
 const crowd = Array.from({ length: LEAD_LIST_CAP }, (_, i) => {
   const row = lead(`cap-${i}`, `@cap${i}`)
@@ -2001,6 +2024,8 @@ const clippedChats = clipCrmIndex(
   }))
 )
 assert(clippedChats.length === LEAD_INDEX_PINNED_CAP, "chat sem espera corta no teto")
+assert(crmIndexClipped(clippedChats), "índice no teto de chats marca recorte")
+assert(!crmIndexClipped(clippedChats.slice(1)), "abaixo do teto não marca recorte")
 assert(!clippedChats.some((item) => item.id === "c-0"), "chat mais velho sai do índice")
 assert(
   clippedChats.some((item) => item.id === `c-${LEAD_INDEX_PINNED_CAP + 1}`),
@@ -2082,6 +2107,13 @@ await upsertLeadKv(indexDeleteKv, lead("drop-me", "@drop"))
 await deleteLeadKv(indexDeleteKv, "drop-me")
 assert((await listLeads(indexDeleteKv, 10, "all")).some((item) => item.id === "keep-me"), "DELETE não apaga o outro do índice")
 assert(!(await listLeads(indexDeleteKv, 10, "all")).some((item) => item.id === "drop-me"), "DELETE tira o lead do índice")
+const noIndexKv = memoryKv()
+const innerPut = noIndexKv.put.bind(noIndexKv)
+noIndexKv.put = async (key, value) => {
+  if (key === "crm:index") return
+  return innerPut(key, value)
+}
+assert(!(await upsertLeadKv(noIndexKv, lead("ghost-idx", "@ghostidx"))), "índice que não grava falha o upsert")
 const simKv = memoryKv()
 for (let i = 0; i < 401; i++) {
   const row = lead(`sim-${i}`, `@sim${i}`)
@@ -2091,6 +2123,7 @@ for (let i = 0; i < 401; i++) {
 assert((await listLeads(simKv, 500, "all")).length === 401, "401 simulações sem chat não caem do índice")
 const firstLeadPage = await listLeadPage(capKv, 400, "all")
 assert(firstLeadPage.nextCursor && isLeadPageCursor(firstLeadPage.nextCursor), "primeira página de 401 leads tem cursor")
+assert(!firstLeadPage.clipped, "401 chats não marcam o teto do índice")
 const secondLeadPage = await listLeadPage(capKv, 400, "all", firstLeadPage.nextCursor)
 assert(secondLeadPage.leads.some((item) => item.id === "id-0"), "página seguinte traz o lead antigo com chat")
 const firstInboxPage = await listLeadPage(capKv, 400, "telegram")
@@ -3368,8 +3401,10 @@ assert((await loadLead(liveEnv.AUTH, "zombie")) === null, "POST atrasado não re
 assert((await loadRemovedLeadIds(liveEnv.AUTH)).includes("zombie"), "POST atrasado não limpa o tombstone")
 const listedAfterZombie = (await (
   await handleRequest(new Request("http://local.test/api/leads", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
-).json()) as { leads?: Array<{ id?: string }> }
+).json()) as { leads?: Array<{ id?: string }>; removed?: string[]; clipped?: boolean }
 assert(!listedAfterZombie.leads?.some((item) => item.id === "zombie"), "GET não devolve lead tombstoned")
+assert(listedAfterZombie.removed?.includes("zombie"), "GET inclui o id apagado nos tombstones")
+assert(!listedAfterZombie.clipped, "índice pequeno não marca recorte")
 const lookCreate = await handleRequest(
   new Request("http://local.test/api/leads", {
     method: "POST",

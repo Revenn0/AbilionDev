@@ -212,6 +212,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     lastLeadReadOk.current = ok
   }
 
+  const ingestRemoteRemoved = (ids: string[] | undefined) => {
+    if (!ids?.length) return
+    let changed = false
+    for (const id of ids) {
+      const next = id.trim()
+      if (!next || removedLeadIds.current.has(next)) continue
+      removedLeadIds.current.add(next)
+      changed = true
+    }
+    if (changed) persistIdSet(REMOVED_LEADS, removedLeadIds.current, LEAD_REMOVED_CAP)
+  }
+
   const flushLeadWrites = (opts?: { keepalive?: boolean }): Promise<boolean> => {
     window.clearTimeout(leadWriteTimer.current)
     const run = async (): Promise<boolean> => {
@@ -357,6 +369,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ([crm, runtime, remoteLeads, inbox]) => {
       setCrmSync(crm.ok ? "ok" : "error")
       markLeadRead(remoteLeads.ok)
+      if (remoteLeads.ok) ingestRemoteRemoved(remoteLeads.removed)
       setInboxSync(inbox.ok ? "ok" : "error")
       setRemote(runtime.persist === "supabase" ? "cloud" : runtime.ok ? "local" : "off")
       setState((prev) => {
@@ -511,6 +524,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const [remoteLeads, inbox] = await Promise.all([fetchLeads(), fetchInbox(INBOX_LIST_PAGES)])
       if (cancelled) return
       markLeadRead(remoteLeads.ok)
+      if (remoteLeads.ok) ingestRemoteRemoved(remoteLeads.removed)
       setInboxSync(inbox.ok ? "ok" : "error")
       if (!remoteLeads.ok) {
         if (pendingLeadWrites.current.size) void flushLeadWrites()

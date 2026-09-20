@@ -35,6 +35,8 @@ export type LeadListPage = {
   leads: Lead[]
   nextCursor?: string
   stale?: boolean
+  clipped?: boolean
+  removed?: string[]
 }
 
 export type LeadPageFold = "strict" | "window"
@@ -51,7 +53,7 @@ export function collectLeadPages(
       return { ok: false, leads: [], retry: true, complete: false }
     }
     leads.push(...page.leads)
-    if (!page.nextCursor) return { ok: true, leads, retry: false, complete: true }
+    if (!page.nextCursor) return { ok: true, leads, retry: false, complete: page.clipped !== true }
   }
   if (!pages.length) return { ok: true, leads: [], retry: false, complete: true }
   if (fold === "window") return { ok: true, leads, retry: false, complete: false }
@@ -324,7 +326,7 @@ export function leadsStillOnRemote(removedIds: Iterable<string>, remote: Array<{
   return remote.filter((item) => drop.has(item.id)).map((item) => item.id)
 }
 
-/** GET de leads + inbox no hydrate: lista vazia limpa o local; inbox vazia não. */
+/** GET completo vazio limpa o local; GET incompleto ou inbox vazia conservam. */
 export function hydrateLeads(
   local: Lead[],
   remote: { ok: boolean; leads: Lead[]; complete?: boolean },
@@ -337,7 +339,9 @@ export function hydrateLeads(
     const incoming = applyRemovedLeads(remote.leads, removed)
     next = remote.leads.length
       ? reconcileLeads(local, incoming, pending.keys(), remote.complete !== false)
-      : local.filter((lead) => pending.has(lead.id))
+      : remote.complete === false
+        ? applyRemovedLeads(local, removed)
+        : local.filter((lead) => pending.has(lead.id))
   }
   if (inbox.ok && inbox.leads.length) {
     next = mergeLeads(next, applyRemovedLeads(inbox.leads, removed))

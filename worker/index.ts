@@ -469,6 +469,8 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       leads: page.leads,
       nextCursor: page.stale ? undefined : page.nextCursor,
       stale: page.stale || undefined,
+      clipped: page.clipped || undefined,
+      removed: cursor ? undefined : await loadRemovedLeadIds(env.AUTH),
     })
   }
 
@@ -523,6 +525,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       leads: page.leads,
       nextCursor: page.stale ? undefined : page.nextCursor,
       stale: page.stale || undefined,
+      clipped: page.clipped || undefined,
     })
   }
 
@@ -941,7 +944,7 @@ function rowToLead(row: LeadRow): Lead {
 }
 
 async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "all", cursor = "") {
-  const page = env.AUTH ? await listLeadPage(env.AUTH, limit, channel, cursor) : { leads: [] as Lead[] }
+  const page = env.AUTH ? await listLeadPage(env.AUTH, limit, channel, cursor) : { leads: [] as Lead[], clipped: false }
   const kv = page.leads
   const filter = channel === "telegram" ? "&channel=eq.telegram" : ""
   const rows =
@@ -958,6 +961,7 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
     leads: adoptLeadStores(kv, await attachLeadEvents(env, live)).slice(0, limit),
     nextCursor: page.stale ? undefined : page.nextCursor,
     stale: page.stale,
+    clipped: page.clipped === true,
   }
 }
 
@@ -1007,7 +1011,7 @@ async function saveLead(env: Env, lead: Lead, opts?: { replace?: boolean }) {
       const latest = await loadLead(env.AUTH, bounded.id)
       bounded = commitStoredLead(prev, bounded, latest)
     }
-    await upsertLeadKv(env.AUTH, bounded)
+    if (!(await upsertLeadKv(env.AUTH, bounded))) return false
   }
   if (!env.SUPABASE_SERVICE_ROLE) return true
   await rest(env, "leads", {
