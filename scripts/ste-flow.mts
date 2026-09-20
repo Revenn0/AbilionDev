@@ -34,6 +34,8 @@ import { validateCapture } from "../src/lib/capture.ts"
 import { mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
 import { consumeThrottle, clearThrottle } from "../worker/auth.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
+import { backgroundCtx, handleRequest, type Env } from "../worker/index.ts"
+import { clearSessionExpired, noteUnauthorized, subscribeSessionExpired } from "../src/lib/session.ts"
 
 function lead(id = "lead-1", contact = "@fb1"): Lead {
   const now = new Date().toISOString()
@@ -392,5 +394,40 @@ await upsertLeadKv(kv, gone)
 assert((await loadLead(kv, "gone"))?.contact === "@gone", "lead persistido no KV")
 await deleteLeadKv(kv, "gone")
 assert((await loadLead(kv, "gone")) === null, "lead apagado do KV")
+
+clearSessionExpired()
+let expiredHits = 0
+const stopWatch = subscribeSessionExpired(() => {
+  expiredHits += 1
+})
+assert(noteUnauthorized({ status: 401 }), "401 marca sessão expirada")
+assert(!noteUnauthorized({ status: 401 }), "401 não dispara duas vezes")
+assert(expiredHits === 1, "listener da sessão corre uma vez")
+clearSessionExpired()
+assert(!noteUnauthorized({ status: 403 }), "403 não é sessão expirada")
+stopWatch()
+
+const apiEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://example.supabase.co",
+  AUTH: memoryKv(),
+  ABILION_ENV: "development",
+} as Env
+const denied = await handleRequest(new Request("http://local.test/api/crm"), apiEnv, backgroundCtx())
+assert(denied.status === 401, "CRM sem sessão é 401")
+const deniedInbox = await handleRequest(new Request("http://local.test/api/inbox"), apiEnv, backgroundCtx())
+assert(deniedInbox.status === 401, "inbox sem sessão é 401")
+const deniedLeads = await handleRequest(
+  new Request("http://local.test/api/leads", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ leads: [] }),
+  }),
+  apiEnv,
+  backgroundCtx()
+)
+assert(deniedLeads.status === 401, "leads sem sessão é 401")
+const deniedSummary = await handleRequest(new Request("http://local.test/api/track/summary"), apiEnv, backgroundCtx())
+assert(deniedSummary.status === 401, "analytics sem sessão é 401")
 
 console.log("ste-flow ok")

@@ -126,6 +126,13 @@ try {
     await page.waitForSelector("h1", { timeout: 10_000 })
   }
 
+  const cookies = await page.cookies()
+  await page.deleteCookie(...cookies.filter((item) => item.name === "abilion_session"))
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+  await page.waitForFunction(() => location.pathname.includes("/login"), { timeout: 8_000 })
+  assert(page.url().includes("/login"), "cookie apagado volta ao login")
+  await login(page)
+
   await open(page, "/pagina-inexistente")
   const notFound = await page.evaluate(() => document.body.innerText)
   assert(notFound.includes("não encontrada") || notFound.includes("404"), "404 no painel")

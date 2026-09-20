@@ -81,7 +81,7 @@ npm run deploy
 
 Domínio **abilion.lol** já aponta para o Worker (`coco.ns.cloudflare.com` / `etienne.ns.cloudflare.com`). Apex, `www` e `abilion.vsanches1060.workers.dev` servem o mesmo painel.
 
-Ao vincular o Telegram, o Worker gera um `secret_token` do webhook e guarda-o no KV. `GET /api/cron` só corre com `CRON_SECRET`.
+Ao vincular o Telegram, o Worker gera um `secret_token` do webhook e guarda-o no KV. `GET /api/cron` só corre com `CRON_SECRET`. Sem cookie, `/api/crm`, `/api/inbox`, `/api/leads` e `/api/track/summary` respondem 401. O painel trata isso como sessão expirada e volta ao login.
 
 Secrets (nunca no git):
 

@@ -140,6 +140,11 @@ function BotPane() {
 
   return (
     <div className="grid max-w-3xl gap-3">
+      {runtimeLoaded && !runtime.ok && (
+        <p role="alert" className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-[12.5px] text-destructive">
+          Não consegui ler o runtime do Worker. Recarrega ou confere a sessão.
+        </p>
+      )}
       <section className="surface p-6">
         <p className="text-[14px] font-medium">Telegram em produção</p>
         <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">

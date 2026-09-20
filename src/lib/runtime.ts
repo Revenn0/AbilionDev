@@ -185,7 +185,6 @@ export function applyEvent(
   }
 
   const { nodes, outs } = graph(snapshot)
-  next.funnelId = next.funnelId
 
   if (!next.nodeId) {
     const entry = findEntry(snapshot, event, next.channel)

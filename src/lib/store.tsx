@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { loginRequest, logoutRequest, meRequest } from "@/lib/auth-api"
+import { clearSessionExpired, noteSessionExpired, subscribeSessionExpired } from "@/lib/session"
+import { toast } from "sonner"
 import { mergeLeads } from "@/lib/crm"
 import { migrateFunnel, migrateLead, migrateSettings } from "@/lib/migrate"
 import { pullRemote, pushRemote, supabaseEnabled } from "@/lib/persist"
@@ -103,7 +105,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       void saveCrm({
         funnels: current.funnels,
         settings: { ...current.settings, telegramBotToken: "" },
-      })
+      }).then((ok) => setCrmSync(ok ? "ok" : "error"))
     }, 400)
   }
 
@@ -124,6 +126,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    const expire = () => {
+      setCrmSync("idle")
+      setInboxSync("idle")
+      setPersistSync("idle")
+      setState((prev) => {
+        if (!prev.user) return prev
+        toast.error("Sessão expirada. Entra outra vez.")
+        return { ...prev, user: null }
+      })
+    }
+    return subscribeSessionExpired(expire)
+  }, [])
+
+  useEffect(() => {
+    if (!state.user) return
+    const check = () => {
+      void meRequest()
+        .then((data) => {
+          if (!data.user) noteSessionExpired()
+        })
+        .catch(() => undefined)
+    }
+    const timer = window.setInterval(check, 15_000)
+    window.addEventListener("focus", check)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener("focus", check)
+    }
+  }, [state.user])
 
   useEffect(() => {
     if (!state.user) return
@@ -237,6 +270,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       state,
       login: async (email, password) => {
         const data = await loginRequest(email, password)
+        clearSessionExpired()
         setState((prev) => ({ ...prev, user: data.user }))
       },
       logout: async () => {

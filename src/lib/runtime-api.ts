@@ -1,3 +1,4 @@
+import { noteUnauthorized } from "./session"
 import type { Lead, SalesFunnel, Settings } from "./types"
 
 export type RuntimeStatus = {
@@ -20,6 +21,7 @@ export type RuntimeStatus = {
 }
 
 async function parse<T>(res: Response): Promise<T> {
+  noteUnauthorized(res)
   const data = (await res.json().catch(() => ({}))) as T & { error?: string }
   if (!res.ok) throw new Error(data.error || "Não foi possível falar com o Worker.")
   return data
@@ -28,6 +30,7 @@ async function parse<T>(res: Response): Promise<T> {
 export async function fetchRuntime() {
   try {
     const res = await fetch("/api/runtime", { credentials: "include", cache: "no-store" })
+    noteUnauthorized(res)
     if (!res.ok) return { ok: false } as RuntimeStatus
     return (await res.json()) as RuntimeStatus
   } catch {
@@ -67,6 +70,7 @@ export async function prepareVoice() {
 export async function fetchInbox() {
   try {
     const res = await fetch("/api/inbox", { credentials: "include", cache: "no-store" })
+    noteUnauthorized(res)
     if (!res.ok) return { ok: false as const, leads: [] as Lead[] }
     const data = (await res.json()) as { leads?: Lead[] }
     return { ok: true as const, leads: data.leads ?? [] }
@@ -78,6 +82,7 @@ export async function fetchInbox() {
 export async function fetchCrm() {
   try {
     const res = await fetch("/api/crm", { credentials: "include", cache: "no-store" })
+    noteUnauthorized(res)
     if (!res.ok) return { ok: false as const, funnels: [] as SalesFunnel[], settings: undefined as Settings | undefined }
     return (await res.json()) as { ok: true; funnels: SalesFunnel[]; settings?: Settings }
   } catch {
@@ -93,6 +98,7 @@ export async function persistLeads(leads: Lead[]) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ leads: leads.slice(0, 120) }),
   })
+  noteUnauthorized(res)
   return res.ok
 }
 
@@ -101,6 +107,7 @@ export async function removeRemoteLead(id: string) {
     method: "DELETE",
     credentials: "include",
   })
+  noteUnauthorized(res)
   return res.ok
 }
 
@@ -111,5 +118,6 @@ export async function saveCrm(body: { funnels?: SalesFunnel[]; settings?: Settin
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   })
+  noteUnauthorized(res)
   return res.ok
 }
