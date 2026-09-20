@@ -207,4 +207,11 @@ npm run build
 npx tsx scripts/ui-audit.mts
 ```
 
-`scripts/ui-audit.mts` percorre login, rotas do painel, 404, skip-link, captura, logout → forgot/reset e as larguras 320 / 375 / 768 / 1024 / 1440. Precisa do `npm run dev` em `http://127.0.0.1:43173` e de Puppeteer (`npx puppeteer browsers install chrome` na primeira vez).
+`scripts/ui-audit.mts` percorre login, rotas do painel, 404, skip-link, captura, logout → forgot/reset e as larguras 320 / 375 / 768 / 1024 / 1440. Precisa do `npm run dev` em `http://127.0.0.1:43173`.
+
+```bash
+npx tsx scripts/ui-audit.mts
+AUDIT_URL=https://www.abilion.lol AUDIT_PUBLIC=1 npx tsx scripts/ui-audit.mts
+```
+
+`AUDIT_PUBLIC=1` só cobre páginas públicas (a senha de produção dos operadores não está no repositório).

@@ -3,6 +3,7 @@ import puppeteer, { type Page } from "puppeteer"
 const BASE = process.env.AUDIT_URL || "http://127.0.0.1:43173"
 const EMAIL = process.env.AUDIT_EMAIL || "victor@abilion.com"
 const PASSWORD = process.env.AUDIT_PASSWORD || "abilion"
+const PUBLIC_ONLY = process.env.AUDIT_PUBLIC === "1"
 const VIEWPORTS = [
   { name: "320", width: 320, height: 720 },
   { name: "375", width: 375, height: 812 },
@@ -106,6 +107,17 @@ try {
   await open(page, "/l")
   assert(await page.$("[data-abilion-cta]"), "landing tem CTA")
 
+  if (PUBLIC_ONLY) {
+    for (const viewport of VIEWPORTS) {
+      await page.setViewport({ width: viewport.width, height: viewport.height })
+      for (const route of ["/login", "/forgot", "/reset", "/l", "/privacidade"] as const) {
+        await open(page, route)
+        const box = await overflow(page)
+        assert(!box.overflow, `overflow ${viewport.name}px em ${route} (${box.scrollWidth}>${box.clientWidth})`)
+      }
+    }
+    console.log("ui-audit public ok")
+  } else {
   await login(page)
 
   for (const route of ROUTES) {
@@ -167,6 +179,7 @@ try {
   assert(relevant.length === 0, `erros de consola: ${relevant.join(" | ")}`)
 
   console.log("ui-audit ok")
+  }
 } finally {
   await browser.close()
 }
