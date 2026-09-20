@@ -4,7 +4,7 @@ import { PageChrome, StatusPill } from "@/components/layout/chrome"
 import { SyncBanner } from "@/components/layout/sync-banner"
 import { SparkBars, TrendLine } from "@/components/ui/spark"
 import { useStore } from "@/lib/store"
-import { deriveOps, seriesLast30 } from "@/lib/ops"
+import { barShare, deriveOps, seriesLast30 } from "@/lib/ops"
 import { facebookOf } from "@/lib/track"
 import { useTrackSummary } from "@/lib/use-track-summary"
 
@@ -14,7 +14,7 @@ export function DashboardPage() {
   const facebook = facebookOf(summary)
   const ops = deriveOps(state.leads)
   const empty = ops.leads === 0
-  const channelTotal = ops.telegram
+  const facebookTotal = Math.max(facebook.adClicks, facebook.pageViews, facebook.buttonClicks)
   const line = seriesLast30(state.leads, () => true)
   const spark = line.slice(-12)
   const waitSpark = seriesLast30(state.leads, (lead) => Boolean(lead.waitUntil)).slice(-12)
@@ -88,11 +88,11 @@ export function DashboardPage() {
           <div className="surface p-6">
             <p className="text-[12.5px] text-muted-foreground">Campanha · Telegram</p>
             <div className="mt-5 space-y-5">
-              <ChannelRow label="Telegram · convite" value={ops.telegram} total={channelTotal} />
+              <ChannelRow label="Telegram · convite" value={ops.telegram} total={ops.leads} />
               <ChannelRow label="Facebook → Telegram" value={ops.facebook} total={ops.leads} />
-              <ChannelRow label="Clique no anúncio" value={facebook.adClicks} total={Math.max(facebook.adClicks, 1)} />
-              <ChannelRow label="Page views Facebook" value={facebook.pageViews} total={Math.max(facebook.pageViews, 1)} />
-              <ChannelRow label="Clique no botão" value={facebook.buttonClicks} total={Math.max(facebook.pageViews, facebook.buttonClicks, 1)} />
+              <ChannelRow label="Clique no anúncio" value={facebook.adClicks} total={facebookTotal} />
+              <ChannelRow label="Page views Facebook" value={facebook.pageViews} total={facebookTotal} />
+              <ChannelRow label="Clique no botão" value={facebook.buttonClicks} total={facebookTotal} />
             </div>
           </div>
           <div className="surface p-6">
@@ -140,7 +140,7 @@ function Kpi({
 }
 
 function ChannelRow({ label, value, total }: { label: string; value: number; total: number }) {
-  const share = total === 0 ? 0 : Math.round((value / total) * 100)
+  const share = barShare(value, total)
   return (
     <div>
       <div className="flex items-center justify-between text-[13px]">

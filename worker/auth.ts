@@ -1,3 +1,5 @@
+import { readJsonObject } from "./json-body.ts"
+
 export const OPERATORS = [
   { email: "victor@abilion.com", name: "Victor Junger" },
   { email: "gabriel@abilion.com", name: "Gabriel" },
@@ -228,13 +230,17 @@ function json(data: unknown, status = 200, headers?: Record<string, string>) {
   })
 }
 
-async function readBody(request: Request) {
-  return (await request.json().catch(() => ({}))) as {
-    email?: string
-    password?: string
-    currentPassword?: string
-    token?: string
-  }
+type AuthBody = {
+  email?: string
+  password?: string
+  currentPassword?: string
+  token?: string
+}
+
+async function readBody(request: Request): Promise<{ ok: true; body: AuthBody } | { ok: false; response: Response }> {
+  const parsed = await readJsonObject<AuthBody>(request, 8_192)
+  if (!parsed.ok) return { ok: false, response: json({ error: "Pedido demasiado grande." }, 413) }
+  return { ok: true, body: parsed.value }
 }
 
 export function retainUserSessions(sessions: Session[], userId: string, next: Session, cap = SESSION_CAP) {
@@ -264,7 +270,9 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
   }
 
   if (path === "/api/auth/login" && request.method === "POST") {
-    const body = await readBody(request)
+    const parsed = await readBody(request)
+    if (!parsed.ok) return parsed.response
+    const body = parsed.body
     const email = (body.email || "").trim().toLowerCase()
     const password = body.password || ""
     if (!email || password.length < 6) {
@@ -328,7 +336,9 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
   }
 
   if (path === "/api/auth/forgot" && request.method === "POST") {
-    const email = ((await readBody(request)).email || "").trim().toLowerCase()
+    const parsed = await readBody(request)
+    if (!parsed.ok) return parsed.response
+    const email = (parsed.body.email || "").trim().toLowerCase()
     if (!email) return json({ error: "Informe o e-mail." }, 400)
     let snapshot = prune(await store.load())
     const guard = consumeThrottle(snapshot, `forgot:${clientIp(request)}`, 5, 15 * 60 * 1000)
@@ -362,7 +372,9 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
       await store.save(snapshot)
       return json({ error: "Muitas tentativas. Espera uns minutos e tenta de novo." }, 429)
     }
-    const body = await readBody(request)
+    const parsed = await readBody(request)
+    if (!parsed.ok) return parsed.response
+    const body = parsed.body
     const currentPassword = body.currentPassword || ""
     const password = body.password || ""
     if (!(await verifyPassword(currentPassword, user.passwordHash))) {
@@ -381,7 +393,9 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
   }
 
   if (path === "/api/auth/reset" && request.method === "POST") {
-    const body = await readBody(request)
+    const parsed = await readBody(request)
+    if (!parsed.ok) return parsed.response
+    const body = parsed.body
     const token = body.token || ""
     const password = body.password || ""
     if (!token || password.length < 6) return json({ error: "Token ou senha inválidos." }, 400)

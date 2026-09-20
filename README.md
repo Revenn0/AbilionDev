@@ -211,7 +211,7 @@ npx tsx scripts/ui-audit.mts
 
 `scripts/ui-audit.mts` percorre login, rotas do painel, 404, skip-link, teclado das tabs, captura, logout → forgot/reset e as larguras 320 / 375 / 768 / 1024 / 1440. Precisa do `npm run dev` em `http://127.0.0.1:43173`.
 
-`scripts/ste-flow.mts` também manda um `/start fb_aabbcc` assinado e confirma que o lead Facebook nasce com as boas-vindas da Sté — sem tratar o `/start` como fala do lead.
+`scripts/ste-flow.mts` cobre o webhook assinado (`/start fb`, segundo `/start` sem spam, fala do lead, join no grupo), inbox autenticada, runtime sem vazar o token, DELETE do lead, cron com duas esperas e recusa de JSON enorme (413).
 
 ```bash
 npx tsx scripts/ui-audit.mts

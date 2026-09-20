@@ -37,7 +37,6 @@ export function deriveOps(leads: Lead[], snapshot: SalesSnapshot | null = null) 
     conversations: leads.filter(hasConversation).length,
     startedToday: leads.filter((lead) => hasConversation(lead) && new Date(lead.createdAt).getTime() >= today).length,
     newToday: leads.filter((lead) => new Date(lead.createdAt).getTime() >= today).length,
-    whatsapp: leads.filter((lead) => lead.channel === "whatsapp").length,
     telegram: leads.filter((lead) => lead.channel === "telegram").length,
     novo: leads.filter((lead) => lead.temperature === "novo").length,
     morno: leads.filter((lead) => lead.temperature === "morno").length,
@@ -50,6 +49,11 @@ export function deriveOps(leads: Lead[], snapshot: SalesSnapshot | null = null) 
     inStep: leads.filter((lead) => Boolean(lead.nodeId)).length,
     stepLabel: (lead: Lead) => nodeTitle(snapshot, lead.nodeId) ?? lead.stage,
   }
+}
+
+export function barShare(value: number, total: number) {
+  if (total <= 0) return 0
+  return Math.round((value / total) * 100)
 }
 
 export function seriesLast30(leads: Lead[], pick: (lead: Lead) => boolean) {

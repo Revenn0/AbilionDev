@@ -35,6 +35,7 @@ import { validateCapture } from "../src/lib/capture.ts"
 import { cleanBotUsername, cleanTelegramGroupUrl, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink } from "../src/lib/telegram-start.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
+import { barShare } from "../src/lib/ops.ts"
 import { mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
 import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, handleAuth, memoryAuthStore, retainUserSessions } from "../worker/auth.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
@@ -498,6 +499,20 @@ assert(
   "produção sem senha de operador recusa o primeiro acesso"
 )
 assert((await loginAttempt("senhaok")).status === 200, "primeiro acesso define a senha")
+assert(
+  (
+    await handleAuth(
+      new Request("http://local.test/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: "victor@abilion.com", password: "x".repeat(9000) }),
+      }),
+      memoryAuthStore(),
+      { ABILION_ENV: "development" }
+    )
+  ).status === 413,
+  "login recusa corpo enorme"
+)
 const meAnon = await handleAuth(new Request("http://local.test/api/auth/me"), memoryAuthStore(), {
   ABILION_ENV: "development",
 })
@@ -748,6 +763,16 @@ const wrongSecret = await handleRequest(
   backgroundCtx()
 )
 assert(wrongSecret.status === 401, "webhook com secret errado é 401")
+const hugeHook = await handleRequest(
+  new Request("http://local.test/api/telegram", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+    body: JSON.stringify({ message: { chat: { id: 1 }, text: "x".repeat(70_000) } }),
+  }),
+  signedEnv,
+  backgroundCtx()
+)
+assert(hugeHook.status === 413, "webhook recusa corpo enorme")
 const startCtx = backgroundCtx()
 const startEnv = { ...apiEnv, TELEGRAM_WEBHOOK_SECRET: "hook-secret", TELEGRAM_BOT_TOKEN: "000:test" } as Env
 const startHook = await handleRequest(
@@ -773,6 +798,124 @@ assert(ana?.origin === "facebook", "/start fb cria lead Facebook")
 assert(ana?.visitorId === "aabbcc", "/start fecha o visitor do pixel")
 assert((ana?.messages ?? []).some((item) => item.role === "ste"), "Sté mandou as boas-vindas")
 assert(!(ana?.messages ?? []).some((item) => item.role === "lead"), "/start não entra como fala do lead")
+const steWelcome = (ana?.messages ?? []).filter((item) => item.role === "ste").length
+const againCtx = backgroundCtx()
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/telegram", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+        body: JSON.stringify({
+          message: {
+            chat: { id: 9001 },
+            text: "/start fb_aabbcc",
+            from: { id: 9001, username: "fbuser", first_name: "Ana" },
+          },
+        }),
+      }),
+      startEnv,
+      againCtx
+    )
+  ).status === 200,
+  "segundo /start é 200"
+)
+await againCtx.flush()
+const anaAgain = (await listLeads(startEnv.AUTH, 20, "all")).find((item) => item.contact === "@fbuser")
+assert((anaAgain?.messages ?? []).filter((item) => item.role === "ste").length === steWelcome, "segundo /start não spam")
+const talkCtx = backgroundCtx()
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/telegram", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+        body: JSON.stringify({
+          message: {
+            chat: { id: 9001 },
+            text: "tô perdendo tudo no Aviator",
+            from: { id: 9001, username: "fbuser", first_name: "Ana" },
+          },
+        }),
+      }),
+      startEnv,
+      talkCtx
+    )
+  ).status === 200,
+  "webhook da fala do lead é 200"
+)
+await talkCtx.flush()
+const anaTalk = (await listLeads(startEnv.AUTH, 20, "all")).find((item) => item.contact === "@fbuser")
+assert((anaTalk?.messages ?? []).some((item) => item.role === "lead" && item.text.includes("perdendo")), "lead falou no 1:1")
+assert(
+  anaTalk?.stePhase === "diagnosis" || (anaTalk?.messages ?? []).some((item) => item.text.includes("minicurso")),
+  "Sté avançou ao minicurso"
+)
+const joinCtx = backgroundCtx()
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/telegram", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+        body: JSON.stringify({
+          message: {
+            chat: { id: -100 },
+            from: { id: 7002, username: "joiner", first_name: "João" },
+            new_chat_members: [{ id: 7002, username: "joiner", first_name: "João" }],
+          },
+        }),
+      }),
+      startEnv,
+      joinCtx
+    )
+  ).status === 200,
+  "webhook join é 200"
+)
+await joinCtx.flush()
+const joined = (await listLeads(startEnv.AUTH, 20, "all")).find((item) => item.contact === "@joiner")
+assert(joined?.origin === "group_join" || joined?.stage === "group", "join cria lead do grupo")
+assert(!(joined?.messages ?? []).some((item) => item.role === "ste"), "join não dispara a Sté no 1:1")
+const startLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  startEnv,
+  backgroundCtx()
+)
+assert(startLogin.status === 200, "login no KV do webhook")
+const startCookie = startLogin.headers.get("set-cookie") || ""
+const inbox = (await (
+  await handleRequest(new Request("http://local.test/api/inbox", { headers: { cookie: startCookie } }), startEnv, backgroundCtx())
+).json()) as { leads?: Array<{ contact?: string }> }
+assert(inbox.leads?.some((item) => item.contact === "@fbuser"), "inbox devolve a Ana")
+const runtimeGet = await handleRequest(
+  new Request("http://local.test/api/runtime", { headers: { cookie: startCookie } }),
+  startEnv,
+  backgroundCtx()
+)
+const runtimeBody = (await runtimeGet.json()) as Record<string, unknown>
+assert(runtimeGet.status === 200 && runtimeBody.ok === true && runtimeBody.telegram === true, "runtime vê o token")
+assert(
+  !JSON.stringify(runtimeBody).includes("000:test") &&
+    !("telegramBotToken" in runtimeBody) &&
+    !("openaiApiKey" in runtimeBody) &&
+    !("elevenApiKey" in runtimeBody),
+  "runtime não vaza secrets"
+)
+assert((await handleRequest(new Request("http://local.test/api/runtime"), startEnv, backgroundCtx())).status === 401, "runtime sem sessão é 401")
+const deleted = await handleRequest(
+  new Request(`http://local.test/api/leads?id=${encodeURIComponent(anaTalk?.id || ana?.id || "")}`, {
+    method: "DELETE",
+    headers: { cookie: startCookie },
+  }),
+  startEnv,
+  backgroundCtx()
+)
+assert(deleted.status === 200, "DELETE lead autenticado")
+assert(!(await listLeads(startEnv.AUTH, 20, "all")).some((item) => item.contact === "@fbuser"), "lead apagado some do KV")
 
 const liveEnv = {
   ASSETS: { fetch: async () => new Response("ok") },
@@ -806,6 +949,16 @@ const crmGet = (await (
   await handleRequest(new Request("http://local.test/api/crm", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
 ).json()) as { funnels?: Array<{ id?: string; name?: string }> }
 assert(crmGet.funnels?.some((item) => item.id === persistFunnel.id), "CRM GET devolve o funil gravado")
+const hugeCrm = await handleRequest(
+  new Request("http://local.test/api/crm", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: liveCookie },
+    body: JSON.stringify({ funnels: [{ id: "x", name: "y".repeat(260_000), nodes: [], edges: [] }] }),
+  }),
+  liveEnv,
+  backgroundCtx()
+)
+assert(hugeCrm.status === 413, "CRM recusa corpo enorme")
 const pixel = await handleRequest(
   new Request("http://local.test/api/track", {
     method: "POST",
@@ -861,9 +1014,16 @@ await upsertLeadKv(cronEnv.AUTH, {
   memory: "ste:remarketing",
   stePhase: "offer",
 })
+await upsertLeadKv(cronEnv.AUTH, {
+  ...lead("due-cron-b", "@due2"),
+  channel: "telegram",
+  waitUntil: new Date(Date.now() - 2000).toISOString(),
+  memory: "ste:remarketing",
+  stePhase: "offer",
+})
 const cronRes = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), cronEnv, backgroundCtx())
 const cronBody = (await cronRes.json()) as { ok?: boolean; advanced?: number }
-assert(cronRes.status === 200 && cronBody.ok && (cronBody.advanced ?? 0) >= 1, "cron avança espera vencida")
+assert(cronRes.status === 200 && cronBody.ok && (cronBody.advanced ?? 0) >= 2, "cron avança cada espera vencida")
 
 const inboxLead = simulateOpenLead([emptySalesFunnel("inbox")])
 assert(!inboxLead.steBlocked && !inboxLead.steQuiet, "simular conversa não encerra")
@@ -874,5 +1034,8 @@ const burstOne = burstFacebookLeads([emptySalesFunnel("lote-um")], 1)[0]
 assert(burstOne?.steBlocked, "o primeiro do lote de 100 ainda testa ofensa")
 const burstMix = burstStats(burstFacebookLeads([emptySalesFunnel("lote")], 100))
 assert(burstMix.blocked >= 1 && burstMix.talking >= 1, "lote Facebook mistura abertos e encerrados")
+assert(barShare(0, 0) === 0, "barra vazia fica em 0")
+assert(barShare(5, 5) === 100, "barra igual ao total é 100")
+assert(barShare(2, 10) === 20, "barra compara com o total")
 
 console.log("ste-flow ok")

@@ -34,6 +34,7 @@ import {
   type RuntimeSecrets,
 } from "./runtime-secrets.ts"
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
+import { readJsonObject, readJsonStrict } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
 
 type Fetcher = { fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> }
@@ -253,7 +254,9 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
-    const body = (await request.json().catch(() => ({}))) as RuntimeSecrets
+    const parsed = await readJsonObject<RuntimeSecrets>(request, 16_384)
+    if (!parsed.ok) return json({ error: "Pedido demasiado grande." }, 413)
+    const body = parsed.value
     const current = await loadSecrets(env.AUTH)
     const next = mergeSecrets(current, body)
     const hook = webhookUrl(request, env)
@@ -303,7 +306,9 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
-    const body = (await request.json().catch(() => ({}))) as { funnels?: SalesFunnel[]; settings?: Settings }
+    const parsed = await readJsonObject<{ funnels?: SalesFunnel[]; settings?: Settings }>(request, 256_000)
+    if (!parsed.ok) return json({ error: "Pedido demasiado grande." }, 413)
+    const body = parsed.value
     if (Array.isArray(body.funnels)) {
       const incoming = body.funnels.map(sanitizeIncomingFunnel).filter((item): item is NonNullable<typeof item> => Boolean(item))
       const funnels = reconcileFunnels(await loadFunnels(env), incoming)
@@ -324,7 +329,9 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
-    const body = (await request.json().catch(() => ({}))) as { lead?: Lead; leads?: Lead[] }
+    const parsed = await readJsonObject<{ lead?: Lead; leads?: Lead[] }>(request, 256_000)
+    if (!parsed.ok) return json({ error: "Pedido demasiado grande." }, 413)
+    const body = parsed.value
     const rows = (body.leads?.length ? body.leads : body.lead ? [body.lead] : []).slice(0, 120)
     let saved = 0
     for (const row of rows) {
@@ -358,8 +365,9 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     const expected = (env.TELEGRAM_WEBHOOK_SECRET || secrets.telegramWebhookSecret || "").trim()
     const header = request.headers.get("x-telegram-bot-api-secret-token") || ""
     if (!expected || header !== expected) return json({ ok: false }, 401)
-    const update = (await request.json().catch(() => null)) as TelegramUpdate | null
-    if (!update || typeof update !== "object") return json({ ok: false }, 400)
+    const parsed = await readJsonStrict(request, 65_536)
+    if (!parsed.ok) return json({ ok: false }, parsed.status)
+    const update = parsed.value as TelegramUpdate
     ctx.waitUntil(handleTelegram(env, update))
     return json({ ok: true })
   }
