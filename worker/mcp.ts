@@ -1,4 +1,5 @@
-import { applyRemovedFunnels, applyRemovedLeads, enforceSinglePublished, publicSettings } from "../src/lib/crm.ts"
+import { applyRemovedFunnels, applyRemovedLeads, commitStoredSettings, enforceSinglePublished, publicSettings } from "../src/lib/crm.ts"
+import { addPageScript, pageInstallManual, pageScriptById, removePageScript } from "../src/lib/page-script.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
 import { emptySalesFunnel, publishSnapshot } from "../src/lib/templates.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
@@ -12,7 +13,7 @@ import {
   type PublicUser,
 } from "./auth.ts"
 import { handleTokens, handleUsers } from "./users.ts"
-import { listLeadPage, loadFunnelsKv, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, lookupLeadsByQuery, saveFunnelsKv } from "./crm-store.ts"
+import { listLeadPage, loadFunnelsKv, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, lookupLeadsByQuery, saveFunnelsKv, saveSettingsKv } from "./crm-store.ts"
 import { readJsonStrict } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -201,6 +202,44 @@ const TOOLS = [
       additionalProperties: false,
     },
   },
+  {
+    name: "abilion_page_install_manual",
+    description: "Manual para instalar o pixel numa landing. Sem id devolve o script geral; com scriptId devolve o snippet daquela página/funil.",
+    inputSchema: {
+      type: "object",
+      properties: { scriptId: { type: "string" } },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "abilion_list_page_scripts",
+    description: "Lista os scripts de página (um por landing/funil) e o snippet de cada um.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "abilion_create_page_script",
+    description: "Cria um script para outra página/funil. O funil precisa de um quadro publicado. Devolve o snippet e o manual.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        funnelId: { type: "string" },
+        pageUrl: { type: "string" },
+      },
+      required: ["name", "funnelId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "abilion_delete_page_script",
+    description: "Remove um script de página. As landings que ainda o colam passam a usar o funil publicado.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
 ] as const
 
 async function funnelsOf(env: McpEnv): Promise<SalesFunnel[]> {
@@ -367,7 +406,61 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     if (!res.ok) throw new Error(typeof data === "object" && data && "error" in data ? String((data as { error: string }).error) : "Não revoguei o token.")
     return data
   }
+  if (name === "abilion_page_install_manual") {
+    return installManualOf(env, str(args.scriptId))
+  }
+  if (name === "abilion_list_page_scripts") {
+    if (!env.AUTH) throw new Error("Auth ainda sem KV.")
+    const settings = await loadSettingsKv(env.AUTH)
+    const funnels = await funnelsOf(env)
+    return {
+      ok: true,
+      scripts: settings.pageScripts.map((script) => ({
+        ...script,
+        funnelName: funnels.find((item) => item.id === script.funnelId)?.name,
+        ...installManualOfSync(settings.telegramBotUsername, script, funnels.find((item) => item.id === script.funnelId)?.name),
+      })),
+    }
+  }
+  if (name === "abilion_create_page_script") {
+    if (!env.AUTH) throw new Error("Auth ainda sem KV.")
+    const funnels = await funnelsOf(env)
+    const funnel = funnels.find((item) => item.id === str(args.funnelId).trim())
+    if (!funnel?.production) throw new Error("Publica este funil antes de criar o script da página.")
+    const settings = await loadSettingsKv(env.AUTH)
+    const made = addPageScript(settings.pageScripts, {
+      name: clipName(str(args.name), "Landing"),
+      funnelId: funnel.id,
+      pageUrl: str(args.pageUrl),
+    })
+    if (!made.ok) throw new Error(made.error)
+    await saveSettingsKv(env.AUTH, commitStoredSettings(settings, { ...settings, pageScripts: made.scripts }, settings))
+    return { ...pageInstallManual({ botUsername: settings.telegramBotUsername, script: made.script, funnelName: funnel.name }), script: made.script }
+  }
+  if (name === "abilion_delete_page_script") {
+    if (!env.AUTH) throw new Error("Auth ainda sem KV.")
+    const id = str(args.id).trim()
+    if (!id) throw new Error("Falta o id do script.")
+    const settings = await loadSettingsKv(env.AUTH)
+    const next = removePageScript(settings.pageScripts, id)
+    if (next.length === settings.pageScripts.length) throw new Error("Este script já não está no estúdio.")
+    await saveSettingsKv(env.AUTH, commitStoredSettings(settings, { ...settings, pageScripts: next }, settings))
+    return { ok: true }
+  }
   throw new Error(`Ferramenta desconhecida: ${name}`)
+}
+
+async function installManualOf(env: McpEnv, scriptId?: string) {
+  if (!env.AUTH) throw new Error("Auth ainda sem KV.")
+  const settings = await loadSettingsKv(env.AUTH)
+  const script = pageScriptById(settings.pageScripts, scriptId)
+  const funnel = script ? (await funnelsOf(env)).find((item) => item.id === script.funnelId) : undefined
+  return pageInstallManual({ botUsername: settings.telegramBotUsername, script, funnelName: funnel?.name })
+}
+
+function installManualOfSync(botUsername: string, script: { id: string; name: string; funnelId: string; pageUrl?: string; createdAt: string; updatedAt: string }, funnelName?: string) {
+  const manual = pageInstallManual({ botUsername, script, funnelName })
+  return { snippet: manual.snippet, landing: manual.landing, start: manual.start }
 }
 
 function clipName(value: string, fallback: string) {
@@ -408,7 +501,7 @@ async function dispatch(request: Request, env: McpEnv, actor: PublicUser, req: R
 
 export async function handleMcp(request: Request, env: McpEnv, actor: PublicUser | null) {
   if (request.method === "GET") {
-    return json({ ok: true, name: SERVER.name, version: SERVER.version, transport: "jsonrpc" })
+    return json({ ok: true, name: SERVER.name, version: SERVER.version, transport: "jsonrpc", install: "/api/install" })
   }
   if (request.method !== "POST") return json({ error: "Usa POST JSON-RPC." }, 405)
   if (!actor) return json({ error: "Token MCP em falta. Cria um em Utilizadores." }, 401)

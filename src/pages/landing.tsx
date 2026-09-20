@@ -1,26 +1,30 @@
 import { useEffect, useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { adsDeepLink } from "@/lib/telegram-start"
 import { fetchHealth } from "@/lib/channel"
+import { adsStartToken, PAGE_SCRIPT_ID } from "@/lib/page-script"
 import { PIXEL_VERSION, readVisitorId } from "@/lib/tracker-script"
 
 export function LandingPage() {
+  const [params] = useSearchParams()
+  const scriptId = PAGE_SCRIPT_ID.test(params.get("s") || "") ? (params.get("s") || "").toLowerCase() : ""
   const [username, setUsername] = useState("")
   const [visitorId, setVisitorId] = useState(() => (typeof window === "undefined" ? "" : readVisitorId()))
   const [ready, setReady] = useState(false)
   const [unreachable, setUnreachable] = useState(false)
-  const href = adsDeepLink(username, visitorId ? `fb_${visitorId}` : "fb")
+  const href = adsDeepLink(username, adsStartToken(scriptId || undefined, visitorId || undefined))
 
   useEffect(() => {
     setVisitorId(readVisitorId())
     if (document.querySelector("script[data-abilion-pixel]")) return
     const script = document.createElement("script")
-    script.src = `/t.js?v=${PIXEL_VERSION}`
+    script.src = scriptId ? `/t.js?v=${PIXEL_VERSION}&s=${scriptId}` : `/t.js?v=${PIXEL_VERSION}`
     script.async = true
     script.dataset.abilionPixel = "1"
     script.dataset.cta = "[data-abilion-cta]"
+    if (scriptId) script.dataset.abilionScript = scriptId
     document.head.appendChild(script)
-  }, [])
+  }, [scriptId])
 
   useEffect(() => {
     let cancelled = false
@@ -94,7 +98,7 @@ export function LandingPage() {
         <p className="mt-4 text-[12px] text-zinc-400">
           {href ? (
             <>
-              O botão vira <code className="text-zinc-300">t.me/...?start=fb_vid</code>. Sem cadastro nesta página.
+              O botão vira <code className="text-zinc-300">t.me/...?start={scriptId ? `fb_s${scriptId}_vid` : "fb_vid"}</code>. Sem cadastro nesta página.
             </>
           ) : (
             <>Sem cadastro nesta página. O clique só abre quando o bot estiver ligado.</>

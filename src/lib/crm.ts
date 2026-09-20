@@ -10,6 +10,7 @@ export const LEAD_LIST_PAGES = 40
 export const LEAD_CACHE_CAP = 2000
 export const LEAD_REMOVED_CAP = 8000
 export const FUNNEL_REMOVED_CAP = 400
+export const FUNNEL_CAP = 20
 export const INBOX_LIST_PAGES = 5
 
 export type LeadListPage = {
@@ -245,7 +246,7 @@ export function adoptRemoteFunnels(
   for (const funnel of current) {
     if (!incomingIds.has(funnel.id) && pending.has(funnel.id)) next.push(funnel)
   }
-  return next.slice(0, 20)
+  return next.slice(0, FUNNEL_CAP)
 }
 
 export function applyRemovedFunnels(funnels: SalesFunnel[], removedIds: string[]): SalesFunnel[] {
@@ -303,6 +304,7 @@ export function commitStoredSettings(stored: Settings, incoming: Settings, lates
       ...patch.plugins,
       telegram: Boolean(patch.plugins.telegram || live.plugins.telegram),
     },
+    pageScripts: patch.pageScripts,
     telegramBotToken: "",
     esterTelegramChatId: "",
   })
@@ -372,7 +374,7 @@ export function adoptDueLeads(kvLeads: Lead[], remoteLeads: Lead[], removedIds: 
 }
 
 export function emptySettings(): Settings {
-  return { ...defaultSettings, plugins: { ...defaultSettings.plugins } }
+  return { ...defaultSettings, plugins: { ...defaultSettings.plugins }, pageScripts: [...defaultSettings.pageScripts] }
 }
 
 export function mergeFunnels(current: SalesFunnel[], incoming: SalesFunnel[]): SalesFunnel[] {
@@ -398,7 +400,12 @@ export function reconcileFunnels(server: SalesFunnel[], incoming: SalesFunnel[])
   for (const funnel of server) {
     if (!seen.has(funnel.id)) next.push(funnel)
   }
-  return next.slice(0, 20)
+  return next.slice(0, FUNNEL_CAP)
+}
+
+export function canCreateFunnel(funnels: SalesFunnel[]): { ok: true } | { ok: false; reason: string } {
+  if (funnels.length >= FUNNEL_CAP) return { ok: false, reason: `O estúdio aceita no máximo ${FUNNEL_CAP} funis.` }
+  return { ok: true }
 }
 
 /** POST do CRM: une o snapshot lido no início com o KV no instante do persist. */

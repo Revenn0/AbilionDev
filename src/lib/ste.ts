@@ -305,8 +305,9 @@ export function steRuntimeFromSettings(settings?: Partial<Settings> | null): Ste
   }
 }
 
-export function steRuntimeFromFunnels(funnels?: SalesFunnel[], settings?: Partial<Settings> | null) {
-  const published = publishedFunnel(funnels ?? [])?.production
+export function steRuntimeFromFunnels(funnels?: SalesFunnel[], settings?: Partial<Settings> | null, funnelId?: string) {
+  const chosen = funnelId ? funnels?.find((item) => item.id === funnelId) : undefined
+  const published = chosen?.production ?? publishedFunnel(funnels ?? [])?.production
   const fromFunnel = steRuntimeFromSnapshot(published)
   if (published && (fromFunnel.welcome || fromFunnel.remarketing || published.nodes.some((node) => node.data.steLine || node.type === "handoff"))) {
     return fromFunnel

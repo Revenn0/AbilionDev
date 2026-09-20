@@ -185,6 +185,15 @@ export type Lead = {
 
 export type PluginId = "whatsapp" | "telegram" | "webhooks" | "forms" | "reports" | "calendar"
 
+export type PageScript = {
+  id: string
+  name: string
+  funnelId: string
+  pageUrl?: string
+  createdAt: string
+  updatedAt: string
+}
+
 export type Settings = {
   workspaceName: string
   timezone: string
@@ -204,6 +213,7 @@ export type Settings = {
   steDieAfterRemarketing: boolean
   esterNotify: boolean
   esterTelegramChatId: string
+  pageScripts: PageScript[]
 }
 
 export const defaultSettings: Settings = {
@@ -236,6 +246,7 @@ export const defaultSettings: Settings = {
   steDieAfterRemarketing: true,
   esterNotify: true,
   esterTelegramChatId: "",
+  pageScripts: [],
 }
 
 export type AppState = {

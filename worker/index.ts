@@ -5,8 +5,9 @@ import { campaignFor } from "../src/lib/labels.ts"
 import { advanceSteIfDue, isSteWait, replySte, replySteSmart, safeHttpUrl, steRuntimeFromFunnels, toTelegramHtml, type SteBeat } from "../src/lib/ste.ts"
 import { linkFollowUp, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { TRACKER_JS } from "../src/lib/tracker-script.ts"
-import { campaignFromStart, originFromStart, parseTelegramStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
-import { applyEvent, canAdvanceRemoteWait, dueWaits, pickLiveDueLead, publishedSnapshot } from "../src/lib/runtime.ts"
+import { campaignFromStart, originFromStart, parseTelegramStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
+import { applyEvent, canAdvanceRemoteWait, dueWaits, pickLiveDueLead, snapshotForLead } from "../src/lib/runtime.ts"
+import { pageInstallManual, pageScriptById } from "../src/lib/page-script.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { BANCA_FIXED, type Lead, type LeadEvent, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types.ts"
 import { compactGeo, factsFromGeo } from "../src/lib/geo.ts"
@@ -25,6 +26,7 @@ import {
   publicSettings,
   commitCrmFunnels,
   commitStoredSettings,
+  FUNNEL_CAP,
   resolveLeadLookup,
 } from "../src/lib/crm.ts"
 import { cleanBotUsername, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
@@ -215,6 +217,21 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       ok: true,
       telegramBotUsername: cleanBotUsername(resolved.telegramBotUsername || settings.telegramBotUsername),
     })
+  }
+
+  if (url.pathname === "/api/install" && request.method === "GET") {
+    const { resolved } = await runtimeOf(env, webhookUrl(request, env))
+    const settings = await loadSettings(env)
+    const scriptId = (url.searchParams.get("s") || "").trim().toLowerCase()
+    const script = pageScriptById(settings.pageScripts, scriptId)
+    const funnel = script ? (await loadFunnels(env)).find((item) => item.id === script.funnelId) : undefined
+    return json(
+      pageInstallManual({
+        botUsername: cleanBotUsername(resolved.telegramBotUsername || settings.telegramBotUsername),
+        script,
+        funnelName: funnel?.name,
+      })
+    )
   }
 
   if (url.pathname.startsWith("/api/auth")) {
@@ -427,6 +444,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       const latestRemoved = env.AUTH ? await loadRemovedFunnelIds(env.AUTH) : storedRemoved
       const funnels = commitCrmFunnels(stored, incoming, storedRemoved, incomingRemoved, latest, latestRemoved)
       if (!funnels.length) return json({ error: "Mantém pelo menos um funil." }, 400)
+      if (funnels.length > FUNNEL_CAP) return json({ error: `O estúdio aceita no máximo ${FUNNEL_CAP} funis.` }, 400)
       await persistFunnels(env, funnels)
       if (env.AUTH && incomingRemoved.length) await rememberRemovedFunnels(env.AUTH, incomingRemoved)
     }
@@ -629,7 +647,14 @@ async function deliverTelegram(env: Env, update: TelegramUpdate, token: string) 
   const incoming = joinUser || start.isStart ? null : (message?.text ?? null)
   const funnels = await loadFunnels(env)
   const settings = await loadSettings(env)
-  const ste = steRuntimeFromFunnels(funnels, settings)
+  if (start.isStart && start.payload) {
+    const script = pageScriptById(settings.pageScripts, scriptIdFromStart(start.payload))
+    if (script) {
+      lead.funnelId = script.funnelId
+      lead.campaign = `Facebook · ${script.name}`.slice(0, 120)
+    }
+  }
+  const ste = steRuntimeFromFunnels(funnels, settings, lead.funnelId)
   const shouldTalk = ste.talking !== false && !joinUser
   const pending = lead
   let delivered = !shouldTalk
@@ -671,8 +696,6 @@ async function processWaits(env: Env) {
     if (!byId.size) return 0
     const funnels = await loadFunnels(env)
     const settings = await loadSettings(env)
-    const snapshot = publishedSnapshot(funnels)
-    const ste = steRuntimeFromFunnels(funnels, settings)
     const { resolved } = await runtimeOf(env)
     const token = resolved.telegramBotToken
     const due = dueWaits([...byId.values()])
@@ -684,6 +707,8 @@ async function processWaits(env: Env) {
         const lead = pickLiveDueLead(queued, live)
         if (!lead) continue
         if (!canAdvanceRemoteWait(lead, Boolean(token))) continue
+        const snapshot = snapshotForLead(funnels, lead)
+        const ste = steRuntimeFromFunnels(funnels, settings, lead.funnelId)
         if (isSteWait(lead)) {
           const talked = advanceSteIfDue(lead, Date.now(), ste)
           if (!talked.replies.length && talked.lead.waitUntil === lead.waitUntil) continue
@@ -765,7 +790,8 @@ async function persistSettings(env: Env, settings: Settings) {
       const again = commitStoredSettings(after, incoming, after)
       if (
         after.telegramBotUsername === again.telegramBotUsername &&
-        after.telegramGroupUrl === again.telegramGroupUrl
+        after.telegramGroupUrl === again.telegramGroupUrl &&
+        JSON.stringify(after.pageScripts ?? []) === JSON.stringify(again.pageScripts ?? [])
       ) {
         break
       }

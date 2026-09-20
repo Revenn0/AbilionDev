@@ -123,7 +123,9 @@ Pixel da landing — botão **Pixel Ads** no Dashboard, no topo de Telegram e de
 <a href="https://t.me/BOT?start=fb" data-abilion-cta>Falar no Telegram</a>
 ```
 
-O script reescreve o `t.me/BOT?start=fb_{vid}` no `pointerdown`, no clique e no clique do meio. Se o construtor da página puser o script em `async`, o pixel ainda encontra o `/t.js` sem `currentScript`. Sem página própria, o anúncio aponta para [https://www.abilion.lol/l](https://www.abilion.lol/l). A `/l` já sai com o visitor no href. O webhook fecha o evento `telegram` com o mesmo visitor.
+Manual de instalação (os mesmos passos no painel, no MCP e no `t.js`): [https://www.abilion.lol/api/install](https://www.abilion.lol/api/install). Outra landing / outro funil: cria um script em Telegram → Pixel ou `abilion_create_page_script` e cola ` /t.js?v=2&s=ID`. O `/start` vira `fb_sID_vid` e a Sté fala o quadro daquele funil. Sem `s=`, usa o funil publicado. Teste: `/l?s=ID`.
+
+O script reescreve o `t.me/BOT?start=fb_{vid}` (ou `fb_sID_{vid}`) no `pointerdown`, no clique e no clique do meio. Se o construtor da página puser o script em `async`, o pixel ainda encontra o `/t.js` sem `currentScript`. Sem página própria, o anúncio aponta para [https://www.abilion.lol/l](https://www.abilion.lol/l). A `/l` já sai com o visitor no href. O webhook fecha o evento `telegram` com o mesmo visitante.
 
 Landing de teste (pixel + CTA): `/l` — local [http://127.0.0.1:43173/l](http://127.0.0.1:43173/l), produção [https://www.abilion.lol/l](https://www.abilion.lol/l).
 
@@ -187,7 +189,8 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `GET/POST/DELETE /api/tokens` | sessão — token `abn_…` (o valor completo só no POST) |
 | `POST /api/funnels/import` | sessão — ManyChat / n8n / Typebot / Abilion / mensagens |
 | `POST /mcp` ou `/api/mcp` | Bearer ou cookie — JSON-RPC para agentes (60 / min por conta e IP) |
-| `GET /mcp` | público: `{ ok, name, version }` |
+| `GET /mcp` | público: `{ ok, name, version, install }` |
+| `GET /api/install` | público: manual do pixel + snippet (`?s=` para um script) |
 | `POST /api/telegram` | Telegram; `secret_token` do webhook |
 | `GET /api/cron` | `CRON_SECRET` obrigatório; cada espera corre isolada |
 | `GET /t.js` | pixel |
@@ -219,7 +222,7 @@ No Claude Code / Claude Desktop, um exemplo está em [`mcp/claude.example.json`]
 }
 ```
 
-Ferramentas: saúde, listar/criar/desligar contas, listar/criar/importar/publicar funis, listar leads, definições (sem segredos), criar e revogar token (`abilion_revoke_token`). O dono é que cria ou altera contas (`abilion_patch_user`). Importar um funil deixa-o em rascunho até `abilion_publish_funnel`. POST autenticado em `/mcp` tem limite de 60 pedidos / minuto por conta e IP. POST sem cookie nem Bearer não lê o snapshot de contas: 20 / minuto por IP, e o tecto do IP é 120 / minuto.
+Ferramentas: saúde, listar/criar/desligar contas, listar/criar/importar/publicar funis, listar leads, definições (sem segredos), criar e revogar token (`abilion_revoke_token`), manual e scripts de página (`abilion_page_install_manual`, `abilion_create_page_script`). O dono é que cria ou altera contas (`abilion_patch_user`). Importar um funil deixa-o em rascunho até `abilion_publish_funnel`. POST autenticado em `/mcp` tem limite de 60 pedidos / minuto por conta e IP. POST sem cookie nem Bearer não lê o snapshot de contas: 20 / minuto por IP, e o tecto do IP é 120 / minuto.
 
 ## Limitações e bloqueios
 

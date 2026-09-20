@@ -9,6 +9,7 @@ import {
   applyRemovedFunnels,
   applyRemovedLeads,
   leadsStillOnRemote,
+  canCreateFunnel,
   canDeleteFunnel,
   canFlushCrm,
   clipNewestIds,
@@ -582,6 +583,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         commitState({ ...stateRef.current, user: null })
       },
       createFunnel: (funnel) => {
+        const gate = canCreateFunnel(stateRef.current.funnels)
+        if (!gate.ok) {
+          toast.error(gate.reason)
+          return
+        }
         pendingFunnelIds.current.add(funnel.id)
         persistIdSet(PENDING_FUNNELS, pendingFunnelIds.current)
         removedFunnelIds.current.delete(funnel.id)
@@ -598,10 +604,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       saveFunnel: (funnel) => {
         if (removedFunnelIds.current.has(funnel.id)) return
+        const exists = stateRef.current.funnels.some((item) => item.id === funnel.id)
+        if (!exists) {
+          const gate = canCreateFunnel(stateRef.current.funnels)
+          if (!gate.ok) {
+            toast.error(gate.reason)
+            return
+          }
+        }
         pendingFunnelIds.current.add(funnel.id)
         persistIdSet(PENDING_FUNNELS, pendingFunnelIds.current)
         const prev = stateRef.current
-        const exists = prev.funnels.some((item) => item.id === funnel.id)
         const nextFunnels = exists
           ? prev.funnels.map((item) => (item.id === funnel.id ? funnel : item))
           : [funnel, ...prev.funnels]

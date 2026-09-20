@@ -2,13 +2,17 @@ export const VISITOR_STORAGE_KEY = "abilion_vid"
 export const ADS_ORIGIN = "https://www.abilion.lol"
 export const PIXEL_VERSION = 2
 
-export function pixelSnippet(origin: string) {
+export function pixelSnippet(origin: string, scriptId = "") {
   const base = origin.replace(/\/$/, "")
-  return `<script src="${base}/t.js?v=${PIXEL_VERSION}" data-cta="[data-abilion-cta]"></script>`
+  const id = scriptId.trim().toLowerCase()
+  const tagged = /^[a-f0-9]{8}$/.test(id)
+  const src = tagged ? `${base}/t.js?v=${PIXEL_VERSION}&s=${id}` : `${base}/t.js?v=${PIXEL_VERSION}`
+  const extra = tagged ? ` data-abilion-script="${id}"` : ""
+  return `<script src="${src}" data-cta="[data-abilion-cta]"${extra}></script>`
 }
 
-export function pixelPageHtml(origin: string, telegramHref = "") {
-  const script = pixelSnippet(origin)
+export function pixelPageHtml(origin: string, telegramHref = "", scriptId = "") {
+  const script = pixelSnippet(origin, scriptId)
   if (!/^https:\/\/t\.me\/[A-Za-z0-9_]{5,32}\?start=[A-Za-z0-9_\-:.]+$/.test(telegramHref)) return script
   return `${script}\n<a href="${telegramHref}" data-abilion-cta>Falar no Telegram</a>`
 }
@@ -41,10 +45,14 @@ export function isTelegramAdsHref(href: string, base = "https://abilion.lol") {
   }
 }
 
-export const TRACKER_JS = `(() => {
+export const TRACKER_JS = `/* Abilion pixel. Manual: https://www.abilion.lol/api/install — src /t.js?v=2&s=ID e botão data-abilion-cta. */
+(() => {
   const script = document.currentScript || document.querySelector('script[src*="/t.js"]');
   if (!script || !script.src) return;
-  const origin = new URL(script.src).origin;
+  const parsed = new URL(script.src);
+  const origin = parsed.origin;
+  const scriptId = (parsed.searchParams.get("s") || script.getAttribute("data-abilion-script") || "").toLowerCase();
+  const tagged = /^[a-f0-9]{8}$/.test(scriptId);
   const ctaSel = script.getAttribute("data-cta") || "[data-abilion-cta]";
   const KEY = "abilion_vid";
   const vid = () => {
@@ -70,7 +78,8 @@ export const TRACKER_JS = `(() => {
       referrer: document.referrer,
       fbclid: url.searchParams.get("fbclid") || undefined,
       utmSource: url.searchParams.get("utm_source") || undefined,
-      utmCampaign: url.searchParams.get("utm_campaign") || undefined,
+      utmCampaign: tagged ? ("Facebook · " + scriptId) : (url.searchParams.get("utm_campaign") || undefined),
+      scriptId: tagged ? scriptId : undefined,
       language: navigator.language,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       href: extra && extra.href,
@@ -97,7 +106,7 @@ export const TRACKER_JS = `(() => {
       const raw = anchor.getAttribute("href") || "";
       if (!anchor.matches(ctaSel) && !adsHref(raw)) return;
       const href = new URL(raw, location.href);
-      href.searchParams.set("start", "fb_" + vid());
+      href.searchParams.set("start", (tagged ? "fb_s" + scriptId + "_" : "fb_") + vid());
       anchor.setAttribute("href", href.toString());
     } catch (_) {}
   };

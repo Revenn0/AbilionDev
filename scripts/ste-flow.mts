@@ -42,6 +42,7 @@ import {
   applyRemovedLeads,
   leadsStillOnRemote,
   adoptHydrateSettings,
+  canCreateFunnel,
   canDeleteFunnel,
   canFlushCrm,
   clipNewestIds,
@@ -52,6 +53,7 @@ import {
   LEAD_LIST_PAGES,
   LEAD_CACHE_CAP,
   commitCrmFunnels,
+  FUNNEL_CAP,
   commitStoredSettings,
   hydrateFunnels,
   hydrateLeads,
@@ -69,7 +71,7 @@ import {
   resolveLeadLookup,
   settingsWriteFingerprint,
 } from "../src/lib/crm.ts"
-import { applyEvent, canAdvanceRemoteWait, eventFromOrigin, pickLiveDueLead, publishedFunnel, publishedSnapshot, waitHours } from "../src/lib/runtime.ts"
+import { applyEvent, canAdvanceRemoteWait, eventFromOrigin, pickLiveDueLead, publishedFunnel, publishedSnapshot, snapshotForLead, waitHours } from "../src/lib/runtime.ts"
 import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
@@ -85,7 +87,8 @@ import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { contactLookups, normalizeTelegramContact, validateCapture } from "../src/lib/capture.ts"
 import { displayContact, formatPhoneContact, isPhoneLikeName, isResolvedPersonName, leadMatchesQuery, nameFromMessages, preferLeadName, resolveLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, migrateLeadOrigin, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
-import { adsDeepLink, visitorIdFromStart } from "../src/lib/telegram-start.ts"
+import { adsDeepLink, campaignFromStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
+import { addPageScript, adsStartToken, pageInstallManual, PAGE_INSTALL_STEPS } from "../src/lib/page-script.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
@@ -573,6 +576,26 @@ assert(
   pixelPageHtml(ADS_ORIGIN, "javascript:alert(1)") === pixelSnippet(ADS_ORIGIN),
   "html da landing recusa href que não é t.me"
 )
+assert(scriptIdFromStart("fb_sdeadbeef_a1b2c3d4e5") === "deadbeef", "start com script devolve o id")
+assert(visitorIdFromStart("fb_sdeadbeef_a1b2c3d4e5") === "a1b2c3d4e5", "start com script ainda devolve o visitor")
+assert(visitorIdFromStart("fb_sdeadbeef") === undefined, "script sem vid não inventa visitor")
+assert(campaignFromStart("fb_sdeadbeef_a1b2c3d4e5") === "Facebook · deadbeef", "campanha do script no start")
+assert(adsStartToken("deadbeef", "a1b2c3d4e5") === "fb_sdeadbeef_a1b2c3d4e5", "token de start junta script e vid")
+assert(
+  pixelSnippet(ADS_ORIGIN, "deadbeef") ===
+    `<script src="https://www.abilion.lol/t.js?v=2&s=deadbeef" data-cta="[data-abilion-cta]" data-abilion-script="deadbeef"></script>`,
+  "snippet de página leva o id do script"
+)
+assert(TRACKER_JS.includes("/api/install") && TRACKER_JS.includes("fb_s"), "t.js aponta o manual e reescreve fb_s")
+assert(PAGE_INSTALL_STEPS.length >= 5, "manual de instalação tem os passos")
+assert(pageInstallManual({}).snippet.includes("/t.js?v=2"), "manual geral inclui o script")
+assert(pageInstallManual({ script: { id: "deadbeef", name: "Landing", funnelId: "f1", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" } }).scriptSrc.includes("s=deadbeef"), "manual do script inclui ?s=")
+assert(FUNNEL_CAP === 20 && !canCreateFunnel(Array.from({ length: 20 }, () => emptySalesFunnel("x"))).ok, "criar o 21.º funil é recusado")
+const boardA = { ...emptySalesFunnel("A"), id: "funil-a", production: { name: "A", publishedAt: "2026-01-01T00:00:00.000Z", nodes: [], edges: [] } }
+const boardB = { ...emptySalesFunnel("B"), id: "funil-b", production: { name: "B", publishedAt: "2026-01-02T00:00:00.000Z", nodes: [], edges: [] } }
+assert(snapshotForLead([boardA, boardB], { funnelId: "funil-a" })?.name === "A", "lead com script usa o quadro daquela landing")
+const madeScript = addPageScript([], { name: "Landing Superbet", funnelId: "funil-b" })
+assert(madeScript.ok && madeScript.script.funnelId === "funil-b", "cria script de outra página")
 assert(cleanTelegramGroupUrl("https://t.me/+abc123").includes("t.me"), "convite t.me passa")
 assert(cleanTelegramGroupUrl("https://evil.com/x") === "", "url alheia cai")
 assert(cleanTelegramGroupUrl("javascript:alert(1)") === "", "javascript: cai")
@@ -3679,6 +3702,8 @@ const mcpToolsBody = (await mcpTools.json()) as { result?: { tools?: Array<{ nam
 const mcpToolNames = (mcpToolsBody.result?.tools ?? []).map((item) => item.name)
 assert(mcpToolNames.includes("abilion_patch_user"), "MCP lista patch_user")
 assert(mcpToolNames.includes("abilion_revoke_token"), "MCP lista revoke_token")
+assert(mcpToolNames.includes("abilion_page_install_manual"), "MCP lista o manual de instalação")
+assert(mcpToolNames.includes("abilion_create_page_script"), "MCP lista criar script de página")
 
 const mcpCreate = await handleRequest(
   new Request("http://local.test/mcp", {
@@ -3744,8 +3769,13 @@ const carlaDisabled = await handleRequest(
 assert(carlaDisabled.status === 401, "conta desligada pelo MCP não entra")
 
 const mcpPublic = await handleRequest(new Request("http://local.test/mcp"), teamEnv, backgroundCtx())
-const mcpPublicBody = (await mcpPublic.json()) as { ok?: boolean; name?: string }
+const mcpPublicBody = (await mcpPublic.json()) as { ok?: boolean; name?: string; install?: string }
 assert(mcpPublic.status === 200 && mcpPublicBody.ok && mcpPublicBody.name === "abilion", "GET MCP é público")
+assert(mcpPublicBody.install === "/api/install", "GET MCP aponta o manual")
+const installPublic = await handleRequest(new Request("http://local.test/api/install"), teamEnv, backgroundCtx())
+const installBody = (await installPublic.json()) as { ok?: boolean; title?: string; snippet?: string; steps?: unknown[] }
+assert(installPublic.status === 200 && installBody.ok && (installBody.steps?.length ?? 0) >= 5, "GET /api/install é o manual")
+assert(Boolean(installBody.snippet?.includes("/t.js")), "manual público inclui o snippet")
 
 const mcpImport = await handleRequest(
   new Request("http://local.test/mcp", {
@@ -3782,6 +3812,47 @@ const mcpPublish = await handleRequest(
 const mcpPublishBody = (await mcpPublish.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
 const mcpPublished = JSON.parse(mcpPublishBody.result?.content?.[0]?.text || "{}") as { ok?: boolean; funnel?: { published?: boolean } }
 assert(mcpPublish.status === 200 && mcpPublished.ok && mcpPublished.funnel?.published, "MCP publica funil")
+
+const mcpPageScript = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 21,
+      method: "tools/call",
+      params: { name: "abilion_create_page_script", arguments: { name: "Landing MCP", funnelId: mcpCreated.id } },
+    }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const mcpPageScriptBody = (await mcpPageScript.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
+const mcpPage = JSON.parse(mcpPageScriptBody.result?.content?.[0]?.text || "{}") as {
+  ok?: boolean
+  script?: { id?: string }
+  snippet?: string
+  start?: string
+}
+assert(mcpPageScript.status === 200 && mcpPage.ok && mcpPage.script?.id, "MCP cria script de outra página")
+assert(Boolean(mcpPage.snippet?.includes(`s=${mcpPage.script?.id}`)), "MCP devolve o snippet daquela landing")
+const mcpManual = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 22,
+      method: "tools/call",
+      params: { name: "abilion_page_install_manual", arguments: { scriptId: mcpPage.script?.id } },
+    }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const mcpManualBody = (await mcpManual.json()) as { result?: { content?: Array<{ text?: string }> } }
+const mcpManualData = JSON.parse(mcpManualBody.result?.content?.[0]?.text || "{}") as { steps?: unknown[]; start?: string }
+assert((mcpManualData.steps?.length ?? 0) >= 5 && mcpManualData.start?.includes(mcpPage.script?.id || "nope"), "MCP devolve o manual daquele script")
 
 const mcpLeads = await handleRequest(
   new Request("http://local.test/mcp", {

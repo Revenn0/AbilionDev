@@ -48,6 +48,16 @@ export function publishedSnapshot(funnels: SalesFunnel[]): SalesSnapshot | null 
   return publishedFunnel(funnels)?.production ?? null
 }
 
+/** /start com script ou lead.funnelId usa o quadro daquela landing; senão o publicado. */
+export function snapshotForLead(funnels: SalesFunnel[], lead?: Pick<Lead, "funnelId"> | null): SalesSnapshot | null {
+  if (lead?.funnelId) {
+    const match = funnels.find((item) => item.id === lead.funnelId)
+    if (match?.production) return match.production
+    if (match) return snapshotOf(match)
+  }
+  return publishedSnapshot(funnels)
+}
+
 export function snapshotOf(funnel: SalesFunnel): SalesSnapshot {
   return {
     name: funnel.name,

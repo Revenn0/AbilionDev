@@ -186,6 +186,8 @@ try {
   await open(page, "/telegram")
   await page.waitForSelector("#pixel", { timeout: 8_000 })
   const pixelCopy = await page.$eval("#pixel", (el) => el.textContent || "")
+  assert(pixelCopy.includes("Manual") || pixelCopy.includes("scripts de página") || pixelCopy.includes("Instalar"), "pixel mostra o manual de instalação")
+  assert(Boolean(await page.$("#page-script-name")), "pixel deixa criar script de outra página")
   assert(pixelCopy.includes("www.abilion.lol/t.js"), "telegram mostra o snippet de produção")
   assert(pixelCopy.includes("data-abilion-cta"), "telegram pede o atributo no botão")
   await open(page, "/configuracoes")

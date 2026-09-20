@@ -1,6 +1,6 @@
 import { useRef, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
-import { Pencil, Plus, Trash2, Upload, Workflow } from "lucide-react"
+import { Code2, Pencil, Plus, Trash2, Upload, Workflow } from "lucide-react"
 import { ImportFunnelDialog } from "@/components/sales/import-dialog"
 import { Button } from "@/components/ui/button"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
@@ -8,7 +8,8 @@ import { HydratePanel } from "@/components/layout/hydrate-panel"
 import { SyncBanner } from "@/components/layout/sync-banner"
 import { FunnelPreview } from "@/components/sales/preview"
 import { RenameFunnelDialog } from "@/components/sales/rename-dialog"
-import { canDeleteFunnel } from "@/lib/crm"
+import { canCreateFunnel, canDeleteFunnel } from "@/lib/crm"
+import { addPageScript, funnelHasInstallableBoard } from "@/lib/page-script"
 import { useStore } from "@/lib/store"
 import { emptySalesFunnel } from "@/lib/templates"
 import { timeAgo } from "@/lib/format"
@@ -16,7 +17,7 @@ import type { SalesFunnel } from "@/lib/types"
 import { toast } from "sonner"
 
 export function FluxoPage() {
-  const { state, createFunnel, saveFunnel, deleteFunnel, flushCrmNow, crmSync } = useStore()
+  const { state, createFunnel, saveFunnel, deleteFunnel, flushCrmNow, saveSettings, crmSync } = useStore()
   const navigate = useNavigate()
   const funnels = state.funnels
   const [renaming, setRenaming] = useState<SalesFunnel | null>(null)
@@ -25,6 +26,11 @@ export function FluxoPage() {
 
   const createSales = () => {
     if (creating.current) return
+    const gate = canCreateFunnel(funnels)
+    if (!gate.ok) {
+      toast.error(gate.reason)
+      return
+    }
     creating.current = true
     const funnel = emptySalesFunnel("Novo funil")
     createFunnel(funnel)
@@ -99,6 +105,30 @@ export function FluxoPage() {
                   <Button asChild size="sm" className="rounded-full">
                     <Link to={`/fluxo/funil/${funnel.id}`}>Abrir</Link>
                   </Button>
+                  {funnelHasInstallableBoard(funnel) ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="rounded-full"
+                      onClick={() => {
+                        const made = addPageScript(state.settings.pageScripts, { name: funnel.name, funnelId: funnel.id })
+                        if (!made.ok) {
+                          toast.error(made.error)
+                          return
+                        }
+                        saveSettings({ pageScripts: made.scripts })
+                        void flushCrmNow().then((result) => {
+                          if (result.ok) toast.success("Script desta página criado. Cola o snippet no Pixel.")
+                          else toast.error(result.error || "Não gravei o script no Worker.")
+                        })
+                        navigate("/telegram#pixel")
+                      }}
+                    >
+                      <Code2 />
+                      Script
+                    </Button>
+                  ) : null}
                   <Button
                     type="button"
                     variant="ghost"
