@@ -82,6 +82,34 @@ async function clickNamed(page: Page, text: string) {
   assert(clicked, `não achei "${text}"`)
 }
 
+async function createAuditFunnel(page: Page) {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const ready = await page.evaluate(() => {
+      const btn = document.querySelector<HTMLButtonElement>("[data-new-funnel]")
+      return Boolean(btn && !btn.disabled)
+    })
+    if (ready) {
+      await page.click("[data-new-funnel]")
+      await page.waitForFunction(() => location.pathname.includes("/fluxo/funil/"), { timeout: 8_000 })
+      return
+    }
+    const count = await page.$$eval("article", (els) => els.length)
+    page.once("dialog", (dialog) => dialog.accept())
+    const deleted = await page.evaluate(() => {
+      const draft = [...document.querySelectorAll("article")].find((el) => {
+        const text = el.textContent || ""
+        return text.includes("Rascunho") && Boolean(el.querySelector('[aria-label="Excluir funil"]:not([disabled])'))
+      })
+      const trash = draft?.querySelector<HTMLButtonElement>('[aria-label="Excluir funil"]')
+      trash?.click()
+      return Boolean(trash)
+    })
+    assert(deleted, "estúdio cheio e sem rascunho para libertar")
+    await page.waitForFunction((prev) => document.querySelectorAll("article").length < prev, { timeout: 8_000 }, count)
+  }
+  throw new Error("não criei o funil de auditoria")
+}
+
 const browser = await puppeteer.launch({
   headless: true,
   args: ["--no-sandbox", "--disable-setuid-sandbox"],
@@ -312,8 +340,7 @@ try {
   )
 
   await open(page, "/fluxo")
-  await clickNamed(page, "Novo funil")
-  await page.waitForFunction(() => location.pathname.includes("/fluxo/funil/"), { timeout: 8_000 })
+  await createAuditFunnel(page)
   await page.waitForFunction(
     () => [...document.querySelectorAll("button")].some((el) => (el.textContent || "").includes("Publicar")),
     { timeout: 8_000 }
@@ -373,6 +400,15 @@ try {
     { timeout: 5_000 }
   )
   const editorPath = new URL(page.url()).pathname
+  await clickNamed(page, "Voltar")
+  await page.waitForFunction(() => location.pathname === "/fluxo" || location.pathname.endsWith("/fluxo"), { timeout: 8_000 })
+  page.once("dialog", (dialog) => dialog.accept())
+  await page.evaluate(() => {
+    const article = [...document.querySelectorAll("article")].find(
+      (el) => (el.textContent || "").includes("Novo funil") && (el.textContent || "").includes("Rascunho")
+    )
+    article?.querySelector<HTMLButtonElement>('[aria-label="Excluir funil"]')?.click()
+  })
 
   await open(page, "/configuracoes?tab=plugins")
   await page.waitForFunction(() => document.body.innerText.includes("Exportar CSV"), { timeout: 8_000 })

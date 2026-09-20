@@ -24,11 +24,12 @@ export function FluxoPage() {
   const [importing, setImporting] = useState(false)
   const creating = useRef(false)
 
+  const createGate = canCreateFunnel(funnels)
+
   const createSales = () => {
     if (creating.current) return
-    const gate = canCreateFunnel(funnels)
-    if (!gate.ok) {
-      toast.error(gate.reason)
+    if (!createGate.ok) {
+      toast.error(createGate.reason)
       return
     }
     creating.current = true
@@ -56,7 +57,14 @@ export function FluxoPage() {
           <Button type="button" variant="outline" className="h-8 rounded-full px-3.5" onClick={() => setImporting(true)}>
             <Upload /> Importar
           </Button>
-          <Button type="button" className="h-8 rounded-full px-3.5" onClick={createSales}>
+          <Button
+            type="button"
+            data-new-funnel
+            className="h-8 rounded-full px-3.5"
+            disabled={!createGate.ok}
+            title={createGate.ok ? undefined : createGate.reason}
+            onClick={createSales}
+          >
             <Plus /> Novo funil
           </Button>
         </PageChrome>
@@ -74,7 +82,14 @@ export function FluxoPage() {
                 <Button type="button" variant="outline" className="rounded-full" onClick={() => setImporting(true)}>
                   <Upload /> Importar
                 </Button>
-                <Button type="button" className="rounded-full" onClick={createSales}>
+                <Button
+                  type="button"
+                  data-new-funnel
+                  className="rounded-full"
+                  disabled={!createGate.ok}
+                  title={createGate.ok ? undefined : createGate.reason}
+                  onClick={createSales}
+                >
                   <Plus /> Novo funil
                 </Button>
               </div>
