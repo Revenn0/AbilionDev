@@ -43,6 +43,7 @@ import {
   clipRemovedIds,
   hydrateFunnels,
   pendingSeedFunnelIds,
+  recoverPendingFunnelIds,
   revertPublishedFunnels,
   mergeFunnels,
   mergeLeadEvents,
@@ -679,6 +680,20 @@ assert(
     [publishedC.id]
   ).some((item) => item.id === publishedC.id),
   "hydrate conserva funil local ainda a gravar"
+)
+assert(
+  recoverPendingFunnelIds(
+    [{ ...publishedA, updatedAt: "2026-06-01T00:00:00.000Z" }],
+    [{ ...publishedA, updatedAt: "2026-04-01T00:00:00.000Z" }]
+  ).includes(publishedA.id),
+  "rascunho mais novo volta à fila de flush"
+)
+assert(
+  recoverPendingFunnelIds(
+    [{ ...publishedC, updatedAt: "2026-06-01T00:00:00.000Z" }],
+    [{ ...publishedA }]
+  ).length === 0,
+  "funil só local sem pending não entra na fila — o tombstone do outro operador manda"
 )
 const olderLead = lead("merge-1")
 olderLead.updatedAt = "2020-01-01T00:00:00.000Z"

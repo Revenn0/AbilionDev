@@ -364,11 +364,15 @@ function LeadDrawer({
 
   const close = () => {
     flushMemory()
+    void onFlush?.()
     onClose()
   }
 
   useEffect(() => {
-    return () => flushMemory()
+    return () => {
+      flushMemory()
+      void onFlush?.()
+    }
   }, [lead?.id])
 
   useEffect(() => {

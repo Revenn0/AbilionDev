@@ -251,6 +251,16 @@ export function pendingSeedFunnelIds(remote: SalesFunnel[], local: SalesFunnel[]
   return local.map((item) => item.id).filter(Boolean)
 }
 
+/** Funis que o Worker já tem, mas o painel tem `updatedAt` mais novo — voltam à fila de flush. */
+export function recoverPendingFunnelIds(local: SalesFunnel[], remote: SalesFunnel[]): string[] {
+  if (!local.length || !remote.length) return []
+  const remoteById = new Map(remote.map((item) => [item.id, item]))
+  return local.filter((funnel) => {
+    const other = remoteById.get(funnel.id)
+    return Boolean(other && funnel.updatedAt > other.updatedAt)
+  }).map((funnel) => funnel.id)
+}
+
 export function hydrateFunnels(
   local: SalesFunnel[],
   remote: SalesFunnel[],

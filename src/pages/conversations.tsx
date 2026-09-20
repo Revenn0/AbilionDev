@@ -52,7 +52,7 @@ function matchesFilter(lead: Lead, filter: FilterId) {
 }
 
 export function ConversationsPage() {
-  const { state, saveLead, createLead, inboxSync, persistSync } = useStore()
+  const { state, saveLead, createLead, flushLeadNow, inboxSync, persistSync } = useStore()
   const hydrating = persistSync === "idle"
   const { summary, status, hasData } = useTrackSummary(4000)
   const runtime = steRuntimeFromFunnels(state.funnels, state.settings)
@@ -102,7 +102,10 @@ export function ConversationsPage() {
   useEffect(() => {
     if (!lead || !canTickSteLocally(lead)) return
     const result = advanceSteIfDue(lead, Date.now(), runtime)
-    if (result.replies.length) saveLead(result.lead)
+    if (result.replies.length) {
+      saveLead(result.lead)
+      void flushLeadNow()
+    }
   }, [lead?.id, lead?.waitUntil, runtimeKey])
 
   useEffect(() => {
@@ -118,6 +121,7 @@ export function ConversationsPage() {
     sending.current = true
     const result = replySteLived(lead, text, Date.now(), runtime)
     saveLead(result.lead)
+    void flushLeadNow()
     setDraft("")
     window.setTimeout(() => {
       sending.current = false

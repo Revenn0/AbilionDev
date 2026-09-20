@@ -14,6 +14,7 @@ import {
   mergeLeads,
   revertPublishedFunnels,
   pendingSeedFunnelIds,
+  recoverPendingFunnelIds,
   reconcileLeads,
 } from "@/lib/crm"
 import { migrateFunnel, migrateLead, migrateSettings } from "@/lib/migrate"
@@ -26,6 +27,8 @@ const LEGACY = "abilion.dev.v1"
 const SESSION = "abilion.dev.session"
 const REMOVED_LEADS = "abilion.dev.removed-leads"
 const REMOVED_FUNNELS = "abilion.dev.removed-funnels"
+const PENDING_LEADS = "abilion.dev.pending-leads"
+const PENDING_FUNNELS = "abilion.dev.pending-funnels"
 
 const empty: AppState = {
   user: null,
@@ -91,6 +94,16 @@ function bootState(): AppState {
   }
 }
 
+function bootSession() {
+  const state = bootState()
+  const pendingLeadIds = loadIdSet(PENDING_LEADS)
+  const pendingLeads = new Map<string, Lead>()
+  for (const lead of state.leads) {
+    if (pendingLeadIds.has(lead.id)) pendingLeads.set(lead.id, lead)
+  }
+  return { state, pendingLeads, pendingFunnels: loadIdSet(PENDING_FUNNELS) }
+}
+
 type SyncState = "idle" | "ok" | "error"
 
 type Store = {
@@ -122,12 +135,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [crmSync, setCrmSync] = useState<SyncState>("idle")
   const [inboxSync, setInboxSync] = useState<SyncState>("idle")
   const [persistSync, setPersistSync] = useState<SyncState>("idle")
-  const [state, setState] = useState<AppState>(bootState)
+  const session = useState(bootSession)[0]
+  const [state, setState] = useState(session.state)
   const persistTimer = useRef(0)
   const crmTimer = useRef(0)
   const leadWriteTimer = useRef(0)
-  const pendingLeadWrites = useRef(new Map<string, Lead>())
-  const pendingFunnelIds = useRef(new Set<string>())
+  const pendingLeadWrites = useRef(session.pendingLeads)
+  const pendingFunnelIds = useRef(session.pendingFunnels)
   const removedFunnelIds = useRef(loadIdSet(REMOVED_FUNNELS))
   const removedLeadIds = useRef(loadIdSet(REMOVED_LEADS))
   const crmHydrated = useRef(false)
@@ -149,6 +163,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (latest && latest.updatedAt === lead.updatedAt) pendingLeadWrites.current.delete(lead.id)
         }
       }
+      persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
       setPersistSync(ok ? "ok" : "error")
       return ok
     })
@@ -156,6 +171,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const queueLeadWrite = (lead: Lead) => {
     pendingLeadWrites.current.set(lead.id, lead)
+    persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
     window.clearTimeout(leadWriteTimer.current)
     leadWriteTimer.current = window.setTimeout(flushLeadWrites, 400)
   }
@@ -182,6 +198,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (result.ok) {
         removedFunnelIds.current.clear()
         pendingFunnelIds.current.clear()
+        persistIdSet(PENDING_FUNNELS, pendingFunnelIds.current)
         settingsDirty.current = false
         lastGoodFunnels.current = current.funnels
       } else {
@@ -210,11 +227,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     meRequest()
       .then((data) => {
         if (cancelled) return
-        setState((prev) => ({ ...prev, user: data.user }))
+        commitState({ ...stateRef.current, user: data.user })
       })
-      .catch(() => {
-        if (!cancelled) setState((prev) => ({ ...prev, user: null }))
-      })
+      .catch(() => undefined)
       .finally(() => {
         if (!cancelled) setReady(true)
       })
@@ -271,6 +286,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           : prev.funnels
         if (crm.ok) {
           for (const id of pendingSeedFunnelIds(remoteFunnels, funnels)) pendingFunnelIds.current.add(id)
+          for (const id of recoverPendingFunnelIds(funnels, remoteFunnels)) pendingFunnelIds.current.add(id)
         }
         const remoteSettings = crm.ok && crm.settings && !settingsDirty.current ? migrateSettings({ ...crm.settings, telegramBotToken: "" }) : {}
         const next = {
@@ -303,8 +319,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return next
       })
       if (crm.ok) {
+        persistIdSet(PENDING_FUNNELS, pendingFunnelIds.current)
         crmHydrated.current = true
         if (pendingFunnelIds.current.size || removedFunnelIds.current.size || settingsDirty.current) pushWorker()
+        if (pendingLeadWrites.current.size) void flushLeadWrites()
       }
     })
     return () => {
@@ -433,8 +451,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         commitState({ ...stateRef.current, user: data.user })
       },
       logout: async () => {
-        flushLeadWrites()
-        flushCrm()
+        await flushLeadWrites()
+        await flushCrm()
         crmHydrated.current = false
         lastGoodFunnels.current = []
         await logoutRequest().catch(() => undefined)
@@ -445,6 +463,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       createFunnel: (funnel) => {
         pendingFunnelIds.current.add(funnel.id)
+        persistIdSet(PENDING_FUNNELS, pendingFunnelIds.current)
         removedFunnelIds.current.delete(funnel.id)
         persistIdSet(REMOVED_FUNNELS, removedFunnelIds.current)
         const prev = stateRef.current
@@ -459,6 +478,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       saveFunnel: (funnel) => {
         pendingFunnelIds.current.add(funnel.id)
+        persistIdSet(PENDING_FUNNELS, pendingFunnelIds.current)
         const prev = stateRef.current
         const exists = prev.funnels.some((item) => item.id === funnel.id)
         const nextFunnels = exists
@@ -479,6 +499,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           return Promise.resolve(false)
         }
         pendingFunnelIds.current.delete(id)
+        persistIdSet(PENDING_FUNNELS, pendingFunnelIds.current)
         removedFunnelIds.current.add(id)
         persistIdSet(REMOVED_FUNNELS, removedFunnelIds.current)
         const prev = stateRef.current
@@ -489,6 +510,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         removedLeadIds.current.delete(lead.id)
         persistIdSet(REMOVED_LEADS, removedLeadIds.current)
         pendingLeadWrites.current.set(lead.id, lead)
+        persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
         const prev = stateRef.current
         commitState({ ...prev, leads: [lead, ...prev.leads] })
         return persistLeads([lead]).then((ok) => {
@@ -496,6 +518,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             const latest = pendingLeadWrites.current.get(lead.id)
             if (latest && latest.updatedAt === lead.updatedAt) pendingLeadWrites.current.delete(lead.id)
           }
+          persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
           setPersistSync(ok ? "ok" : "error")
           return ok
         })
@@ -506,6 +529,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           pendingLeadWrites.current.set(lead.id, lead)
         }
         persistIdSet(REMOVED_LEADS, removedLeadIds.current)
+        persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
         const prev = stateRef.current
         commitState({ ...prev, leads: [...leads, ...prev.leads] })
         return persistLeads(leads).then((ok) => {
@@ -515,6 +539,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               if (latest && latest.updatedAt === lead.updatedAt) pendingLeadWrites.current.delete(lead.id)
             }
           }
+          persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
           setPersistSync(ok ? "ok" : "error")
           return ok
         })
@@ -531,6 +556,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       deleteLead: (id) => {
         pendingLeadWrites.current.delete(id)
+        persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
         removedLeadIds.current.add(id)
         persistIdSet(REMOVED_LEADS, removedLeadIds.current)
         const prev = stateRef.current
