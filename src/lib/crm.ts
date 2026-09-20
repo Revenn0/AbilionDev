@@ -227,6 +227,16 @@ export function reconcileFunnels(server: SalesFunnel[], incoming: SalesFunnel[])
   return next.slice(0, 20)
 }
 
+/** Sem hydrate, um POST do seed local apaga os quadros mais velhos do Worker. */
+export function canFlushCrm(hydrated: boolean) {
+  return hydrated
+}
+
+export function pendingSeedFunnelIds(remote: SalesFunnel[], local: SalesFunnel[]): string[] {
+  if (remote.length) return []
+  return local.map((item) => item.id).filter(Boolean)
+}
+
 export function activatePublishedFunnels(funnels: SalesFunnel[], id: string): SalesFunnel[] {
   const target = funnels.find((item) => item.id === id)
   if (!target?.production) return funnels

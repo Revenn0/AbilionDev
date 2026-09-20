@@ -38,7 +38,9 @@ import {
   applyRemovedFunnels,
   applyRemovedLeads,
   canDeleteFunnel,
+  canFlushCrm,
   clipRemovedIds,
+  pendingSeedFunnelIds,
   mergeFunnels,
   mergeLeadEvents,
   mergeLeads,
@@ -587,6 +589,15 @@ assert(
   !applyRemovedFunnels(newestKept, [publishedC.id]).some((item) => item.id === publishedC.id),
   "tombstone apaga o funil mais novo"
 )
+const seedWipe = reconcileFunnels(
+  [{ ...publishedA, updatedAt: "2024-01-01T00:00:00.000Z" }],
+  [{ ...emptySalesFunnel("seed"), updatedAt: "2026-09-20T00:00:00.000Z" }]
+)
+assert(!seedWipe.some((item) => item.id === publishedA.id), "POST só com seed apaga o quadro do Worker")
+assert(!canFlushCrm(false), "sem hydrate o painel não grava CRM")
+assert(canFlushCrm(true), "depois do GET o painel pode gravar")
+assert(pendingSeedFunnelIds([], [{ ...emptySalesFunnel("seed"), id: "seed-1" }]).includes("seed-1"), "Worker vazio adopta o seed")
+assert(pendingSeedFunnelIds([{ ...publishedA }], [{ ...emptySalesFunnel("seed"), id: "seed-1" }]).length === 0, "Worker com quadro não adopta seed")
 assert(clipRemovedIds(["  ok  ", "", "x".repeat(81), "ok", 12, null]).join(",") === "ok", "ids removidos são cortados")
 assert(
   !adoptRemoteFunnels(

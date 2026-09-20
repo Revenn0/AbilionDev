@@ -9,8 +9,10 @@ import {
   applyRemovedFunnels,
   applyRemovedLeads,
   canDeleteFunnel,
+  canFlushCrm,
   clipRemovedIds,
   mergeLeads,
+  pendingSeedFunnelIds,
   reconcileLeads,
 } from "@/lib/crm"
 import { migrateFunnel, migrateLead, migrateSettings } from "@/lib/migrate"
@@ -125,6 +127,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const pendingFunnelIds = useRef(new Set<string>())
   const removedFunnelIds = useRef(loadIdSet(REMOVED_FUNNELS))
   const removedLeadIds = useRef(loadIdSet(REMOVED_LEADS))
+  const crmHydrated = useRef(false)
   const stateRef = useRef(state)
 
   const flushLeadWrites = () => {
@@ -158,7 +161,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const flushCrm = () => {
     window.clearTimeout(crmTimer.current)
     const current = stateRef.current
-    if (!current.user) return
+    if (!current.user || !canFlushCrm(crmHydrated.current)) return
     void saveCrm({
       funnels: current.funnels,
       settings: { ...current.settings, telegramBotToken: "" },
@@ -197,6 +200,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const expire = () => {
+      crmHydrated.current = false
       setCrmSync("idle")
       setInboxSync("idle")
       setPersistSync("idle")
@@ -234,34 +238,47 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setCrmSync(crm.ok ? "ok" : "error")
       setPersistSync(remoteLeads.ok ? "ok" : "error")
       setRemote(runtime.persist === "supabase" ? "cloud" : runtime.ok ? "local" : "off")
-      setState((prev) => ({
-        ...prev,
-        funnels:
-          crm.ok && crm.funnels.length
-            ? adoptRemoteFunnels(prev.funnels, crm.funnels.map(migrateFunnel), pendingFunnelIds.current)
-            : prev.funnels,
-        leads: remoteLeads.ok
-          ? remoteLeads.leads.length
-            ? reconcileLeads(
-                prev.leads,
-                applyRemovedLeads(remoteLeads.leads.map(migrateLead), removedLeadIds.current),
-                pendingLeadWrites.current.keys()
-              )
-            : prev.leads.filter((lead) => pendingLeadWrites.current.has(lead.id))
-          : prev.leads,
-        settings: {
-          ...prev.settings,
-          ...(crm.ok && crm.settings ? migrateSettings({ ...crm.settings, telegramBotToken: "" }) : {}),
-          telegramBotToken: "",
-          telegramBotUsername: runtime.telegramBotUsername || prev.settings.telegramBotUsername,
-          telegramGroupUrl: runtime.telegramGroupUrl || prev.settings.telegramGroupUrl,
-          plugins: {
-            ...prev.settings.plugins,
-            ...(crm.ok && crm.settings?.plugins ? crm.settings.plugins : {}),
-            telegram: runtime.ok ? Boolean(runtime.telegram) : prev.settings.plugins.telegram,
+      setState((prev) => {
+        const remoteFunnels = crm.ok ? crm.funnels.map(migrateFunnel) : []
+        const funnels =
+          crm.ok && remoteFunnels.length
+            ? adoptRemoteFunnels(prev.funnels, remoteFunnels, pendingFunnelIds.current)
+            : prev.funnels
+        if (crm.ok) {
+          for (const id of pendingSeedFunnelIds(remoteFunnels, funnels)) pendingFunnelIds.current.add(id)
+        }
+        const next = {
+          ...prev,
+          funnels,
+          leads: remoteLeads.ok
+            ? remoteLeads.leads.length
+              ? reconcileLeads(
+                  prev.leads,
+                  applyRemovedLeads(remoteLeads.leads.map(migrateLead), removedLeadIds.current),
+                  pendingLeadWrites.current.keys()
+                )
+              : prev.leads.filter((lead) => pendingLeadWrites.current.has(lead.id))
+            : prev.leads,
+          settings: {
+            ...prev.settings,
+            ...(crm.ok && crm.settings ? migrateSettings({ ...crm.settings, telegramBotToken: "" }) : {}),
+            telegramBotToken: "",
+            telegramBotUsername: runtime.telegramBotUsername || prev.settings.telegramBotUsername,
+            telegramGroupUrl: runtime.telegramGroupUrl || prev.settings.telegramGroupUrl,
+            plugins: {
+              ...prev.settings.plugins,
+              ...(crm.ok && crm.settings?.plugins ? crm.settings.plugins : {}),
+              telegram: runtime.ok ? Boolean(runtime.telegram) : prev.settings.plugins.telegram,
+            },
           },
-        },
-      }))
+        }
+        stateRef.current = next
+        return next
+      })
+      if (crm.ok) {
+        crmHydrated.current = true
+        if (pendingFunnelIds.current.size) pushWorker()
+      }
     })
     return () => {
       cancelled = true
@@ -391,6 +408,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       logout: async () => {
         flushLeadWrites()
         flushCrm()
+        crmHydrated.current = false
         await logoutRequest().catch(() => undefined)
         setCrmSync("idle")
         setInboxSync("idle")
