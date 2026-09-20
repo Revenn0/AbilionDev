@@ -65,6 +65,9 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
   const keepDropSelection = useRef(false)
   const didFit = useRef(false)
   const skipAutoSave = useRef(true)
+  const dirty = useRef(false)
+  const persistRef = useRef<() => void>(() => undefined)
+  const readOnlyRef = useRef(false)
 
   useEffect(() => {
     if (!rf || didFit.current) return
@@ -111,9 +114,15 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
       nodes: nodes.map((n) => ({ id: n.id, type: (n.type as SalesKind) || "message", position: n.position, data: n.data })),
       edges: edges.map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle ?? undefined })),
     }
+    dirty.current = false
     onSave(next)
     return next
   }
+
+  useEffect(() => {
+    persistRef.current = () => persist()
+    readOnlyRef.current = readOnly
+  })
 
   const onConnect = useCallback(
     (c: Connection) => {
@@ -139,6 +148,7 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
       data: { ...defaultSalesData(item.kind), ...item.defaults },
     }
     keepDropSelection.current = true
+    dirty.current = true
     setNodes((nds) => [...nds.map((n) => ({ ...n, selected: false })), node])
     setSelected(node)
     if (window.innerWidth < 768) setMobilePanel("props")
@@ -150,9 +160,22 @@ export function SalesCanvas({ funnel, onSave }: { funnel: SalesFunnel; onSave: (
       skipAutoSave.current = false
       return
     }
-    const timer = window.setTimeout(() => persist(), 500)
+    dirty.current = true
+    const timer = window.setTimeout(() => persistRef.current(), 500)
     return () => window.clearTimeout(timer)
   }, [nodes, edges, readOnly])
+
+  useEffect(() => {
+    const flush = () => {
+      if (!dirty.current || readOnlyRef.current) return
+      persistRef.current()
+    }
+    window.addEventListener("pagehide", flush)
+    return () => {
+      window.removeEventListener("pagehide", flush)
+      flush()
+    }
+  }, [])
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault()

@@ -10,7 +10,7 @@ Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / M
 - Leads no passo do fluxo (print, banca, espera, oferta só se o grafo deixar)
 - Conversas Telegram: a Sté segue o funil publicado (boas-vindas, minicurso, Superbet, App/Premium, remarketing). A voz muda conforme o que o lead falou; o passo, os links e a próxima fase não mudam. A IA começa no OpenCode (DeepSeek V4.1 Flash). Se falhar, cai no OpenRouter: Gemma 4 31B e depois DeepSeek V4 Flash. Sem chave, a voz local ainda reconhece o lead.
 - Áudio: mensagens grandes do funil saem como áudio da ElevenLabs. Cada clip é gerado uma vez, guardado e reutilizado. Os links continuam no texto.
-- Funil com mapa e fluxo executável, no estúdio visual claro (catálogo, quadro e propriedades). O rascunho grava sozinho. No telemóvel, toca num bloco da paleta para o adicionar.
+- Funil com mapa e fluxo executável, no estúdio visual claro (catálogo, quadro e propriedades). O rascunho grava sozinho e também ao sair (Voltar / fechar o separador). No telemóvel, toca num bloco da paleta para o adicionar. O último funil publicado não se apaga.
 - Telegram: webhook no Worker (`/api/telegram`) — /start abre a Sté
 - Facebook → Telegram: `https://t.me/BOT?start=fb` (500–1000 /start por dia)
 - Configurações: Telegram, webhook, pixel `/t.js`. A cópia da Sté edita-se no funil publicado
@@ -194,7 +194,7 @@ Estes itens dependem de credenciais ou de uma decisão humana. O código não in
 - **Esqueceu a senha?** em produção não envia e-mail. Troca em Configurações → Conta.
 - **Supabase** só entra com `SUPABASE_SERVICE_ROLE`. Sem isso a operação corre no KV `abilion-auth`.
 - **Senhas dos operadores** em produção já estão no KV. Não estão neste repositório. Primeiro acesso local define a senha (6+).
-- Plugin **Agenda** é “Em breve” de propósito — não é código morto.
+- Plugin **Agenda** e **webhooks de saída** são “Em breve” de propósito. Relatórios exporta CSV da base de leads. Captura abre Leads. Telegram mostra o estado do Worker — sem interruptores que não fazem nada.
 - `ESTER_CHAT_ID` só é preciso se a Ester receber aviso no Telegram.
 
 ## Auditoria

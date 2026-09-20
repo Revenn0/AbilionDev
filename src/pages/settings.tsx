@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
+import { downloadLeadsCsv } from "@/lib/leads-export"
 import { cleanBotUsername, cleanTelegramGroupUrl } from "@/lib/migrate"
 import { useStore } from "@/lib/store"
 import { changePasswordRequest } from "@/lib/auth-api"
@@ -46,12 +47,13 @@ const PLUGINS: Array<{
   title: string
   hint: string
   soon?: boolean
+  exportCsv?: boolean
   icon: typeof Plug
 }> = [
-  { id: "telegram", title: "Telegram Bot", hint: "Token no Worker, webhook e Sté no 1:1.", icon: Send },
-  { id: "forms", title: "Captura", hint: "Popup do mini curso da Stefany para o CRM.", icon: FormInput },
-  { id: "webhooks", title: "Webhooks", hint: "Eventos para o Worker já existente.", icon: Webhook },
-  { id: "reports", title: "Relatórios", hint: "Exportações da operação.", icon: FileSpreadsheet },
+  { id: "telegram", title: "Telegram Bot", hint: "Liga-se em Bot Telegram. O interruptor daqui não mexe no token.", icon: Send },
+  { id: "forms", title: "Captura", hint: "Nova captura está em Leads. Não é um interruptor morto.", icon: FormInput },
+  { id: "webhooks", title: "Webhooks de saída", hint: "O webhook do Telegram já corre no Worker. Eventos para um URL teu ficam para depois.", icon: Webhook, soon: true },
+  { id: "reports", title: "Relatórios", hint: "Exporta a base de leads em CSV. Sem toggle falso.", icon: FileSpreadsheet, exportCsv: true },
   { id: "calendar", title: "Agenda", hint: "Oferta 3–4 dias depois do print. Em breve.", icon: Calendar, soon: true },
 ]
 
@@ -62,10 +64,9 @@ function readTab(params: URLSearchParams): TabId {
 
 export function SettingsPage() {
   const [params, setParams] = useSearchParams()
-  const [tab, setTab] = useState<TabId>(() => readTab(params))
+  const tab = readTab(params)
 
   const go = (next: TabId) => {
-    setTab(next)
     const copy = new URLSearchParams(params)
     if (next === "bot") copy.delete("tab")
     else copy.set("tab", next)
@@ -592,21 +593,20 @@ function AccountPane() {
 }
 
 function PluginsPane() {
-  const { state, togglePlugin } = useStore()
-  const on = Object.entries(state.settings.plugins).filter(([id, value]) => id !== "whatsapp" && value).length
+  const { state } = useStore()
+  const telegramOn = Boolean(state.settings.plugins.telegram)
 
   return (
     <section>
       <div className="mb-3 flex items-end justify-between gap-3">
         <div>
           <p className="text-[14px] font-medium">Plugins</p>
-          <p className="mt-0.5 text-[12.5px] text-muted-foreground">O canal activo é o Telegram. O resto entra no mesmo grafo.</p>
+          <p className="mt-0.5 text-[12.5px] text-muted-foreground">O canal activo é o Telegram. Interruptores sem efeito saíram daqui.</p>
         </div>
-        <p className="text-[12.5px] text-muted-foreground">{on} ligados</p>
+        <p className="text-[12.5px] text-muted-foreground">{state.leads.length} leads na base</p>
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         {PLUGINS.map((plugin) => {
-          const enabled = state.settings.plugins[plugin.id]
           const Icon = plugin.icon
           return (
             <article key={plugin.id} className="surface flex items-start gap-3.5 p-5">
@@ -619,24 +619,32 @@ function PluginsPane() {
                     <p className="text-[14px] font-medium">{plugin.title}</p>
                     <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">{plugin.hint}</p>
                   </div>
-                  {plugin.soon ? (
-                    <StatusPill>Em breve</StatusPill>
-                  ) : (
-                    <Switch
-                      checked={enabled}
-                      onCheckedChange={() => {
-                        togglePlugin(plugin.id)
-                        toast.success(enabled ? `${plugin.title} desligado.` : `${plugin.title} ligado.`)
-                      }}
-                      aria-label={`Ligar ${plugin.title}`}
-                    />
-                  )}
+                  {plugin.soon ? <StatusPill>Em breve</StatusPill> : null}
                 </div>
-                {!plugin.soon && (
-                  <div className="mt-3">
-                    <StatusPill tone={enabled ? "success" : "muted"}>{enabled ? "Ligado" : "Desligado"}</StatusPill>
-                  </div>
-                )}
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {plugin.id === "telegram" ? (
+                    <StatusPill tone={telegramOn ? "success" : "muted"}>{telegramOn ? "Ligado no Worker" : "Ainda sem token"}</StatusPill>
+                  ) : null}
+                  {plugin.id === "forms" ? (
+                    <Button asChild size="sm" variant="outline" className="rounded-full">
+                      <Link to="/leads">Abrir captura</Link>
+                    </Button>
+                  ) : null}
+                  {plugin.exportCsv ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="rounded-full"
+                      disabled={!state.leads.length}
+                      onClick={() => {
+                        downloadLeadsCsv(state.leads)
+                        toast.success(state.leads.length ? `CSV com ${state.leads.length} leads.` : "Sem leads para exportar.")
+                      }}
+                    >
+                      Exportar CSV
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             </article>
           )

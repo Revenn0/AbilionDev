@@ -171,7 +171,7 @@ export function defaultSalesData(kind: SalesKind): SalesNodeData {
       return {
         title: "Campanha — não misturar",
         splits: [
-          { id: "a", label: "WhatsApp · grupo", percent: 50 },
+          { id: "a", label: "Facebook Ads", percent: 50 },
           { id: "b", label: "Telegram · convite", percent: 50 },
         ],
       }

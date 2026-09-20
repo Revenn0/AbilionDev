@@ -6,6 +6,7 @@ import { PageChrome, StatusPill } from "@/components/layout/chrome"
 import { SyncBanner } from "@/components/layout/sync-banner"
 import { FunnelPreview } from "@/components/sales/preview"
 import { RenameFunnelDialog } from "@/components/sales/rename-dialog"
+import { canDeleteFunnel } from "@/lib/crm"
 import { useStore } from "@/lib/store"
 import { emptySalesFunnel } from "@/lib/templates"
 import { timeAgo } from "@/lib/format"
@@ -55,7 +56,9 @@ export function FluxoPage() {
               </Button>
             </div>
           )}
-          {funnels.map((funnel) => (
+          {funnels.map((funnel) => {
+            const gate = canDeleteFunnel(funnels, funnel.id)
+            return (
             <article key={funnel.id} className="surface overflow-hidden">
               <Link to={`/fluxo/funil/${funnel.id}`} className="block" aria-label={`Abrir ${funnel.name}`}>
                 <FunnelPreview funnel={funnel} />
@@ -82,10 +85,16 @@ export function FluxoPage() {
                     variant="ghost"
                     size="icon-sm"
                     className="rounded-full"
-                    aria-label="Excluir funil"
+                    disabled={!gate.ok}
+                    title={gate.ok ? "Excluir funil" : gate.reason}
+                    aria-label={gate.ok ? "Excluir funil" : gate.reason}
                     onClick={() => {
+                      if (!gate.ok) {
+                        toast.error(gate.reason)
+                        return
+                      }
                       if (!confirm("Remover este funil? Isto não se desfaz.")) return
-                      deleteFunnel(funnel.id)
+                      if (!deleteFunnel(funnel.id)) return
                       toast.success("Funil removido.")
                     }}
                   >
@@ -94,7 +103,8 @@ export function FluxoPage() {
                 </div>
               </div>
             </article>
-          ))}
+            )
+          })}
         </div>
       </div>
 

@@ -23,7 +23,8 @@ import {
   toTelegramHtml,
 } from "../src/lib/ste.ts"
 import { emptySalesFunnel } from "../src/lib/templates.ts"
-import { mergeLeads } from "../src/lib/crm.ts"
+import { canDeleteFunnel, mergeLeads } from "../src/lib/crm.ts"
+import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import type { Lead } from "../src/lib/types.ts"
 import { deleteLeadKv, findLeadInKv, listLeads, loadLead, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
 import { memoryKv } from "../worker/kv.ts"
@@ -390,6 +391,22 @@ assert(sanitizeIncomingLead({ id: "x".repeat(81) }) === null, "lead com id longo
 assert(sanitizeIncomingFunnel({ id: "funil-1", name: "Quadro", nodes: [], edges: [] })?.id === "funil-1", "funil válido passa")
 assert(sanitizeIncomingFunnel({ id: "" }) === null, "funil sem id cai")
 assert(sanitizeIncomingFunnel({ id: "funil-1", nodes: "nope" }) === null, "funil com nodes inválidos cai")
+
+const publishedA = emptySalesFunnel("A")
+publishedA.status = "active"
+publishedA.production = { name: "A", publishedAt: publishedA.updatedAt, nodes: publishedA.nodes, edges: publishedA.edges }
+assert(!canDeleteFunnel([publishedA], publishedA.id).ok, "último funil não apaga")
+const extraDraft = emptySalesFunnel("B")
+extraDraft.status = "draft"
+assert(canDeleteFunnel([publishedA, extraDraft], extraDraft.id).ok, "rascunho extra apaga")
+assert(!canDeleteFunnel([publishedA, extraDraft], publishedA.id).ok, "último publicado não apaga")
+const publishedC = emptySalesFunnel("C")
+publishedC.status = "active"
+publishedC.production = { name: "C", publishedAt: publishedC.updatedAt, nodes: publishedC.nodes, edges: publishedC.edges }
+assert(canDeleteFunnel([publishedA, publishedC], publishedA.id).ok, "publicado extra apaga")
+assert(csvCell("a,b") === '"a,b"', "csv cita vírgula")
+assert(csvCell('diz "oi"') === '"diz ""oi"""', "csv escapa aspas")
+assert(leadsToCsv([lead()]).includes("lead-1"), "csv inclui o id")
 
 assert(safeAppPath("/leads") === "/leads", "rota interna passa")
 assert(safeAppPath("/configuracoes?tab=conta") === "/configuracoes?tab=conta", "query da conta passa")

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { Children, cloneElement, isValidElement, useId, type ReactElement, type ReactNode } from "react"
 import { Plus, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -309,13 +309,32 @@ export function SalesInspector({
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
+  const id = useId()
+  const labelId = `${id}-label`
+  const kids = Children.toArray(children)
+  const controlIndex = kids.findIndex((child) => isValidElement(child) && (child.type === Input || child.type === Textarea))
+  const control = controlIndex >= 0 && isValidElement(kids[controlIndex]) ? kids[controlIndex] : null
   return (
     <div className="space-y-1.5">
-      <p className="flex items-center gap-1.5 text-[10px] font-medium text-slate-400">
-        <span className="size-1.5 rounded-full bg-slate-300" />
+      <label
+        id={labelId}
+        htmlFor={control ? id : undefined}
+        className="flex items-center gap-1.5 text-[10px] font-medium text-slate-400"
+      >
+        <span className="size-1.5 rounded-full bg-slate-300" aria-hidden />
         {label}
-      </p>
-      {children}
+      </label>
+      {control
+        ? kids.map((child, index) =>
+            index === controlIndex && isValidElement(child)
+              ? cloneElement(child as ReactElement<{ id?: string }>, { id })
+              : child
+          )
+        : (
+            <div role="group" aria-labelledby={labelId}>
+              {children}
+            </div>
+          )}
     </div>
   )
 }

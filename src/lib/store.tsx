@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { loginRequest, logoutRequest, meRequest } from "@/lib/auth-api"
 import { clearSessionExpired, noteSessionExpired, subscribeSessionExpired } from "@/lib/session"
 import { toast } from "sonner"
-import { mergeLeads } from "@/lib/crm"
+import { canDeleteFunnel, mergeLeads } from "@/lib/crm"
 import { migrateFunnel, migrateLead, migrateSettings } from "@/lib/migrate"
 import { pullRemote, pushRemote, supabaseEnabled } from "@/lib/persist"
 import { fetchCrm, fetchInbox, fetchLeads, fetchRuntime, persistLeads, removeRemoteLead, saveCrm } from "@/lib/runtime-api"
@@ -70,7 +70,7 @@ type Store = {
   logout: () => Promise<void>
   createFunnel: (funnel: SalesFunnel) => void
   saveFunnel: (funnel: SalesFunnel) => void
-  deleteFunnel: (id: string) => void
+  deleteFunnel: (id: string) => boolean
   createLead: (lead: Lead) => void
   createLeads: (leads: Lead[]) => void
   saveLead: (lead: Lead) => void
@@ -91,7 +91,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const skipPush = useRef(true)
   const persistTimer = useRef(0)
   const crmTimer = useRef(0)
+  const leadWriteTimer = useRef(0)
+  const pendingLeadWrites = useRef(new Map<string, Lead>())
   const stateRef = useRef(state)
+
+  const flushLeadWrites = () => {
+    window.clearTimeout(leadWriteTimer.current)
+    const batch = [...pendingLeadWrites.current.values()]
+    pendingLeadWrites.current.clear()
+    if (!batch.length) return
+    void persistLeads(batch).then((ok) => setPersistSync(ok ? "ok" : "error"))
+  }
+
+  const queueLeadWrite = (lead: Lead) => {
+    pendingLeadWrites.current.set(lead.id, lead)
+    window.clearTimeout(leadWriteTimer.current)
+    leadWriteTimer.current = window.setTimeout(flushLeadWrites, 400)
+  }
 
   useEffect(() => {
     stateRef.current = state
@@ -243,6 +259,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
+    const onHide = () => flushLeadWrites()
+    window.addEventListener("pagehide", onHide)
+    return () => {
+      window.removeEventListener("pagehide", onHide)
+      flushLeadWrites()
+    }
+  }, [])
+
+  useEffect(() => {
     window.clearTimeout(persistTimer.current)
     persistTimer.current = window.setTimeout(() => {
       const recent = [...state.leads].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 400)
@@ -276,6 +301,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setState((prev) => ({ ...prev, user: data.user }))
       },
       logout: async () => {
+        flushLeadWrites()
         await logoutRequest().catch(() => undefined)
         setCrmSync("idle")
         setInboxSync("idle")
@@ -294,8 +320,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         pushWorker()
       },
       deleteFunnel: (id) => {
+        const gate = canDeleteFunnel(stateRef.current.funnels, id)
+        if (!gate.ok) {
+          toast.error(gate.reason)
+          return false
+        }
         setState((prev) => ({ ...prev, funnels: prev.funnels.filter((item) => item.id !== id) }))
         pushWorker()
+        return true
       },
       createLead: (lead) => {
         setState((prev) => ({ ...prev, leads: [lead, ...prev.leads] }))
@@ -310,9 +342,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ...prev,
           leads: prev.leads.map((item) => (item.id === lead.id ? lead : item)),
         }))
-        void persistLeads([lead]).then((ok) => setPersistSync(ok ? "ok" : "error"))
+        queueLeadWrite(lead)
       },
       deleteLead: (id) => {
+        pendingLeadWrites.current.delete(id)
         setState((prev) => ({ ...prev, leads: prev.leads.filter((item) => item.id !== id) }))
         void removeRemoteLead(id).then((ok) => setPersistSync(ok ? "ok" : "error"))
       },

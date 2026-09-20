@@ -207,7 +207,38 @@ try {
     () => [...document.querySelectorAll("input")].some((el) => (el as HTMLInputElement).value === "Landing"),
     { timeout: 5_000 }
   )
+  const labelledTitle = await page.evaluate(() =>
+    [...document.querySelectorAll("label[for]")].some((label) => {
+      const id = label.getAttribute("for")
+      const input = id ? document.getElementById(id) : null
+      return Boolean(input && (input as HTMLInputElement).value === "Landing")
+    })
+  )
+  assert(labelledTitle, "inspector associa o título ao input")
+  await clickNamed(page, "Voltar")
+  await page.waitForFunction(() => location.pathname === "/fluxo" || location.pathname.endsWith("/fluxo"), { timeout: 8_000 })
+  await clickNamed(page, "Abrir")
+  await page.waitForFunction(() => location.pathname.includes("/fluxo/funil/"), { timeout: 8_000 })
+  const persistedLanding = await page.evaluate(() => {
+    const node = [...document.querySelectorAll(".react-flow__node")].find((el) => {
+      const text = (el.textContent || "").replace(/\s+/g, " ")
+      return text.includes("Landing") && !text.includes("mini curso")
+    })
+    if (node) (node as HTMLElement).click()
+    return Boolean(node)
+  })
+  assert(persistedLanding, "bloco Landing persistiu depois de Voltar")
+  await page.waitForFunction(
+    () => [...document.querySelectorAll("input")].some((el) => (el as HTMLInputElement).value === "Landing"),
+    { timeout: 5_000 }
+  )
   const editorPath = new URL(page.url()).pathname
+
+  await open(page, "/configuracoes")
+  await clickNamed(page, "Plugins")
+  const pluginsCopy = await page.evaluate(() => document.body.innerText)
+  assert(pluginsCopy.includes("Exportar CSV"), "plugins exporta CSV")
+  assert(!pluginsCopy.includes("Ligar Relatórios") && !pluginsCopy.includes("Ligar Webhooks"), "plugins sem interruptor morto")
 
   for (const viewport of VIEWPORTS) {
     await page.setViewport({ width: viewport.width, height: viewport.height })

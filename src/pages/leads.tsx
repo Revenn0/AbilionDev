@@ -320,6 +320,38 @@ function LeadDrawer({
 }) {
   const panel = useRef<HTMLElement>(null)
   const snapshot = publishedSnapshot(funnels)
+  const [memory, setMemory] = useState(lead?.memory ?? "")
+  const memoryRef = useRef(memory)
+  const dirtyMemory = useRef(false)
+  const leadRef = useRef(lead)
+
+  useEffect(() => {
+    memoryRef.current = memory
+    leadRef.current = lead
+  })
+
+  const flushMemory = () => {
+    const current = leadRef.current
+    if (!current || !dirtyMemory.current) return
+    dirtyMemory.current = false
+    onSave({ ...current, memory: memoryRef.current, updatedAt: new Date().toISOString() })
+  }
+
+  const commit = (next: Lead) => {
+    onSave({ ...next, memory: memoryRef.current })
+  }
+
+  const close = () => {
+    flushMemory()
+    onClose()
+  }
+
+  useEffect(() => {
+    dirtyMemory.current = false
+    setMemory(lead?.memory ?? "")
+  }, [lead?.id])
+
+  useEffect(() => () => flushMemory(), [])
 
   useEffect(() => {
     if (!lead) return
@@ -331,7 +363,7 @@ function LeadDrawer({
       )
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        onClose()
+        close()
         return
       }
       if (event.key !== "Tab" || !root) return
@@ -354,8 +386,8 @@ function LeadDrawer({
   if (!lead) return null
 
   const run = (event: RuntimeEvent, ok: string, blocked?: string) => {
-    const result = applyEvent(snapshot, lead, event)
-    onSave(result.lead)
+    const result = applyEvent(snapshot, { ...lead, memory: memoryRef.current }, event)
+    commit(result.lead)
     const stop = result.effects.find((item) => item.kind === "blocked")
     if (stop) {
       toast.error(blocked ?? stop.reason)
@@ -366,7 +398,7 @@ function LeadDrawer({
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/40" onClick={close} />
       <aside
         ref={panel}
         role="dialog"
@@ -397,7 +429,7 @@ function LeadDrawer({
               key={temp}
               type="button"
               aria-pressed={lead.temperature === temp}
-              onClick={() => onSave({ ...lead, temperature: temp, updatedAt: new Date().toISOString() })}
+              onClick={() => commit({ ...lead, temperature: temp, updatedAt: new Date().toISOString() })}
               className={cn(
                 "h-7 rounded-full px-2.5 text-[12px]",
                 lead.temperature === temp ? "bg-foreground text-background" : "bg-muted text-muted-foreground"
@@ -435,8 +467,8 @@ function LeadDrawer({
             className="rounded-full"
             onClick={() => {
               const when = lead.waitUntil ? new Date(lead.waitUntil).getTime() + 1000 : Date.now()
-              const result = applyEvent(snapshot, lead, { type: "timer" }, when)
-              onSave(result.lead)
+              const result = applyEvent(snapshot, { ...lead, memory: memoryRef.current }, { type: "timer" }, when)
+              commit(result.lead)
               const offered = result.effects.some((item) => item.kind === "offer")
               toast.success(offered ? "Oferta disparada pelo fluxo." : "Espera avançada.")
             }}
@@ -451,8 +483,11 @@ function LeadDrawer({
         <Textarea
           id="lead-memory"
           className="mt-1.5 min-h-28"
-          value={lead.memory}
-          onChange={(event) => onSave({ ...lead, memory: event.target.value, updatedAt: new Date().toISOString() })}
+          value={memory}
+          onChange={(event) => {
+            dirtyMemory.current = true
+            setMemory(event.target.value)
+          }}
           placeholder="O que esta pessoa já disse. Não misturar com outro chat."
         />
 
@@ -468,7 +503,7 @@ function LeadDrawer({
         )}
 
         <div className="mt-auto flex flex-wrap gap-2 pt-6">
-          <Button variant="ghost" className="rounded-full" onClick={onClose}>
+          <Button variant="ghost" className="rounded-full" onClick={close}>
             Fechar
           </Button>
           <Button

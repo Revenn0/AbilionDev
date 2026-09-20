@@ -1,4 +1,4 @@
-import { defaultSettings, type Lead, type Settings } from "./types"
+import { defaultSettings, type Lead, type SalesFunnel, type Settings } from "./types"
 
 const CAP = 400
 
@@ -28,4 +28,18 @@ export function mergeLeads(current: Lead[], incoming: Lead[]): Lead[] {
 
 export function emptySettings(): Settings {
   return { ...defaultSettings, plugins: { ...defaultSettings.plugins } }
+}
+
+export function canDeleteFunnel(
+  funnels: SalesFunnel[],
+  id: string
+): { ok: true } | { ok: false; reason: string } {
+  if (funnels.length <= 1) return { ok: false, reason: "Mantém pelo menos um funil." }
+  const target = funnels.find((item) => item.id === id)
+  if (!target) return { ok: false, reason: "Este funil já não está no CRM." }
+  const published = funnels.filter((item) => item.status === "active" && item.production)
+  if (target.status === "active" && target.production && published.length <= 1) {
+    return { ok: false, reason: "Não apagues o último funil publicado. A Sté precisa de um quadro." }
+  }
+  return { ok: true }
 }
