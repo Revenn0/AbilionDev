@@ -445,7 +445,11 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       const funnels = commitCrmFunnels(stored, incoming, storedRemoved, incomingRemoved, latest, latestRemoved)
       if (!funnels.length) return json({ error: "Mantém pelo menos um funil." }, 400)
       if (funnels.length > FUNNEL_CAP) return json({ error: `O estúdio aceita no máximo ${FUNNEL_CAP} funis.` }, 400)
-      await persistFunnels(env, funnels)
+      try {
+        await persistFunnels(env, funnels)
+      } catch (error) {
+        return json({ error: error instanceof Error ? error.message : "Não gravei os funis." }, 400)
+      }
       if (env.AUTH && incomingRemoved.length) await rememberRemovedFunnels(env.AUTH, incomingRemoved)
     }
     if (body.settings) await persistSettings(env, body.settings)
@@ -748,8 +752,9 @@ async function notifyEster(env: Env, token: string, body: string) {
 
 async function persistFunnels(env: Env, funnels: SalesFunnel[]) {
   const clean = enforceSinglePublished(
-    funnels.map(sanitizeIncomingFunnel).filter((item): item is SalesFunnel => Boolean(item)).slice(0, 20)
+    funnels.map(sanitizeIncomingFunnel).filter((item): item is SalesFunnel => Boolean(item))
   )
+  if (clean.length > FUNNEL_CAP) throw new Error(`O estúdio aceita no máximo ${FUNNEL_CAP} funis.`)
   if (env.AUTH) await saveFunnelsKv(env.AUTH, clean)
   if (!env.SUPABASE_SERVICE_ROLE) return
   if (clean.length) {

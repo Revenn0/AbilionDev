@@ -4,7 +4,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { adsDeepLink } from "@/lib/telegram-start"
 import { ADS_ORIGIN, pixelPageHtml } from "@/lib/tracker-script"
-import { addPageScript, adsStartToken, funnelHasInstallableBoard, PAGE_INSTALL_STEPS, pageInstallManual, removePageScript } from "@/lib/page-script"
+import { clipNewestIds } from "@/lib/crm"
+import { addPageScript, adsStartToken, funnelHasInstallableBoard, PAGE_INSTALL_STEPS, PAGE_SCRIPT_REMOVED_CAP, pageInstallManual, removePageScript } from "@/lib/page-script"
 import { useStore } from "@/lib/store"
 import { toast } from "sonner"
 
@@ -23,10 +24,10 @@ export function PixelSnippet({ origin, botUsername }: { origin: string; botUsern
   const defaultSnippet = pixelPageHtml(ADS_ORIGIN, defaultHref)
   const manual = pageInstallManual({ botUsername })
 
-  const persist = (next: typeof scripts, ok: string, fail: string) => {
+  const persist = (next: typeof scripts, removed: string[] | undefined, ok: string, fail: string) => {
     if (busy) return
     setBusy(true)
-    saveSettings({ pageScripts: next })
+    saveSettings({ pageScripts: next, ...(removed ? { removedPageScripts: removed } : {}) })
     void flushCrmNow()
       .then((result) => {
         if (result.ok) toast.success(ok)
@@ -106,7 +107,7 @@ export function PixelSnippet({ origin, botUsername }: { origin: string; botUsern
           }
           setName("")
           setPageUrl("")
-          persist(made.scripts, "Script da página criado.", "Não gravei o script no Worker.")
+          persist(made.scripts, undefined, "Script da página criado.", "Não gravei o script no Worker.")
         }}
       >
         <div className="space-y-1.5 sm:col-span-2">
@@ -199,7 +200,12 @@ export function PixelSnippet({ origin, botUsername }: { origin: string; botUsern
                     disabled={busy}
                     onClick={() => {
                       if (!confirm("Remover este script? As páginas que ainda o colam passam a usar o funil publicado.")) return
-                      persist(removePageScript(scripts, script.id), "Script removido.", "Não removi o script no Worker.")
+                      persist(
+                        removePageScript(scripts, script.id),
+                        clipNewestIds([...(state.settings.removedPageScripts ?? []), script.id], PAGE_SCRIPT_REMOVED_CAP),
+                        "Script removido.",
+                        "Não removi o script no Worker."
+                      )
                     }}
                   >
                     Remover

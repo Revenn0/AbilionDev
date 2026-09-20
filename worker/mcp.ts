@@ -1,5 +1,6 @@
-import { applyRemovedFunnels, applyRemovedLeads, commitStoredSettings, enforceSinglePublished, publicSettings } from "../src/lib/crm.ts"
-import { addPageScript, pageInstallManual, pageScriptById, removePageScript } from "../src/lib/page-script.ts"
+import { applyRemovedFunnels, applyRemovedLeads, clipNewestIds, commitStoredSettings, enforceSinglePublished, FUNNEL_CAP, publicSettings } from "../src/lib/crm.ts"
+import { addLeadCategory, leadFromImport, parseLeadImportText } from "../src/lib/lead-category.ts"
+import { addPageScript, pageInstallManual, pageScriptById, PAGE_SCRIPT_REMOVED_CAP, removePageScript } from "../src/lib/page-script.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
 import { emptySalesFunnel, publishSnapshot } from "../src/lib/templates.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
@@ -13,7 +14,7 @@ import {
   type PublicUser,
 } from "./auth.ts"
 import { handleTokens, handleUsers } from "./users.ts"
-import { listLeadPage, loadFunnelsKv, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, lookupLeadsByQuery, saveFunnelsKv, saveSettingsKv } from "./crm-store.ts"
+import { listLeadPage, loadFunnelsKv, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, lookupLeadsByQuery, saveFunnelsKv, saveSettingsKv, upsertLeadKv } from "./crm-store.ts"
 import { readJsonStrict } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -59,6 +60,7 @@ function compactLead(lead: Lead) {
     channel: lead.channel,
     origin: lead.origin,
     campaign: lead.campaign,
+    category: lead.category,
     stage: lead.stage,
     temperature: lead.temperature,
     updatedAt: lead.updatedAt,
@@ -204,7 +206,8 @@ const TOOLS = [
   },
   {
     name: "abilion_page_install_manual",
-    description: "Manual para instalar o pixel numa landing. Sem id devolve o script geral; com scriptId devolve o snippet daquela página/funil.",
+    description:
+      "Manual para instalar o pixel numa landing. Passos: 1) publica o funil 2) cria um script (abilion_create_page_script) 3) cola <script src=https://www.abilion.lol/t.js?v=2&s=ID data-cta=[data-abilion-cta]> 4) o anúncio aponta para a landing, não t.me 5) /start fica fb_sID_vid. Sem scriptId devolve o script geral; com scriptId o snippet daquela página/funil.",
     inputSchema: {
       type: "object",
       properties: { scriptId: { type: "string" } },
@@ -240,6 +243,20 @@ const TOOLS = [
       additionalProperties: false,
     },
   },
+  {
+    name: "abilion_import_leads",
+    description: "Importa uma lista (nome, contacto) para o CRM. toGroup=true mete-os na categoria Grupo e no passo group.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        text: { type: "string" },
+        category: { type: "string" },
+        toGroup: { type: "boolean" },
+      },
+      required: ["text"],
+      additionalProperties: false,
+    },
+  },
 ] as const
 
 async function funnelsOf(env: McpEnv): Promise<SalesFunnel[]> {
@@ -250,7 +267,8 @@ async function funnelsOf(env: McpEnv): Promise<SalesFunnel[]> {
 async function saveFunnels(env: McpEnv, funnels: SalesFunnel[]) {
   if (!env.AUTH) throw new Error("Auth ainda sem KV.")
   if (!funnels.length) throw new Error("Mantém pelo menos um funil.")
-  await saveFunnelsKv(env.AUTH, enforceSinglePublished(funnels.slice(0, 20)))
+  if (funnels.length > FUNNEL_CAP) throw new Error(`O estúdio aceita no máximo ${FUNNEL_CAP} funis.`)
+  await saveFunnelsKv(env.AUTH, enforceSinglePublished(funnels))
 }
 
 async function publishFunnel(env: McpEnv, id: string) {
@@ -428,11 +446,15 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     const funnel = funnels.find((item) => item.id === str(args.funnelId).trim())
     if (!funnel?.production) throw new Error("Publica este funil antes de criar o script da página.")
     const settings = await loadSettingsKv(env.AUTH)
-    const made = addPageScript(settings.pageScripts, {
-      name: clipName(str(args.name), "Landing"),
-      funnelId: funnel.id,
-      pageUrl: str(args.pageUrl),
-    })
+    const made = addPageScript(
+      settings.pageScripts,
+      {
+        name: clipName(str(args.name), "Landing"),
+        funnelId: funnel.id,
+        pageUrl: str(args.pageUrl),
+      },
+      settings.removedPageScripts
+    )
     if (!made.ok) throw new Error(made.error)
     await saveSettingsKv(env.AUTH, commitStoredSettings(settings, { ...settings, pageScripts: made.scripts }, settings))
     return { ...pageInstallManual({ botUsername: settings.telegramBotUsername, script: made.script, funnelName: funnel.name }), script: made.script }
@@ -444,8 +466,38 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     const settings = await loadSettingsKv(env.AUTH)
     const next = removePageScript(settings.pageScripts, id)
     if (next.length === settings.pageScripts.length) throw new Error("Este script já não está no estúdio.")
-    await saveSettingsKv(env.AUTH, commitStoredSettings(settings, { ...settings, pageScripts: next }, settings))
+    await saveSettingsKv(
+      env.AUTH,
+      commitStoredSettings(
+        settings,
+        {
+          ...settings,
+          pageScripts: next,
+          removedPageScripts: clipNewestIds([...(settings.removedPageScripts ?? []), id], PAGE_SCRIPT_REMOVED_CAP),
+        },
+        settings
+      )
+    )
     return { ok: true }
+  }
+  if (name === "abilion_import_leads") {
+    if (!env.AUTH) throw new Error("Auth ainda sem KV.")
+    const parsed = parseLeadImportText(str(args.text))
+    if (parsed.error) throw new Error(parsed.error)
+    const settings = await loadSettingsKv(env.AUTH)
+    const toGroup = args.toGroup === true
+    const named = addLeadCategory(settings.leadCategories, str(args.category) || (toGroup ? "Grupo" : ""))
+    const category = named.ok ? named.category : ""
+    if (named.ok && named.categories !== settings.leadCategories) {
+      await saveSettingsKv(env.AUTH, commitStoredSettings(settings, { ...settings, leadCategories: named.categories }, settings))
+    }
+    const imported = []
+    for (const row of parsed.rows.slice(0, 50)) {
+      const lead = leadFromImport(row, { category, toGroup, groupUrl: settings.telegramGroupUrl })
+      await upsertLeadKv(env.AUTH, lead)
+      imported.push({ id: lead.id, name: lead.name, contact: lead.contact, category: lead.category, stage: lead.stage })
+    }
+    return { ok: true, imported: imported.length, leads: imported }
   }
   throw new Error(`Ferramenta desconhecida: ${name}`)
 }
@@ -482,7 +534,27 @@ async function dispatch(request: Request, env: McpEnv, actor: PublicUser, req: R
   }
   if (method === "ping" || method === "notifications/initialized") return rpcResult(id, {})
   if (method === "tools/list") return rpcResult(id, { tools: TOOLS })
-  if (method === "resources/list") return rpcResult(id, { resources: [] })
+  if (method === "resources/list") {
+    return rpcResult(id, {
+      resources: [
+        {
+          uri: "abilion://install",
+          name: "Manual de instalação do pixel",
+          mimeType: "application/json",
+          description: "Os mesmos 5 passos do painel, do t.js e de GET /api/install.",
+        },
+      ],
+    })
+  }
+  if (method === "resources/read") {
+    const uri = str(params.uri)
+    if (uri === "abilion://install" || uri.startsWith("abilion://install/")) {
+      const scriptId = uri.split("/")[3] || ""
+      const manual = await installManualOf(env, scriptId)
+      return rpcResult(id, { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(manual) }] })
+    }
+    return rpcError(id, -32602, "Recurso desconhecido.")
+  }
   if (method === "prompts/list") return rpcResult(id, { prompts: [] })
   if (method === "tools/call") {
     const name = str(params.name)

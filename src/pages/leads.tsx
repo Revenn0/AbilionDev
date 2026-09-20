@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Plus, Users } from "lucide-react"
+import { Plus, Upload, Users } from "lucide-react"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
 import { HydratePanel } from "@/components/layout/hydrate-panel"
 import { SyncBanner } from "@/components/layout/sync-banner"
@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useStore } from "@/lib/store"
+import { addLeadCategory, leadFromImport, mergeLeadCategories, parseLeadImportText } from "@/lib/lead-category"
 import { captureAgainstFunnels } from "@/lib/templates"
 import { ORIGIN_LABEL, STAGE_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { isImportedLead, needsEster } from "@/lib/ops"
@@ -45,15 +46,20 @@ const FILTERS = [
 ] as const
 
 export function LeadsPage() {
-  const { state, createLead, saveLead, flushLeadNow, deleteLead, crmSync, inboxSync, persistSync } = useStore()
+  const { state, createLead, createLeads, saveLead, saveSettings, flushLeadNow, deleteLead, crmSync, inboxSync, persistSync } = useStore()
   const { summary } = useTrackSummary(8000)
-  const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("all")
+  const [filter, setFilter] = useState<string>("all")
   const [query, setQuery] = useState("")
   useRemoteLeadSearch(query)
   const [open, setOpen] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
   const lead = state.leads.find((item) => item.id === selected) ?? null
   const snapshot = publishedSnapshot(state.funnels)
+  const categories = useMemo(
+    () => mergeLeadCategories(state.settings.leadCategories, state.leads.map((item) => item.category).filter(Boolean) as string[]),
+    [state.leads, state.settings.leadCategories]
+  )
 
   const rows = useMemo(() => {
     const needle = query.trim()
@@ -64,6 +70,7 @@ export function LeadsPage() {
       if ((filter === "novo" || filter === "morno" || filter === "quente") && item.temperature !== filter) return false
       if (filter === "ester" && !needsEster(item)) return false
       if (filter === "facebook" && item.origin !== "facebook") return false
+      if (filter.startsWith("cat:") && item.category !== filter.slice(4)) return false
       if (!needle) return true
       return leadMatchesQuery(item, needle, 1)
     })
@@ -80,6 +87,9 @@ export function LeadsPage() {
           ]}
         />
         <PageChrome icon={Users} title="Leads">
+          <Button variant="outline" className="h-8 rounded-full px-3.5" onClick={() => setImporting(true)}>
+            <Upload /> Importar lista
+          </Button>
           <Button className="h-8 rounded-full px-3.5" onClick={() => setOpen(true)}>
             <Plus /> Nova captura
           </Button>
@@ -129,6 +139,23 @@ export function LeadsPage() {
                 </span>
               </button>
             ))}
+            {categories.map((category) => (
+              <button
+                key={`cat:${category}`}
+                type="button"
+                aria-pressed={filter === `cat:${category}`}
+                onClick={() => setFilter(`cat:${category}`)}
+                className={cn(
+                  "min-h-8 pb-1",
+                  filter === `cat:${category}` ? "border-b-2 border-foreground font-medium" : "text-muted-foreground"
+                )}
+              >
+                {category}{" "}
+                <span className="text-muted-foreground">
+                  {state.leads.filter((row) => row.category === category).length}
+                </span>
+              </button>
+            ))}
           </div>
 
           <div className="hidden grid-cols-[1.1fr_150px_80px_80px_130px_80px] gap-3 border-b border-border px-5 py-2.5 text-[12px] text-muted-foreground md:grid">
@@ -152,7 +179,7 @@ export function LeadsPage() {
                   ? "Nenhum nome, @user ou campanha bate com o recorte."
                   : filter !== "all"
                     ? "Este filtro está vazio. Escolhe Todos ou limpa a busca."
-                    : "Popup, join ou /start entram no fluxo publicado. Importados da lista antiga ficam em WhatsApp."}
+                    : "Popup, join ou /start entram no fluxo publicado. Importa uma lista para uma categoria ou para o grupo."}
               </p>
             </div>
           ) : (
@@ -166,7 +193,10 @@ export function LeadsPage() {
                   >
                     <div className="min-w-0">
                       <p className="truncate text-[13.5px] font-medium">{item.name}</p>
-                      <p className="truncate text-[12px] text-muted-foreground">{displayContact(item.contact)}</p>
+                      <p className="truncate text-[12px] text-muted-foreground">
+                        {displayContact(item.contact)}
+                        {item.category ? ` · ${item.category}` : ""}
+                      </p>
                     </div>
                     <GeoBadge facts={factsWithTrack(item, summary.geos)} className="text-[12.5px]" />
                     <p className="text-[12.5px] text-muted-foreground">{item.channel === "whatsapp" ? "WhatsApp" : "Telegram"}</p>
@@ -183,10 +213,39 @@ export function LeadsPage() {
         </section>
       </div>
 
-      <CaptureDialog open={open} onOpenChange={setOpen} onCreate={createLead} funnels={state.funnels} />
+      <CaptureDialog
+        open={open}
+        onOpenChange={setOpen}
+        onCreate={createLead}
+        funnels={state.funnels}
+        categories={categories}
+        onCategory={(name) => {
+          const made = addLeadCategory(state.settings.leadCategories, name)
+          if (made.ok) saveSettings({ leadCategories: made.categories })
+          return made
+        }}
+      />
+      <ImportLeadsDialog
+        open={importing}
+        onOpenChange={setImporting}
+        categories={categories}
+        groupUrl={state.settings.telegramGroupUrl}
+        onCategory={(name) => {
+          const made = addLeadCategory(state.settings.leadCategories, name)
+          if (made.ok) saveSettings({ leadCategories: made.categories })
+          return made
+        }}
+        onImport={async (leads) => createLeads(leads)}
+      />
       <LeadDrawer
         lead={lead}
         funnels={state.funnels}
+        categories={categories}
+        onCategory={(name) => {
+          const made = addLeadCategory(state.settings.leadCategories, name)
+          if (made.ok) saveSettings({ leadCategories: made.categories })
+          return made
+        }}
         geos={summary.geos}
         onClose={() => setSelected(null)}
         onSave={saveLead}
@@ -206,15 +265,20 @@ function CaptureDialog({
   onOpenChange,
   onCreate,
   funnels,
+  categories,
+  onCategory,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCreate: (lead: Lead) => void | Promise<boolean>
   funnels: SalesFunnel[]
+  categories: string[]
+  onCategory: (name: string) => { ok: true; category: string } | { ok: false; error: string }
 }) {
   const [name, setName] = useState("")
   const [contact, setContact] = useState("")
   const [origin, setOrigin] = useState<LeadOrigin>("popup")
+  const [category, setCategory] = useState("")
   const [errors, setErrors] = useState<{ name?: string; contact?: string }>({})
   const creating = useRef(false)
 
@@ -227,7 +291,7 @@ function CaptureDialog({
       return
     }
     creating.current = true
-    const created = captureAgainstFunnels({ name, contact, channel: "telegram", origin }, funnels)
+    const created = captureAgainstFunnels({ name, contact, channel: "telegram", origin, category: category || undefined }, funnels)
     void Promise.resolve(onCreate(created))
       .then((ok) => {
         if (ok === false) {
@@ -292,11 +356,193 @@ function CaptureDialog({
               <option value="closing">Fechamento</option>
             </select>
           </div>
+          <CategoryField id="lead-category" value={category} categories={categories} onChange={setCategory} onCreate={onCategory} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
             <Button type="submit">Guardar no CRM</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function CategoryField({
+  id,
+  value,
+  categories,
+  onChange,
+  onCreate,
+}: {
+  id: string
+  value: string
+  categories: string[]
+  onChange: (value: string) => void
+  onCreate: (name: string) => { ok: true; category: string } | { ok: false; error: string }
+}) {
+  const [draft, setDraft] = useState("")
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>Categoria</Label>
+      <select
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+      >
+        <option value="">Sem categoria</option>
+        {categories.map((item) => (
+          <option key={item} value={item}>
+            {item}
+          </option>
+        ))}
+      </select>
+      <div className="flex gap-2">
+        <Input
+          id={`${id}-new`}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="Nova categoria"
+        />
+        <Button
+          type="button"
+          variant="outline"
+          className="rounded-full"
+          onClick={() => {
+            const made = onCreate(draft)
+            if (!made.ok) {
+              toast.error(made.error)
+              return
+            }
+            onChange(made.category)
+            setDraft("")
+          }}
+        >
+          Criar
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function ImportLeadsDialog({
+  open,
+  onOpenChange,
+  categories,
+  groupUrl,
+  onCategory,
+  onImport,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  categories: string[]
+  groupUrl?: string
+  onCategory: (name: string) => { ok: true; category: string } | { ok: false; error: string }
+  onImport: (leads: Lead[]) => Promise<boolean>
+}) {
+  const [text, setText] = useState("")
+  const [category, setCategory] = useState("")
+  const [toGroup, setToGroup] = useState(false)
+  const [error, setError] = useState("")
+  const busy = useRef(false)
+
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault()
+    if (busy.current) return
+    const parsed = parseLeadImportText(text)
+    if (parsed.error) {
+      setError(parsed.error)
+      return
+    }
+    busy.current = true
+    const leads = parsed.rows.map((row) =>
+      leadFromImport(row, { category: category || (toGroup ? "Grupo" : ""), toGroup, groupUrl })
+    )
+    void onImport(leads)
+      .then((ok) => {
+        if (!ok) {
+          toast.error("Não gravei a lista no Worker.")
+          return
+        }
+        toast.success(
+          toGroup
+            ? `${leads.length} contactos importados para o grupo.`
+            : `${leads.length} contactos importados.`
+        )
+        setText("")
+        setError("")
+        onOpenChange(false)
+      })
+      .catch(() => toast.error("Não gravei a lista no Worker."))
+      .finally(() => {
+        busy.current = false
+      })
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Importar lista</DialogTitle>
+          <DialogDescription>
+            Uma linha por contacto: nome e telefone, ou só o @user. Importar para o grupo mete-os na categoria Grupo.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={submit} className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="lead-import-text">Lista</Label>
+            <Textarea
+              id="lead-import-text"
+              className="min-h-36"
+              value={text}
+              onChange={(event) => {
+                setText(event.target.value)
+                setError("")
+              }}
+              placeholder={"Ana Silva, 11987654321\n@carlos"}
+            />
+            {error ? (
+              <p role="alert" className="text-[12px] text-destructive">
+                {error}
+              </p>
+            ) : null}
+          </div>
+          <CategoryField id="lead-import-category" value={category} categories={categories} onChange={setCategory} onCreate={onCategory} />
+          <label className="flex items-start gap-2 text-[13px] leading-relaxed">
+            <input
+              id="lead-import-group"
+              type="checkbox"
+              className="mt-1"
+              checked={toGroup}
+              onChange={(event) => {
+                setToGroup(event.target.checked)
+                if (event.target.checked && !category) setCategory("Grupo")
+              }}
+            />
+            <span>
+              Importar para o grupo Telegram
+              {groupUrl ? (
+                <>
+                  {" "}
+                  (
+                  <a className="underline-offset-2 hover:underline" href={groupUrl} rel="noreferrer">
+                    convite
+                  </a>
+                  )
+                </>
+              ) : (
+                " — o link do grupo está em Configurações → Bot"
+              )}
+              . Os contactos ficam no passo grupo, sem a Sté a falar.
+            </span>
+          </label>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit">Importar</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -342,6 +588,8 @@ function Field({
 function LeadDrawer({
   lead,
   funnels,
+  categories,
+  onCategory,
   geos,
   onClose,
   onSave,
@@ -350,6 +598,8 @@ function LeadDrawer({
 }: {
   lead: Lead | null
   funnels: SalesFunnel[]
+  categories: string[]
+  onCategory: (name: string) => { ok: true; category: string } | { ok: false; error: string }
   geos?: Record<string, { country?: string; countryCode?: string; city?: string; region?: string; regionCode?: string }>
   onClose: () => void
   onSave: (lead: Lead) => void
@@ -531,6 +781,15 @@ function LeadDrawer({
         {isPhoneLikeName(name || lead.name) ? (
           <p className="mt-1 text-[12px] text-muted-foreground">Este import não tinha nome de pessoa. Escreve o nome aqui.</p>
         ) : null}
+        <div className="mt-4">
+          <CategoryField
+            id="lead-drawer-category"
+            value={lead.category ?? ""}
+            categories={categories}
+            onChange={(value) => commit({ ...lead, category: value || undefined, updatedAt: new Date().toISOString() })}
+            onCreate={onCategory}
+          />
+        </div>
         <p className="mt-2 text-[13.5px] font-medium">
           <GeoBadge facts={factsWithTrack(lead, geos)} empty="Estado ainda sem rastreio" />
         </p>

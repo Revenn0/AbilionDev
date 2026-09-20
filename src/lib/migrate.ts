@@ -1,6 +1,7 @@
 import { normalizeTelegramContact } from "./capture.ts"
 import { isEmailName, resolveLeadName } from "./lead-name.ts"
-import { migratePageScripts } from "./page-script.ts"
+import { migrateLeadCategories, sanitizeLeadCategory } from "./lead-category.ts"
+import { migratePageScripts, migrateRemovedPageScripts } from "./page-script.ts"
 import { defaultSettings, isFlowKind, isMapKind, type Lead, type LeadOrigin, type SalesFunnel, type SalesKind, type SalesSnapshot, type Settings } from "./types.ts"
 
 export function migrateLeadOrigin(value?: string): LeadOrigin {
@@ -93,6 +94,7 @@ export function migrateLead(raw: Partial<Lead> & { id: string }): Lead {
     steBlocked: raw.steBlocked ?? false,
     steQuiet: raw.steQuiet ?? false,
     telegramChatId: raw.telegramChatId,
+    category: sanitizeLeadCategory(raw.category) || undefined,
     updatedAt: raw.updatedAt ?? now,
     createdAt: raw.createdAt ?? now,
   }
@@ -293,5 +295,7 @@ export function migrateSettings(raw: Partial<Settings> | undefined): Settings {
     esterTelegramChatId: "",
     steDieAfterRemarketing: merged.steDieAfterRemarketing !== false,
     pageScripts: migratePageScripts(merged.pageScripts),
+    removedPageScripts: migrateRemovedPageScripts(merged.removedPageScripts),
+    leadCategories: migrateLeadCategories(merged.leadCategories),
   }
 }

@@ -1,6 +1,8 @@
 import { adsDeepLink } from "./telegram-start.ts"
-import { ADS_ORIGIN, PIXEL_VERSION, pixelPageHtml } from "./tracker-script.ts"
+import { ADS_ORIGIN, PAGE_INSTALL_STEPS, PIXEL_VERSION, pixelPageHtml } from "./tracker-script.ts"
 import type { PageScript, SalesFunnel } from "./types.ts"
+
+export { PAGE_INSTALL_STEPS }
 
 function pageUrlOf(value: string) {
   const next = value.trim()
@@ -16,30 +18,8 @@ function pageUrlOf(value: string) {
 }
 
 export const PAGE_SCRIPT_CAP = 20
+export const PAGE_SCRIPT_REMOVED_CAP = 40
 export const PAGE_SCRIPT_ID = /^[a-f0-9]{8}$/
-
-export const PAGE_INSTALL_STEPS = [
-  {
-    title: "Publica o funil desta página",
-    body: "A Sté fala o quadro publicado daquele funil. Sem production, o script recusa. Um funil já publicado continua válido mesmo que outro esteja activo.",
-  },
-  {
-    title: "Cria um script para a landing",
-    body: "Em Telegram ou Configurações → Pixel, ou via MCP (abilion_create_page_script). Dá um nome, escolhe o funil e, se quiseres, a URL da página. Máximo 20 scripts.",
-  },
-  {
-    title: "Cola o snippet na página",
-    body: "O <script src=\"https://www.abilion.lol/t.js?v=2&s=ID\"> vai no <head> ou antes de </body>. O botão/link do Telegram leva data-abilion-cta. Sem página própria, aponta o anúncio para /l?s=ID.",
-  },
-  {
-    title: "O anúncio aponta para a landing",
-    body: "Não mandes o Facebook directo para t.me — o pixel não vê a visita. O script grava view/clique e reescreve o start para fb_sID_vid no pointerdown e no clique.",
-  },
-  {
-    title: "Confere o /start",
-    body: "O href deve ficar t.me/BOT?start=fb_sID_xxxxxx. O webhook fecha o mesmo visitante e abre o funil deste script. Sem ?s=, usa o funil publicado.",
-  },
-] as const
 
 export function newPageScriptId() {
   return Array.from(crypto.getRandomValues(new Uint8Array(4)), (byte) => byte.toString(16).padStart(2, "0")).join("")
@@ -73,9 +53,43 @@ export function migratePageScripts(raw: unknown): PageScript[] {
   return out
 }
 
+export function mergePageScripts(...lists: Array<PageScript[] | undefined>) {
+  const byId = new Map<string, PageScript>()
+  for (const list of lists) {
+    for (const item of list ?? []) {
+      const next = sanitizePageScript(item)
+      if (!next) continue
+      const prev = byId.get(next.id)
+      if (!prev || next.updatedAt >= prev.updatedAt) byId.set(next.id, next)
+    }
+  }
+  return [...byId.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(0, PAGE_SCRIPT_CAP)
+}
+
+export function migrateRemovedPageScripts(raw: unknown) {
+  if (!Array.isArray(raw)) return []
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const item of raw) {
+    const id = typeof item === "string" ? item.trim().toLowerCase() : ""
+    if (!PAGE_SCRIPT_ID.test(id) || seen.has(id)) continue
+    seen.add(id)
+    out.push(id)
+    if (out.length >= PAGE_SCRIPT_REMOVED_CAP) break
+  }
+  return out
+}
+
+export function applyRemovedPageScripts(scripts: PageScript[], removed: Iterable<string>) {
+  const drop = new Set(migrateRemovedPageScripts([...removed]))
+  if (!drop.size) return scripts
+  return scripts.filter((item) => !drop.has(item.id))
+}
+
 export function addPageScript(
   current: PageScript[],
-  input: { name: string; funnelId: string; pageUrl?: string }
+  input: { name: string; funnelId: string; pageUrl?: string },
+  reserved: Iterable<string> = []
 ): { ok: true; scripts: PageScript[]; script: PageScript } | { ok: false; error: string } {
   const name = input.name.trim().slice(0, 80)
   const funnelId = input.funnelId.trim().slice(0, 80)
@@ -85,7 +99,7 @@ export function addPageScript(
   if (live.length >= PAGE_SCRIPT_CAP) return { ok: false, error: `O estúdio aceita no máximo ${PAGE_SCRIPT_CAP} scripts de página.` }
   const now = new Date().toISOString()
   let id = newPageScriptId()
-  const used = new Set(live.map((item) => item.id))
+  const used = new Set([...live.map((item) => item.id), ...migrateRemovedPageScripts([...reserved])])
   for (let i = 0; i < 8 && used.has(id); i++) id = newPageScriptId()
   const script: PageScript = {
     id,

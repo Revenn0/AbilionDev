@@ -123,7 +123,7 @@ Pixel da landing — botão **Pixel Ads** no Dashboard, no topo de Telegram e de
 <a href="https://t.me/BOT?start=fb" data-abilion-cta>Falar no Telegram</a>
 ```
 
-Manual de instalação (os mesmos passos no painel, no MCP e no `t.js`): [https://www.abilion.lol/api/install](https://www.abilion.lol/api/install). Outra landing / outro funil: cria um script em Telegram → Pixel ou `abilion_create_page_script` e cola ` /t.js?v=2&s=ID`. O `/start` vira `fb_sID_vid` e a Sté fala o quadro daquele funil. Sem `s=`, usa o funil publicado. Teste: `/l?s=ID`.
+Manual de instalação (os mesmos 5 passos no painel, no comentário do `t.js`, no snippet que colas, em GET `/api/install` e no MCP `abilion_page_install_manual` / recurso `abilion://install`): [https://www.abilion.lol/api/install](https://www.abilion.lol/api/install). Outra landing / outro funil: cria um script em Telegram → Pixel, no funil (botão Script) ou `abilion_create_page_script` e cola `/t.js?v=2&s=ID`. O `/start` vira `fb_sID_vid` e a Sté fala o quadro daquele funil. Sem `s=`, usa o funil publicado. Teste: `/l?s=ID`. Leads: categorias no recorte e **Importar lista** (opção para o grupo Telegram).
 
 O script reescreve o `t.me/BOT?start=fb_{vid}` (ou `fb_sID_{vid}`) no `pointerdown`, no clique e no clique do meio. Se o construtor da página puser o script em `async`, o pixel ainda encontra o `/t.js` sem `currentScript`. Sem página própria, o anúncio aponta para [https://www.abilion.lol/l](https://www.abilion.lol/l). A `/l` já sai com o visitor no href. O webhook fecha o evento `telegram` com o mesmo visitante.
 
@@ -222,7 +222,7 @@ No Claude Code / Claude Desktop, um exemplo está em [`mcp/claude.example.json`]
 }
 ```
 
-Ferramentas: saúde, listar/criar/desligar contas, listar/criar/importar/publicar funis, listar leads, definições (sem segredos), criar e revogar token (`abilion_revoke_token`), manual e scripts de página (`abilion_page_install_manual`, `abilion_create_page_script`). O dono é que cria ou altera contas (`abilion_patch_user`). Importar um funil deixa-o em rascunho até `abilion_publish_funnel`. POST autenticado em `/mcp` tem limite de 60 pedidos / minuto por conta e IP. POST sem cookie nem Bearer não lê o snapshot de contas: 20 / minuto por IP, e o tecto do IP é 120 / minuto.
+Ferramentas: saúde, listar/criar/desligar contas, listar/criar/importar/publicar funis, listar leads, importar lista (`abilion_import_leads`, `toGroup` mete no grupo), definições (sem segredos), criar e revogar token (`abilion_revoke_token`), manual e scripts de página (`abilion_page_install_manual`, `abilion_create_page_script`, recurso `abilion://install`). O dono é que cria ou altera contas (`abilion_patch_user`). Importar um funil deixa-o em rascunho até `abilion_publish_funnel`. POST autenticado em `/mcp` tem limite de 60 pedidos / minuto por conta e IP. POST sem cookie nem Bearer não lê o snapshot de contas: 20 / minuto por IP, e o tecto do IP é 120 / minuto.
 
 ## Limitações e bloqueios
 

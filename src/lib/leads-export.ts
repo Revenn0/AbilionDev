@@ -1,6 +1,6 @@
 import type { Lead } from "./types"
 
-const COLS = ["id", "name", "contact", "channel", "campaign", "origin", "temperature", "stage", "createdAt", "updatedAt"] as const
+const COLS = ["id", "name", "contact", "channel", "campaign", "origin", "category", "temperature", "stage", "createdAt", "updatedAt"] as const
 
 export function csvCell(value: string) {
   const formula = /^[=+\-@\t\r]/.test(value)

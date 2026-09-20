@@ -37,6 +37,7 @@ import {
   adoptOperatorLead,
   commitStoredLead,
   adoptRemoteFunnels,
+  clipFunnelsKeepBoards,
   mergeLeadMessages,
   applyRemovedFunnels,
   applyRemovedLeads,
@@ -88,7 +89,8 @@ import { contactLookups, normalizeTelegramContact, validateCapture } from "../sr
 import { displayContact, formatPhoneContact, isPhoneLikeName, isResolvedPersonName, leadMatchesQuery, nameFromMessages, preferLeadName, resolveLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, migrateLeadOrigin, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink, campaignFromStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
-import { addPageScript, adsStartToken, pageInstallManual, PAGE_INSTALL_STEPS } from "../src/lib/page-script.ts"
+import { addPageScript, adsStartToken, pageInstallManual, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
+import { leadFromImport, parseLeadImportLine, parseLeadImportText } from "../src/lib/lead-category.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
@@ -564,8 +566,9 @@ assert(adsDeepLink("@good_bot", "fb_a1b2c3d4e5") === "https://t.me/good_bot?star
 assert(visitorIdFromStart("fb_a1b2c3d4e5") === "a1b2c3d4e5", "start fb_vid devolve o visitor")
 assert(visitorIdFromStart("fb") === undefined, "start fb sem vid não inventa visitor")
 assert(
-  pixelSnippet("https://www.abilion.lol") === `<script src="https://www.abilion.lol/t.js?v=2" data-cta="[data-abilion-cta]"></script>`,
-  "snippet do pixel usa a origem"
+  pixelSnippet("https://www.abilion.lol").includes(`<script src="https://www.abilion.lol/t.js?v=2" data-cta="[data-abilion-cta]"></script>`) &&
+    pixelSnippet("https://www.abilion.lol").includes("manual de instalação"),
+  "snippet do pixel usa a origem e o manual"
 )
 assert(ADS_ORIGIN === "https://www.abilion.lol", "pixel do ads aponta para produção")
 assert(
@@ -582,17 +585,29 @@ assert(visitorIdFromStart("fb_sdeadbeef") === undefined, "script sem vid não in
 assert(campaignFromStart("fb_sdeadbeef_a1b2c3d4e5") === "Facebook · deadbeef", "campanha do script no start")
 assert(adsStartToken("deadbeef", "a1b2c3d4e5") === "fb_sdeadbeef_a1b2c3d4e5", "token de start junta script e vid")
 assert(
-  pixelSnippet(ADS_ORIGIN, "deadbeef") ===
-    `<script src="https://www.abilion.lol/t.js?v=2&s=deadbeef" data-cta="[data-abilion-cta]" data-abilion-script="deadbeef"></script>`,
+  pixelSnippet(ADS_ORIGIN, "deadbeef").includes(
+    `<script src="https://www.abilion.lol/t.js?v=2&s=deadbeef" data-cta="[data-abilion-cta]" data-abilion-script="deadbeef"></script>`
+  ),
   "snippet de página leva o id do script"
 )
-assert(TRACKER_JS.includes("/api/install") && TRACKER_JS.includes("fb_s"), "t.js aponta o manual e reescreve fb_s")
+assert(TRACKER_JS.includes("/api/install") && TRACKER_JS.includes("fb_s") && TRACKER_JS.includes("Publica o funil"), "t.js leva o manual e reescreve fb_s")
 assert(PAGE_INSTALL_STEPS.length >= 5, "manual de instalação tem os passos")
 assert(pageInstallManual({}).snippet.includes("/t.js?v=2"), "manual geral inclui o script")
 assert(pageInstallManual({ script: { id: "deadbeef", name: "Landing", funnelId: "f1", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" } }).scriptSrc.includes("s=deadbeef"), "manual do script inclui ?s=")
 assert(FUNNEL_CAP === 20 && !canCreateFunnel(Array.from({ length: 20 }, () => emptySalesFunnel("x"))).ok, "criar o 21.º funil é recusado")
+const twentyOne = Array.from({ length: 21 }, (_, index) => ({ ...emptySalesFunnel(`n${index}`), id: `funil-${index}` }))
+assert(reconcileFunnels([], twentyOne).length === 21, "reconcile não corta o 21.º quadro à calada")
+assert(commitCrmFunnels([], twentyOne, [], []).length === 21, "commit do CRM não corta o 21.º à calada")
 const boardA = { ...emptySalesFunnel("A"), id: "funil-a", production: { name: "A", publishedAt: "2026-01-01T00:00:00.000Z", nodes: [], edges: [] } }
 const boardB = { ...emptySalesFunnel("B"), id: "funil-b", production: { name: "B", publishedAt: "2026-01-02T00:00:00.000Z", nodes: [], edges: [] } }
+const clippedBoards = clipFunnelsKeepBoards(
+  [
+    ...Array.from({ length: 20 }, (_, index) => ({ ...emptySalesFunnel(`d${index}`), id: `draft-${index}` })),
+    { ...boardA, id: "publicado-vivo" },
+  ],
+  []
+)
+assert(clippedBoards.some((item) => item.id === "publicado-vivo"), "hydrate recorta rascunho, não o quadro publicado")
 assert(snapshotForLead([boardA, boardB], { funnelId: "funil-a" })?.name === "A", "lead com script usa o quadro daquela landing")
 const madeScript = addPageScript([], { name: "Landing Superbet", funnelId: "funil-b" })
 assert(madeScript.ok && madeScript.script.funnelId === "funil-b", "cria script de outra página")
@@ -906,6 +921,29 @@ assert(
     "@novo_bot",
   "username novo substitui"
 )
+const scriptKept = addPageScript([], { name: "Landing A", funnelId: "funil-b" })
+assert(scriptKept.ok, "script de teste")
+const settingsWithScript = migrateSettings({ pageScripts: scriptKept.scripts })
+assert(
+  commitStoredSettings(settingsWithScript, migrateSettings({ workspaceName: "Abilion" }), settingsWithScript).pageScripts[0]?.id ===
+    scriptKept.script.id,
+  "autosave vazio não apaga scripts de página"
+)
+const afterDelete = removePageScript(scriptKept.scripts, scriptKept.script.id)
+const settingsDeleted = commitStoredSettings(
+  settingsWithScript,
+  migrateSettings({ pageScripts: afterDelete, removedPageScripts: [scriptKept.script.id] }),
+  settingsWithScript
+)
+assert(settingsDeleted.pageScripts.length === 0, "tombstone remove o último script")
+assert(parseLeadImportLine("Ana Silva, 11987654321")?.contact === "11987654321", "import lê nome e telefone")
+assert(parseLeadImportLine("@carlos")?.contact === "@carlos", "import lê @user")
+assert(parseLeadImportText("Ana, 11987654321\nAna, 11987654321").rows.length === 1, "import não duplica o mesmo contacto")
+const importedGroup = leadFromImport({ name: "Ana", contact: "11987654321" }, { toGroup: true, groupUrl: "https://t.me/+abc" })
+assert(importedGroup.origin === "import" && importedGroup.stage === "group" && importedGroup.category === "Grupo", "import para o grupo")
+assert(importedGroup.channel === "whatsapp", "telefone importado fica WhatsApp")
+assert(importedGroup.memory.includes("t.me"), "import para o grupo guarda o convite")
+assert(leadsToCsv([importedGroup]).includes("category"), "CSV exporta categoria")
 assert(!canFlushCrm(false), "sem hydrate o painel não grava CRM")
 assert(canFlushCrm(true), "depois do GET o painel pode gravar")
 assert(pendingSeedFunnelIds([], [{ ...emptySalesFunnel("seed"), id: "seed-1" }]).includes("seed-1"), "Worker vazio adopta o seed")
@@ -2465,6 +2503,20 @@ const crmGet = (await (
   await handleRequest(new Request("http://local.test/api/crm", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
 ).json()) as { funnels?: Array<{ id?: string; name?: string }> }
 assert(crmGet.funnels?.some((item) => item.id === persistFunnel.id), "CRM GET devolve o funil gravado")
+const crmTooMany = await handleRequest(
+  new Request("http://local.test/api/crm", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: liveCookie },
+    body: JSON.stringify({ funnels: Array.from({ length: 21 }, (_, index) => emptySalesFunnel(`cap-${index}`)) }),
+  }),
+  liveEnv,
+  backgroundCtx()
+)
+assert(crmTooMany.status === 400, "POST de 21 funis é recusado em vez de cortar o quadro")
+const crmAfterCap = (await (
+  await handleRequest(new Request("http://local.test/api/crm", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
+).json()) as { funnels?: Array<{ id?: string }> }
+assert(crmAfterCap.funnels?.some((item) => item.id === persistFunnel.id), "recusa do 21.º conserva o quadro já gravado")
 assert(
   (
     await handleRequest(
@@ -3853,6 +3905,40 @@ const mcpManual = await handleRequest(
 const mcpManualBody = (await mcpManual.json()) as { result?: { content?: Array<{ text?: string }> } }
 const mcpManualData = JSON.parse(mcpManualBody.result?.content?.[0]?.text || "{}") as { steps?: unknown[]; start?: string }
 assert((mcpManualData.steps?.length ?? 0) >= 5 && mcpManualData.start?.includes(mcpPage.script?.id || "nope"), "MCP devolve o manual daquele script")
+const mcpResource = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 23, method: "resources/read", params: { uri: "abilion://install" } }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const mcpResourceBody = (await mcpResource.json()) as { result?: { contents?: Array<{ text?: string }> } }
+const mcpResourceManual = JSON.parse(mcpResourceBody.result?.contents?.[0]?.text || "{}") as { steps?: unknown[] }
+assert((mcpResourceManual.steps?.length ?? 0) >= 5, "MCP resources/read devolve o manual")
+const mcpImportLeads = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 24,
+      method: "tools/call",
+      params: { name: "abilion_import_leads", arguments: { text: "Rita, 11911112222", toGroup: true } },
+    }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const mcpImportLeadsBody = (await mcpImportLeads.json()) as { result?: { content?: Array<{ text?: string }> } }
+const mcpImportedLeads = JSON.parse(mcpImportLeadsBody.result?.content?.[0]?.text || "{}") as {
+  ok?: boolean
+  imported?: number
+  leads?: Array<{ stage?: string; category?: string }>
+}
+assert(mcpImportLeads.status === 200 && mcpImportedLeads.ok && mcpImportedLeads.imported === 1, "MCP importa lista")
+assert(mcpImportedLeads.leads?.[0]?.stage === "group" && mcpImportedLeads.leads?.[0]?.category === "Grupo", "MCP importa para o grupo")
 
 const mcpLeads = await handleRequest(
   new Request("http://local.test/mcp", {

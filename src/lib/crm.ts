@@ -1,7 +1,9 @@
 import { publishedFunnel } from "./runtime.ts"
 import { migrateSettings } from "./migrate.ts"
+import { mergeLeadCategories } from "./lead-category.ts"
 import { isOperatorLockedLead } from "./ops.ts"
 import { preferLeadName } from "./lead-name.ts"
+import { applyRemovedPageScripts, mergePageScripts, PAGE_SCRIPT_REMOVED_CAP } from "./page-script.ts"
 import { defaultSettings, type ChatMessage, type Lead, type LeadEvent, type LeadFacts, type SalesFunnel, type Settings } from "./types.ts"
 
 const CAP = 400
@@ -129,6 +131,7 @@ export function adoptOperatorLead(prev: Lead | null, incoming: Lead): Lead {
     temperature: incoming.temperature,
     memory: incoming.memory,
     facts: incoming.facts,
+    category: incoming.category,
     updatedAt: incoming.updatedAt > prev.updatedAt ? incoming.updatedAt : prev.updatedAt,
   }
   return adoptStoredLead(prev, patched)
@@ -246,7 +249,22 @@ export function adoptRemoteFunnels(
   for (const funnel of current) {
     if (!incomingIds.has(funnel.id) && pending.has(funnel.id)) next.push(funnel)
   }
-  return next.slice(0, FUNNEL_CAP)
+  return clipFunnelsKeepBoards(next, pending)
+}
+
+/** Hydrate pode recortar rascunhos; quadro publicado e pending não saem para caber um draft. */
+export function clipFunnelsKeepBoards(funnels: SalesFunnel[], pinIds: Iterable<string> = []): SalesFunnel[] {
+  if (funnels.length <= FUNNEL_CAP) return funnels
+  const pin = new Set(pinIds)
+  const rank = (funnel: SalesFunnel) => {
+    if (pin.has(funnel.id)) return 0
+    if (funnel.production) return 1
+    return 2
+  }
+  return funnels
+    .slice()
+    .sort((left, right) => rank(left) - rank(right) || right.updatedAt.localeCompare(left.updatedAt))
+    .slice(0, FUNNEL_CAP)
 }
 
 export function applyRemovedFunnels(funnels: SalesFunnel[], removedIds: string[]): SalesFunnel[] {
@@ -304,7 +322,15 @@ export function commitStoredSettings(stored: Settings, incoming: Settings, lates
       ...patch.plugins,
       telegram: Boolean(patch.plugins.telegram || live.plugins.telegram),
     },
-    pageScripts: patch.pageScripts,
+    pageScripts: applyRemovedPageScripts(
+      mergePageScripts(prev.pageScripts, live.pageScripts, patch.pageScripts),
+      clipNewestIds([...(prev.removedPageScripts ?? []), ...(live.removedPageScripts ?? []), ...(patch.removedPageScripts ?? [])], PAGE_SCRIPT_REMOVED_CAP)
+    ),
+    removedPageScripts: clipNewestIds(
+      [...(prev.removedPageScripts ?? []), ...(live.removedPageScripts ?? []), ...(patch.removedPageScripts ?? [])],
+      PAGE_SCRIPT_REMOVED_CAP
+    ),
+    leadCategories: mergeLeadCategories(prev.leadCategories, live.leadCategories, patch.leadCategories),
     telegramBotToken: "",
     esterTelegramChatId: "",
   })
@@ -374,7 +400,13 @@ export function adoptDueLeads(kvLeads: Lead[], remoteLeads: Lead[], removedIds: 
 }
 
 export function emptySettings(): Settings {
-  return { ...defaultSettings, plugins: { ...defaultSettings.plugins }, pageScripts: [...defaultSettings.pageScripts] }
+  return {
+    ...defaultSettings,
+    plugins: { ...defaultSettings.plugins },
+    pageScripts: [...defaultSettings.pageScripts],
+    removedPageScripts: [...defaultSettings.removedPageScripts],
+    leadCategories: [...defaultSettings.leadCategories],
+  }
 }
 
 export function mergeFunnels(current: SalesFunnel[], incoming: SalesFunnel[]): SalesFunnel[] {
@@ -400,7 +432,7 @@ export function reconcileFunnels(server: SalesFunnel[], incoming: SalesFunnel[])
   for (const funnel of server) {
     if (!seen.has(funnel.id)) next.push(funnel)
   }
-  return next.slice(0, FUNNEL_CAP)
+  return next
 }
 
 export function canCreateFunnel(funnels: SalesFunnel[]): { ok: true } | { ok: false; reason: string } {

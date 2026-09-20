@@ -118,6 +118,7 @@ export type LeadSearchFields = {
   telegramChatId?: string
   campaign?: string
   lastMessage?: string
+  category?: string
 }
 
 /** Worker exige 3+ caracteres. O painel passa 1 para a lista já hidratada. */
@@ -136,6 +137,7 @@ export function leadMatchesQuery(lead: LeadSearchFields, query: string, minLengt
       displayContact(lead.name),
       lead.campaign ?? "",
       lead.lastMessage ?? "",
+      lead.category ?? "",
     ].join(" ")
   )
   if (hay.includes(needle)) return true

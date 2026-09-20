@@ -179,6 +179,7 @@ export type Lead = {
   steBlocked?: boolean
   steQuiet?: boolean
   telegramChatId?: string
+  category?: string
   updatedAt: string
   createdAt: string
 }
@@ -214,6 +215,8 @@ export type Settings = {
   esterNotify: boolean
   esterTelegramChatId: string
   pageScripts: PageScript[]
+  removedPageScripts: string[]
+  leadCategories: string[]
 }
 
 export const defaultSettings: Settings = {
@@ -247,6 +250,8 @@ export const defaultSettings: Settings = {
   esterNotify: true,
   esterTelegramChatId: "",
   pageScripts: [],
+  removedPageScripts: [],
+  leadCategories: [],
 }
 
 export type AppState = {

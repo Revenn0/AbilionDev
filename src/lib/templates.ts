@@ -1,5 +1,6 @@
 import { normalizeTelegramContact } from "./capture.ts"
 import { uid } from "./format.ts"
+import { sanitizeLeadCategory } from "./lead-category.ts"
 import { campaignFor } from "./labels.ts"
 import { applyEvent, eventFromOrigin, publishedSnapshot } from "./runtime.ts"
 import { replySte, steRuntimeFromSnapshot, STE_COURSE_BLOCK, STE_LIVE_BLOCK, STE_OFFER_BLOCK, STE_REMARKETING_BLOCK, STE_SUPERBET_BLOCK, STE_SUPERBET_RESCUE, STE_WELCOME } from "./ste.ts"
@@ -185,6 +186,7 @@ export function leadFromCapture(
     contact: string
     channel: LeadChannel
     origin: LeadOrigin
+    category?: string
   },
   snapshot: SalesSnapshot | null = null,
   funnelId?: string
@@ -197,6 +199,7 @@ export function leadFromCapture(
     channel: input.channel,
     campaign: campaignFor(input.channel, input.origin),
     origin: input.origin,
+    category: sanitizeLeadCategory(input.category) || undefined,
     temperature: "novo",
     stage: input.origin === "popup" || input.origin === "import" ? "capture" : input.origin === "group_join" ? "group" : "welcome",
     memory: "",
@@ -213,7 +216,7 @@ export function leadFromCapture(
 }
 
 export function captureAgainstFunnels(
-  input: { name: string; contact: string; channel: LeadChannel; origin: LeadOrigin },
+  input: { name: string; contact: string; channel: LeadChannel; origin: LeadOrigin; category?: string },
   funnels: SalesFunnel[]
 ) {
   const published = publishedSnapshot(funnels)
