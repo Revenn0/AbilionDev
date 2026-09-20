@@ -77,6 +77,7 @@ export function adoptStoredLead(prev: Lead, incoming: Lead): Lead {
   const telegramChatId = newer.telegramChatId || older.telegramChatId
   const visitorId = newer.visitorId || older.visitorId
   const contact = newer.contact || older.contact
+  const category = newer.category ?? older.category
   const extra = { email: facts.email, messages }
   const nextName = preferLeadName(newer.name, older.name, contact, extra)
   if (incomingOlder) {
@@ -87,6 +88,7 @@ export function adoptStoredLead(prev: Lead, incoming: Lead): Lead {
       memory === prev.memory &&
       telegramChatId === prev.telegramChatId &&
       visitorId === prev.visitorId &&
+      category === prev.category &&
       nextName === prev.name &&
       JSON.stringify(facts ?? {}) === JSON.stringify(prev.facts ?? {})
     if (sameMessages && sameEvents && sameExtra) return prev
@@ -99,6 +101,7 @@ export function adoptStoredLead(prev: Lead, incoming: Lead): Lead {
       facts,
       telegramChatId,
       visitorId,
+      category,
       printAt: prev.printAt || incoming.printAt,
       bancaAt: prev.bancaAt || incoming.bancaAt,
     }
@@ -112,6 +115,7 @@ export function adoptStoredLead(prev: Lead, incoming: Lead): Lead {
     facts,
     telegramChatId,
     visitorId,
+    category,
     printAt: incoming.printAt || prev.printAt,
     bancaAt: incoming.bancaAt || prev.bancaAt,
     temperature: addedChat ? prev.temperature : incoming.temperature,
@@ -131,7 +135,7 @@ export function adoptOperatorLead(prev: Lead | null, incoming: Lead): Lead {
     temperature: incoming.temperature,
     memory: incoming.memory,
     facts: incoming.facts,
-    category: incoming.category,
+    category: incoming.category ?? prev.category,
     updatedAt: incoming.updatedAt > prev.updatedAt ? incoming.updatedAt : prev.updatedAt,
   }
   return adoptStoredLead(prev, patched)

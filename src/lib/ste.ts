@@ -342,6 +342,7 @@ export function isolateLead(lead: Lead): Lead {
     steBlocked: lead.steBlocked,
     steQuiet: lead.steQuiet,
     telegramChatId: lead.telegramChatId,
+    category: lead.category,
     updatedAt: lead.updatedAt,
     createdAt: lead.createdAt,
   }

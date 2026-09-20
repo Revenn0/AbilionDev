@@ -26,6 +26,7 @@ export type CrmIndexEntry = {
   id: string
   contact: string
   name?: string
+  category?: string
   chatId?: string
   waitUntil?: string
   updatedAt: string
@@ -52,9 +53,9 @@ export function mergeIndexEntries(left: CrmIndexEntry[], right: CrmIndexEntry[])
   for (const item of right) {
     const prev = byId.get(item.id)
     if (!prev || item.updatedAt >= prev.updatedAt) {
-      byId.set(item.id, { ...prev, ...item, name: item.name || prev?.name })
+      byId.set(item.id, { ...prev, ...item, name: item.name || prev?.name, category: item.category || prev?.category })
     } else {
-      byId.set(item.id, { ...item, ...prev, name: prev.name || item.name })
+      byId.set(item.id, { ...item, ...prev, name: prev.name || item.name, category: prev.category || item.category })
     }
   }
   return [...byId.values()]
@@ -291,7 +292,7 @@ export async function lookupLeadsByQuery(kv: KvLike, query: string): Promise<Lea
   const matchIds: string[] = []
   for (const entry of index.entries) {
     const name = entry.name || names[entry.id] || ""
-    if (!leadMatchesQuery({ id: entry.id, name, contact: entry.contact, telegramChatId: entry.chatId }, needle)) continue
+    if (!leadMatchesQuery({ id: entry.id, name, contact: entry.contact, telegramChatId: entry.chatId, category: entry.category }, needle)) continue
     if (!seen.has(entry.id) && !matchIds.includes(entry.id)) matchIds.push(entry.id)
     if (matchIds.length >= 20) break
   }
@@ -331,6 +332,7 @@ export async function upsertLeadKv(kv: KvLike, lead: Lead) {
     id: lead.id,
     contact: lead.contact,
     name: lead.name,
+    category: lead.category,
     chatId: lead.telegramChatId,
     waitUntil: lead.waitUntil,
     updatedAt: lead.updatedAt,

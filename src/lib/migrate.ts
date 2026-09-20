@@ -94,7 +94,7 @@ export function migrateLead(raw: Partial<Lead> & { id: string }): Lead {
     steBlocked: raw.steBlocked ?? false,
     steQuiet: raw.steQuiet ?? false,
     telegramChatId: raw.telegramChatId,
-    category: sanitizeLeadCategory(raw.category) || undefined,
+    category: typeof raw.category === "string" ? sanitizeLeadCategory(raw.category) : undefined,
     updatedAt: raw.updatedAt ?? now,
     createdAt: raw.createdAt ?? now,
   }

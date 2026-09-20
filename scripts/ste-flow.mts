@@ -207,6 +207,18 @@ assert(!JSON.stringify(bob.lead).includes("Alice"), "Bob nao ve Alice")
 assert(!JSON.stringify(bob.lead.messages).includes("perdendo tudo"), "transcript isolado")
 assert(isolateLead(alice.lead).id === "alice", "isolate guarda o id")
 assert(isolateLead(alice.lead).messages.every((item) => alice.lead.messages.some((own) => own.id === item.id)), "so mensagens dela")
+assert(isolateLead({ ...alice.lead, category: "Grupo" }).category === "Grupo", "isolate conserva a categoria")
+const taggedLead = { ...alice.lead, category: "Grupo", updatedAt: "2026-01-01T00:00:00.000Z" }
+assert(
+  adoptStoredLead(taggedLead, { ...isolateLead(taggedLead), category: undefined, updatedAt: "2026-06-01T00:00:00.000Z" }).category ===
+    "Grupo",
+  "tick da Sté não apaga a categoria"
+)
+assert(
+  adoptOperatorLead(taggedLead, { ...taggedLead, category: "", updatedAt: "2026-06-01T00:00:00.000Z" }).category === "",
+  "o painel pode tirar a categoria"
+)
+assert(leadMatchesQuery({ id: "c1", name: "Ana", contact: "@ana", category: "Grupo" }, "grupo", 1), "busca local pela categoria")
 assert(bob.lead.facts.hasSuperbet === false, "fato do Bob")
 
 const html = toTelegramHtml(STE_COURSE_BLOCK[2]!)
@@ -1850,12 +1862,14 @@ const lookLead = lead("look-me", "@lookme")
 lookLead.telegramChatId = "4400"
 await upsertLeadKv(lookKv, lookLead)
 lookLead.name = "Paulo Sergio de Souza"
+lookLead.category = "Grupo Premium"
 await upsertLeadKv(lookKv, lookLead)
 assert((await lookupLeadsByQuery(lookKv, "@lookme"))[0]?.id === "look-me", "busca pelo @user usa o alias")
 assert((await lookupLeadsByQuery(lookKv, "look-me"))[0]?.id === "look-me", "busca pelo id do lead")
 assert((await lookupLeadsByQuery(lookKv, "Paulo Sergio"))[0]?.id === "look-me", "busca pelo nome da pessoa")
 assert((await lookupLeadsByQuery(lookKv, "sergio"))[0]?.id === "look-me", "busca pelo nome sem acento/caixa")
 assert((await lookupLeadsByQuery(lookKv, "ab")).length === 0, "busca curta não varre o índice")
+assert((await lookupLeadsByQuery(lookKv, "Grupo Premium"))[0]?.id === "look-me", "busca Worker pela categoria")
 assert(leadMatchesQuery({ id: "x", name: "Maria Silva", contact: "+5511987654321" }, "maria"), "nome dobra na busca")
 assert(leadMatchesQuery({ id: "x", name: "José Silva", contact: "@jose" }, "jose"), "acento dobra na busca")
 assert(leadMatchesQuery({ id: "x", name: "Ana", contact: "@ana", campaign: "Black Friday" }, "black"), "campanha entra na busca")

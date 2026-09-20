@@ -786,7 +786,7 @@ function LeadDrawer({
             id="lead-drawer-category"
             value={lead.category ?? ""}
             categories={categories}
-            onChange={(value) => commit({ ...lead, category: value || undefined, updatedAt: new Date().toISOString() })}
+            onChange={(value) => commit({ ...lead, category: value, updatedAt: new Date().toISOString() })}
             onCreate={onCategory}
           />
         </div>
