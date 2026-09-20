@@ -194,7 +194,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 
 ## MCP (Claude Code e outros agentes)
 
-O Worker expõe JSON-RPC em `https://www.abilion.lol/mcp` (também `/api/mcp`). A sessão do painel ou um token `abn_…` (Utilizadores → Gerar token) autenticam. O proxy stdio do repositório reenvia o stdin:
+O Worker expõe JSON-RPC em `https://www.abilion.lol/mcp` (também `/api/mcp`). Em local o Vite encaminha `/mcp` para o mesmo handler. A sessão do painel ou um token `abn_…` (Utilizadores → Gerar token) autenticam. O proxy stdio do repositório reenvia o stdin:
 
 ```bash
 export ABILION_URL=https://www.abilion.lol

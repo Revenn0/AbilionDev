@@ -70,7 +70,7 @@ async function toRequest(req: IncomingMessage) {
 function localApi(env: Env) {
   return async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     const url = (req.url || "/").split("?")[0] || "/"
-    if (url !== "/t.js" && !url.startsWith("/api/")) {
+    if (url !== "/t.js" && url !== "/mcp" && !url.startsWith("/api/")) {
       next()
       return
     }
