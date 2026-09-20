@@ -690,10 +690,11 @@ function LeadDrawer({
   }, [lead])
 
   useEffect(() => {
+    if (!lead) return
     dirtyMemory.current = false
     dirtyName.current = false
-    const nextMemory = lead?.memory ?? ""
-    const nextName = lead?.name ?? ""
+    const nextMemory = lead.memory ?? ""
+    const nextName = lead.name ?? ""
     memoryRef.current = nextMemory
     nameRef.current = nextName
     setMemory(nextMemory)
@@ -909,9 +910,12 @@ function LeadDrawer({
           className="mt-1.5 min-h-28"
           value={memory}
           onChange={(event) => {
+            const next = event.target.value
             dirtyMemory.current = true
-            memoryRef.current = event.target.value
-            setMemory(event.target.value)
+            memoryRef.current = next
+            setMemory(next)
+            const current = leadRef.current
+            if (current) onSave({ ...current, memory: next, updatedAt: new Date().toISOString() })
           }}
           placeholder="O que esta pessoa já disse. Não misturar com outro chat."
         />

@@ -53,22 +53,17 @@ async function overflow(page: Page) {
 
 async function fillField(page: Page, selector: string, value: string) {
   await page.waitForSelector(selector, { timeout: 5_000 })
-  const ok = await page.$eval(
+  await page.focus(selector)
+  await page.keyboard.down("ControlLeft")
+  await page.keyboard.press("KeyA")
+  await page.keyboard.up("ControlLeft")
+  await page.keyboard.type(value, { delay: 8 })
+  await page.waitForFunction(
+    (sel, expected) => (document.querySelector(sel) as HTMLTextAreaElement | HTMLInputElement | null)?.value === expected,
+    { timeout: 5_000 },
     selector,
-    (el, next) => {
-      const input = el as HTMLInputElement | HTMLTextAreaElement
-      input.focus()
-      const proto =
-        input instanceof HTMLTextAreaElement
-          ? Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")
-          : Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")
-      proto?.set?.call(input, next)
-      input.dispatchEvent(new Event("input", { bubbles: true }))
-      return input.value === next
-    },
     value
   )
-  assert(ok, `não preenchi ${selector}`)
 }
 
 async function clickNamed(page: Page, text: string) {
