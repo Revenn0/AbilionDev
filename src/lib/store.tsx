@@ -4,13 +4,13 @@ import { clearSessionExpired, noteSessionExpired, subscribeSessionExpired } from
 import { toast } from "sonner"
 import {
   activatePublishedFunnels,
-  adoptRemoteFunnels,
   adoptStoredLead,
   applyRemovedFunnels,
   applyRemovedLeads,
   canDeleteFunnel,
   canFlushCrm,
   clipRemovedIds,
+  hydrateFunnels,
   mergeLeads,
   pendingSeedFunnelIds,
   reconcileLeads,
@@ -128,6 +128,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const removedFunnelIds = useRef(loadIdSet(REMOVED_FUNNELS))
   const removedLeadIds = useRef(loadIdSet(REMOVED_LEADS))
   const crmHydrated = useRef(false)
+  const settingsDirty = useRef(false)
   const stateRef = useRef(state)
 
   const flushLeadWrites = () => {
@@ -170,6 +171,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (ok) {
         removedFunnelIds.current.clear()
         pendingFunnelIds.current.clear()
+        settingsDirty.current = false
       }
       setCrmSync(ok ? "ok" : "error")
     })
@@ -240,13 +242,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setRemote(runtime.persist === "supabase" ? "cloud" : runtime.ok ? "local" : "off")
       setState((prev) => {
         const remoteFunnels = crm.ok ? crm.funnels.map(migrateFunnel) : []
-        const funnels =
-          crm.ok && remoteFunnels.length
-            ? adoptRemoteFunnels(prev.funnels, remoteFunnels, pendingFunnelIds.current)
-            : prev.funnels
+        const funnels = crm.ok
+          ? hydrateFunnels(prev.funnels, remoteFunnels, pendingFunnelIds.current, removedFunnelIds.current)
+          : prev.funnels
         if (crm.ok) {
           for (const id of pendingSeedFunnelIds(remoteFunnels, funnels)) pendingFunnelIds.current.add(id)
         }
+        const remoteSettings = crm.ok && crm.settings && !settingsDirty.current ? migrateSettings({ ...crm.settings, telegramBotToken: "" }) : {}
         const next = {
           ...prev,
           funnels,
@@ -261,13 +263,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             : prev.leads,
           settings: {
             ...prev.settings,
-            ...(crm.ok && crm.settings ? migrateSettings({ ...crm.settings, telegramBotToken: "" }) : {}),
+            ...remoteSettings,
             telegramBotToken: "",
             telegramBotUsername: runtime.telegramBotUsername || prev.settings.telegramBotUsername,
             telegramGroupUrl: runtime.telegramGroupUrl || prev.settings.telegramGroupUrl,
             plugins: {
               ...prev.settings.plugins,
-              ...(crm.ok && crm.settings?.plugins ? crm.settings.plugins : {}),
+              ...(crm.ok && crm.settings?.plugins && !settingsDirty.current ? crm.settings.plugins : {}),
               telegram: runtime.ok ? Boolean(runtime.telegram) : prev.settings.plugins.telegram,
             },
           },
@@ -277,7 +279,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       })
       if (crm.ok) {
         crmHydrated.current = true
-        if (pendingFunnelIds.current.size) pushWorker()
+        if (pendingFunnelIds.current.size || removedFunnelIds.current.size || settingsDirty.current) pushWorker()
       }
     })
     return () => {
@@ -514,6 +516,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         void removeRemoteLead(id).then((ok) => setPersistSync(ok ? "ok" : "error"))
       },
       saveSettings: (patch) => {
+        settingsDirty.current = true
         setState((prev) => {
           const next = {
             ...prev,

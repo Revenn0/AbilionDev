@@ -40,6 +40,7 @@ import {
   canDeleteFunnel,
   canFlushCrm,
   clipRemovedIds,
+  hydrateFunnels,
   pendingSeedFunnelIds,
   mergeFunnels,
   mergeLeadEvents,
@@ -598,6 +599,42 @@ assert(!canFlushCrm(false), "sem hydrate o painel não grava CRM")
 assert(canFlushCrm(true), "depois do GET o painel pode gravar")
 assert(pendingSeedFunnelIds([], [{ ...emptySalesFunnel("seed"), id: "seed-1" }]).includes("seed-1"), "Worker vazio adopta o seed")
 assert(pendingSeedFunnelIds([{ ...publishedA }], [{ ...emptySalesFunnel("seed"), id: "seed-1" }]).length === 0, "Worker com quadro não adopta seed")
+assert(
+  !hydrateFunnels(
+    [{ ...publishedA }],
+    [{ ...publishedA }, { ...publishedC }],
+    [],
+    [publishedC.id]
+  ).some((item) => item.id === publishedC.id),
+  "hydrate aplica o tombstone do funil apagado"
+)
+assert(
+  hydrateFunnels(
+    [{ ...publishedA }, { ...publishedC, updatedAt: "2026-05-01T00:00:00.000Z" }],
+    [{ ...publishedA }],
+    [publishedC.id],
+    []
+  ).some((item) => item.id === publishedC.id),
+  "hydrate conserva o funil local ainda a gravar"
+)
+assert(
+  !hydrateFunnels(
+    [{ ...publishedA }, { ...publishedC }],
+    [{ ...publishedA }, { ...publishedC }],
+    [publishedC.id],
+    [publishedC.id]
+  ).some((item) => item.id === publishedC.id),
+  "tombstone ganha do pending do mesmo funil"
+)
+assert(
+  !hydrateFunnels(
+    [{ ...publishedA }, { ...publishedC }],
+    [],
+    [],
+    [publishedC.id]
+  ).some((item) => item.id === publishedC.id),
+  "Worker vazio ainda aplica o tombstone local"
+)
 assert(clipRemovedIds(["  ok  ", "", "x".repeat(81), "ok", 12, null]).join(",") === "ok", "ids removidos são cortados")
 assert(
   !adoptRemoteFunnels(
@@ -1737,6 +1774,55 @@ assert(
   ).status === 400,
   "CRM recusa ficar sem funil"
 )
+const afterRefuseEmpty = (await (
+  await handleRequest(new Request("http://local.test/api/crm", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
+).json()) as { funnels?: Array<{ id?: string; production?: { nodes?: unknown[]; publishedAt?: string } }> }
+assert(afterRefuseEmpty.funnels?.some((item) => item.id === latestPub.id), "400 sem funil não tombstoneia o que ficou")
+const emptyPublished = emptySalesFunnel("vazio")
+emptyPublished.status = "active"
+emptyPublished.production = { name: "Vazio", publishedAt: "2099-09-20T00:00:00.000Z", nodes: [], edges: [] }
+const emptyPubRes = await handleRequest(
+  new Request("http://local.test/api/crm", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: liveCookie },
+    body: JSON.stringify({ funnels: [emptyPublished] }),
+  }),
+  liveEnv,
+  backgroundCtx()
+)
+assert(emptyPubRes.status === 400, "CRM recusa publicar quadro vazio")
+const emptyPubBody = (await emptyPubRes.json()) as { error?: string }
+assert(emptyPubBody.error === "Publica pelo menos uma entrada (popup, join ou /start).", "CRM diz o erro de publicação")
+const afterEmptyPub = (await (
+  await handleRequest(new Request("http://local.test/api/crm", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
+).json()) as { funnels?: Array<{ id?: string }> }
+assert(!afterEmptyPub.funnels?.some((item) => item.id === emptyPublished.id), "quadro vazio não entra no KV")
+assert(afterEmptyPub.funnels?.some((item) => item.id === latestPub.id), "recusar o vazio não apaga o publicado")
+const sameStampEmpty = {
+  ...latestPub,
+  updatedAt: "2099-09-20T00:00:00.000Z",
+  production: { name: latestPub.name, publishedAt: latestPub.production!.publishedAt, nodes: [], edges: [] },
+}
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/crm", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: liveCookie },
+        body: JSON.stringify({ funnels: [sameStampEmpty] }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 200,
+  "CRM aceita o mesmo publishedAt já gravado"
+)
+const afterGrandfather = (await (
+  await handleRequest(new Request("http://local.test/api/crm", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
+).json()) as { funnels?: Array<{ id?: string; production?: { nodes?: unknown[]; publishedAt?: string } }> }
+const keptPublished = afterGrandfather.funnels?.find((item) => item.id === latestPub.id)
+assert((keptPublished?.production?.nodes?.length ?? 0) > 0, "grandfather não apaga o quadro já publicado")
+assert(keptPublished?.production?.publishedAt === latestPub.production!.publishedAt, "publishedAt do quadro fica")
 const freshMemory = lead("mem-1")
 freshMemory.memory = "guarda"
 freshMemory.updatedAt = "2026-06-02T00:00:00.000Z"

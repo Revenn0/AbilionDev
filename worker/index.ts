@@ -5,6 +5,7 @@ import { linkFollowUp, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { campaignFromStart, originFromStart, parseTelegramStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { applyEvent, canAdvanceRemoteWait, dueWaits, publishedSnapshot } from "../src/lib/runtime.ts"
+import { validatePublish } from "../src/lib/validate.ts"
 import { BANCA_FIXED, type Lead, type LeadEvent, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types.ts"
 import { compactGeo, factsFromGeo } from "../src/lib/geo.ts"
 import { parseDevice } from "../src/lib/track.ts"
@@ -346,14 +347,26 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (Array.isArray(body.funnels)) {
       const incoming = body.funnels.map(sanitizeIncomingFunnel).filter((item): item is NonNullable<typeof item> => Boolean(item))
       const incomingRemoved = clipRemovedIds(body.removedFunnelIds, 400)
-      if (env.AUTH && incomingRemoved.length) await rememberRemovedFunnels(env.AUTH, incomingRemoved)
       const storedRemoved = env.AUTH ? await loadRemovedFunnelIds(env.AUTH) : []
+      const stored = await loadFunnels(env)
+      for (const funnel of incoming) {
+        if (funnel.status !== "active" || !funnel.production) continue
+        const issue = validatePublish(funnel.production.nodes, funnel.production.edges)[0]
+        if (!issue) continue
+        const prev = stored.find((item) => item.id === funnel.id)
+        if (prev?.production?.publishedAt && prev.production.publishedAt === funnel.production.publishedAt) {
+          funnel.production = prev.production
+          continue
+        }
+        return json({ error: issue.message }, 400)
+      }
       const funnels = applyRemovedFunnels(
-        reconcileFunnels(await loadFunnels(env), incoming),
+        reconcileFunnels(stored, incoming),
         clipRemovedIds([...storedRemoved, ...incomingRemoved], 400)
       )
       if (!funnels.length) return json({ error: "Mantém pelo menos um funil." }, 400)
       await persistFunnels(env, funnels)
+      if (env.AUTH && incomingRemoved.length) await rememberRemovedFunnels(env.AUTH, incomingRemoved)
     }
     if (body.settings) await persistSettings(env, migrateSettings(body.settings))
     return json({ ok: true })

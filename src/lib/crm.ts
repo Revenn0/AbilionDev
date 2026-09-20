@@ -237,6 +237,16 @@ export function pendingSeedFunnelIds(remote: SalesFunnel[], local: SalesFunnel[]
   return local.map((item) => item.id).filter(Boolean)
 }
 
+export function hydrateFunnels(
+  local: SalesFunnel[],
+  remote: SalesFunnel[],
+  pendingIds: Iterable<string>,
+  removedIds: Iterable<string>
+): SalesFunnel[] {
+  const adopted = remote.length ? adoptRemoteFunnels(local, remote, pendingIds) : local
+  return applyRemovedFunnels(adopted, [...removedIds])
+}
+
 export function activatePublishedFunnels(funnels: SalesFunnel[], id: string): SalesFunnel[] {
   const target = funnels.find((item) => item.id === id)
   if (!target?.production) return funnels

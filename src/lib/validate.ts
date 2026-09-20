@@ -1,4 +1,4 @@
-import { isFlowKind, type FlowEdge, type FlowNode } from "@/lib/types"
+import { isFlowKind, type FlowEdge, type FlowNode } from "./types.ts"
 
 export type PublishIssue = { message: string }
 
