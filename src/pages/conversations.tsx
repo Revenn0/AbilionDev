@@ -95,7 +95,8 @@ export function ConversationsPage() {
   }, [all, filter, query])
 
   const selected = id ? all.find((item) => item.id === id) ?? null : null
-  const lead = selected ?? rows[0] ?? null
+  const listed = Boolean(selected && rows.some((row) => row.id === selected.id))
+  const lead = listed ? selected : id && selected ? null : rows[0] ?? null
 
   useEffect(() => {
     if (!lead || !canTickSteLocally(lead)) return
@@ -296,7 +297,9 @@ export function ConversationsPage() {
               <div className="grid place-items-center px-6 py-16 text-center">
                 <p className="text-[14px] font-medium">Nada neste recorte</p>
                 <p className="mt-1 max-w-sm text-[13px] text-muted-foreground">
-                  A lista à esquerda está vazia neste filtro. Limpa a busca ou escolhe Todas.
+                  {id && selected && !listed
+                    ? "A conversa escolhida não entra neste filtro. Limpa a busca ou escolhe Todas."
+                    : "A lista à esquerda está vazia neste filtro. Limpa a busca ou escolhe Todas."}
                 </p>
               </div>
             )}

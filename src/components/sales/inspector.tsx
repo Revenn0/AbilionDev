@@ -174,7 +174,18 @@ export function SalesInspector({
         {node.type === "wait" && (
           <>
             <Field label="Horas de espera">
-              <Input disabled={readOnly} className={BOX} type="number" min={0} value={d.delayHours ?? 84} onChange={(e) => set({ delayHours: Number(e.target.value) })} />
+              <Input
+                disabled={readOnly}
+                className={BOX}
+                type="number"
+                min={0}
+                max={8760}
+                value={d.delayHours ?? 84}
+                onChange={(e) => {
+                  const hours = Number(e.target.value)
+                  set({ delayHours: Number.isFinite(hours) && hours >= 0 ? Math.min(8760, hours) : 84 })
+                }}
+              />
             </Field>
             <Field label="Janela">
               <Input disabled={readOnly} className={BOX} value={d.delayWindow || ""} onChange={(e) => set({ delayWindow: e.target.value })} />

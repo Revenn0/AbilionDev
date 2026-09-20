@@ -1,5 +1,5 @@
 import { publishedFunnel } from "./runtime.ts"
-import { defaultSettings, type Lead, type LeadEvent, type SalesFunnel, type Settings } from "./types.ts"
+import { defaultSettings, type ChatMessage, type Lead, type LeadEvent, type LeadFacts, type SalesFunnel, type Settings } from "./types.ts"
 
 const CAP = 400
 
@@ -7,16 +7,56 @@ export function publicSettings(settings: Settings): Settings {
   return { ...settings, telegramBotToken: "", esterTelegramChatId: "" }
 }
 
+export function mergeLeadMessages(left: ChatMessage[] = [], right: ChatMessage[] = [], cap = 80): ChatMessage[] {
+  if (!right.length) return left.slice(-cap)
+  if (!left.length) return right.slice(-cap)
+  const byId = new Map<string, ChatMessage>()
+  for (const msg of [...left, ...right]) {
+    if (!msg?.id) continue
+    const prev = byId.get(msg.id)
+    if (!prev || msg.at >= prev.at) byId.set(msg.id, msg)
+  }
+  return [...byId.values()].sort((a, b) => a.at.localeCompare(b.at)).slice(-cap)
+}
+
+function fillFacts(primary?: LeadFacts, fallback?: LeadFacts): LeadFacts {
+  const left = fallback ?? {}
+  const right = primary ?? {}
+  if (!Object.keys(left).length) return right
+  if (!Object.keys(right).length) return left
+  return { ...left, ...right }
+}
+
 export function adoptStoredLead(prev: Lead, incoming: Lead): Lead {
-  if (prev.updatedAt > incoming.updatedAt) return prev
+  const incomingOlder = prev.updatedAt > incoming.updatedAt
+  const newer = incomingOlder ? prev : incoming
+  const older = incomingOlder ? incoming : prev
+  const messages = mergeLeadMessages(prev.messages ?? [], incoming.messages ?? [])
+  const events = mergeLeadEvents(incoming.events ?? [], prev.events ?? [])
+  const memory = newer.memory.trim() ? newer.memory : older.memory
+  const facts = fillFacts(newer.facts, older.facts)
+  const telegramChatId = newer.telegramChatId || older.telegramChatId
+  const visitorId = newer.visitorId || older.visitorId
+  if (incomingOlder) {
+    const prevMessages = prev.messages ?? []
+    const sameMessages = messages.length === prevMessages.length && messages.every((msg, index) => msg.id === prevMessages[index]?.id)
+    const sameEvents = events.length === prev.events.length && events.every((event, index) => event.id === prev.events[index]?.id)
+    const sameExtra =
+      memory === prev.memory &&
+      telegramChatId === prev.telegramChatId &&
+      visitorId === prev.visitorId &&
+      JSON.stringify(facts ?? {}) === JSON.stringify(prev.facts ?? {})
+    if (sameMessages && sameEvents && sameExtra) return prev
+    return { ...prev, events, messages, memory, facts, telegramChatId, visitorId }
+  }
   return {
     ...incoming,
-    events: mergeLeadEvents(incoming.events ?? [], prev.events ?? []),
-    messages: incoming.messages?.length ? incoming.messages : prev.messages,
-    memory: incoming.memory.trim() ? incoming.memory : prev.memory,
-    facts: incoming.facts && Object.keys(incoming.facts).length ? incoming.facts : prev.facts,
-    telegramChatId: incoming.telegramChatId || prev.telegramChatId,
-    visitorId: incoming.visitorId || prev.visitorId,
+    events,
+    messages,
+    memory,
+    facts,
+    telegramChatId,
+    visitorId,
   }
 }
 
@@ -31,8 +71,9 @@ export function mergeLeads(current: Lead[], incoming: Lead[]): Lead[] {
       changed = true
       continue
     }
-    if (prev.updatedAt < lead.updatedAt) {
-      map.set(lead.id, adoptStoredLead(prev, lead))
+    const next = adoptStoredLead(prev, lead)
+    if (next !== prev) {
+      map.set(lead.id, next)
       changed = true
     }
   }

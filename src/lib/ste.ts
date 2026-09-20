@@ -286,7 +286,10 @@ export function steRuntimeFromSnapshot(snapshot?: Pick<SalesSnapshot, "nodes"> |
     remarketing: remarketing.length ? remarketing : undefined,
     close: close.length ? close : undefined,
     dieAfterRemarketing: dieNode ? dieNode.data.dieAfter !== false : true,
-    remarketingHours: wait?.data.delayHours && wait.data.delayHours > 0 ? wait.data.delayHours : undefined,
+    remarketingHours:
+      wait?.data.delayHours && Number.isFinite(wait.data.delayHours) && wait.data.delayHours > 0
+        ? Math.min(8760, wait.data.delayHours)
+        : undefined,
   }
 }
 

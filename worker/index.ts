@@ -33,6 +33,7 @@ import {
   loadLead,
   CRM_SETTINGS,
   claimCronLock,
+  renewCronLock,
   loadFunnelsKv,
   loadRemovedFunnelIds,
   loadRemovedLeadIds,
@@ -575,6 +576,7 @@ async function processWaits(env: Env) {
     let advanced = 0
     for (const lead of due) {
       try {
+        if (env.AUTH && lockOwner !== "local" && !(await renewCronLock(env.AUTH, lockOwner))) break
         if (isSteWait(lead)) {
           const talked = advanceSteIfDue(lead, Date.now(), ste)
           await saveLead(env, talked.lead)
@@ -805,7 +807,6 @@ async function saveLead(env: Env, lead: Lead) {
   }
   if (env.AUTH) {
     const prev = await loadLead(env.AUTH, bounded.id)
-    if (prev && prev.updatedAt > bounded.updatedAt) return
     bounded = prev ? adoptStoredLead(prev, bounded) : bounded
     await upsertLeadKv(env.AUTH, bounded)
   }

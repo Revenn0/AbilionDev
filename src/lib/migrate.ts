@@ -113,6 +113,12 @@ function clipText(value: unknown, max: number) {
   return typeof value === "string" ? value.slice(0, max) : undefined
 }
 
+function clipDelayHours(value: unknown) {
+  const hours = typeof value === "number" ? value : Number(value)
+  if (!Number.isFinite(hours) || hours < 0) return 84
+  return Math.min(8760, hours)
+}
+
 export function cleanHttpUrl(value?: string) {
   const next = (value ?? "").trim()
   if (!next) return ""
@@ -146,6 +152,7 @@ function clipFunnel(funnel: SalesFunnel): SalesFunnel {
         body: clipText(node.data.body, 4000),
         cta: clipText(node.data.cta, 80),
         conditionValue: clipText(node.data.conditionValue, 80),
+        delayHours: node.data.delayHours === undefined ? undefined : clipDelayHours(node.data.delayHours),
       },
     }))
   return {

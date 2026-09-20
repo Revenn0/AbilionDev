@@ -33,6 +33,7 @@ import {
   adoptLeadStores,
   adoptStoredLead,
   adoptRemoteFunnels,
+  mergeLeadMessages,
   applyRemovedFunnels,
   applyRemovedLeads,
   canDeleteFunnel,
@@ -45,10 +46,10 @@ import {
   reconcileLeads,
   resolveLeadLookup,
 } from "../src/lib/crm.ts"
-import { applyEvent, publishedFunnel, publishedSnapshot } from "../src/lib/runtime.ts"
+import { applyEvent, publishedFunnel, publishedSnapshot, waitHours } from "../src/lib/runtime.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
-import { CRM_CRON_LOCK, CRM_FUNNELS, aliasKey, claimCronLock, deleteLeadKv, dueLeadsKv, findLeadInKv, listLeads, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, releaseCronLock, saveFunnelsKv, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_CRON_LOCK, CRM_FUNNELS, aliasKey, claimCronLock, deleteLeadKv, dueLeadsKv, findLeadInKv, listLeads, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, releaseCronLock, renewCronLock, saveFunnelsKv, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
@@ -614,6 +615,66 @@ const adopted = adoptStoredLead(olderLead, newerEmpty)
 assert(adopted.memory === "local", "gravação nova sem memória não apaga a nota")
 assert(adopted.messages?.[0]?.id === "m-1", "gravação nova sem mensagens conserva o chat")
 assert(adoptStoredLead(olderLead, { ...newerEmpty, updatedAt: "2019-01-01T00:00:00.000Z" }) === olderLead, "gravação antiga perde para o KV")
+const chatPrev = {
+  ...olderLead,
+  updatedAt: "2026-06-01T00:00:00.000Z",
+  temperature: "novo" as const,
+  messages: [
+    { id: "m-1", at: "2026-06-01T00:00:00.000Z", role: "ste" as const, text: "oi" },
+    { id: "m-2", at: "2026-06-01T00:01:00.000Z", role: "lead" as const, text: "já jogo" },
+  ],
+}
+const staleDrawer = {
+  ...chatPrev,
+  updatedAt: "2026-06-02T00:00:00.000Z",
+  temperature: "quente" as const,
+  messages: [chatPrev.messages[0]!],
+}
+const keptChat = adoptStoredLead(chatPrev, staleDrawer)
+assert(keptChat.temperature === "quente", "clique mais novo do operador entra")
+assert(keptChat.messages?.map((item) => item.id).join(",") === "m-1,m-2", "chat do Telegram sobrevive ao POST incompleto")
+const lateTelegram = {
+  ...chatPrev,
+  updatedAt: "2026-05-01T00:00:00.000Z",
+  temperature: "novo" as const,
+  messages: [
+    ...chatPrev.messages,
+    { id: "m-3", at: "2026-06-01T00:02:00.000Z", role: "ste" as const, text: "minicurso" },
+  ],
+}
+const afterClick = { ...keptChat, updatedAt: "2026-06-02T00:00:00.000Z", temperature: "quente" as const }
+const mergedLate = adoptStoredLead(afterClick, lateTelegram)
+assert(mergedLate.temperature === "quente", "gravação antiga do webhook não reverte a temperatura")
+assert(mergedLate.messages?.some((item) => item.id === "m-3"), "mensagem nova do Telegram entra mesmo com updatedAt velho")
+assert(mergeLeadMessages([{ id: "m-1", at: "1", role: "ste", text: "a" }], [{ id: "m-2", at: "2", role: "lead", text: "b" }]).map((item) => item.id).join(",") === "m-1,m-2", "merge de falas une por id")
+assert(waitHours(Number("x")) === 84, "espera NaN cai nas 84h")
+assert(waitHours(-3) === 84, "espera negativa cai nas 84h")
+assert(waitHours(10_000) === 8760, "espera tem teto de um ano")
+const nanWait = sanitizeIncomingFunnel({
+  id: "funil-nan",
+  name: "NaN",
+  nodes: [{ id: "w", type: "wait", position: { x: 0, y: 0 }, data: { title: "Espera", delayHours: Number("x") } }],
+  edges: [],
+})
+assert(nanWait?.nodes[0]?.data.delayHours === 84, "funil persistido não guarda NaN na espera")
+const nanSnap = {
+  name: "nan",
+  publishedAt: "2026-01-01T00:00:00.000Z",
+  nodes: [
+    { id: "e", type: "entry" as const, position: { x: 0, y: 0 }, data: { title: "Start", entryTrigger: "start" as const } },
+    { id: "w", type: "wait" as const, position: { x: 0, y: 0 }, data: { title: "Espera", delayHours: Number("x") } },
+  ],
+  edges: [{ id: "e1", source: "e", target: "w" }],
+}
+let nanHours = -1
+try {
+  const nanFired = applyEvent(nanSnap, lead("nan-wait"), { type: "start" }, Date.parse("2026-01-01T00:00:00.000Z"))
+  const waitEffect = nanFired.effects.find((item) => item.kind === "wait")
+  nanHours = waitEffect && "hours" in waitEffect ? waitEffect.hours : -1
+} catch {
+  nanHours = -2
+}
+assert(nanHours === 84, "applyEvent com espera NaN não rebenta")
 olderLead.facts = { regionCode: "SP" }
 olderLead.telegramChatId = "9001"
 const newerBare = { ...newerEmpty, facts: {}, telegramChatId: undefined }
@@ -1019,6 +1080,12 @@ assert(await claimCronLock(lockKv, Date.now(), 90_000), "release certo solta o l
 const expiredLock = memoryKv()
 await expiredLock.put(CRM_CRON_LOCK, JSON.stringify({ until: new Date(Date.now() - 1000).toISOString(), owner: "velho" }))
 assert(await claimCronLock(expiredLock, Date.now(), 90_000), "lock expirado pode ser pego")
+const renewKv = memoryKv()
+const renewOwner = await claimCronLock(renewKv, 1000, 90_000, "cron-a")
+assert(renewOwner === "cron-a", "claim para renovar")
+assert(await renewCronLock(renewKv, "cron-a", 91_000, 90_000), "dono renova depois do TTL")
+assert(!(await claimCronLock(renewKv, 91_000, 90_000, "cron-b")), "lock renovado ainda impede o outro")
+assert(!(await renewCronLock(renewKv, "cron-b", 91_000, 90_000)), "alheio não renova")
 let lockReads = 0
 const racedLock = {
   async get(key: string) {
@@ -1678,6 +1745,75 @@ assert(
   "POST lead mais novo sem memória é 200"
 )
 assert((await loadLead(liveEnv.AUTH, "mem-1"))?.memory === "guarda", "POST novo sem memória não apaga a nota")
+const chatLead = lead("chat-1", "@chatmerge")
+chatLead.messages = [
+  { id: "cm-1", at: "2026-06-01T00:00:00.000Z", role: "ste", text: "oi" },
+  { id: "cm-2", at: "2026-06-01T00:01:00.000Z", role: "lead", text: "já jogo" },
+]
+chatLead.updatedAt = "2026-06-01T00:01:00.000Z"
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/leads", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: liveCookie },
+        body: JSON.stringify({ lead: chatLead }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 200,
+  "POST lead com duas falas"
+)
+const staleChat = {
+  ...chatLead,
+  updatedAt: "2026-06-02T00:00:00.000Z",
+  temperature: "quente" as const,
+  messages: [chatLead.messages[0]!],
+}
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/leads", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: liveCookie },
+        body: JSON.stringify({ lead: staleChat }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 200,
+  "POST mais novo com chat incompleto é 200"
+)
+const storedChat = await loadLead(liveEnv.AUTH, "chat-1")
+assert(storedChat?.temperature === "quente", "temperatura nova entra")
+assert(storedChat?.messages?.map((item) => item.id).join(",") === "cm-1,cm-2", "POST incompleto não apaga a fala do Telegram")
+const lateChat = {
+  ...chatLead,
+  updatedAt: "2026-05-01T00:00:00.000Z",
+  temperature: "novo" as const,
+  messages: [
+    ...chatLead.messages,
+    { id: "cm-3", at: "2026-06-01T00:02:00.000Z", role: "ste" as const, text: "minicurso" },
+  ],
+}
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/leads", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: liveCookie },
+        body: JSON.stringify({ lead: lateChat }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 200,
+  "POST atrasado com fala nova é 200"
+)
+const afterLate = await loadLead(liveEnv.AUTH, "chat-1")
+assert(afterLate?.temperature === "quente", "POST atrasado não reverte a temperatura")
+assert(afterLate?.messages?.some((item) => item.id === "cm-3"), "fala nova do Telegram entra com updatedAt velho")
 assert((await handleRequest(new Request("http://local.test/api/leads?id=", { method: "DELETE", headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())).status === 400, "DELETE sem id é 400")
 assert(
   (

@@ -150,6 +150,12 @@ function skipMap(
   return current
 }
 
+export function waitHours(value: unknown, fallback = 84) {
+  const hours = typeof value === "number" ? value : Number(value)
+  if (!Number.isFinite(hours) || hours < 0) return fallback
+  return Math.min(8760, hours)
+}
+
 export function applyEvent(
   snapshot: SalesSnapshot | null,
   lead: Lead,
@@ -244,7 +250,7 @@ export function applyEvent(
     }
 
     if (node.type === "wait") {
-      const hours = node.data.delayHours ?? 84
+      const hours = waitHours(node.data.delayHours)
       const due = next.waitUntil ? new Date(next.waitUntil).getTime() : 0
       if (due && nowMs >= due && event.type === "timer") {
         next.waitUntil = undefined
