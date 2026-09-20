@@ -420,6 +420,14 @@ const deletedOld = reconcileFunnels(
   [{ ...publishedA, updatedAt: "2026-04-01T00:00:00.000Z" }]
 )
 assert(!deletedOld.some((item) => item.id === publishedC.id), "reconcile deixa apagar funil mais velho")
+const olderLead = lead("merge-1")
+olderLead.updatedAt = "2020-01-01T00:00:00.000Z"
+olderLead.events = [{ id: "ev-1", at: olderLead.updatedAt, kind: "entered", title: "entrou" }]
+olderLead.messages = [{ id: "m-1", at: olderLead.updatedAt, role: "ste", text: "oi" }]
+const newerEmpty = { ...olderLead, updatedAt: "2026-01-01T00:00:00.000Z", events: [], messages: [] }
+const mergedNewer = mergeLeads([olderLead], [newerEmpty])[0]
+assert(mergedNewer?.events[0]?.id === "ev-1", "hydrate remoto vazio conserva eventos")
+assert(mergedNewer?.messages?.[0]?.id === "m-1", "hydrate remoto vazio conserva mensagens")
 assert(csvCell("a,b") === '"a,b"', "csv cita vírgula")
 assert(csvCell('diz "oi"') === '"diz ""oi"""', "csv escapa aspas")
 assert(leadsToCsv([lead()]).includes("lead-1"), "csv inclui o id")

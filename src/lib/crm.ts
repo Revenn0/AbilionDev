@@ -18,7 +18,11 @@ export function mergeLeads(current: Lead[], incoming: Lead[]): Lead[] {
       continue
     }
     if (prev.updatedAt < lead.updatedAt) {
-      map.set(lead.id, lead)
+      map.set(lead.id, {
+        ...lead,
+        events: lead.events.length ? lead.events : prev.events,
+        messages: lead.messages?.length ? lead.messages : prev.messages,
+      })
       changed = true
     }
   }

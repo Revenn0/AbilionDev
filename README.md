@@ -56,8 +56,8 @@ Sem print → sem banca. Sem o nó de oferta → o canal não vende. O canal é 
 Projecto já usado no wrangler:
 
 - URL: `https://eyjgmkmaixmpmeeahxon.supabase.co`
-- Correr [`supabase/migrations/001_flow.sql`](supabase/migrations/001_flow.sql), [`002_ste_chat.sql`](supabase/migrations/002_ste_chat.sql) e [`003_facebook_scale.sql`](supabase/migrations/003_facebook_scale.sql) no SQL editor
-- Service role só no Worker. Não há chave anónima no browser
+- Correr [`supabase/migrations/001_flow.sql`](supabase/migrations/001_flow.sql), [`002_ste_chat.sql`](supabase/migrations/002_ste_chat.sql), [`003_facebook_scale.sql`](supabase/migrations/003_facebook_scale.sql), [`004_track_and_facts.sql`](supabase/migrations/004_track_and_facts.sql) e [`005_worker_only_rls.sql`](supabase/migrations/005_worker_only_rls.sql) no SQL editor
+- Service role só no Worker. Não há chave anónima no browser. O `005` tira as policies abertas do recorte antigo — sem isso, quem tiver a chave anon ainda lê o workspace `local`.
 
 ## Produção
 
@@ -192,7 +192,7 @@ Estes itens dependem de credenciais ou de uma decisão humana. O código não in
 - **Telegram em produção** continua desligado até existir `TELEGRAM_BOT_TOKEN` (e, se quiseres fixar, `TELEGRAM_WEBHOOK_SECRET`). Sem isso não há /start reais. A landing `/l` também fica sem CTA até o username estar no Worker.
 - **Voz da Sté** fica em texto até `ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID`. Não há `voice_id` inventado.
 - **Esqueceu a senha?** em produção não envia e-mail. Troca em Configurações → Conta.
-- **Supabase** só entra com `SUPABASE_SERVICE_ROLE`. Sem isso a operação corre no KV `abilion-auth`.
+- **Supabase** só entra com `SUPABASE_SERVICE_ROLE`. Sem isso a operação corre no KV `abilion-auth`. Corre `005_worker_only_rls.sql` no SQL editor para fechar as policies anónimas do recorte antigo.
 - **Senhas dos operadores** em produção já estão no KV. Não estão neste repositório. Primeiro acesso local define a senha (6+).
 - Plugin **Agenda** e **webhooks de saída** são “Em breve” de propósito. Relatórios exporta CSV da base de leads. Captura abre Leads. Telegram mostra o estado do Worker — sem interruptores que não fazem nada.
 - **Notificações** na conta também são “Em breve”. O aviso da Ester no print continua a sair pelo funil quando há `ESTER_CHAT_ID`.

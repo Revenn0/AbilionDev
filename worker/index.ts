@@ -543,12 +543,44 @@ async function findLead(env: Env, contact: string, telegramId: number, chatId: s
     `telegram_chat_id.eq.${quote(chatId)}`,
   ].join(",")
   const rows = (await rest<LeadRow[]>(env, `leads?workspace_id=eq.${WORKSPACE}&or=(${filter})&select=*&limit=1`)) ?? []
-  if (rows[0]) return rowToLead(rows[0])
+  if (rows[0]) {
+    const [hydrated] = await attachLeadEvents(env, [rowToLead(rows[0])])
+    return hydrated ?? null
+  }
   return env.AUTH ? findLeadInKv(env.AUTH, contact, telegramId, chatId) : null
 }
 
 function quote(value: string) {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
+}
+
+async function attachLeadEvents(env: Env, leads: Lead[]): Promise<Lead[]> {
+  if (!leads.length) return leads
+  const ids = [...new Set(leads.map((lead) => lead.id).filter(Boolean))]
+  const rows =
+    (await rest<LeadEventRow[]>(
+      env,
+      `lead_events?lead_id=in.(${ids.map(quote).join(",")})&select=*&order=at.asc`
+    )) ?? []
+  if (!rows.length) return leads
+  const byLead = new Map<string, LeadEvent[]>()
+  for (const row of rows) {
+    const list = byLead.get(row.lead_id) ?? []
+    list.push({
+      id: row.id,
+      at: row.at,
+      kind: row.kind,
+      nodeId: row.node_id ?? undefined,
+      title: row.title ?? undefined,
+      body: row.body ?? undefined,
+      effect: row.effect ?? undefined,
+    })
+    byLead.set(row.lead_id, list)
+  }
+  return leads.map((lead) => {
+    const events = byLead.get(lead.id)
+    return events?.length && !lead.events.length ? { ...lead, events } : lead
+  })
 }
 
 function rowToLead(row: LeadRow): Lead {
@@ -591,7 +623,7 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
       env,
       `leads?workspace_id=eq.${WORKSPACE}${filter}&select=*&order=updated_at.desc&limit=${limit}`
     )) ?? []
-  return mergeLeads(kv, rows.map(rowToLead)).slice(0, limit)
+  return mergeLeads(kv, await attachLeadEvents(env, rows.map(rowToLead))).slice(0, limit)
 }
 
 async function removeLead(env: Env, id: string) {
@@ -783,6 +815,17 @@ type SalesFunnelRow = {
   nodes: SalesFunnel["nodes"]
   edges: SalesFunnel["edges"]
   production: SalesFunnel["production"]
+}
+
+type LeadEventRow = {
+  id: string
+  lead_id: string
+  at: string
+  kind: LeadEvent["kind"]
+  node_id?: string | null
+  title?: string | null
+  body?: string | null
+  effect?: string | null
 }
 
 type LeadRow = {
