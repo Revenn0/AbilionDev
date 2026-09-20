@@ -406,7 +406,7 @@ function BotPane() {
             {origin}/l
           </a>
         </p>
-        <pre className="mt-4 overflow-x-auto rounded-xl bg-muted px-4 py-3 text-[12px] leading-relaxed">{pixel}</pre>
+        <pre className="mt-4 overflow-x-auto rounded-xl bg-muted px-4 py-3 text-[12px] leading-relaxed">{pixel.replaceAll("<", "\u003c")}</pre>
         <Button
           type="button"
           variant="outline"
