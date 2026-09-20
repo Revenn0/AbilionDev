@@ -8,7 +8,7 @@ import { applyEvent, dueWaits, publishedSnapshot } from "../src/lib/runtime.ts"
 import { BANCA_FIXED, type Lead, type LeadEvent, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types.ts"
 import { compactGeo, factsFromGeo } from "../src/lib/geo.ts"
 import { parseDevice } from "../src/lib/track.ts"
-import { applyRemovedFunnels, clipRemovedIds, emptySettings, mergeLeads, publicSettings, reconcileFunnels } from "../src/lib/crm.ts"
+import { adoptLeadStores, applyRemovedFunnels, clipRemovedIds, emptySettings, publicSettings, reconcileFunnels } from "../src/lib/crm.ts"
 import { cleanBotUsername, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { resolveClientGeo } from "./geo-lookup.ts"
 import { ingestTrack, kvTrackStore, memoryTrackStore, readTrackBody, summaryFromStore, type TrackStore } from "./track-store.ts"
@@ -698,12 +698,16 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
       env,
       `leads?workspace_id=eq.${WORKSPACE}${filter}&select=*&order=updated_at.desc&limit=${limit}`
     )) ?? []
-  return mergeLeads(kv, await attachLeadEvents(env, rows.map(rowToLead))).slice(0, limit)
+  const remote = rows.map(rowToLead)
+  const keep = new Set(kv.map((lead) => lead.id))
+  const scoped = kv.length ? remote.filter((lead) => keep.has(lead.id)) : remote
+  return adoptLeadStores(kv, await attachLeadEvents(env, scoped)).slice(0, limit)
 }
 
 async function removeLead(env: Env, id: string) {
   if (env.AUTH) await deleteLeadKv(env.AUTH, id)
   await rest(env, `leads?id=eq.${encodeURIComponent(id)}&workspace_id=eq.${WORKSPACE}`, { method: "DELETE" })
+  await rest(env, `lead_events?lead_id=eq.${encodeURIComponent(id)}`, { method: "DELETE" })
 }
 
 async function saveLead(env: Env, lead: Lead) {

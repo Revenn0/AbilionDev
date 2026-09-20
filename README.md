@@ -176,7 +176,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `POST /api/auth/password` | sessão |
 | `GET/POST /api/crm` | sessão — funis e settings (sem token). POST aceita `removedFunnelIds`; o KV ganha se já houver quadro |
 | `GET/POST/DELETE /api/leads` | sessão — lista até 400. O hydrate trata o GET como lista completa |
-| `GET /api/inbox` | sessão — leads do Telegram |
+| `GET /api/inbox` | sessão — recorte de 80 do Telegram. O poll não reabre lead apagado nesta sessão |
 | `GET/POST /api/runtime` | sessão — Telegram, IA, voz |
 | `POST /api/runtime/voice` | sessão — gera clips ElevenLabs |
 | `POST /api/track` | público, CORS aberto só aqui (pixel) |

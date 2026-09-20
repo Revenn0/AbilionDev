@@ -21,12 +21,16 @@ import {
   STE_REMARKETING_BLOCK,
   STE_CLOSE,
   steRuntimeFromSnapshot,
+  safeHttpUrl,
+  splitSteMarkup,
   toTelegramHtml,
 } from "../src/lib/ste.ts"
 import { emptySalesFunnel } from "../src/lib/templates.ts"
 import {
+  adoptLeadStores,
   adoptRemoteFunnels,
   applyRemovedFunnels,
+  applyRemovedLeads,
   canDeleteFunnel,
   clipRemovedIds,
   mergeFunnels,
@@ -160,6 +164,10 @@ assert(bob.lead.facts.hasSuperbet === false, "fato do Bob")
 const html = toTelegramHtml(STE_COURSE_BLOCK[2]!)
 assert(html.includes("<a href=\"https://mundoaviator.com.br/mini-curso/\">"), "html do telegram")
 assert(!html.includes("]("), "markdown nao vaza")
+assert(safeHttpUrl("https://t.me/bot")?.startsWith("https://t.me/bot"), "https passa")
+assert(safeHttpUrl("javascript:alert(1)") === null, "javascript nao passa")
+assert(splitSteMarkup("[x](javascript:alert(1))")[0]?.type === "text", "markup recusa javascript")
+assert(!toTelegramHtml("[x](javascript:alert(1))").includes("href"), "html recusa javascript")
 
 assert(flagEmoji("BR") === "🇧🇷", "bandeira BR")
 assert(stateLabel("São Paulo", "SP", "BR") === "São Paulo (SP)", "estado SP")
@@ -544,6 +552,20 @@ assert(
   reconcileLeads([freshLead, liveLead], [liveLead], ["fresh"]).some((item) => item.id === "fresh"),
   "pending local sobrevive ao hydrate"
 )
+assert(!applyRemovedLeads([freshLead, liveLead], ["fresh"]).some((item) => item.id === "fresh"), "tombstone tira o lead da lista")
+assert(
+  mergeLeads(applyRemovedLeads([liveLead], ["fresh"]), [freshLead]).some((item) => item.id === "fresh"),
+  "sem tombstone a inbox volta a trazer o lead"
+)
+assert(
+  !mergeLeads(applyRemovedLeads([liveLead], ["fresh"]), applyRemovedLeads([freshLead], ["fresh"])).some((item) => item.id === "fresh"),
+  "inbox com tombstone nao ressuscita"
+)
+assert(
+  !adoptLeadStores([liveLead], [liveLead, freshLead]).some((item) => item.id === "fresh"),
+  "KV nao aceita lead que so existe no Supabase"
+)
+assert(adoptLeadStores([], [freshLead]).some((item) => item.id === "fresh"), "KV vazio recupera do remoto")
 assert(csvCell("a,b") === '"a,b"', "csv cita vírgula")
 assert(csvCell('diz "oi"') === '"diz ""oi"""', "csv escapa aspas")
 assert(leadsToCsv([lead()]).includes("lead-1"), "csv inclui o id")

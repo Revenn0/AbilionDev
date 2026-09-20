@@ -79,6 +79,20 @@ export function applyRemovedFunnels(funnels: SalesFunnel[], removedIds: string[]
   return funnels.filter((item) => !drop.has(item.id))
 }
 
+export function applyRemovedLeads(leads: Lead[], removedIds: Iterable<string>): Lead[] {
+  const drop = new Set(removedIds)
+  if (!drop.size) return leads
+  const next = leads.filter((lead) => !drop.has(lead.id))
+  return next.length === leads.length ? leads : next
+}
+
+export function adoptLeadStores(kv: Lead[], remote: Lead[]): Lead[] {
+  if (!kv.length) return remote
+  if (!remote.length) return kv
+  const keep = new Set(kv.map((lead) => lead.id))
+  return mergeLeads(kv, remote.filter((lead) => keep.has(lead.id)))
+}
+
 export function emptySettings(): Settings {
   return { ...defaultSettings, plugins: { ...defaultSettings.plugins } }
 }

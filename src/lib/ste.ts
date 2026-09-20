@@ -597,6 +597,18 @@ export function isSteWait(lead: Lead) {
   return Boolean(lead.waitUntil) && (memHas(lead, MEM.superbet) || memHas(lead, MEM.remarketing))
 }
 
+export function safeHttpUrl(url: string): string | null {
+  const next = url.trim()
+  if (!/^https?:\/\//i.test(next)) return null
+  try {
+    const parsed = new URL(next)
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null
+    return parsed.href
+  } catch {
+    return null
+  }
+}
+
 export function splitSteMarkup(text: string): SteMarkup[] {
   const nodes: SteMarkup[] = []
   const pattern = /\[([^\]]+)\]\((https?:[^)\s]+)\)/g
@@ -604,7 +616,9 @@ export function splitSteMarkup(text: string): SteMarkup[] {
   for (const match of text.matchAll(pattern)) {
     const index = match.index ?? 0
     if (index > cursor) nodes.push({ type: "text", text: text.slice(cursor, index) })
-    nodes.push({ type: "link", text: match[1] ?? "", url: match[2] ?? "" })
+    const href = safeHttpUrl(match[2] ?? "")
+    if (href) nodes.push({ type: "link", text: match[1] ?? "", url: href })
+    else nodes.push({ type: "text", text: match[0] })
     cursor = index + match[0].length
   }
   if (cursor < text.length) nodes.push({ type: "text", text: text.slice(cursor) })
@@ -618,9 +632,13 @@ export function toTelegramHtml(text: string) {
       if (part.type === "text") {
         return part.text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
       }
-      const href = part.url.replace(/&/g, "&amp;").replace(/"/g, "&quot;")
+      const href = safeHttpUrl(part.url)
+      if (!href) {
+        return part.text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      }
+      const safe = href.replace(/&/g, "&amp;").replace(/"/g, "&quot;")
       const label = part.text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-      return `<a href="${href}">${label}</a>`
+      return `<a href="${safe}">${label}</a>`
     })
     .join("")
 }

@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { loginRequest, logoutRequest, meRequest } from "@/lib/auth-api"
 import { clearSessionExpired, noteSessionExpired, subscribeSessionExpired } from "@/lib/session"
 import { toast } from "sonner"
-import { adoptRemoteFunnels, canDeleteFunnel, mergeLeads, reconcileLeads } from "@/lib/crm"
+import { adoptRemoteFunnels, applyRemovedLeads, canDeleteFunnel, mergeLeads, reconcileLeads } from "@/lib/crm"
 import { migrateFunnel, migrateLead, migrateSettings } from "@/lib/migrate"
 import { fetchCrm, fetchInbox, fetchLeads, fetchRuntime, persistLeads, removeRemoteLead, saveCrm } from "@/lib/runtime-api"
 import { seededOperation } from "@/lib/templates"
@@ -92,15 +92,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const pendingLeadWrites = useRef(new Map<string, Lead>())
   const pendingFunnelIds = useRef(new Set<string>())
   const removedFunnelIds = useRef(new Set<string>())
+  const removedLeadIds = useRef(new Set<string>())
   const stateRef = useRef(state)
 
   const flushLeadWrites = () => {
     window.clearTimeout(leadWriteTimer.current)
-    const batch = [...pendingLeadWrites.current.values()]
+    const batch = [...pendingLeadWrites.current.values()].filter((lead) => !removedLeadIds.current.has(lead.id))
     if (!batch.length) return
     void persistLeads(batch).then((ok) => {
+      const raced = batch.filter((lead) => removedLeadIds.current.has(lead.id))
+      if (raced.length) void Promise.all(raced.map((lead) => removeRemoteLead(lead.id)))
       if (ok) {
         for (const lead of batch) {
+          if (removedLeadIds.current.has(lead.id)) continue
           const latest = pendingLeadWrites.current.get(lead.id)
           if (latest && latest.updatedAt === lead.updatedAt) pendingLeadWrites.current.delete(lead.id)
         }
@@ -203,7 +207,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             : prev.funnels,
         leads: remoteLeads.ok
           ? remoteLeads.leads.length
-            ? reconcileLeads(prev.leads, remoteLeads.leads.map(migrateLead), pendingLeadWrites.current.keys())
+            ? reconcileLeads(
+                prev.leads,
+                applyRemovedLeads(remoteLeads.leads.map(migrateLead), removedLeadIds.current),
+                pendingLeadWrites.current.keys()
+              )
             : prev.leads.filter((lead) => pendingLeadWrites.current.has(lead.id))
           : prev.leads,
         settings: {
@@ -232,10 +240,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const inbox = await fetchInbox()
       if (cancelled) return
       setInboxSync(inbox.ok ? "ok" : "error")
-      const incoming = inbox.leads.map((lead) => migrateLead(lead))
+      const incoming = applyRemovedLeads(inbox.leads.map((lead) => migrateLead(lead)), removedLeadIds.current)
       if (!incoming.length) return
       setState((prev) => {
-        const leads = mergeLeads(prev.leads, incoming)
+        const leads = mergeLeads(applyRemovedLeads(prev.leads, removedLeadIds.current), incoming)
         return leads === prev.leads ? prev : { ...prev, leads }
       })
     }
@@ -320,6 +328,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return true
       },
       createLead: (lead) => {
+        removedLeadIds.current.delete(lead.id)
         pendingLeadWrites.current.set(lead.id, lead)
         setState((prev) => ({ ...prev, leads: [lead, ...prev.leads] }))
         void persistLeads([lead]).then((ok) => {
@@ -331,7 +340,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         })
       },
       createLeads: (leads) => {
-        for (const lead of leads) pendingLeadWrites.current.set(lead.id, lead)
+        for (const lead of leads) {
+          removedLeadIds.current.delete(lead.id)
+          pendingLeadWrites.current.set(lead.id, lead)
+        }
         setState((prev) => ({ ...prev, leads: [...leads, ...prev.leads] }))
         void persistLeads(leads).then((ok) => {
           if (ok) {
@@ -352,6 +364,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       deleteLead: (id) => {
         pendingLeadWrites.current.delete(id)
+        removedLeadIds.current.add(id)
         setState((prev) => ({ ...prev, leads: prev.leads.filter((item) => item.id !== id) }))
         void removeRemoteLead(id).then((ok) => setPersistSync(ok ? "ok" : "error"))
       },
