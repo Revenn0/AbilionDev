@@ -34,6 +34,7 @@ import {
   adoptLeadStores,
   adoptStoredLead,
   adoptOperatorLead,
+  commitStoredLead,
   adoptRemoteFunnels,
   mergeLeadMessages,
   applyRemovedFunnels,
@@ -816,6 +817,18 @@ const adopted = adoptStoredLead(olderLead, newerEmpty)
 assert(adopted.memory === "local", "gravação nova sem memória não apaga a nota")
 assert(adopted.messages?.[0]?.id === "m-1", "gravação nova sem mensagens conserva o chat")
 assert(adoptStoredLead(olderLead, { ...newerEmpty, updatedAt: "2019-01-01T00:00:00.000Z" }) === olderLead, "gravação antiga perde para o KV")
+const staleWrite = { ...olderLead, memory: "velha", updatedAt: "2020-01-01T00:00:00.000Z", messages: [] }
+const liveWrite = {
+  ...olderLead,
+  memory: "nova",
+  updatedAt: "2026-09-20T12:00:00.000Z",
+  messages: [{ id: "m-live", role: "ste" as const, text: "tick", at: "2026-09-20T12:00:00.000Z" }],
+}
+const committed = commitStoredLead(olderLead, staleWrite, liveWrite)
+assert(committed.memory === "nova", "POST velho do lead não apaga a nota mais nova")
+assert(committed.messages?.some((item) => item.id === "m-live"), "POST velho do lead não apaga a fala do tick")
+assert(commitStoredLead(null, staleWrite, liveWrite).memory === "nova", "upsert sem prev ainda une o KV mais novo")
+assert(commitStoredLead(olderLead, liveWrite).memory === "nova", "sem latest extra o commit cai no adopt")
 const telegramWait = {
   ...olderLead,
   id: "tg-flow",

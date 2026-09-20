@@ -178,15 +178,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const flushLeadWrites = (): Promise<boolean> => {
     window.clearTimeout(leadWriteTimer.current)
-    for (const id of [...pendingLeadWrites.current.keys()]) {
-      if (removedLeadIds.current.has(id)) pendingLeadWrites.current.delete(id)
-    }
-    persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
-    const batch = [...pendingLeadWrites.current.values()]
-    if (!batch.length) return leadFlushRef.current
-    const pending = persistLeads(batch).then((ok) => {
+    const run = async (): Promise<boolean> => {
+      for (const id of [...pendingLeadWrites.current.keys()]) {
+        if (removedLeadIds.current.has(id)) pendingLeadWrites.current.delete(id)
+      }
+      persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
+      const batch = [...pendingLeadWrites.current.values()]
+      if (!batch.length) return true
+      const ok = await persistLeads(batch)
       const raced = batch.filter((lead) => removedLeadIds.current.has(lead.id))
-      if (raced.length) void Promise.all(raced.map((lead) => removeRemoteLead(lead.id)))
+      if (raced.length) await Promise.all(raced.map((lead) => removeRemoteLead(lead.id)))
       if (ok) {
         for (const lead of batch) {
           if (removedLeadIds.current.has(lead.id)) continue
@@ -197,8 +198,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
       setPersistSync(ok ? "ok" : "error")
       return ok
-    })
-    leadFlushRef.current = pending
+    }
+    const pending = leadFlushRef.current.then(run, run)
+    leadFlushRef.current = pending.then(
+      () => true,
+      () => false
+    )
     return pending
   }
 

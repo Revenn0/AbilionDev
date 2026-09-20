@@ -92,6 +92,13 @@ export function adoptOperatorLead(prev: Lead | null, incoming: Lead): Lead {
   return adoptStoredLead(prev, patched)
 }
 
+/** Persist do lead: une o snapshot lido no início com o KV no instante do upsert. */
+export function commitStoredLead(prev: Lead | null, incoming: Lead, latest: Lead | null = prev): Lead {
+  const first = prev ? adoptStoredLead(prev, incoming) : incoming
+  if (!latest || latest === prev) return first
+  return adoptStoredLead(latest, first)
+}
+
 export function mergeLeads(current: Lead[], incoming: Lead[]): Lead[] {
   if (!incoming.length) return current
   const map = new Map(current.map((lead) => [lead.id, lead]))

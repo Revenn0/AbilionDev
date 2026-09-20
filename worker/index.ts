@@ -13,7 +13,7 @@ import {
   adoptDueLeads,
   adoptLeadStores,
   adoptOperatorLead,
-  adoptStoredLead,
+  commitStoredLead,
   applyRemovedFunnels,
   applyRemovedLeads,
   clipRemovedIds,
@@ -829,7 +829,8 @@ async function saveLead(env: Env, lead: Lead) {
     const removed = await loadRemovedLeadIds(env.AUTH)
     if (removed.includes(bounded.id)) return false
     const prev = await loadLead(env.AUTH, bounded.id)
-    bounded = prev ? adoptStoredLead(prev, bounded) : bounded
+    const latest = await loadLead(env.AUTH, bounded.id)
+    bounded = commitStoredLead(prev, bounded, latest)
     await upsertLeadKv(env.AUTH, bounded)
   }
   if (!env.SUPABASE_SERVICE_ROLE) return true
