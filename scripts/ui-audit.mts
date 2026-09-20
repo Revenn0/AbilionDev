@@ -156,6 +156,27 @@ try {
   await page.click('button[type="submit"]')
   await page.waitForSelector("#lead-name-error", { timeout: 3_000 })
   assert(await page.$("#lead-contact-error"), "captura mostra os dois erros")
+  await page.type("#lead-name", "Lead Auditoria")
+  await page.type("#lead-contact", "@auditoria")
+  await page.click('button[type="submit"]')
+  await page.waitForFunction(() => !document.querySelector("#lead-name"), { timeout: 5_000 })
+  await page.waitForSelector("#lead-search", { timeout: 5_000 })
+  await page.type("#lead-search", "Auditoria")
+  await page.waitForFunction(
+    () => [...document.querySelectorAll("button")].some((el) => (el.textContent || "").includes("Lead Auditoria")),
+    { timeout: 5_000 }
+  )
+  await clickNamed(page, "Lead Auditoria")
+  await page.waitForFunction(
+    () => [...document.querySelectorAll("button")].some((el) => (el.textContent || "").includes("Excluir lead")),
+    { timeout: 5_000 }
+  )
+  page.once("dialog", (dialog) => dialog.accept())
+  await clickNamed(page, "Excluir lead")
+  await page.waitForFunction(
+    () => ![...document.querySelectorAll("button")].some((el) => (el.textContent || "").includes("Lead Auditoria")),
+    { timeout: 5_000 }
+  )
 
   await open(page, "/fluxo")
   await clickNamed(page, "Novo funil")

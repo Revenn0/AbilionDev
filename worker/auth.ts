@@ -145,6 +145,7 @@ function prune(snapshot: AuthSnapshot, now = Date.now()): AuthSnapshot {
     users: snapshot.users,
     sessions: snapshot.sessions.filter((item) => item.expiresAt > now),
     resets: Object.fromEntries(Object.entries(snapshot.resets).filter(([, item]) => item.expiresAt > now)),
+    throttles: Object.fromEntries(Object.entries(snapshot.throttles ?? {}).filter(([, item]) => item.resetAt > now)),
   }
 }
 
@@ -282,15 +283,22 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
   if (path === "/api/auth/forgot" && request.method === "POST") {
     const email = ((await readBody(request)).email || "").trim().toLowerCase()
     if (!email) return json({ error: "Informe o e-mail." }, 400)
-    const snapshot = prune(await store.load())
-    const user = snapshot.users.find((item) => item.email === email)
-    if (user) {
-      const token = randomToken()
-      snapshot.resets[token] = { userId: user.id, expiresAt: Date.now() + RESET_TTL_MS }
+    let snapshot = prune(await store.load())
+    const guard = consumeThrottle(snapshot, `forgot:${clientIp(request)}`, 5, 15 * 60 * 1000)
+    snapshot = guard.snapshot
+    if (!guard.ok) {
       await store.save(snapshot)
-      if (env?.ABILION_ENV !== "production") {
-        return json({ ok: true, resetPath: `/reset?token=${token}` })
-      }
+      return json({ error: "Muitas tentativas. Espera uns minutos e tenta de novo." }, 429)
+    }
+    const user = snapshot.users.find((item) => item.email === email)
+    let resetToken = ""
+    if (user) {
+      resetToken = randomToken()
+      snapshot.resets[resetToken] = { userId: user.id, expiresAt: Date.now() + RESET_TTL_MS }
+    }
+    await store.save(snapshot)
+    if (user && resetToken && env?.ABILION_ENV !== "production") {
+      return json({ ok: true, resetPath: `/reset?token=${resetToken}` })
     }
     return json({ ok: true })
   }

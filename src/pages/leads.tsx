@@ -39,23 +39,26 @@ const FILTERS = [
 ] as const
 
 export function LeadsPage() {
-  const { state, createLead, saveLead, crmSync, inboxSync, persistSync } = useStore()
+  const { state, createLead, saveLead, deleteLead, crmSync, inboxSync, persistSync } = useStore()
   const { summary } = useTrackSummary(8000)
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("all")
+  const [query, setQuery] = useState("")
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
   const lead = state.leads.find((item) => item.id === selected) ?? null
   const snapshot = publishedSnapshot(state.funnels)
 
   const rows = useMemo(() => {
+    const needle = query.trim().toLowerCase()
     return state.leads.filter((item) => {
-      if (filter === "telegram") return item.channel === "telegram"
-      if (filter === "novo" || filter === "morno" || filter === "quente") return item.temperature === filter
-      if (filter === "ester") return needsEster(item)
-      if (filter === "facebook") return item.origin === "facebook"
-      return true
+      if (filter === "telegram" && item.channel !== "telegram") return false
+      if ((filter === "novo" || filter === "morno" || filter === "quente") && item.temperature !== filter) return false
+      if (filter === "ester" && !needsEster(item)) return false
+      if (filter === "facebook" && item.origin !== "facebook") return false
+      if (!needle) return true
+      return [item.name, item.contact, item.campaign].some((value) => (value ?? "").toLowerCase().includes(needle))
     })
-  }, [filter, state.leads])
+  }, [filter, query, state.leads])
 
   return (
     <div className="h-full overflow-y-auto">
@@ -74,6 +77,17 @@ export function LeadsPage() {
         </PageChrome>
 
         <section className="surface overflow-hidden">
+          <div className="border-b border-border px-5 py-3">
+            <Label htmlFor="lead-search" className="sr-only">
+              Buscar leads
+            </Label>
+            <Input
+              id="lead-search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Nome, @user ou campanha"
+            />
+          </div>
           <div className="flex flex-wrap gap-3 border-b border-border px-5 py-3 text-[13px]">
             {FILTERS.map((item) => (
               <button
@@ -113,9 +127,11 @@ export function LeadsPage() {
 
           {rows.length === 0 ? (
             <div className="grid place-items-center px-6 py-16 text-center">
-              <p className="text-[14px] font-medium">Nenhum lead</p>
+              <p className="text-[14px] font-medium">{query.trim() ? "Nada nesta busca" : "Nenhum lead"}</p>
               <p className="mt-1 max-w-md text-[13px] text-muted-foreground">
-                Popup, join ou /start entram no fluxo publicado. Só Telegram.
+                {query.trim()
+                  ? "Nenhum nome, @user ou campanha bate com o recorte."
+                  : "Popup, join ou /start entram no fluxo publicado. Só Telegram."}
               </p>
             </div>
           ) : (
@@ -154,6 +170,10 @@ export function LeadsPage() {
         geos={summary.geos}
         onClose={() => setSelected(null)}
         onSave={saveLead}
+        onDelete={(id) => {
+          deleteLead(id)
+          setSelected(null)
+        }}
       />
     </div>
   )
@@ -288,6 +308,7 @@ function LeadDrawer({
   geos,
   onClose,
   onSave,
+  onDelete,
 }: {
   lead: Lead | null
   esterNotify: boolean
@@ -295,6 +316,7 @@ function LeadDrawer({
   geos?: Record<string, { country?: string; countryCode?: string; city?: string; region?: string; regionCode?: string }>
   onClose: () => void
   onSave: (lead: Lead) => void
+  onDelete: (id: string) => void
 }) {
   const panel = useRef<HTMLElement>(null)
   const snapshot = publishedSnapshot(funnels)
@@ -354,6 +376,7 @@ function LeadDrawer({
             <button
               key={temp}
               type="button"
+              aria-pressed={lead.temperature === temp}
               onClick={() => onSave({ ...lead, temperature: temp, updatedAt: new Date().toISOString() })}
               className={cn(
                 "h-7 rounded-full px-2.5 text-[12px]",
@@ -424,9 +447,20 @@ function LeadDrawer({
           </ul>
         )}
 
-        <div className="mt-auto pt-6">
+        <div className="mt-auto flex flex-wrap gap-2 pt-6">
           <Button variant="ghost" className="rounded-full" onClick={onClose}>
             Fechar
+          </Button>
+          <Button
+            variant="ghost"
+            className="rounded-full text-destructive"
+            onClick={() => {
+              if (!confirm("Remover este lead? Isto não se desfaz.")) return
+              onDelete(lead.id)
+              toast.success("Lead removido.")
+            }}
+          >
+            Excluir lead
           </Button>
         </div>
       </aside>

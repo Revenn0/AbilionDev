@@ -32,7 +32,7 @@ import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS
 import { safeAppPath } from "../src/lib/safe-path.ts"
 import { validateCapture } from "../src/lib/capture.ts"
 import { mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
-import { consumeThrottle, clearThrottle } from "../worker/auth.ts"
+import { consumeThrottle, clearThrottle, handleAuth, memoryAuthStore } from "../worker/auth.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
 import { backgroundCtx, handleRequest, type Env } from "../worker/index.ts"
 import { clearSessionExpired, noteUnauthorized, subscribeSessionExpired } from "../src/lib/session.ts"
@@ -387,6 +387,36 @@ gated = consumeThrottle(gated.snapshot, "login:1:a", 2, 60_000, 1002)
 assert(!gated.ok, "terceira tentativa bloqueia")
 const unlocked = consumeThrottle(clearThrottle(gated.snapshot, "login:1:a"), "login:1:a", 2, 60_000, 1003)
 assert(unlocked.ok, "sucesso limpa o bloqueio")
+
+const authStore = memoryAuthStore()
+const loginAttempt = (password: string) =>
+  handleAuth(
+    new Request("http://local.test/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.9" },
+      body: JSON.stringify({ email: "victor@abilion.com", password }),
+    }),
+    authStore,
+    { ABILION_ENV: "development" }
+  )
+assert((await loginAttempt("senhaok")).status === 200, "primeiro acesso define a senha")
+for (let i = 0; i < 8; i++) {
+  assert((await loginAttempt("errada1")).status === 401, `falha ${i + 1} ainda entra no throttle`)
+}
+assert((await loginAttempt("errada1")).status === 429, "nona falha bloqueia de verdade")
+
+const forgotAttempt = () =>
+  handleAuth(
+    new Request("http://local.test/api/auth/forgot", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.9" },
+      body: JSON.stringify({ email: "victor@abilion.com" }),
+    }),
+    authStore,
+    { ABILION_ENV: "development" }
+  )
+for (let i = 0; i < 5; i++) assert((await forgotAttempt()).status === 200, `forgot ${i + 1} passa`)
+assert((await forgotAttempt()).status === 429, "forgot bloqueia na sexta")
 
 const gone = lead("gone", "@gone")
 gone.telegramChatId = "9"
