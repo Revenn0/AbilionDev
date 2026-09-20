@@ -11,6 +11,7 @@ import { parseDevice } from "../src/lib/track.ts"
 import {
   adoptDueLeads,
   adoptLeadStores,
+  adoptStoredLead,
   applyRemovedFunnels,
   applyRemovedLeads,
   clipRemovedIds,
@@ -152,14 +153,16 @@ export async function handleRequest(request: Request, env: Env, ctx: ExecutionCo
 async function routeRequest(request: Request, env: Env, ctx: ExecutionContext) {
   const url = new URL(request.url)
   if (url.pathname === "/t.js") {
-    return new Response(TRACKER_JS, {
-      headers: {
-        "content-type": "text/javascript; charset=utf-8",
-        "access-control-allow-origin": "*",
-        "cache-control": "public, max-age=300",
-        "x-content-type-options": "nosniff",
-      },
-    })
+    return withSecurityHeaders(
+      new Response(TRACKER_JS, {
+        headers: {
+          "content-type": "text/javascript; charset=utf-8",
+          "access-control-allow-origin": "*",
+          "cache-control": "public, max-age=300",
+          "x-content-type-options": "nosniff",
+        },
+      })
+    )
   }
   if (url.pathname.startsWith("/api/")) {
     return withSecurityHeaders(await handleApi(request, env, url, ctx))
@@ -793,7 +796,7 @@ async function removeLead(env: Env, id: string) {
 }
 
 async function saveLead(env: Env, lead: Lead) {
-  const bounded = sanitizeIncomingLead(lead) ?? {
+  let bounded = sanitizeIncomingLead(lead) ?? {
     ...lead,
     events: lead.events.slice(-80),
     messages: (lead.messages ?? []).slice(-80),
@@ -801,6 +804,7 @@ async function saveLead(env: Env, lead: Lead) {
   if (env.AUTH) {
     const prev = await loadLead(env.AUTH, bounded.id)
     if (prev && prev.updatedAt > bounded.updatedAt) return
+    bounded = prev ? adoptStoredLead(prev, bounded) : bounded
     await upsertLeadKv(env.AUTH, bounded)
   }
   if (!env.SUPABASE_SERVICE_ROLE) return

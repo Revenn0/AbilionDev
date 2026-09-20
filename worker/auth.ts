@@ -12,12 +12,16 @@ const RESET_TTL_MS = 60 * 60 * 1000
 const SESSION_CAP = 5
 const PBKDF2_ITERATIONS = 100_000
 
+export const AUTH_REVOKED_CAP = 2000
+export const AUTH_SPENT_RESET_CAP = 200
+
 export type StoredUser = {
   id: string
   email: string
   name: string
   passwordHash: string
   createdAt: string
+  passwordUpdatedAt?: number
 }
 
 export type Session = {
@@ -116,7 +120,7 @@ function emptySnapshot(): AuthSnapshot {
   return { users: [], sessions: [], resets: {}, throttles: {}, revoked: [], spentResets: [] }
 }
 
-export function clipAuthTokens(ids: unknown, cap = 200): string[] {
+export function clipAuthTokens(ids: unknown, cap = AUTH_REVOKED_CAP): string[] {
   if (!Array.isArray(ids)) return []
   const out: string[] = []
   const seen = new Set<string>()
@@ -165,6 +169,22 @@ function capSessions(sessions: Session[], cap = SESSION_CAP): Session[] {
   return out
 }
 
+function passwordAt(user: StoredUser | undefined) {
+  return user?.passwordUpdatedAt ?? 0
+}
+
+function preferUser(prev: StoredUser, next: StoredUser): StoredUser {
+  const prevAt = passwordAt(prev)
+  const nextAt = passwordAt(next)
+  if (nextAt > prevAt) {
+    return { ...prev, ...next, passwordHash: next.passwordHash, passwordUpdatedAt: nextAt }
+  }
+  if (prevAt > nextAt) {
+    return { ...next, ...prev, id: prev.id, passwordHash: prev.passwordHash, passwordUpdatedAt: prevAt }
+  }
+  return { ...prev, ...next, id: prev.id, passwordHash: next.passwordHash || prev.passwordHash }
+}
+
 export function mergeAuthSnapshots(left: AuthSnapshot, right: AuthSnapshot): AuthSnapshot {
   const remap = new Map<string, string>()
   const byEmail = new Map<string, StoredUser>()
@@ -178,25 +198,41 @@ export function mergeAuthSnapshots(left: AuthSnapshot, right: AuthSnapshot): Aut
       byEmail.set(user.email, user)
       continue
     }
-    if (prev.id === user.id) {
-      byEmail.set(user.email, { ...prev, ...user })
-      continue
+    if (prev.id !== user.id) remap.set(user.id, prev.id)
+    byEmail.set(user.email, preferUser(prev, { ...user, id: prev.id }))
+  }
+
+  const users = [...byEmail.values()]
+  const winAt = new Map(users.map((user) => [user.id, passwordAt(user)]))
+  const freshByUser = new Map<string, Set<string> | null>()
+  const tokensFor = (userId: string) => {
+    if (freshByUser.has(userId)) return freshByUser.get(userId) ?? null
+    const winner = winAt.get(userId) ?? 0
+    if (!winner) {
+      freshByUser.set(userId, null)
+      return null
     }
-    remap.set(user.id, prev.id)
-    byEmail.set(user.email, {
-      ...prev,
-      name: user.name || prev.name,
-      passwordHash: user.passwordHash || prev.passwordHash,
-    })
+    const tokens = new Set<string>()
+    for (const snap of [left, right]) {
+      if (!snap.users.some((item) => (remap.get(item.id) ?? item.id) === userId && passwordAt(item) === winner)) continue
+      for (const session of snap.sessions) {
+        if ((remap.get(session.userId) ?? session.userId) === userId) tokens.add(session.token)
+      }
+    }
+    freshByUser.set(userId, tokens)
+    return tokens
   }
 
   const sessions = new Map<string, Session>()
   for (const session of [...left.sessions, ...right.sessions]) {
     if (!session?.token) continue
-    sessions.set(session.token, { ...session, userId: remap.get(session.userId) ?? session.userId })
+    const userId = remap.get(session.userId) ?? session.userId
+    const allowed = tokensFor(userId)
+    if (allowed && !allowed.has(session.token)) continue
+    sessions.set(session.token, { ...session, userId })
   }
-  const revoked = clipAuthTokens([...(left.revoked ?? []), ...(right.revoked ?? [])], 200)
-  const spentResets = clipAuthTokens([...(left.spentResets ?? []), ...(right.spentResets ?? [])], 50)
+  const revoked = clipAuthTokens([...(left.revoked ?? []), ...(right.revoked ?? [])], AUTH_REVOKED_CAP)
+  const spentResets = clipAuthTokens([...(left.spentResets ?? []), ...(right.spentResets ?? [])], AUTH_SPENT_RESET_CAP)
   const drop = new Set(revoked)
   const now = Date.now()
   const resetByUser = new Map<string, { token: string; rec: ResetRecord }>()
@@ -278,8 +314,8 @@ export function clientIp(request: Request) {
 }
 
 function prune(snapshot: AuthSnapshot, now = Date.now()): AuthSnapshot {
-  const revoked = clipAuthTokens(snapshot.revoked, 200)
-  const spentResets = clipAuthTokens(snapshot.spentResets, 50)
+  const revoked = clipAuthTokens(snapshot.revoked, AUTH_REVOKED_CAP)
+  const spentResets = clipAuthTokens(snapshot.spentResets, AUTH_SPENT_RESET_CAP)
   const drop = new Set(revoked)
   return {
     users: snapshot.users,
@@ -306,6 +342,7 @@ export async function ensureOperatorUsers(store: AuthStore, password: string) {
         name: operator.name,
         passwordHash: await hashPassword(password),
         createdAt: new Date().toISOString(),
+        passwordUpdatedAt: Date.now(),
       })
       changed = true
       continue
@@ -417,6 +454,7 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
         name: operatorName(email),
         passwordHash: await hashPassword(password),
         createdAt: new Date().toISOString(),
+        passwordUpdatedAt: Date.now(),
       }
       snapshot.users.push(user)
     } else if (!(await verifyPassword(password, user.passwordHash))) {
@@ -439,7 +477,7 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
   if (path === "/api/auth/logout" && request.method === "POST") {
     const token = readCookie(request)
     const snapshot = prune(await store.load())
-    if (token) snapshot.revoked = clipAuthTokens([token, ...(snapshot.revoked ?? [])], 200)
+    if (token) snapshot.revoked = clipAuthTokens([token, ...(snapshot.revoked ?? [])], AUTH_REVOKED_CAP)
     snapshot.sessions = snapshot.sessions.filter((item) => item.token !== token)
     await store.save(snapshot)
     return json({ ok: true }, 200, { "set-cookie": cookieHeader(null, secure) })
@@ -507,9 +545,10 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
       return json({ error: "A nova senha precisa de 6+ caracteres." }, 400)
     }
     user.passwordHash = await hashPassword(password)
+    user.passwordUpdatedAt = Date.now()
     snapshot = clearThrottle(snapshot, `password:${clientIp(request)}:${user.id}`)
     const dropped = snapshot.sessions.filter((item) => item.userId === user.id && item.token !== token)
-    snapshot.revoked = clipAuthTokens([...dropped.map((item) => item.token), ...(snapshot.revoked ?? [])], 200)
+    snapshot.revoked = clipAuthTokens([...dropped.map((item) => item.token), ...(snapshot.revoked ?? [])], AUTH_REVOKED_CAP)
     snapshot.sessions = snapshot.sessions.filter((item) => item.userId !== user.id || item.token === token)
     await store.save(snapshot)
     return json({ ok: true })
@@ -540,9 +579,10 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
       return json({ error: "Link expirado ou inválido." }, 400)
     }
     user.passwordHash = await hashPassword(password)
+    user.passwordUpdatedAt = Date.now()
     const dropped = snapshot.sessions.filter((item) => item.userId === user.id)
-    snapshot.revoked = clipAuthTokens([...dropped.map((item) => item.token), ...(snapshot.revoked ?? [])], 200)
-    snapshot.spentResets = clipAuthTokens([token, ...(snapshot.spentResets ?? [])], 50)
+    snapshot.revoked = clipAuthTokens([...dropped.map((item) => item.token), ...(snapshot.revoked ?? [])], AUTH_REVOKED_CAP)
+    snapshot.spentResets = clipAuthTokens([token, ...(snapshot.spentResets ?? [])], AUTH_SPENT_RESET_CAP)
     snapshot.sessions = snapshot.sessions.filter((item) => item.userId !== user.id)
     delete snapshot.resets[token]
     await store.save(snapshot)
@@ -563,8 +603,8 @@ export function kvAuthStore(kv: { get(key: string, type: "json"): Promise<unknow
         sessions: Array.isArray(value.sessions) ? value.sessions : [],
         resets: value.resets && typeof value.resets === "object" ? value.resets : {},
         throttles: value.throttles && typeof value.throttles === "object" ? value.throttles : {},
-        revoked: clipAuthTokens(value.revoked, 200),
-        spentResets: clipAuthTokens(value.spentResets, 50),
+        revoked: clipAuthTokens(value.revoked, AUTH_REVOKED_CAP),
+        spentResets: clipAuthTokens(value.spentResets, AUTH_SPENT_RESET_CAP),
       }
     },
     async save(next) {

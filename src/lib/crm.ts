@@ -7,6 +7,19 @@ export function publicSettings(settings: Settings): Settings {
   return { ...settings, telegramBotToken: "" }
 }
 
+export function adoptStoredLead(prev: Lead, incoming: Lead): Lead {
+  if (prev.updatedAt > incoming.updatedAt) return prev
+  return {
+    ...incoming,
+    events: mergeLeadEvents(incoming.events ?? [], prev.events ?? []),
+    messages: incoming.messages?.length ? incoming.messages : prev.messages,
+    memory: incoming.memory.trim() ? incoming.memory : prev.memory,
+    facts: incoming.facts && Object.keys(incoming.facts).length ? incoming.facts : prev.facts,
+    telegramChatId: incoming.telegramChatId || prev.telegramChatId,
+    visitorId: incoming.visitorId || prev.visitorId,
+  }
+}
+
 export function mergeLeads(current: Lead[], incoming: Lead[]): Lead[] {
   if (!incoming.length) return current
   const map = new Map(current.map((lead) => [lead.id, lead]))
@@ -19,15 +32,7 @@ export function mergeLeads(current: Lead[], incoming: Lead[]): Lead[] {
       continue
     }
     if (prev.updatedAt < lead.updatedAt) {
-      map.set(lead.id, {
-        ...lead,
-        events: lead.events.length ? lead.events : prev.events,
-        messages: lead.messages?.length ? lead.messages : prev.messages,
-        memory: lead.memory.trim() ? lead.memory : prev.memory,
-        facts: lead.facts && Object.keys(lead.facts).length ? lead.facts : prev.facts,
-        telegramChatId: lead.telegramChatId || prev.telegramChatId,
-        visitorId: lead.visitorId || prev.visitorId,
-      })
+      map.set(lead.id, adoptStoredLead(prev, lead))
       changed = true
     }
   }
@@ -35,7 +40,7 @@ export function mergeLeads(current: Lead[], incoming: Lead[]): Lead[] {
   return [...map.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, CAP)
 }
 
-export function clipRemovedIds(ids: unknown, cap = 20): string[] {
+export function clipRemovedIds(ids: unknown, cap = CAP): string[] {
   if (!Array.isArray(ids)) return []
   const out: string[] = []
   const seen = new Set<string>()

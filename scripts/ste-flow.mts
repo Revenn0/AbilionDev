@@ -31,6 +31,7 @@ import {
   enforceSinglePublished,
   adoptDueLeads,
   adoptLeadStores,
+  adoptStoredLead,
   adoptRemoteFunnels,
   applyRemovedFunnels,
   applyRemovedLeads,
@@ -60,7 +61,7 @@ import { barShare } from "../src/lib/ops.ts"
 import { mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
 import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, handleAuth, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, retainUserSessions } from "../worker/auth.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
-import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall } from "../worker/telegram.ts"
+import { claimTelegramUpdate, forgetTelegramUpdate, mergeTelegramClaims, telegramCall } from "../worker/telegram.ts"
 import { backgroundCtx, handleRequest, type Env } from "../worker/index.ts"
 import { clearSessionExpired, noteUnauthorized, subscribeSessionExpired } from "../src/lib/session.ts"
 
@@ -595,6 +596,10 @@ const mergedNewer = mergeLeads([olderLead], [newerEmpty])[0]
 assert(mergedNewer?.events[0]?.id === "ev-1", "hydrate remoto vazio conserva eventos")
 assert(mergedNewer?.messages?.[0]?.id === "m-1", "hydrate remoto vazio conserva mensagens")
 assert(mergedNewer?.memory === "local", "hydrate remoto vazio conserva memória")
+const adopted = adoptStoredLead(olderLead, newerEmpty)
+assert(adopted.memory === "local", "gravação nova sem memória não apaga a nota")
+assert(adopted.messages?.[0]?.id === "m-1", "gravação nova sem mensagens conserva o chat")
+assert(adoptStoredLead(olderLead, { ...newerEmpty, updatedAt: "2019-01-01T00:00:00.000Z" }) === olderLead, "gravação antiga perde para o KV")
 olderLead.facts = { regionCode: "SP" }
 olderLead.telegramChatId = "9001"
 const newerBare = { ...newerEmpty, facts: {}, telegramChatId: undefined }
@@ -700,6 +705,30 @@ await raceStore.save({ users: [gabrielUser, ...stale.users], sessions: [gabrielS
 await raceStore.save({ users: [victorUser], sessions: [victorSession], resets: {}, throttles: {} })
 const raced = await raceStore.load()
 assert(raced.sessions.some((item) => item.token === "tok-v") && raced.sessions.some((item) => item.token === "tok-g"), "KV não perde a sessão da escrita concorrente")
+const oldPwd = { ...victorUser, passwordHash: "old", passwordUpdatedAt: 1000 }
+const newPwd = { ...victorUser, passwordHash: "new", passwordUpdatedAt: 2000 }
+const staleSession = { token: "tok-stale", userId: "victor", expiresAt: sessionExp, issuedAt: 0 }
+const mergedPassword = mergeAuthSnapshots(
+  { users: [newPwd], sessions: [victorSession], resets: {}, revoked: ["tok-old"] },
+  { users: [oldPwd], sessions: [victorSession, staleSession], resets: {}, revoked: [] }
+)
+assert(mergedPassword.users[0]?.passwordHash === "new", "login velho não reverte a senha")
+assert(!mergedPassword.sessions.some((item) => item.token === "tok-stale"), "sessão do login velho cai depois da troca")
+assert(mergedPassword.sessions.some((item) => item.token === "tok-v"), "sessão actual da troca fica")
+const hashKv = memoryKv()
+const hashStore = kvAuthStore(hashKv)
+await hashStore.save({ users: [oldPwd], sessions: [victorSession], resets: {}, throttles: {} })
+const stalePwd = await hashStore.load()
+await hashStore.save({ users: [newPwd], sessions: [victorSession], resets: {}, revoked: ["tok-old"], throttles: {} })
+await hashStore.save({
+  users: stalePwd.users,
+  sessions: [...stalePwd.sessions, staleSession],
+  resets: {},
+  throttles: {},
+})
+const hashRaced = await hashStore.load()
+assert(hashRaced.users[0]?.passwordHash === "new", "KV não reverte a senha na corrida do login")
+assert(!hashRaced.sessions.some((item) => item.token === "tok-stale"), "KV não ressuscita sessão anterior à troca")
 
 const authStore = memoryAuthStore()
 const loginAttempt = (password: string) =>
@@ -1261,6 +1290,14 @@ assert((duda?.messages ?? []).filter((item) => item.role === "ste").length === d
 assert(await claimTelegramUpdate(dupEnv.AUTH, 42) === false, "update_id já visto não volta a entrar")
 await forgetTelegramUpdate(dupEnv.AUTH, 42)
 assert(await claimTelegramUpdate(dupEnv.AUTH, 42), "esquecer o update permite retry")
+const claimedOnce = mergeTelegramClaims(
+  { ids: [88], owners: { "88": "first" } },
+  { ids: [88], owners: { "88": "second" } }
+)
+assert(claimedOnce.owners["88"] === "first", "primeiro dono do update_id fica")
+const raceTg = memoryKv()
+const racedClaims = await Promise.all([claimTelegramUpdate(raceTg, 88), claimTelegramUpdate(raceTg, 88)])
+assert(racedClaims.filter(Boolean).length === 1, "só um claim do mesmo update_id ganha")
 globalThis.fetch = okFetch
 const startLogin = await handleRequest(
   new Request("http://local.test/api/auth/login", {
@@ -1523,6 +1560,22 @@ assert(
   "POST lead atrasado é 200"
 )
 assert((await loadLead(liveEnv.AUTH, "mem-1"))?.memory === "guarda", "POST antigo não apaga a memória")
+const newerBlank = { ...freshMemory, memory: "", updatedAt: "2026-06-03T00:00:00.000Z" }
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/leads", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: liveCookie },
+        body: JSON.stringify({ lead: newerBlank }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 200,
+  "POST lead mais novo sem memória é 200"
+)
+assert((await loadLead(liveEnv.AUTH, "mem-1"))?.memory === "guarda", "POST novo sem memória não apaga a nota")
 assert((await handleRequest(new Request("http://local.test/api/leads?id=", { method: "DELETE", headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())).status === 400, "DELETE sem id é 400")
 assert(
   (
@@ -1585,6 +1638,7 @@ assert(pixel.status === 204, "pixel público grava")
 const tracker = await handleRequest(new Request("http://local.test/t.js"), liveEnv, backgroundCtx())
 assert(tracker.status === 200, "t.js público")
 assert(tracker.headers.get("x-content-type-options") === "nosniff", "t.js tem nosniff")
+assert(tracker.headers.get("strict-transport-security")?.includes("max-age=31536000"), "t.js manda HSTS")
 assert((await tracker.text()).includes("/api/track"), "t.js aponta o pixel")
 const pixelPlain = await handleRequest(
   new Request("http://local.test/api/track", {

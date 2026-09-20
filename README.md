@@ -65,7 +65,7 @@ URL no ar: [https://www.abilion.lol](https://www.abilion.lol) (apex [https://abi
 
 O Worker `abilion` (conta `73dd2cecfc9c7f0220a36fe999e3edf1`) serve o painel e `/api/*`. O CRM Next antigo saiu do ar. `run_worker_first` faz o HTML (`/` incluído) passar pelo Worker para levar CSP, `X-Frame-Options` e o resto dos headers — o pipeline de assets sozinho não os punha na home.
 
-Login: só `victor@abilion.com` ou `gabriel@abilion.com`. O primeiro acesso de cada conta grava a senha no KV `abilion-auth`. Depois, só essa senha entra. Login, “Esqueceu a senha?” e troca de senha têm limite por IP (8, 5 e 5 tentativas / 15 min). Cada operador fica com no máximo 5 sessões activas. O snapshot de auth no KV une sessões no gravar — dois logins ao mesmo tempo já não apagam um ao outro. Logout e troca de senha gravam tombstone do token. Token do Telegram e chaves de IA **não** entram no git — Configurações → Vincular Telegram grava no mesmo KV e aponta o webhook. Troca de senha: Configurações → Conta. “Esqueceu a senha?” só devolve link fora de produção (não há e-mail). Leads: busca por nome/@user, exclusão com confirmação e hidratação até 400 no login. Simular 100 /start pede confirmação.
+Login: só `victor@abilion.com` ou `gabriel@abilion.com`. O primeiro acesso de cada conta grava a senha no KV `abilion-auth`. Depois, só essa senha entra. Login, “Esqueceu a senha?” e troca de senha têm limite por IP (8, 5 e 5 tentativas / 15 min). Cada operador fica com no máximo 5 sessões activas. O snapshot de auth no KV une sessões no gravar — dois logins ao mesmo tempo já não apagam um ao outro. Uma troca de senha marca `passwordUpdatedAt`: um login que ainda tinha o hash velho não reverte a senha nem reabre sessões antigas. Logout e troca de senha gravam tombstone do token (até 2000). Token do Telegram e chaves de IA **não** entram no git — Configurações → Vincular Telegram grava no mesmo KV e aponta o webhook. Troca de senha: Configurações → Conta. “Esqueceu a senha?” só devolve link fora de produção (não há e-mail). Leads: busca por nome/@user, exclusão com confirmação e hidratação até 400 no login. Simular 100 /start pede confirmação.
 
 `ABILION_OPERATOR_PASSWORD` só **cria** as contas que ainda não existem. Depois de criadas, a troca em Configurações → Conta fica. Não reescreve o hash em cada `/api/auth/me`.
 
@@ -202,13 +202,15 @@ Estes itens dependem de credenciais ou de uma decisão humana. O código não in
 - O índice do CRM lista 400 leads; o contacto/chat fica num alias permanente e as esperas não saem do índice. O Telegram não cria um lead novo só porque o recorte da lista encheu.
 - JSON inválido em `/api/crm`, `/api/leads`, `/api/runtime` e login devolve 400 — não grava objeto vazio.
 - Vincular runtime (10 / 15 min) e gerar voz (5 / 15 min) têm limite por operador+IP. Gravar CRM (80 / min), leads (40 / min) e apagar lead (30 / min) também. URLs do funil só aceitam http(s). Chat id e aliases do KV são cortados para não rebentar a chave.
-- O envio ao Telegram só conta sucesso com HTTP ok e `ok: true`. 429 e 5xx tentam de novo (até 3). 400/403 ficam no log do Worker, sem token. O webhook só grava as falas da Sté depois do Telegram aceitar — se recusar, o lead fica com o chat e o `/start` seguinte ainda pode mandar as boas-vindas. `update_id` repetido não reprocessa. O cron continua a gravar a espera antes de mandar — prefere falhar uma vez a mandar duas.
+- O envio ao Telegram só conta sucesso com HTTP ok e `ok: true`. 429 e 5xx tentam de novo (até 3). 400/403 ficam no log do Worker, sem token. O webhook só grava as falas da Sté depois do Telegram aceitar — se recusar, o lead fica com o chat e o `/start` seguinte ainda pode mandar as boas-vindas. `update_id` repetido não reprocessa: o claim grava um dono e o primeiro a escrever ganha, mesmo em dois webhooks ao mesmo tempo. O cron continua a gravar a espera antes de mandar — prefere falhar uma vez a mandar duas.
+- Gravar um lead mais novo com memória, factos ou mensagens vazias não apaga o que já estava no KV. O hydrate do browser já fazia o mesmo.
 - `webhookOk` e `webhookUrl` só o Worker escreve depois do `setWebhook`. O cliente não marca o webhook como activo.
 - O lock do cron (`crm:cron-lock`) grava um dono e confirma a escrita. Um release alheio não solta o lock.
 - Eventos do lead no Supabase unem-se aos do KV por id (não só quando o KV está vazio). A leitura vai em blocos de 50 ids.
 - Apagar lead/funil nesta sessão fica no `localStorage`. Outro separador some o cartão sem esperar refresh. A lista de leads reconcilia com o Worker a cada 30 s.
 - O Worker impõe um só funil `active`+`production` ao gravar. Tombstone de funil também fica no KV.
 - Dashboard, Analytics e Conversas mostram "—" / "…" no pixel quando a leitura ainda não veio ou falhou. Não tratam zero como dado real.
+- `/t.js` passa pelos mesmos headers de segurança do Worker (HSTS, CSP, `X-Frame-Options`). O CORS aberto fica só no pixel.
 
 ## Auditoria
 
@@ -222,7 +224,7 @@ npx tsx scripts/ui-audit.mts
 
 `scripts/ui-audit.mts` percorre login, rotas do painel, 404, skip-link, teclado das tabs, captura, logout → forgot/reset e as larguras 320 / 375 / 768 / 1024 / 1440. Precisa do `npm run dev` em `http://127.0.0.1:43173`.
 
-`scripts/ste-flow.mts` cobre o webhook assinado (`/start fb`, segundo `/start` sem spam, fala do lead, join no grupo), recusa do Telegram que não grava boas-vindas, `update_id` repetido, inbox autenticada, runtime sem vazar o token, DELETE do lead, cron com duas esperas, recusa de JSON enorme (413), hydrate que não ressuscita lead/funil apagado, tombstone de funil e de lead (KV ganha do Supabase no webhook e no cron), a regra de que simulação/lote não inventam `telegramChatId`, o pixel que não finge zero quando a leitura falha, o envio Telegram que não trata 403 como sucesso, o lock do cron com dono, a união de eventos do lead, e os limites de escrita do CRM/leads.
+`scripts/ste-flow.mts` cobre o webhook assinado (`/start fb`, segundo `/start` sem spam, fala do lead, join no grupo), recusa do Telegram que não grava boas-vindas, `update_id` repetido (incluindo dois claims ao mesmo tempo), inbox autenticada, runtime sem vazar o token, DELETE do lead, cron com duas esperas, recusa de JSON enorme (413), hydrate que não ressuscita lead/funil apagado, tombstone de funil e de lead (KV ganha do Supabase no webhook e no cron), a regra de que simulação/lote não inventam `telegramChatId`, o pixel que não finge zero quando a leitura falha, o envio Telegram que não trata 403 como sucesso, o lock do cron com dono, a união de eventos do lead, a corrida login/troca de senha, a memória que sobrevive a um POST mais novo vazio, o HSTS do `/t.js`, e os limites de escrita do CRM/leads.
 
 ```bash
 npx tsx scripts/ui-audit.mts
