@@ -20,6 +20,7 @@ const ConversationsPage = lazy(() => import("@/pages/conversations").then((m) =>
 const SettingsPage = lazy(() => import("@/pages/settings").then((m) => ({ default: m.SettingsPage })))
 const AnalyticsPage = lazy(() => import("@/pages/analytics").then((m) => ({ default: m.AnalyticsPage })))
 const TelegramPage = lazy(() => import("@/pages/telegram").then((m) => ({ default: m.TelegramPage })))
+const UsersPage = lazy(() => import("@/pages/users").then((m) => ({ default: m.UsersPage })))
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { ready, state } = useStore()
@@ -73,6 +74,7 @@ function AppRoutes() {
                   <Route path="/leads" element={<LeadsPage />} />
                   <Route path="/conversas" element={<ConversationsPage />} />
                   <Route path="/telegram" element={<TelegramPage />} />
+                  <Route path="/utilizadores" element={<UsersPage />} />
                   <Route path="/configuracoes" element={<SettingsPage />} />
                   <Route path="*" element={<NotFoundPage />} />
                 </Routes>

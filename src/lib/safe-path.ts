@@ -5,6 +5,7 @@ const ALLOWED = new Set([
   "/leads",
   "/conversas",
   "/telegram",
+  "/utilizadores",
   "/configuracoes",
   "/privacidade",
 ])

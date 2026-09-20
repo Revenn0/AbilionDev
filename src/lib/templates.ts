@@ -1,9 +1,9 @@
-import { normalizeTelegramContact } from "@/lib/capture"
-import { uid } from "@/lib/format"
-import { campaignFor } from "@/lib/labels"
-import { applyEvent, eventFromOrigin, publishedSnapshot } from "@/lib/runtime"
-import { replySte, steRuntimeFromSnapshot, STE_COURSE_BLOCK, STE_LIVE_BLOCK, STE_OFFER_BLOCK, STE_REMARKETING_BLOCK, STE_SUPERBET_BLOCK, STE_SUPERBET_RESCUE, STE_WELCOME } from "@/lib/ste"
-import type { Lead, LeadChannel, LeadOrigin, SalesFunnel, SalesSnapshot } from "@/lib/types"
+import { normalizeTelegramContact } from "./capture.ts"
+import { uid } from "./format.ts"
+import { campaignFor } from "./labels.ts"
+import { applyEvent, eventFromOrigin, publishedSnapshot } from "./runtime.ts"
+import { replySte, steRuntimeFromSnapshot, STE_COURSE_BLOCK, STE_LIVE_BLOCK, STE_OFFER_BLOCK, STE_REMARKETING_BLOCK, STE_SUPERBET_BLOCK, STE_SUPERBET_RESCUE, STE_WELCOME } from "./ste.ts"
+import type { Lead, LeadChannel, LeadOrigin, SalesFunnel, SalesSnapshot } from "./types.ts"
 
 export function emptySalesFunnel(name = "Operação"): SalesFunnel {
   const ad = uid()

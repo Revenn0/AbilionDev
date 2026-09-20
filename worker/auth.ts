@@ -10,10 +10,22 @@ const DAY = 60 * 60 * 24
 const SESSION_TTL_MS = 7 * DAY * 1000
 const RESET_TTL_MS = 60 * 60 * 1000
 const SESSION_CAP = 5
+export const USER_CAP = 40
+export const TOKEN_CAP = 20
 const PBKDF2_ITERATIONS = 100_000
 
 export const AUTH_REVOKED_CAP = 2000
 export const AUTH_SPENT_RESET_CAP = 200
+
+export type UserRole = "owner" | "operator"
+
+export type ApiToken = {
+  id: string
+  name: string
+  hash: string
+  prefix: string
+  createdAt: string
+}
 
 export type StoredUser = {
   id: string
@@ -22,6 +34,23 @@ export type StoredUser = {
   passwordHash: string
   createdAt: string
   passwordUpdatedAt?: number
+  role?: UserRole
+  disabled?: boolean
+  tokens?: ApiToken[]
+}
+
+export type PublicUser = {
+  id: string
+  email: string
+  name: string
+  role: UserRole
+}
+
+export type ManagedUser = PublicUser & {
+  disabled: boolean
+  createdAt: string
+  seeded: boolean
+  tokenCount: number
 }
 
 export type Session = {
@@ -113,8 +142,69 @@ export function operatorName(email: string) {
   return OPERATORS.find((item) => item.email === email)?.name ?? email
 }
 
-export function publicUser(user: StoredUser) {
-  return { id: user.id, email: user.email, name: user.name }
+export function userRole(user: Pick<StoredUser, "email" | "role">): UserRole {
+  if (isOperatorEmail(user.email)) return "owner"
+  return user.role === "owner" ? "owner" : "operator"
+}
+
+export function isOwner(user: Pick<PublicUser, "role" | "email">) {
+  return user.role === "owner" || isOperatorEmail(user.email)
+}
+
+export function publicUser(user: StoredUser): PublicUser {
+  return { id: user.id, email: user.email, name: user.name, role: userRole(user) }
+}
+
+export function publicManagedUser(user: StoredUser): ManagedUser {
+  return {
+    ...publicUser(user),
+    disabled: Boolean(user.disabled) && !isOperatorEmail(user.email),
+    createdAt: user.createdAt,
+    seeded: isOperatorEmail(user.email),
+    tokenCount: (user.tokens ?? []).length,
+  }
+}
+
+export function publicApiToken(token: ApiToken) {
+  return { id: token.id, name: token.name, prefix: token.prefix, createdAt: token.createdAt }
+}
+
+export function normalizeEmail(value: string) {
+  return value.trim().toLowerCase()
+}
+
+export function isValidEmail(value: string) {
+  return value.length >= 6 && value.length <= 120 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
+export function mergeTokens(left?: ApiToken[], right?: ApiToken[], cap = TOKEN_CAP): ApiToken[] {
+  const byId = new Map<string, ApiToken>()
+  for (const token of [...(left ?? []), ...(right ?? [])]) {
+    if (!token?.id || !token.hash) continue
+    const id = token.id.trim().slice(0, 40)
+    const hash = token.hash.trim().slice(0, 80)
+    if (!id || !hash) continue
+    const prev = byId.get(id)
+    const next: ApiToken = {
+      id,
+      name: (token.name || prev?.name || "Agente").trim().slice(0, 60) || "Agente",
+      hash,
+      prefix: (token.prefix || prev?.prefix || "abn_").trim().slice(0, 24),
+      createdAt: token.createdAt || prev?.createdAt || new Date().toISOString(),
+    }
+    if (!prev) {
+      byId.set(id, next)
+      continue
+    }
+    byId.set(id, (next.createdAt || "") >= (prev.createdAt || "") ? { ...prev, ...next } : { ...next, ...prev })
+  }
+  return [...byId.values()].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")).slice(0, cap)
+}
+
+export function clipUsers(users: StoredUser[], cap = USER_CAP): StoredUser[] {
+  const seeded = users.filter((user) => user?.email && isOperatorEmail(user.email))
+  const rest = users.filter((user) => user?.email && !isOperatorEmail(user.email)).slice(0, Math.max(0, cap - seeded.length))
+  return [...seeded, ...rest]
 }
 
 function emptySnapshot(): AuthSnapshot {
@@ -194,13 +284,21 @@ function passwordAt(user: StoredUser | undefined) {
 function preferUser(prev: StoredUser, next: StoredUser): StoredUser {
   const prevAt = passwordAt(prev)
   const nextAt = passwordAt(next)
-  if (nextAt > prevAt) {
-    return { ...prev, ...next, passwordHash: next.passwordHash, passwordUpdatedAt: nextAt }
+  const winner =
+    nextAt > prevAt
+      ? { ...prev, ...next, passwordHash: next.passwordHash, passwordUpdatedAt: nextAt }
+      : prevAt > nextAt
+        ? { ...next, ...prev, id: prev.id, passwordHash: prev.passwordHash, passwordUpdatedAt: prevAt }
+        : { ...prev, ...next, id: prev.id, passwordHash: next.passwordHash || prev.passwordHash }
+  const seeded = isOperatorEmail(prev.email) || isOperatorEmail(next.email)
+  return {
+    ...winner,
+    id: prev.id,
+    email: prev.email,
+    role: seeded ? "owner" : winner.role === "owner" ? "owner" : "operator",
+    disabled: seeded ? false : Boolean(winner.disabled),
+    tokens: mergeTokens(prev.tokens, next.tokens),
   }
-  if (prevAt > nextAt) {
-    return { ...next, ...prev, id: prev.id, passwordHash: prev.passwordHash, passwordUpdatedAt: prevAt }
-  }
-  return { ...prev, ...next, id: prev.id, passwordHash: next.passwordHash || prev.passwordHash }
 }
 
 export function mergeAuthSnapshots(left: AuthSnapshot, right: AuthSnapshot): AuthSnapshot {
@@ -220,7 +318,7 @@ export function mergeAuthSnapshots(left: AuthSnapshot, right: AuthSnapshot): Aut
     byEmail.set(user.email, preferUser(prev, { ...user, id: prev.id }))
   }
 
-  const users = [...byEmail.values()]
+  const users = clipUsers([...byEmail.values()])
   const winAt = new Map(users.map((user) => [user.id, passwordAt(user)]))
   const freshByUser = new Map<string, Set<string> | null>()
   const tokensFor = (userId: string) => {
@@ -262,7 +360,7 @@ export function mergeAuthSnapshots(left: AuthSnapshot, right: AuthSnapshot): Aut
   }
 
   return {
-    users: [...byEmail.values()],
+    users,
     sessions: capSessions(
       [...sessions.values()].filter((item) => !drop.has(item.token) && item.expiresAt > now)
     ),
@@ -393,12 +491,19 @@ export async function ensureOperatorUsers(store: AuthStore, password: string) {
         passwordHash: await hashPassword(password),
         createdAt: new Date().toISOString(),
         passwordUpdatedAt: Date.now(),
+        role: "owner",
+        disabled: false,
       })
       changed = true
       continue
     }
     if (current.name !== operator.name) {
       current.name = operator.name
+      changed = true
+    }
+    if (current.role !== "owner" || current.disabled) {
+      current.role = "owner"
+      current.disabled = false
       changed = true
     }
   }
@@ -456,13 +561,60 @@ export function retainUserSessions(sessions: Session[], userId: string, next: Se
   return [...others, ...mine, next]
 }
 
-export async function sessionUser(request: Request, store: AuthStore) {
-  const token = readCookie(request)
-  if (!token) return null
+export function readBearer(request: Request) {
+  const header = request.headers.get("authorization") || ""
+  const match = /^Bearer\s+(\S+)/i.exec(header)
+  return match?.[1]?.trim() || ""
+}
+
+export async function hashApiToken(token: string) {
+  const bits = await crypto.subtle.digest("SHA-256", encoder.encode(token))
+  return hex(new Uint8Array(bits))
+}
+
+export function mintApiToken(name: string) {
+  const id = randomToken(8)
+  const secret = randomToken(24)
+  const token = `abn_${id}_${secret}`
+  return {
+    id,
+    token,
+    prefix: token.slice(0, 16),
+    name: name.trim().slice(0, 60) || "Agente",
+  }
+}
+
+export async function findUserByApiToken(snapshot: AuthSnapshot, token: string) {
+  if (!token.startsWith("abn_") || token.length > 200) return null
+  const hash = await hashApiToken(token)
+  const id = token.split("_")[1] || ""
+  for (const user of snapshot.users) {
+    if (user.disabled) continue
+    const rec = (user.tokens ?? []).find((item) => item.hash === hash && (!id || item.id === id))
+    if (rec) return { user, token: rec }
+  }
+  return null
+}
+
+export async function requestActor(request: Request, store: AuthStore): Promise<PublicUser | null> {
+  const cookie = readCookie(request)
+  const bearer = readBearer(request)
+  if (!cookie && !bearer) return null
   const snapshot = prune(await store.load())
-  const session = snapshot.sessions.find((item) => item.token === token)
-  const user = session ? snapshot.users.find((item) => item.id === session.userId) : null
-  return user ? publicUser(user) : null
+  if (cookie) {
+    const session = snapshot.sessions.find((item) => item.token === cookie)
+    const user = session ? snapshot.users.find((item) => item.id === session.userId) : null
+    if (user && !user.disabled) return publicUser(user)
+  }
+  if (bearer) {
+    const found = await findUserByApiToken(snapshot, bearer)
+    if (found) return publicUser(found.user)
+  }
+  return null
+}
+
+export async function sessionUser(request: Request, store: AuthStore) {
+  return requestActor(request, store)
 }
 
 export async function handleAuth(request: Request, store: AuthStore, env?: { ABILION_OPERATOR_PASSWORD?: string; ABILION_ENV?: string }) {
@@ -482,9 +634,6 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     if (!email || password.length < 6) {
       return json({ error: "Informe um e-mail e uma senha com 6+ caracteres." }, 400)
     }
-    if (!isOperatorEmail(email)) {
-      return json({ error: "E-mail ou senha inválidos." }, 401)
-    }
     let snapshot = prune(await store.load())
     const guard = consumeThrottle(snapshot, `login:${clientIp(request)}:${email}`, 8, 15 * 60 * 1000)
     snapshot = guard.snapshot
@@ -494,6 +643,10 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     }
     let user = snapshot.users.find((item) => item.email === email)
     if (!user) {
+      if (!isOperatorEmail(email)) {
+        await store.save(snapshot)
+        return json({ error: "E-mail ou senha inválidos." }, 401)
+      }
       user = {
         id: randomToken(8),
         email,
@@ -501,8 +654,13 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
         passwordHash: await hashPassword(password),
         createdAt: new Date().toISOString(),
         passwordUpdatedAt: Date.now(),
+        role: "owner",
+        disabled: false,
       }
       snapshot.users.push(user)
+    } else if (user.disabled) {
+      await store.save(snapshot)
+      return json({ error: "E-mail ou senha inválidos." }, 401)
     } else if (!(await verifyPassword(password, user.passwordHash))) {
       await store.save(snapshot)
       return json({ error: "E-mail ou senha inválidos." }, 401)
@@ -530,11 +688,7 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
   }
 
   if (path === "/api/auth/me" && request.method === "GET") {
-    const token = readCookie(request)
-    const snapshot = prune(await store.load())
-    const session = snapshot.sessions.find((item) => item.token === token)
-    const user = session ? snapshot.users.find((item) => item.id === session.userId) : null
-    return json({ user: user ? publicUser(user) : null })
+    return json({ user: await sessionUser(request, store) })
   }
 
   if (path === "/api/auth/forgot" && request.method === "POST") {

@@ -12,7 +12,7 @@ const VIEWPORTS = [
   { name: "1440", width: 1440, height: 900 },
 ] as const
 
-const ROUTES = ["/", "/analytics", "/fluxo", "/leads", "/conversas", "/telegram", "/configuracoes"] as const
+const ROUTES = ["/", "/analytics", "/fluxo", "/leads", "/conversas", "/telegram", "/utilizadores", "/configuracoes"] as const
 
 function assert(cond: unknown, message: string) {
   if (!cond) throw new Error(message)

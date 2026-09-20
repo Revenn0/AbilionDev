@@ -12,6 +12,7 @@
     "typecheck": "tsc -b",
     "preview": "vite preview --host 127.0.0.1 --port 43173",
     "deploy": "npm run build && wrangler deploy --keep-vars",
+    "mcp": "npx tsx mcp/server.mts",
     "postinstall": "mkdir -p node_modules/.bin && ln -sfn ../../tools/opennext-shim/cli.mjs node_modules/.bin/opennextjs-cloudflare"
   },
   "dependencies": {

@@ -1,7 +1,10 @@
+export type UserRole = "owner" | "operator"
+
 export type User = {
   id: string
   name: string
   email: string
+  role?: UserRole
 }
 
 export type MapKind = "traffic" | "landing" | "split"

@@ -1,4 +1,6 @@
 import { clientIp, consumeKvThrottle, consumeMemoryThrottle, handleAuth, kvAuthStore, randomToken, sessionUser } from "./auth.ts"
+import { handleMcp, handleFunnelImport } from "./mcp.ts"
+import { handleTokens, handleUsers } from "./users.ts"
 import { campaignFor } from "../src/lib/labels.ts"
 import { advanceSteIfDue, isSteWait, replySte, replySteSmart, safeHttpUrl, steRuntimeFromFunnels, toTelegramHtml, type SteBeat } from "../src/lib/ste.ts"
 import { linkFollowUp, voiceClipFor } from "../src/lib/ste-voice.ts"
@@ -172,10 +174,20 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext) {
       })
     )
   }
+  if (url.pathname === "/mcp" || url.pathname === "/api/mcp") {
+    return withSecurityHeaders(await handleMcpRoute(request, env))
+  }
   if (url.pathname.startsWith("/api/")) {
     return withSecurityHeaders(await handleApi(request, env, url, ctx))
   }
   return withSecurityHeaders(await env.ASSETS.fetch(request))
+}
+
+async function handleMcpRoute(request: Request, env: Env) {
+  if (request.method === "GET") return handleMcp(request, env, null)
+  if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
+  const actor = await sessionUser(request, kvAuthStore(env.AUTH))
+  return handleMcp(request, env, actor)
 }
 
 async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionContext) {
@@ -191,6 +203,30 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   if (url.pathname.startsWith("/api/auth")) {
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     return handleAuth(request, kvAuthStore(env.AUTH), env)
+  }
+
+  if (url.pathname === "/api/users" || url.pathname === "/api/tokens") {
+    if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
+    const actor = await sessionUser(request, kvAuthStore(env.AUTH))
+    if (!actor) return json({ error: "Sessão expirada." }, 401)
+    if (
+      request.method !== "GET" &&
+      !(await consumeKvThrottle(env.AUTH, `users:${actor.id}:${clientIp(request)}`, 30, 60_000))
+    ) {
+      return json({ error: "Demasiados pedidos às contas. Espera um pouco." }, 429)
+    }
+    if (url.pathname === "/api/users") return handleUsers(request, kvAuthStore(env.AUTH), actor)
+    return handleTokens(request, kvAuthStore(env.AUTH), actor)
+  }
+
+  if (url.pathname === "/api/funnels/import" && request.method === "POST") {
+    if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
+    const user = await sessionUser(request, kvAuthStore(env.AUTH))
+    if (!user) return json({ error: "Sessão expirada." }, 401)
+    if (!(await consumeKvThrottle(env.AUTH, `funnels:${user.id}:${clientIp(request)}`, 20, 60_000))) {
+      return json({ error: "Demasiados pedidos de importação. Espera um pouco." }, 429)
+    }
+    return handleFunnelImport(request, env)
   }
 
   if (url.pathname === "/api/track" && request.method === "OPTIONS") {

@@ -1,6 +1,7 @@
 import { useRef, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
-import { Pencil, Plus, Trash2, Workflow } from "lucide-react"
+import { Pencil, Plus, Trash2, Upload, Workflow } from "lucide-react"
+import { ImportFunnelDialog } from "@/components/sales/import-dialog"
 import { Button } from "@/components/ui/button"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
 import { HydratePanel } from "@/components/layout/hydrate-panel"
@@ -19,6 +20,7 @@ export function FluxoPage() {
   const navigate = useNavigate()
   const funnels = state.funnels
   const [renaming, setRenaming] = useState<SalesFunnel | null>(null)
+  const [importing, setImporting] = useState(false)
   const creating = useRef(false)
 
   const createSales = () => {
@@ -45,6 +47,9 @@ export function FluxoPage() {
           items={[{ ok: crmSync !== "error", message: "Não consegui ler os funis do Worker. O quadro local pode estar desactualizado." }]}
         />
         <PageChrome icon={Workflow} title="Funil">
+          <Button type="button" variant="outline" className="h-8 rounded-full px-3.5" onClick={() => setImporting(true)}>
+            <Upload /> Importar
+          </Button>
           <Button type="button" className="h-8 rounded-full px-3.5" onClick={createSales}>
             <Plus /> Novo funil
           </Button>
@@ -59,9 +64,14 @@ export function FluxoPage() {
               <p className="mx-auto mt-1 max-w-md text-[13.5px] text-muted-foreground">
                 O quadro publicado é o que a Sté fala. Boas-vindas, minicurso, Superbet e remarketing editam-se aqui. O rascunho grava sozinho.
               </p>
-              <Button type="button" className="mt-5 rounded-full" onClick={createSales}>
-                <Plus /> Novo funil
-              </Button>
+              <div className="mt-5 flex flex-wrap justify-center gap-2">
+                <Button type="button" variant="outline" className="rounded-full" onClick={() => setImporting(true)}>
+                  <Upload /> Importar
+                </Button>
+                <Button type="button" className="rounded-full" onClick={createSales}>
+                  <Plus /> Novo funil
+                </Button>
+              </div>
             </div>
           ) : null}
           {funnels.map((funnel) => {
@@ -118,6 +128,15 @@ export function FluxoPage() {
         </div>
       </div>
 
+      <ImportFunnelDialog
+        open={importing}
+        onOpenChange={setImporting}
+        onImported={(funnel) => {
+          createFunnel(funnel)
+          toast.success("Funil importado como rascunho.")
+          navigate(`/fluxo/funil/${funnel.id}`)
+        }}
+      />
       <RenameFunnelDialog
         open={Boolean(renaming)}
         name={renaming?.name ?? ""}

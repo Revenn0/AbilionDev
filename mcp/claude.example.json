@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "abilion": {
+      "command": "npx",
+      "args": ["tsx", "mcp/server.mts"],
+      "env": {
+        "ABILION_URL": "https://www.abilion.lol",
+        "ABILION_TOKEN": "abn_cola_o_token_de_utilizadores"
+      }
+    }
+  }
+}

@@ -90,7 +90,8 @@ import { campaignFor } from "../src/lib/labels.ts"
 import { barShare, isImportedLead, isOperatorLockedLead, leadsHydrating } from "../src/lib/ops.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
-import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, handleAuth, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeThrottles, retainUserSessions } from "../worker/auth.ts"
+import { consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, handleAuth, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeThrottles, retainUserSessions, sessionUser } from "../worker/auth.ts"
+import { importFunnel } from "../src/lib/funnel-import.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTelegramClaims, telegramCall } from "../worker/telegram.ts"
 import { backgroundCtx, handleRequest, type Env } from "../worker/index.ts"
@@ -1234,6 +1235,7 @@ assert(safeAppPath("/fluxo/funil/../x") === "/", "path traversal cai no inicio")
 assert(safeAppPath("/configuracoesfoo") === "/", "prefixo de configuracoes nao passa")
 assert(safeAppPath("/configuracoes/") === "/", "barra extra em configuracoes nao passa")
 assert(safeAppPath("/privacidade") === "/privacidade", "politica no next do login passa")
+assert(safeAppPath("/utilizadores") === "/utilizadores", "gestor de contas passa no next")
 assert(withSafeNext("/forgot", "/leads") === "/forgot?next=%2Fleads", "forgot conserva o next")
 assert(withSafeNext("/login", "//evil.com") === "/login", "next perigoso não entra no forgot")
 assert(withSafeNext("/reset?token=abc", "/leads") === "/reset?token=abc&next=%2Fleads", "reset junta next ao token")
@@ -3241,5 +3243,255 @@ try {
 } finally {
   globalThis.fetch = ghostFetch
 }
+
+const nativeImport = importFunnel({
+  id: "keep-me",
+  name: "Quadro nativo",
+  nodes: [{ id: "n1", type: "message", position: { x: 10, y: 10 }, data: { title: "Oi", body: "Olá do JSON Abilion" } }],
+  edges: [],
+})
+assert(nativeImport.ok && nativeImport.source === "abilion", "import nativo Abilion")
+assert(nativeImport.ok && nativeImport.funnel.id !== "keep-me", "import nativo ganha id novo")
+assert(nativeImport.ok && nativeImport.funnel.status === "draft" && !nativeImport.funnel.production, "import nativo fica rascunho")
+
+const manyImport = importFunnel({
+  name: "Fluxo ManyChat",
+  steps: [
+    { name: "Boas-vindas", content: { messages: [{ type: "text", text: "Oi, sou a Sté" }] } },
+    { type: "delay", delayHours: 2, name: "Espera" },
+    { name: "Oferta", messages: [{ text: "Vê o premium" }] },
+  ],
+})
+assert(manyImport.ok && manyImport.source === "manychat", "import ManyChat")
+assert(manyImport.ok && manyImport.funnel.nodes.some((node) => node.data.body?.includes("Sté")), "ManyChat traz o texto")
+assert(manyImport.ok && manyImport.funnel.nodes.some((node) => node.type === "wait"), "ManyChat traz a espera")
+
+const n8nImport = importFunnel({
+  name: "Workflow n8n",
+  nodes: [
+    { id: "a", name: "Telegram", type: "n8n-nodes-base.telegram", position: [0, 0], parameters: { text: "Primeira do n8n" } },
+    { id: "b", name: "Wait", type: "n8n-nodes-base.wait", position: [240, 0], parameters: { amount: 3, unit: "hours" } },
+    { id: "c", name: "Follow", type: "n8n-nodes-base.telegram", position: [480, 0], parameters: { text: "Segunda do n8n" } },
+  ],
+  connections: { Telegram: { main: [[{ node: "Wait", type: "main", index: 0 }]] }, Wait: { main: [[{ node: "Follow", type: "main", index: 0 }]] } },
+})
+assert(n8nImport.ok && n8nImport.source === "n8n", "import n8n")
+assert(n8nImport.ok && n8nImport.funnel.edges.length >= 2, "n8n liga as conexões")
+
+const typebotImport = importFunnel({
+  name: "Typebot demo",
+  groups: [
+    { id: "g1", title: "Entrada", graphCoordinates: { x: 0, y: 0 }, blocks: [{ type: "text", content: { richText: [{ children: [{ text: "Olá do Typebot" }] }] } }] },
+    { id: "g2", title: "Segue", graphCoordinates: { x: 300, y: 0 }, blocks: [{ type: "text", content: { text: "Segundo grupo" } }] },
+  ],
+  edges: [{ id: "e1", from: { groupId: "g1" }, to: { groupId: "g2" } }],
+})
+assert(typebotImport.ok && typebotImport.source === "typebot", "import Typebot")
+assert(typebotImport.ok && typebotImport.funnel.nodes.some((node) => node.data.body?.includes("Typebot")), "Typebot extrai richText")
+
+const genericImport = importFunnel({ messages: ["Linha um", "Linha dois"] })
+assert(genericImport.ok && genericImport.source === "generic" && genericImport.funnel.nodes.length >= 3, "import genérico vira entrada + mensagens")
+
+const pastedImport = importFunnel("Primeira colada\n\nSegunda colada")
+assert(pastedImport.ok && pastedImport.funnel.nodes.some((node) => node.data.body?.includes("colada")), "texto colado vira mensagens")
+
+const badImport = importFunnel({ foo: true })
+assert(!badImport.ok, "JSON vazio não inventa funil")
+
+const strangerStore = memoryAuthStore()
+const stranger = await handleAuth(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.200" },
+    body: JSON.stringify({ email: "rita@example.com", password: "senhaok" }),
+  }),
+  strangerStore,
+  { ABILION_ENV: "development" }
+)
+assert(stranger.status === 401, "e-mail desconhecido não entra")
+assert((await strangerStore.load()).users.length === 0, "login desconhecido não cria conta")
+
+const teamEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://example.supabase.co",
+  AUTH: memoryKv(),
+  ABILION_ENV: "development",
+} as Env
+const teamLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.201" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+assert(teamLogin.status === 200, "dono inicial entra para gerir contas")
+const teamCookie = teamLogin.headers.get("set-cookie") || ""
+const teamMe = (await teamLogin.json()) as { user: { role?: string } }
+assert(teamMe.user?.role === "owner", "primeiro acesso do Victor é dono")
+
+const deniedUsers = await handleRequest(new Request("http://local.test/api/users"), teamEnv, backgroundCtx())
+assert(deniedUsers.status === 401, "contas sem sessão são 401")
+
+const createdUser = await handleRequest(
+  new Request("http://local.test/api/users", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: teamCookie, "x-forwarded-for": "203.0.113.201" },
+    body: JSON.stringify({ email: "ana@abilion.com", name: "Ana", password: "senhaok", role: "operator" }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const createdBody = (await createdUser.json()) as { user?: { id?: string; email?: string; role?: string } }
+assert(createdUser.status === 201 && createdBody.user?.email === "ana@abilion.com", "dono cria operador")
+assert(createdBody.user?.role === "operator", "conta nova nasce operador")
+
+const anaLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.202" },
+    body: JSON.stringify({ email: "ana@abilion.com", password: "senhaok" }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+assert(anaLogin.status === 200, "operador criado entra")
+const anaCookie = anaLogin.headers.get("set-cookie") || ""
+const anaForbidden = await handleRequest(
+  new Request("http://local.test/api/users", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: anaCookie, "x-forwarded-for": "203.0.113.202" },
+    body: JSON.stringify({ email: "bruno@abilion.com", name: "Bruno", password: "senhaok" }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+assert(anaForbidden.status === 403, "operador não cria contas")
+
+const minted = await handleRequest(
+  new Request("http://local.test/api/tokens", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: teamCookie, "x-forwarded-for": "203.0.113.201" },
+    body: JSON.stringify({ name: "Claude Code" }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const mintedBody = (await minted.json()) as { token?: string; item?: { prefix?: string } }
+assert(minted.status === 201 && mintedBody.token?.startsWith("abn_"), "token MCP nasce abn_")
+assert(Boolean(mintedBody.item?.prefix), "token devolve prefixo")
+
+const bearerCrm = await handleRequest(
+  new Request("http://local.test/api/crm", { headers: { authorization: `Bearer ${mintedBody.token}` } }),
+  teamEnv,
+  backgroundCtx()
+)
+assert(bearerCrm.status === 200, "CRM aceita Bearer do token")
+const bearerUser = await sessionUser(
+  new Request("http://local.test/api/crm", { headers: { authorization: `Bearer ${mintedBody.token}` } }),
+  kvAuthStore(teamEnv.AUTH!)
+)
+assert(bearerUser?.email === "victor@abilion.com", "Bearer resolve o dono")
+
+const mcpAnon = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26" } }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+assert(mcpAnon.status === 401, "MCP sem token é 401")
+
+const mcpInit = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26" } }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const mcpInitBody = (await mcpInit.json()) as { result?: { serverInfo?: { name?: string }; protocolVersion?: string } }
+assert(mcpInit.status === 200 && mcpInitBody.result?.serverInfo?.name === "abilion", "MCP initialize")
+assert(mcpInitBody.result?.protocolVersion === "2025-03-26", "MCP aceita 2025-03-26")
+
+const mcpCreate = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: { name: "abilion_create_funnel", arguments: { name: "Funil MCP" } },
+    }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const mcpCreateBody = (await mcpCreate.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
+const mcpCreated = JSON.parse(mcpCreateBody.result?.content?.[0]?.text || "{}") as { id?: string; ok?: boolean }
+assert(mcpCreate.status === 200 && mcpCreated.ok && mcpCreated.id, "MCP cria funil")
+
+const mcpAccount = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: { name: "abilion_create_user", arguments: { email: "carla@abilion.com", name: "Carla", password: "senhaok" } },
+    }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const mcpAccountBody = (await mcpAccount.json()) as { result?: { content?: Array<{ text?: string }> } }
+const mcpUser = JSON.parse(mcpAccountBody.result?.content?.[0]?.text || "{}") as { user?: { email?: string } }
+assert(mcpUser.user?.email === "carla@abilion.com", "MCP cria conta")
+
+const importedHttp = await handleRequest(
+  new Request("http://local.test/api/funnels/import", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: teamCookie, "x-forwarded-for": "203.0.113.201" },
+    body: JSON.stringify({ name: "Import HTTP", payload: { messages: ["Passo A", "Passo B"] } }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const importedHttpBody = (await importedHttp.json()) as { source?: string; funnel?: { name?: string } }
+assert(importedHttp.status === 201 && importedHttpBody.source === "generic", "POST import cria rascunho")
+assert(importedHttpBody.funnel?.name === "Import HTTP", "import HTTP conserva o nome")
+
+const listed = await handleRequest(new Request("http://local.test/api/users", { headers: { cookie: teamCookie } }), teamEnv, backgroundCtx())
+const listedBody = (await listed.json()) as { users?: Array<{ id?: string; email?: string; disabled?: boolean }> }
+const anaRow = listedBody.users?.find((item) => item.email === "ana@abilion.com")
+assert(listed.status === 200 && Boolean(anaRow), "lista mostra a Ana")
+const anaId = anaRow?.id
+assert(Boolean(anaId), "id da Ana existe")
+const disableAna = await handleRequest(
+  new Request("http://local.test/api/users", {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie: teamCookie, "x-forwarded-for": "203.0.113.201" },
+    body: JSON.stringify({ id: anaId, disabled: true }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+assert(disableAna.status === 200, "dono desliga operador")
+const anaDisabledLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.203" },
+    body: JSON.stringify({ email: "ana@abilion.com", password: "senhaok" }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+assert(anaDisabledLogin.status === 401, "conta desligada não entra")
 
 console.log("ste-flow ok")

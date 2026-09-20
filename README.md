@@ -4,7 +4,7 @@ Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / M
 
 ## O que entra
 
-- Login real: `victor@abilion.com` ou `gabriel@abilion.com`. O primeiro acesso de cada conta define a senha (6+ caracteres).
+- Login real: `victor@abilion.com` ou `gabriel@abilion.com` no primeiro acesso (cada um define a senha, 6+). Contas novas criam-se em **Utilizadores** — o login não inventa e-mails.
 - Dashboard: leads, conversas, página / cliques, Facebook, espera, ofertas
 - Analytics: funil Ads → landing → Telegram → chat, globo de visitantes, gráficos de 30 dias, geo e device — no mesmo estúdio claro do funil
 - Leads no passo do fluxo (print, banca, espera, oferta só se o grafo deixar)
@@ -65,7 +65,7 @@ URL no ar: [https://www.abilion.lol](https://www.abilion.lol) (apex [https://abi
 
 O Worker `abilion` (conta `73dd2cecfc9c7f0220a36fe999e3edf1`) serve o painel e `/api/*`. O CRM Next antigo saiu do ar. `run_worker_first` faz o HTML (`/` incluído) passar pelo Worker para levar CSP, `X-Frame-Options` e o resto dos headers — o pipeline de assets sozinho não os punha na home.
 
-Login: só `victor@abilion.com` ou `gabriel@abilion.com`. O primeiro acesso de cada conta grava a senha no KV `abilion-auth`. Depois, só essa senha entra. Login, “Esqueceu a senha?” e troca de senha têm limite por IP (8, 5 e 5 tentativas / 15 min). Cada operador fica com no máximo 5 sessões activas. O snapshot de auth no KV une sessões no gravar — dois logins ao mesmo tempo já não apagam um ao outro. Uma troca de senha marca `passwordUpdatedAt`: um login que ainda tinha o hash velho não reverte a senha nem reabre sessões antigas. Logout e troca de senha gravam tombstone do token (até 2000). Token do Telegram e chaves de IA **não** entram no git — Configurações → Vincular Telegram grava no mesmo KV e aponta o webhook. Troca de senha: Configurações → Conta. “Esqueceu a senha?” só devolve link fora de produção (não há e-mail). Leads: busca por nome/@user (a caixa também pergunta o Worker pelo alias se o lead já saiu da lista hidratada), exclusão com confirmação e hidratação até 8000 no login (20 páginas de 400). Simular 100 /start pede confirmação.
+Login: `victor@abilion.com` e `gabriel@abilion.com` no primeiro acesso (definem a senha). As outras contas só entram depois de um dono as criar em Utilizadores. Login, “Esqueceu a senha?” e troca de senha têm limite por IP (8, 5 e 5 tentativas / 15 min). Cada conta fica com no máximo 5 sessões activas e 20 tokens MCP (`abn_…`). O snapshot de auth no KV une sessões, tokens e contas no gravar. Uma troca de senha marca `passwordUpdatedAt`: um login que ainda tinha o hash velho não reverte a senha nem reabre sessões antigas. Logout e troca de senha gravam tombstone do token de sessão (até 2000). Token do Telegram e chaves de IA **não** entram no git — Configurações → Vincular Telegram grava no mesmo KV e aponta o webhook. Troca de senha: Configurações → Conta. “Esqueceu a senha?” só devolve link fora de produção (não há e-mail). Leads: busca por nome/@user (a caixa também pergunta o Worker pelo alias se o lead já saiu da lista hidratada), exclusão com confirmação e hidratação até 8000 no login (20 páginas de 400). Simular 100 /start pede confirmação.
 
 `ABILION_OPERATOR_PASSWORD` é opcional: só **cria** as contas que ainda não existem. Sem o secret, o primeiro login de cada operador define a senha. Depois de criadas, a troca em Configurações → Conta fica. Não reescreve o hash em cada `/api/auth/me`.
 
@@ -81,7 +81,7 @@ npm run deploy
 
 Domínio **abilion.lol** já aponta para o Worker (`coco.ns.cloudflare.com` / `etienne.ns.cloudflare.com`). Apex, `www` e `abilion.vsanches1060.workers.dev` servem o mesmo painel.
 
-Ao vincular o Telegram, o Worker gera um `secret_token` do webhook e guarda-o no KV. `POST /api/telegram` sem esse secret (ou com o header errado) responde 401 — não aceita updates assinados. `GET /api/cron` só corre com `CRON_SECRET`. Sem cookie, `/api/crm`, `/api/inbox`, `/api/leads` e `/api/track/summary` respondem 401. CRM, inbox e leads tratam isso como sessão expirada e voltam ao login. O poll do pixel (`/api/track/summary`) **não** desloga — Analytics/Dashboard mostram “Sem leitura”, não um gráfico vazio verde. A sessão cai pelo `/api/auth/me` (15 s) e pelas escritas do CRM. Sem rede, um aviso no topo deixa claro que a sincronização espera. O primeiro login de `victor@abilion.com` ou `gabriel@abilion.com` define a senha (6+), também em produção. `ABILION_OPERATOR_PASSWORD` é opcional e só cria contas que ainda não existem.
+Ao vincular o Telegram, o Worker gera um `secret_token` do webhook e guarda-o no KV. `POST /api/telegram` sem esse secret (ou com o header errado) responde 401 — não aceita updates assinados. `GET /api/cron` só corre com `CRON_SECRET`. Sem cookie nem Bearer `abn_…`, `/api/crm`, `/api/inbox`, `/api/leads` e `/api/track/summary` respondem 401. CRM, inbox e leads tratam isso como sessão expirada e voltam ao login. O poll do pixel (`/api/track/summary`) **não** desloga — Analytics/Dashboard mostram “Sem leitura”, não um gráfico vazio verde. A sessão cai pelo `/api/auth/me` (15 s) e pelas escritas do CRM. Sem rede, um aviso no topo deixa claro que a sincronização espera. O primeiro login de `victor@abilion.com` ou `gabriel@abilion.com` define a senha (6+), também em produção. Contas criadas em Utilizadores já nascem com senha. `ABILION_OPERATOR_PASSWORD` é opcional e só cria as duas contas iniciais que ainda não existem.
 
 Secrets (nunca no git):
 
@@ -143,7 +143,7 @@ Simulador de 100 leads Facebook roda UFs reais para o CRM não ficar “Sem esta
 
 Públicas:
 
-- `/login` — entrada. Só `victor@abilion.com` ou `gabriel@abilion.com`.
+- `/login` — entrada. Victor e Gabriel no primeiro acesso; as outras contas vêm de Utilizadores.
 - `/forgot` — localmente gera link de reset. Em produção não envia e-mail. O `next=` do login segue para forgot/reset e volta.
 - `/reset?token=` — nova senha a partir do link local.
 - `/privacidade` — política do CRM interno.
@@ -153,18 +153,19 @@ Autenticadas:
 
 - `/` — dashboard (leads, conversas, Facebook, espera, ofertas).
 - `/analytics` — funil Ads → landing → Telegram, globo, 30 dias.
-- `/fluxo` — lista de funis.
+- `/fluxo` — lista de funis. **Importar** lê JSON do ManyChat, n8n, Typebot, um funil Abilion ou uma lista de mensagens. O resultado fica rascunho.
 - `/fluxo/funil/:id` — editor visual + runtime. Zoom/ajuste no canto superior direito; **Testar fluxo** no canto inferior direito — no telemóvel já não tapam um ao outro.
 - `/leads` — CRM, captura, print/banca. Contacto `ana` e `@ana` são o mesmo lead. Fechar a ficha já não reverte a temperatura ao gravar a memória. Excluir só fecha a ficha se o Worker aceitar. Em lead com `telegramChatId` **ou** lista importada (WhatsApp / origem `import`) a ficha não avança print, espera nem oferta. Nota e temperatura ainda gravam. O POST `/api/leads` (`adoptOperatorLead`) recusa o mesmo avanço num chat real **e** num import.
 - `/conversas` — inbox Telegram da Sté. Os primeiros 80 vêm na lista; **Carregar mais** abre o resto hidratado. Sem conversas, “Simular conversa” corre o motor no painel. Leads com `telegramChatId` real não avançam a espera no browser e a caixa “Simular lead” fica fechada — simular ali gravaria falas que o Telegram nunca enviou. O cron é que manda o Telegram. Leads só do painel disparam a espera no `waitUntil` (setTimeout), não só quando o operador volta a escrever.
 - `/telegram` — saúde do bot, webhook, snippet do pixel, simulação de /start.
+- `/utilizadores` — contas (dono cria / desliga / muda papel) e tokens MCP para Claude Code e outros agentes.
 - `/configuracoes` — bot, conta, plugins, notificações, aparência.
 
 Endereços desconhecidos no painel mostram 404. `next=` no login só aceita estas rotas.
 
 ## API do Worker
 
-Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exigem sessão, salvo o que está abaixo.
+Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exigem sessão ou token `abn_…`, salvo o que está abaixo.
 
 | Rota | Quem |
 | --- | --- |
@@ -182,9 +183,43 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `POST /api/runtime/voice` | sessão — gera clips ElevenLabs |
 | `POST /api/track` | público, CORS aberto só aqui (pixel) |
 | `GET /api/track/summary` | sessão |
+| `GET/POST/PATCH /api/users` | sessão — lista; POST/PATCH só dono (máx. 40 contas) |
+| `GET/POST/DELETE /api/tokens` | sessão — token `abn_…` (o valor completo só no POST) |
+| `POST /api/funnels/import` | sessão — ManyChat / n8n / Typebot / Abilion / mensagens |
+| `POST /mcp` ou `/api/mcp` | Bearer ou cookie — JSON-RPC para agentes |
+| `GET /mcp` | público: `{ ok, name, version }` |
 | `POST /api/telegram` | Telegram; `secret_token` do webhook |
 | `GET /api/cron` | `CRON_SECRET` obrigatório; cada espera corre isolada |
 | `GET /t.js` | pixel |
+
+## MCP (Claude Code e outros agentes)
+
+O Worker expõe JSON-RPC em `https://www.abilion.lol/mcp` (também `/api/mcp`). A sessão do painel ou um token `abn_…` (Utilizadores → Gerar token) autenticam. O proxy stdio do repositório reenvia o stdin:
+
+```bash
+export ABILION_URL=https://www.abilion.lol
+export ABILION_TOKEN=abn_…
+npm run mcp
+```
+
+No Claude Code / Claude Desktop, um exemplo está em [`mcp/claude.example.json`](mcp/claude.example.json):
+
+```json
+{
+  "mcpServers": {
+    "abilion": {
+      "command": "npx",
+      "args": ["tsx", "mcp/server.mts"],
+      "env": {
+        "ABILION_URL": "https://www.abilion.lol",
+        "ABILION_TOKEN": "abn_…"
+      }
+    }
+  }
+}
+```
+
+Ferramentas: saúde, listar/criar contas, listar/criar/importar/publicar funis, listar leads, definições (sem segredos), criar token. O dono é que cria contas. Importar um funil deixa-o em rascunho até `abilion_publish_funnel`.
 
 ## Limitações e bloqueios
 

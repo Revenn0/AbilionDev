@@ -568,7 +568,11 @@ function AccountPane() {
     <section className="surface max-w-3xl p-6">
       <p className="text-[14px] font-medium">Conta do operador</p>
       <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
-        Em produção o “Esqueceu a senha?” não envia e-mail. Troca a senha aqui com a senha actual.
+        Em produção o “Esqueceu a senha?” não envia e-mail. Troca a senha aqui com a senha actual. Contas novas e tokens MCP ficam em{" "}
+        <Link to="/utilizadores" className="underline underline-offset-3">
+          Utilizadores
+        </Link>
+        .
       </p>
       <dl className="mt-4 space-y-2 text-[12.5px]">
         <div className="flex flex-wrap justify-between gap-2">
@@ -578,6 +582,10 @@ function AccountPane() {
         <div className="flex flex-wrap justify-between gap-2">
           <dt className="text-muted-foreground">E-mail</dt>
           <dd className="font-medium">{state.user?.email}</dd>
+        </div>
+        <div className="flex flex-wrap justify-between gap-2">
+          <dt className="text-muted-foreground">Papel</dt>
+          <dd className="font-medium">{state.user?.role === "operator" ? "Operador" : "Dono"}</dd>
         </div>
       </dl>
       <form
