@@ -2,6 +2,7 @@ import { publishedFunnel } from "./runtime.ts"
 import { defaultSettings, type ChatMessage, type Lead, type LeadEvent, type LeadFacts, type SalesFunnel, type Settings } from "./types.ts"
 
 const CAP = 400
+export const LEAD_LIST_CAP = 2000
 
 export function publicSettings(settings: Settings): Settings {
   return { ...settings, telegramBotToken: "", esterTelegramChatId: "" }
@@ -117,7 +118,7 @@ export function mergeLeads(current: Lead[], incoming: Lead[]): Lead[] {
     }
   }
   if (!changed) return current
-  return [...map.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, CAP)
+  return [...map.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, LEAD_LIST_CAP)
 }
 
 export function clipRemovedIds(ids: unknown, cap = CAP): string[] {
@@ -170,7 +171,7 @@ export function reconcileLeads(current: Lead[], incoming: Lead[], pendingIds: It
   const pending = new Set(pendingIds)
   const next = merged.filter((lead) => remoteIds.has(lead.id) || pending.has(lead.id))
   if (next.length === merged.length) return merged
-  return next.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, CAP)
+  return next.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, LEAD_LIST_CAP)
 }
 
 export function adoptRemoteFunnels(

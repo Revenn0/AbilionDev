@@ -62,10 +62,10 @@ import {
   settingsWriteFingerprint,
 } from "../src/lib/crm.ts"
 import { applyEvent, canAdvanceRemoteWait, publishedFunnel, publishedSnapshot, waitHours } from "../src/lib/runtime.ts"
-import { isTelegramAdsHref, TRACKER_JS } from "../src/lib/tracker-script.ts"
+import { isTelegramAdsHref, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
-import { CRM_CRON_LOCK, CRM_FUNNELS, aliasKey, claimCronLock, claimLeadAlias, deleteLeadKv, dueLeadsKv, findLeadInKv, listLeads, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, releaseCronLock, renewCronLock, reserveLeadIdentity, saveFunnelsKv, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_CRON_LOCK, CRM_FUNNELS, aliasKey, claimCronLock, claimLeadAlias, deleteLeadKv, dueLeadsKv, findLeadInKv, isLeadPageCursor, listLeadPage, listLeads, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, releaseCronLock, renewCronLock, reserveLeadIdentity, saveFunnelsKv, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
@@ -75,7 +75,7 @@ import { safeAppPath } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { validateCapture } from "../src/lib/capture.ts"
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
-import { adsDeepLink } from "../src/lib/telegram-start.ts"
+import { adsDeepLink, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { barShare, leadsHydrating } from "../src/lib/ops.ts"
 import { loadSecrets, mergeSecrets, resolveRuntime, tokenHint } from "../worker/runtime-secrets.ts"
@@ -471,6 +471,13 @@ assert(cleanBotUsername("foo/bar") === "", "username com barra cai")
 assert(cleanBotUsername("foo?x=1") === "", "username com query cai")
 assert(adsDeepLink("foo/bar") === "", "deep link recusa handle inválido")
 assert(adsDeepLink("@good_bot") === "https://t.me/good_bot?start=fb", "deep link usa handle limpo")
+assert(adsDeepLink("@good_bot", "fb_a1b2c3d4e5") === "https://t.me/good_bot?start=fb_a1b2c3d4e5", "deep link aceita visitor id")
+assert(visitorIdFromStart("fb_a1b2c3d4e5") === "a1b2c3d4e5", "start fb_vid devolve o visitor")
+assert(visitorIdFromStart("fb") === undefined, "start fb sem vid não inventa visitor")
+assert(
+  pixelSnippet("https://www.abilion.lol") === `<script src="https://www.abilion.lol/t.js" data-cta="[data-abilion-cta]"></script>`,
+  "snippet do pixel usa a origem"
+)
 assert(cleanTelegramGroupUrl("https://t.me/+abc123").includes("t.me"), "convite t.me passa")
 assert(cleanTelegramGroupUrl("https://evil.com/x") === "", "url alheia cai")
 assert(cleanTelegramGroupUrl("javascript:alert(1)") === "", "javascript: cai")
@@ -1408,6 +1415,14 @@ for (let i = 0; i < 401; i++) {
 }
 assert((await findLeadInKv(capKv, "@u0", 0, "0"))?.id === "id-0", "alias encontra lead fora do recorte de 400")
 assert((await listLeads(capKv, 400, "all")).length === 400, "lista continua no teto de 400")
+const firstLeadPage = await listLeadPage(capKv, 400, "all")
+assert(firstLeadPage.nextCursor && isLeadPageCursor(firstLeadPage.nextCursor), "primeira página de 401 leads tem cursor")
+const secondLeadPage = await listLeadPage(capKv, 400, "all", firstLeadPage.nextCursor)
+assert(secondLeadPage.leads.some((item) => item.id === "id-0"), "página seguinte traz o lead antigo com chat")
+assert(
+  (await listLeadPage(capKv, 400, "all", "1999-01-01T00:00:00.000Z|missing")).leads.length === 0,
+  "cursor desconhecido não rebobina a lista"
+)
 const waitingOld = lead("wait-old", "@waitold")
 waitingOld.waitUntil = new Date(Date.now() - 1000).toISOString()
 waitingOld.updatedAt = new Date(1_600_000_000_000).toISOString()
@@ -2450,6 +2465,16 @@ assert(
 )
 assert((await loadLead(liveEnv.AUTH, "zombie")) === null, "lead apagado some do KV")
 assert((await loadRemovedLeadIds(liveEnv.AUTH)).includes("zombie"), "DELETE grava tombstone")
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/leads?cursor=broken", { headers: { cookie: liveCookie } }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 400,
+  "GET leads com cursor inválido é 400"
+)
 const zombieBack = await handleRequest(
   new Request("http://local.test/api/leads", {
     method: "POST",
@@ -2610,6 +2635,7 @@ assert(isTelegramAdsHref("https://t.me/steaviator?start=fb"), "pixel reescreve d
 assert(!isTelegramAdsHref("https://t.me/+AbCdEfGhIjK"), "pixel não reescreve convite +")
 assert(!isTelegramAdsHref("https://t.me/joinchat/AbCdEf"), "pixel não reescreve joinchat")
 assert(TRACKER_JS.includes("joinchat") && TRACKER_JS.includes('charAt(0) === "+"'), "t.js recusa convite de grupo")
+assert(TRACKER_JS.includes("auxclick") && TRACKER_JS.includes("pointerdown"), "t.js reescreve o CTA antes do clique do meio")
 
 const waitId = "w-html"
 const msgId = "m-html"

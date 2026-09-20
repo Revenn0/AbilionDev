@@ -1,3 +1,25 @@
+export const VISITOR_STORAGE_KEY = "abilion_vid"
+
+export function pixelSnippet(origin: string) {
+  const base = origin.replace(/\/$/, "")
+  return `<script src="${base}/t.js" data-cta="[data-abilion-cta]"></script>`
+}
+
+export function readVisitorId() {
+  try {
+    let id = localStorage.getItem(VISITOR_STORAGE_KEY)
+    if (!id || !/^[a-f0-9]{6,16}$/i.test(id)) {
+      const bytes = new Uint8Array(5)
+      crypto.getRandomValues(bytes)
+      id = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
+      localStorage.setItem(VISITOR_STORAGE_KEY, id)
+    }
+    return id.toLowerCase()
+  } catch {
+    return Math.random().toString(16).slice(2, 12)
+  }
+}
+
 export function isTelegramAdsHref(href: string, base = "https://abilion.lol") {
   try {
     const url = new URL(href, base)
@@ -76,13 +98,22 @@ export const TRACKER_JS = `(() => {
     document.querySelectorAll("a[href*='t.me'], " + ctaSel).forEach(rewrite);
   };
   bind();
-  document.addEventListener("click", (event) => {
+  const onPointer = (event) => {
+    const anchor = event.target && event.target.closest ? event.target.closest("a") : null;
+    if (!anchor) return;
+    if (!anchor.matches(ctaSel) && !adsHref(anchor.href || "")) return;
+    rewrite(anchor);
+  };
+  const onClick = (event) => {
     const anchor = event.target && event.target.closest ? event.target.closest("a") : null;
     if (!anchor) return;
     if (!anchor.matches(ctaSel) && !adsHref(anchor.href || "")) return;
     rewrite(anchor);
     send("click", { href: anchor.href });
-  }, true);
+  };
+  document.addEventListener("pointerdown", onPointer, true);
+  document.addEventListener("auxclick", onClick, true);
+  document.addEventListener("click", onClick, true);
   setInterval(function () { send("beat"); }, 30000);
 })();
 `

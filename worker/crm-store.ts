@@ -44,15 +44,50 @@ export async function loadIndex(kv: KvLike): Promise<CrmIndex> {
 async function saveIndex(kv: KvLike, index: CrmIndex) {
   const byId = new Map(index.entries.map((item) => [item.id, item]))
   const all = [...byId.values()]
-  const waiting = all.filter((item) => item.waitUntil)
+  const pinned = all.filter((item) => item.waitUntil || item.chatId)
   const rest = all
-    .filter((item) => !item.waitUntil)
+    .filter((item) => !item.waitUntil && !item.chatId)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, CAP)
   const keep = new Map<string, CrmIndexEntry>()
-  for (const item of [...waiting, ...rest]) keep.set(item.id, item)
+  for (const item of [...pinned, ...rest]) keep.set(item.id, item)
   const entries = [...keep.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   await kv.put(CRM_INDEX, JSON.stringify({ entries }))
+}
+
+export function leadPageCursor(entry: Pick<CrmIndexEntry, "updatedAt" | "id">) {
+  return `${entry.updatedAt}|${entry.id}`
+}
+
+export function isLeadPageCursor(value: string) {
+  const next = value.trim()
+  if (!next || next.length > 160) return false
+  const split = next.indexOf("|")
+  return split > 0 && split < next.length - 1
+}
+
+export async function listLeadPage(
+  kv: KvLike,
+  limit = 80,
+  channel: Lead["channel"] | "all" = "telegram",
+  cursor = ""
+): Promise<{ leads: Lead[]; nextCursor?: string }> {
+  const index = await loadIndex(kv)
+  const rows = channel === "all" ? index.entries : index.entries.filter((item) => item.channel === channel)
+  let start = 0
+  const mark = cursor.trim()
+  if (mark) {
+    const at = rows.findIndex((item) => leadPageCursor(item) === mark)
+    if (at < 0) return { leads: [] }
+    start = at + 1
+  }
+  const slice = rows.slice(start, start + Math.max(1, limit))
+  const leads = (await Promise.all(slice.map((item) => loadLead(kv, item.id)))).filter((lead): lead is Lead => Boolean(lead))
+  const last = slice.at(-1)
+  return {
+    leads,
+    nextCursor: slice.length === limit && last ? leadPageCursor(last) : undefined,
+  }
 }
 
 async function writeAliases(kv: KvLike, lead: Pick<Lead, "id" | "contact" | "telegramChatId">) {
@@ -114,11 +149,7 @@ export async function loadLead(kv: KvLike, id: string): Promise<Lead | null> {
 }
 
 export async function listLeads(kv: KvLike, limit = 80, channel: Lead["channel"] | "all" = "telegram"): Promise<Lead[]> {
-  const index = await loadIndex(kv)
-  const rows = channel === "all" ? index.entries : index.entries.filter((item) => item.channel === channel)
-  const ids = rows.slice(0, limit).map((item) => item.id)
-  const leads = await Promise.all(ids.map((id) => loadLead(kv, id)))
-  return leads.filter((lead): lead is Lead => Boolean(lead))
+  return (await listLeadPage(kv, limit, channel)).leads
 }
 
 export async function findLeadInKv(kv: KvLike, contact: string, telegramId: number, chatId: string): Promise<Lead | null> {

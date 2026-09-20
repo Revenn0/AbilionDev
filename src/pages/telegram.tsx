@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { Send } from "lucide-react"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
+import { PixelSnippet } from "@/components/layout/pixel-snippet"
 import { SyncBanner } from "@/components/layout/sync-banner"
 import { Button } from "@/components/ui/button"
 import { useStore } from "@/lib/store"
@@ -152,6 +153,7 @@ export function TelegramPage() {
             </p>
           )}
         </section>
+        <PixelSnippet origin={workerUrl()} />
       </div>
     </div>
   )

@@ -31,7 +31,8 @@ import {
   deleteLeadKv,
   dueLeadsKv,
   findLeadInKv,
-  listLeads,
+  isLeadPageCursor,
+  listLeadPage,
   loadLead,
   CRM_SETTINGS,
   claimCronLock,
@@ -383,7 +384,10 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
-    return json({ ok: true, leads: await loadMergedLeads(env, 400, "all") })
+    const cursor = (url.searchParams.get("cursor") || "").trim()
+    if (cursor && !isLeadPageCursor(cursor)) return json({ error: "Cursor inválido." }, 400)
+    const page = await loadMergedLeads(env, 400, "all", cursor)
+    return json({ ok: true, leads: page.leads, nextCursor: page.nextCursor })
   }
 
   if (url.pathname === "/api/leads" && request.method === "POST") {
@@ -425,7 +429,8 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
-    return json({ ok: true, leads: await loadMergedLeads(env, 80, "telegram") })
+    const page = await loadMergedLeads(env, 80, "telegram")
+    return json({ ok: true, leads: page.leads })
   }
 
   if (url.pathname === "/api/telegram" && request.method === "POST") {
@@ -799,8 +804,9 @@ function rowToLead(row: LeadRow): Lead {
   }
 }
 
-async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "all") {
-  const kv = env.AUTH ? await listLeads(env.AUTH, limit, channel) : []
+async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "all", cursor = "") {
+  const page = env.AUTH ? await listLeadPage(env.AUTH, limit, channel, cursor) : { leads: [] as Lead[] }
+  const kv = page.leads
   const filter = channel === "telegram" ? "&channel=eq.telegram" : ""
   const rows =
     (await rest<LeadRow[]>(
@@ -810,8 +816,11 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
   const removed = env.AUTH ? await loadRemovedLeadIds(env.AUTH) : []
   const remote = applyRemovedLeads(rows.map(rowToLead), removed)
   const keep = new Set(kv.map((lead) => lead.id))
-  const scoped = kv.length ? remote.filter((lead) => keep.has(lead.id)) : remote
-  return adoptLeadStores(kv, await attachLeadEvents(env, scoped)).slice(0, limit)
+  const scoped = kv.length || cursor ? remote.filter((lead) => keep.has(lead.id)) : remote
+  return {
+    leads: adoptLeadStores(kv, await attachLeadEvents(env, scoped)).slice(0, limit),
+    nextCursor: page.nextCursor,
+  }
 }
 
 async function removeLead(env: Env, id: string) {

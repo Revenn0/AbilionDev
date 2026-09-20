@@ -2,14 +2,17 @@ import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { adsDeepLink } from "@/lib/telegram-start"
 import { fetchHealth } from "@/lib/channel"
+import { readVisitorId } from "@/lib/tracker-script"
 
 export function LandingPage() {
   const [username, setUsername] = useState("")
+  const [visitorId, setVisitorId] = useState(() => (typeof window === "undefined" ? "" : readVisitorId()))
   const [ready, setReady] = useState(false)
   const [unreachable, setUnreachable] = useState(false)
-  const href = adsDeepLink(username, "fb")
+  const href = adsDeepLink(username, visitorId ? `fb_${visitorId}` : "fb")
 
   useEffect(() => {
+    setVisitorId(readVisitorId())
     if (document.querySelector("script[data-abilion-pixel]")) return
     const script = document.createElement("script")
     script.src = "/t.js"

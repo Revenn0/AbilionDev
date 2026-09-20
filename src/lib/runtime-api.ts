@@ -72,12 +72,23 @@ export async function prepareVoice() {
 
 export async function fetchLeads() {
   try {
-    const res = await fetchWithTimeout("/api/leads", { credentials: "include", cache: "no-store" })
-    noteUnauthorized(res)
-    if (!res.ok) return { ok: false as const, leads: [] as Lead[] }
-    const data = (await res.json()) as { leads?: Lead[] }
-    if (!Array.isArray(data.leads)) return { ok: false as const, leads: [] as Lead[] }
-    return { ok: true as const, leads: data.leads }
+    const leads: Lead[] = []
+    let cursor = ""
+    for (let page = 0; page < 5; page++) {
+      const res = await fetchWithTimeout(cursor ? `/api/leads?cursor=${encodeURIComponent(cursor)}` : "/api/leads", {
+        credentials: "include",
+        cache: "no-store",
+      })
+      noteUnauthorized(res)
+      if (!res.ok) return page === 0 ? { ok: false as const, leads: [] as Lead[] } : { ok: true as const, leads }
+      const data = (await res.json()) as { leads?: Lead[]; nextCursor?: string }
+      if (!Array.isArray(data.leads)) return page === 0 ? { ok: false as const, leads: [] as Lead[] } : { ok: true as const, leads }
+      leads.push(...data.leads)
+      const next = typeof data.nextCursor === "string" ? data.nextCursor.trim() : ""
+      if (!next) return { ok: true as const, leads }
+      cursor = next
+    }
+    return { ok: true as const, leads }
   } catch {
     return { ok: false as const, leads: [] as Lead[] }
   }
