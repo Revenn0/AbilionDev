@@ -64,6 +64,7 @@ import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { safeAppPath } from "../src/lib/safe-path.ts"
+import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { validateCapture } from "../src/lib/capture.ts"
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink } from "../src/lib/telegram-start.ts"
@@ -473,6 +474,22 @@ assert(
 )
 assert(sanitizeIncomingLead({ id: "lead-3", lastMessage: "z".repeat(800) })?.lastMessage?.length === 400, "lastMessage longo é cortado")
 assert(cleanHttpUrl("javascript:alert(1)") === "", "javascript: no funil cai")
+assert(
+  firstInvalidPublishUrl([{ data: { title: "Oferta", url: "javascript:alert(1)" } }])?.message.includes("inválido"),
+  "publicar aponta o link javascript"
+)
+assert(!firstInvalidPublishUrl([{ data: { title: "Oferta", url: "https://abilion.lol/oferta" } }]), "https do bloco passa")
+assert(!firstInvalidPublishUrl([{ data: { title: "Oferta", url: "" } }]), "url vazia do bloco passa")
+assert(
+  validatePublish(
+    [
+      { id: "e", type: "entry", position: { x: 0, y: 0 }, data: { title: "Start", entryTrigger: "start" } },
+      { id: "o", type: "offer", position: { x: 40, y: 0 }, data: { title: "Oferta", url: "javascript:alert(1)" } },
+    ],
+    [{ id: "x", source: "e", target: "o" }]
+  ).some((item) => item.message.includes("inválido")),
+  "validatePublish recusa javascript:"
+)
 assert(cleanHttpUrl("https://mundoaviator.com.br/premium") === "https://mundoaviator.com.br/premium", "https do funil fica")
 assert(cleanHttpUrl("https://user:pass@evil.test/") === "", "URL com userinfo cai")
 assert(
@@ -893,6 +910,8 @@ assert(safeAppPath("/\\evil") === "/", "backslash nao redireciona")
 assert(safeAppPath("https://evil.com") === "/", "url absoluta cai no inicio")
 assert(safeAppPath("/fluxo/funil/abc") === "/fluxo/funil/abc", "editor do funil passa")
 assert(safeAppPath("/fluxo/funil/../x") === "/", "path traversal cai no inicio")
+assert(safeAppPath("/configuracoesfoo") === "/", "prefixo de configuracoes nao passa")
+assert(safeAppPath("/configuracoes/") === "/", "barra extra em configuracoes nao passa")
 
 let gated = consumeThrottle({ users: [], sessions: [], resets: {} }, "login:1:a", 2, 60_000, 1000)
 assert(gated.ok, "primeira tentativa passa")
@@ -2003,6 +2022,34 @@ const afterGrandfather = (await (
 const keptPublished = afterGrandfather.funnels?.find((item) => item.id === latestPub.id)
 assert((keptPublished?.production?.nodes?.length ?? 0) > 0, "grandfather não apaga o quadro já publicado")
 assert(keptPublished?.production?.publishedAt === latestPub.production!.publishedAt, "publishedAt do quadro fica")
+const dirtyUrlFunnel = emptySalesFunnel("url-suja")
+dirtyUrlFunnel.status = "active"
+const dirtyNodes = dirtyUrlFunnel.nodes.map((node) =>
+  node.type === "offer" ? { ...node, data: { ...node.data, url: "javascript:alert(1)" } } : node
+)
+dirtyUrlFunnel.production = {
+  name: dirtyUrlFunnel.name,
+  publishedAt: "2099-09-21T00:00:00.000Z",
+  nodes: dirtyNodes,
+  edges: dirtyUrlFunnel.edges,
+}
+const dirtyUrlRes = await handleRequest(
+  new Request("http://local.test/api/crm", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: liveCookie },
+    body: JSON.stringify({ funnels: [dirtyUrlFunnel] }),
+  }),
+  liveEnv,
+  backgroundCtx()
+)
+assert(dirtyUrlRes.status === 400, "CRM recusa publicar javascript:")
+const dirtyUrlBody = (await dirtyUrlRes.json()) as { error?: string }
+assert(dirtyUrlBody.error?.includes("inválido"), "CRM diz o link inválido")
+const afterDirtyUrl = (await (
+  await handleRequest(new Request("http://local.test/api/crm", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
+).json()) as { funnels?: Array<{ id?: string }> }
+assert(!afterDirtyUrl.funnels?.some((item) => item.id === dirtyUrlFunnel.id), "quadro com javascript: não entra no KV")
+assert(afterDirtyUrl.funnels?.some((item) => item.id === latestPub.id), "recusar o link sujo não apaga o publicado")
 const freshMemory = lead("mem-1")
 freshMemory.memory = "guarda"
 freshMemory.updatedAt = "2026-06-02T00:00:00.000Z"

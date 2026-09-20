@@ -22,6 +22,5 @@ export function safeAppPath(raw: string | null | undefined) {
     const id = pathname.slice("/fluxo/funil/".length)
     if (id && !id.includes("/") && !id.includes("..")) return pathname
   }
-  if (pathname.startsWith("/configuracoes")) return query ? `${pathname}?${query}` : pathname
   return "/"
 }

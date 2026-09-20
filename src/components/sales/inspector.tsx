@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { STE_LINE_LABELS } from "./catalog"
+import { cleanHttpUrl } from "@/lib/migrate"
 import { isMapKind, type SalesNodeData, type SteLine } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import type { SalesCanvasNode } from "./nodes"
@@ -80,9 +81,7 @@ export function SalesInspector({
                 ))}
               </Chips>
             </Field>
-            <Field label="URL / destino">
-              <Input disabled={readOnly} className={BOX} placeholder="https://…" value={d.url || ""} onChange={(e) => set({ url: e.target.value })} />
-            </Field>
+            <UrlField readOnly={readOnly} value={d.url || ""} onChange={(url) => set({ url })} />
           </>
         )}
         {node.type === "entry" && (
@@ -305,9 +304,7 @@ export function SalesInspector({
           </Field>
         )}
         {(node.type === "message" || node.type === "landing" || node.type === "offer") && (
-          <Field label="URL / link real">
-            <Input disabled={readOnly} className={BOX} placeholder="https://…" value={d.url || ""} onChange={(e) => set({ url: e.target.value })} />
-          </Field>
+          <UrlField label="URL / link real" readOnly={readOnly} value={d.url || ""} onChange={(url) => set({ url })} />
         )}
         {!readOnly && (
           <Button variant="destructive" size="sm" className="w-full rounded-lg" onClick={onDelete}>
@@ -316,6 +313,39 @@ export function SalesInspector({
         )}
       </div>
     </aside>
+  )
+}
+
+function UrlField({
+  label = "URL / destino",
+  value,
+  readOnly,
+  onChange,
+}: {
+  label?: string
+  value: string
+  readOnly?: boolean
+  onChange: (value: string) => void
+}) {
+  const errorId = useId()
+  const dirty = Boolean(value.trim()) && !cleanHttpUrl(value)
+  return (
+    <Field label={label}>
+      <Input
+        disabled={readOnly}
+        className={BOX}
+        placeholder="https://…"
+        value={value}
+        aria-invalid={dirty}
+        aria-describedby={dirty ? errorId : undefined}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {dirty ? (
+        <p id={errorId} role="alert" className="text-[11px] leading-relaxed text-rose-600">
+          Usa um link http ou https, sem utilizador na URL.
+        </p>
+      ) : null}
+    </Field>
   )
 }
 
@@ -338,7 +368,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       {control
         ? kids.map((child, index) =>
             index === controlIndex && isValidElement(child)
-              ? cloneElement(child as ReactElement<{ id?: string }>, { id })
+              ? cloneElement(child as ReactElement<{ id?: string; "aria-invalid"?: boolean; "aria-describedby"?: string }>, { id })
               : child
           )
         : (

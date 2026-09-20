@@ -1,9 +1,24 @@
+import { cleanHttpUrl } from "./migrate.ts"
 import { isFlowKind, type FlowEdge, type FlowNode } from "./types.ts"
 
 export type PublishIssue = { message: string }
 
+export function firstInvalidPublishUrl(nodes: unknown): PublishIssue | undefined {
+  if (!Array.isArray(nodes)) return
+  for (const node of nodes) {
+    if (!node || typeof node !== "object") continue
+    const data = "data" in node && node.data && typeof node.data === "object" ? (node.data as { title?: unknown; url?: unknown }) : null
+    const url = typeof data?.url === "string" ? data.url : ""
+    if (!url.trim() || cleanHttpUrl(url)) continue
+    const title = typeof data?.title === "string" && data.title.trim() ? data.title.trim() : "Bloco"
+    return { message: `O bloco “${title}” tem um link inválido. Usa http ou https.` }
+  }
+}
+
 export function validatePublish(nodes: FlowNode[], edges: FlowEdge[]): PublishIssue[] {
   const issues: PublishIssue[] = []
+  const urlIssue = firstInvalidPublishUrl(nodes)
+  if (urlIssue) issues.push(urlIssue)
   const flow = nodes.filter((node) => isFlowKind(node.type))
   const entries = flow.filter((node) => node.type === "entry")
   if (entries.length === 0) {

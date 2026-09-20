@@ -1,24 +1,27 @@
 import { MousePointerClick, PanelsTopLeft, Megaphone } from "lucide-react"
 import { StudioMetric, StudioPanel } from "@/components/layout/studio"
-import { formatDelta } from "@/lib/analytics-view"
+import { formatDelta, pixelFigure } from "@/lib/analytics-view"
 import { facebookOf, type TrackSummary } from "@/lib/track"
 import { cn } from "@/lib/utils"
 
 export function FacebookSplit({
   summary,
   deltas,
-  ready = true,
+  status = "ok",
+  hasData = true,
 }: {
   summary: TrackSummary
   deltas?: { ads?: number; views?: number; clicks?: number }
-  ready?: boolean
+  status?: "loading" | "ok" | "error"
+  hasData?: boolean
 }) {
   const facebook = facebookOf(summary)
+  const ready = status === "ok" || hasData
   const rows = [
     {
       id: "ads",
       title: "Clique no anúncio",
-      value: ready ? facebook.adClicks : "—",
+      value: pixelFigure(status, hasData, facebook.adClicks),
       hint: "Chegaram na landing pelo Facebook.",
       tone: "blue" as const,
       icon: Megaphone,
@@ -27,7 +30,7 @@ export function FacebookSplit({
     {
       id: "views",
       title: "Page views",
-      value: ready ? facebook.pageViews : "—",
+      value: pixelFigure(status, hasData, facebook.pageViews),
       hint: "Aberturas da landing deste tráfego.",
       tone: "sky" as const,
       icon: PanelsTopLeft,
@@ -36,7 +39,7 @@ export function FacebookSplit({
     {
       id: "clicks",
       title: "Clique no Telegram",
-      value: ready ? facebook.buttonClicks : "—",
+      value: pixelFigure(status, hasData, facebook.buttonClicks),
       hint: "Tocaram no botão da página.",
       tone: "pink" as const,
       icon: MousePointerClick,

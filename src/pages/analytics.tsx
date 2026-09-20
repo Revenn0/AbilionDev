@@ -59,7 +59,8 @@ export function AnalyticsPage() {
 
         <FacebookSplit
           summary={summary}
-          ready={pixelReady}
+          status={status}
+          hasData={hasData}
           deltas={{
             ads: periodDelta(periods.facebookAds.current, periods.facebookAds.previous),
             views: periodDelta(periods.facebookViews.current, periods.facebookViews.previous),
@@ -67,7 +68,7 @@ export function AnalyticsPage() {
           }}
         />
 
-        <FunnelFlow steps={funnel} pixelReady={pixelReady} leadsReady={leadsReady} />
+        <FunnelFlow steps={funnel} status={status} hasData={hasData} leadsReady={leadsReady} />
 
         <VisitorGlobe geos={summary.geos} leads={state.leads} />
 

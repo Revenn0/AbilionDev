@@ -198,7 +198,7 @@ Estes itens dependem de credenciais ou de uma decisão humana. O código não in
 - **Notificações** na conta também são “Em breve”. O aviso da Ester no print só sai com o secret `ESTER_CHAT_ID` no Worker — um POST do CRM não define o chat. O botão Print no lead só marca o fluxo; o toast já não finge que a Ester foi avisada.
 - **Primeiro login em produção** recusa criar senha se o Worker não tiver `ABILION_OPERATOR_PASSWORD`. Localmente o primeiro acesso ainda define a senha (6+).
 - `ESTER_CHAT_ID` só é preciso se a Ester receber aviso no Telegram. O campo não existe na UI e o GET `/api/crm` não o devolve.
-- Links da Sté (markup e HTML do Telegram) recusam `javascript:` e URLs com userinfo, como o funil.
+- Links da Sté (markup e HTML do Telegram) recusam `javascript:` e URLs com userinfo, como o funil. Publicar um quadro com `javascript:` ou userinfo no `data.url` falha no painel e no POST `/api/crm` (400). O inspector marca o campo inválido. O persist ainda limpa o valor se alguém gravar só o rascunho.
 - Gravar CRM ou leads com a rede em baixo devolve erro no banner — não rebenta a Promise no browser.
 - Apagar um lead grava um tombstone no KV (`crm:removed`). O webhook e o cron não voltam a puxar essa linha do Supabase. Sem `SUPABASE_SERVICE_ROLE` isto não muda nada.
 - O índice do CRM lista 400 leads; o contacto/chat fica num alias permanente e as esperas não saem do índice. O Telegram não cria um lead novo só porque o recorte da lista encheu. Dois `/start` ao mesmo tempo no mesmo chat reivindicam o alias antes do UUID — o segundo reusa o id do primeiro.
@@ -221,7 +221,8 @@ Estes itens dependem de credenciais ou de uma decisão humana. O código não in
 - Vincular o Telegram com token válido mas webhook recusado (rede, 5xx, Bad Request) grava o token e devolve 200 com `warning`. Token `Unauthorized` continua 400 e não pisa o que já estava. O operador não precisa de colar o token outra vez para tentar de novo. Gravar só a chave da IA já não finge “Username gravado”.
 - A inbox de 5 s e o reconcile de 30 s passam por `overlayPendingLeads`: a ficha a meio do debounce não perde nota nem temperatura, e a fala nova do Telegram ainda entra. Captura e lote usam a mesma fila de flush. Nó sem `id` no POST do CRM é ignorado (já não é 500). Quadro em `/fluxo/funil/:id` com CRM em erro já não finge 404.
 - `reconcileFunnels` já não apaga um quadro só porque o POST o omitiu. Um separador velho que grava A+B não remove o C criado noutro. Apagar exige tombstone (`removedFunnelIds`). O painel ainda não faz POST `/api/crm` até o GET hidratar, para o seed local não criar um quadro a mais. Seed só sobe quando o GET veio vazio.
-- Dashboard, Analytics e Conversas mostram "—" / "…" no pixel quando a leitura ainda não veio ou falhou. Não tratam zero como dado real. Funis, leads e conversas mostram “A carregar…” enquanto o Worker ainda não respondeu — não fingem lista vazia.
+- Dashboard, Analytics e Conversas mostram "—" / "…" no pixel quando a leitura ainda não veio ou falhou. O funil Facebook e o split do ads usam o mesmo `pixelFigure` dos KPIs: "…" a carregar, "—" se a API falhou sem leitura anterior. Não tratam zero como dado real. Funis, leads e conversas mostram “A carregar…” enquanto o Worker ainda não respondeu — não fingem lista vazia.
+- `safeAppPath` só aceita rotas exactas do painel (e `/fluxo/funil/:id`). `/configuracoesfoo` não redirecciona para Configurações.
 - `/t.js` passa pelos mesmos headers de segurança do Worker (HSTS, CSP, `X-Frame-Options`). O CORS aberto fica só no pixel.
 - A ficha do lead fecha pelo botão, por Escape e pelo fundo (controlo com nome acessível). Com `prefers-reduced-motion`, animações e transições do estúdio param.
 

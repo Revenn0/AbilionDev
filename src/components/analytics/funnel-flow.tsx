@@ -1,7 +1,7 @@
 import { Megaphone, MessagesSquare, MousePointerClick, PanelsTopLeft } from "lucide-react"
 import { StudioMetric, StudioPanel, type StudioTone } from "@/components/layout/studio"
 import { formatPercent } from "@/lib/track"
-import { stepDrop, type FunnelStep } from "@/lib/analytics-view"
+import { pixelFigure, stepDrop, type FunnelStep } from "@/lib/analytics-view"
 
 const META: Record<FunnelStep["id"], { icon: typeof Megaphone; tone: StudioTone }> = {
   ads: { icon: Megaphone, tone: "blue" },
@@ -12,17 +12,20 @@ const META: Record<FunnelStep["id"], { icon: typeof Megaphone; tone: StudioTone 
 
 export function FunnelFlow({
   steps,
-  pixelReady = true,
+  status = "ok",
+  hasData = true,
   leadsReady = true,
 }: {
   steps: FunnelStep[]
-  pixelReady?: boolean
+  status?: "loading" | "ok" | "error"
+  hasData?: boolean
   leadsReady?: boolean
 }) {
+  const pixelReady = status === "ok" || hasData
   const peak = Math.max(...steps.map((item) => item.value), 1)
   const figure = (step: FunnelStep) => {
     if (step.id === "chat") return leadsReady ? step.value : "…"
-    return pixelReady ? step.value : "—"
+    return pixelFigure(status, hasData, step.value)
   }
   return (
     <StudioPanel
