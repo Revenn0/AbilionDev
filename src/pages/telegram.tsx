@@ -10,6 +10,7 @@ import { useStore } from "@/lib/store"
 import { fetchHealth, workerUrl } from "@/lib/channel"
 import { fetchRuntime, type RuntimeStatus } from "@/lib/runtime-api"
 import { adsDeepLink } from "@/lib/telegram-start"
+import { adsLandingUrl } from "@/lib/page-script"
 import { burstFacebookLeads, burstStats } from "@/lib/burst"
 import { leadsHydrating, leadsLoadFailed } from "@/lib/ops"
 import { toast } from "sonner"
@@ -32,7 +33,8 @@ export function TelegramPage() {
   const [runtime, setRuntime] = useState<RuntimeStatus | null>(null)
   const [burstLock, setBurstLock] = useState(false)
   const botName = runtime?.telegramBotUsername || settings.telegramBotUsername
-  const ads = adsDeepLink(botName)
+  const ads = adsLandingUrl()
+  const landingCta = adsDeepLink(botName)
   useHashScroll("pixel")
 
   useEffect(() => {
@@ -143,7 +145,7 @@ export function TelegramPage() {
           <article className="surface p-5">
             <p className="text-[12.5px] text-muted-foreground">Facebook hoje</p>
             <p className="mt-2 text-[18px] font-medium">{pending ? "…" : facebookToday}</p>
-            <p className="mt-2 text-[12.5px] text-muted-foreground">/start=fb no anúncio. Pico de 500–1000/dia.</p>
+            <p className="mt-2 text-[12.5px] text-muted-foreground">Landing /l. O /start fecha o visitante. Pico de 500–1000/dia.</p>
           </article>
         </section>
 
@@ -155,7 +157,11 @@ export function TelegramPage() {
           </p>
           <p className="mt-4 text-[13px]">
             Link do anúncio Facebook:{" "}
-            <span className="break-all text-muted-foreground">{ads || "configura o username do bot"}</span>
+            <span className="break-all text-muted-foreground">{ads}</span>
+          </p>
+          <p className="mt-2 text-[13px]">
+            Botão da landing:{" "}
+            <span className="break-all text-muted-foreground">{landingCta || "liga o username do bot — não coloques t.me no Ads"}</span>
           </p>
           <p className="mt-2 text-[13px]">
             Webhook: <span className="break-all text-muted-foreground">{hook}</span>

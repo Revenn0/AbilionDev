@@ -205,7 +205,7 @@ export function ConversationsPage() {
           <section className="surface grid place-items-center px-6 py-16 text-center">
             <p className="text-[14px] font-medium">Nenhuma conversa no Telegram</p>
             <p className="mt-1 max-w-md text-[13px] text-muted-foreground">
-              O anúncio do Facebook usa t.me/BOT?start=fb. /start manda as 3 boas-vindas do quadro. Sem bot, podes simular uma conversa aqui — não envia Telegram.
+              O anúncio aponta para abilion.lol/l. O pixel reescreve o Telegram com o visitante e o /start manda as 3 boas-vindas do quadro. Sem bot, podes simular uma conversa aqui — não envia Telegram.
             </p>
             <Button
               type="button"

@@ -244,12 +244,18 @@ try {
   assert(Boolean(await page.$("#page-script-name")), "pixel deixa criar script de outra página")
   assert(pixelCopy.includes("www.abilion.lol/t.js"), "telegram mostra o snippet de produção")
   assert(pixelCopy.includes("data-abilion-cta"), "telegram pede o atributo no botão")
+  const telegramCopy = await page.evaluate(() => document.body.innerText)
+  assert(telegramCopy.includes("www.abilion.lol/l"), "telegram manda o anúncio para a landing")
+  assert(!/Anúncio Facebook[:·\s]+https:\/\/t\.me/i.test(telegramCopy), "telegram não cola t.me como destino do ads")
   await open(page, "/configuracoes")
   await page.waitForSelector("#pixel", { timeout: 8_000 })
   assert(
     ((await page.$eval("#pixel", (el) => el.textContent || "")) || "").includes("www.abilion.lol/t.js"),
     "configurações mostra o snippet de produção"
   )
+  const settingsCopy = await page.evaluate(() => document.body.innerText)
+  assert(settingsCopy.includes("www.abilion.lol/l"), "configurações aponta o anúncio para a landing")
+  assert(!/Anúncio Facebook[:·\s]+https:\/\/t\.me/i.test(settingsCopy), "configurações não cola t.me como destino do ads")
 
   const cookies = await page.cookies()
   await page.deleteCookie(...cookies.filter((item) => item.name === "abilion_session"))

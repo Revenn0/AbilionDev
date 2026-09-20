@@ -12,7 +12,7 @@ Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / M
 - Áudio: mensagens grandes do funil saem como áudio da ElevenLabs. Cada clip é gerado uma vez, guardado e reutilizado. Os links continuam no texto.
 - Funil com mapa e fluxo executável, no estúdio visual claro (catálogo, quadro e propriedades). O rascunho grava sozinho e também ao sair (Voltar / fechar o separador). Publicar um funil torna-o o único quadro activo — a Sté segue o `publishedAt` mais recente. No telemóvel, toca num bloco da paleta para o adicionar. O último funil publicado não se apaga.
 - Telegram: webhook no Worker (`/api/telegram`) — /start abre a Sté
-- Facebook → Telegram: `https://t.me/BOT?start=fb` (500–1000 /start por dia)
+- Facebook → Telegram: o anúncio aponta para `https://www.abilion.lol/l` (500–1000 /start por dia). O pixel fecha o visitante no `?start=fb_{vid}`.
 - Configurações: Telegram, webhook, pixel `/t.js`. A cópia da Sté edita-se no funil publicado
 - Persistência no Worker (KV) + Supabase quando houver service role
 
@@ -107,7 +107,7 @@ O bot configura-se em Configurações. Vincular grava o token no Worker, aponta 
 
 ## Facebook → Telegram (volume)
 
-O anúncio aponta para `https://t.me/BOT?start=fb` (ou `fb_campanha`). O Worker:
+O anúncio aponta para a landing (`https://www.abilion.lol/l` ou `/l?s=ID`), não para `t.me`. O Worker:
 
 - responde 200 na hora (`waitUntil`) para o Telegram não reenviar
 - procura **um** lead por contacto / chat, sem carregar a base

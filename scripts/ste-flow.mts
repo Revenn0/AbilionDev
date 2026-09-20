@@ -93,7 +93,7 @@ import { contactLookups, normalizeTelegramContact, sameLeadContact, validateCapt
 import { displayContact, draftLeadField, formatPhoneContact, isPhoneLikeName, isResolvedPersonName, leadMatchesQuery, nameFromMessages, preferLeadName, resolveLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, migrateLeadOrigin, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink, campaignFromStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
-import { addPageScript, adsStartToken, pageInstallManual, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
+import { addPageScript, adsLandingUrl, adsStartToken, pageInstallManual, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
 import { leadFromImport, parseLeadImportLine, parseLeadImportText } from "../src/lib/lead-category.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
@@ -648,6 +648,16 @@ assert(TRACKER_JS.includes("/api/install") && TRACKER_JS.includes("fb_s") && TRA
 assert(PAGE_INSTALL_STEPS.length >= 5, "manual de instalação tem os passos")
 assert(pageInstallManual({}).snippet.includes("/t.js?v=2"), "manual geral inclui o script")
 assert(pageInstallManual({ script: { id: "deadbeef", name: "Landing", funnelId: "f1", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" } }).scriptSrc.includes("s=deadbeef"), "manual do script inclui ?s=")
+assert(adsLandingUrl() === "https://www.abilion.lol/l", "anúncio sem script vai à landing geral")
+assert(adsLandingUrl("deadbeef") === "https://www.abilion.lol/l?s=deadbeef", "anúncio com script leva ?s=")
+assert(adsLandingUrl("nao-e-id") === "https://www.abilion.lol/l", "id inválido não inventa query")
+assert(pageInstallManual({}).landing === adsLandingUrl(), "manual geral aponta o ads para /l")
+assert(
+  pageInstallManual({
+    script: { id: "deadbeef", name: "Landing", funnelId: "f1", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" },
+  }).landing === adsLandingUrl("deadbeef"),
+  "manual do script aponta o ads para /l?s="
+)
 assert(FUNNEL_CAP === 20 && !canCreateFunnel(Array.from({ length: 20 }, () => emptySalesFunnel("x"))).ok, "criar o 21.º funil é recusado")
 const twentyOne = Array.from({ length: 21 }, (_, index) => ({ ...emptySalesFunnel(`n${index}`), id: `funil-${index}` }))
 assert(reconcileFunnels([], twentyOne).length === 21, "reconcile não corta o 21.º quadro à calada")

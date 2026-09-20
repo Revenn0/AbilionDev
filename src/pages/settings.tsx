@@ -32,6 +32,7 @@ import { fetchRuntime, prepareVoice, saveRuntime, type RuntimeStatus } from "@/l
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_LLM_MODELS, normalizeSteModel } from "@/lib/llm"
 import { STE_VOICE_CLIPS } from "@/lib/ste-voice"
 import { adsDeepLink } from "@/lib/telegram-start"
+import { adsLandingUrl } from "@/lib/page-script"
 import { cn } from "@/lib/utils"
 import type { PluginId } from "@/lib/types"
 import { toast } from "sonner"
@@ -167,6 +168,7 @@ function BotPane() {
   const modelDirty = useRef(false)
   const origin = workerUrl()
   const hook = runtime.webhook || `${origin}/api/telegram`
+  const landing = adsLandingUrl()
   const ads = adsDeepLink(cleanBotUsername(username) || runtime.telegramBotUsername || state.settings.telegramBotUsername)
 
   const refresh = async () => {
@@ -248,9 +250,13 @@ function BotPane() {
             <dt className="text-muted-foreground">Webhook</dt>
             <dd className="break-all font-medium">{hook}</dd>
           </div>
+          <div className="flex flex-wrap justify-between gap-2">
+            <dt className="text-muted-foreground">Anúncio Facebook</dt>
+            <dd className="break-all font-medium">{landing}</dd>
+          </div>
           {ads && (
             <div className="flex flex-wrap justify-between gap-2">
-              <dt className="text-muted-foreground">Anúncio Facebook</dt>
+              <dt className="text-muted-foreground">Botão da landing</dt>
               <dd className="break-all font-medium">{ads}</dd>
             </div>
           )}
@@ -429,7 +435,8 @@ function BotPane() {
             </Link>
             . Publica o quadro para a Sté falar essa cópia.
           </p>
-          {ads && <p className="break-all text-[12px] text-muted-foreground">Anúncio Facebook · {ads}</p>}
+          <p className="break-all text-[12px] text-muted-foreground">Anúncio Facebook · {landing}</p>
+          {ads ? <p className="break-all text-[12px] text-muted-foreground">Botão da landing · {ads}</p> : null}
           <p className="break-all text-[12px] text-muted-foreground">Webhook · {hook}</p>
           <Button type="submit" className="rounded-full" disabled={busy}>
             {busy ? "A ligar…" : "Vincular Telegram"}

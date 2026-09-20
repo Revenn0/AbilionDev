@@ -117,6 +117,11 @@ export function removePageScript(current: PageScript[], id: string): PageScript[
   return migratePageScripts(current).filter((item) => item.id !== needle)
 }
 
+export function adsLandingUrl(scriptId = "") {
+  const id = scriptId.trim().toLowerCase()
+  return PAGE_SCRIPT_ID.test(id) ? `${ADS_ORIGIN}/l?s=${id}` : `${ADS_ORIGIN}/l`
+}
+
 export function pageScriptById(scripts: PageScript[] | undefined, id: string | undefined) {
   const needle = (id || "").trim().toLowerCase()
   if (!PAGE_SCRIPT_ID.test(needle)) return undefined
@@ -135,7 +140,7 @@ export function pageInstallManual(input: { botUsername?: string; script?: PageSc
     title: "Instalar o pixel da Abilion",
     steps: PAGE_INSTALL_STEPS.map((step) => ({ title: step.title, body: step.body })),
     snippet,
-    landing: input.script ? `${ADS_ORIGIN}/l?s=${input.script.id}` : `${ADS_ORIGIN}/l`,
+    landing: adsLandingUrl(input.script?.id),
     scriptSrc: input.script ? `${ADS_ORIGIN}/t.js?v=${PIXEL_VERSION}&s=${input.script.id}` : `${ADS_ORIGIN}/t.js?v=${PIXEL_VERSION}`,
     cta: "data-abilion-cta",
     start: input.script ? `fb_s${input.script.id}_{vid}` : "fb_{vid}",
