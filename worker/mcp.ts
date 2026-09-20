@@ -1,4 +1,4 @@
-import { applyRemovedFunnels, applyRemovedLeads, clipNewestIds, FUNNEL_CAP, publicSettings } from "../src/lib/crm.ts"
+import { applyRemovedFunnels, clipNewestIds, FUNNEL_CAP, publicSettings } from "../src/lib/crm.ts"
 import { addLeadCategory, leadFromImport, parseLeadImportText } from "../src/lib/lead-category.ts"
 import { addPageScript, pageInstallManual, pageScriptById, PAGE_SCRIPT_REMOVED_CAP, removePageScript } from "../src/lib/page-script.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
@@ -14,7 +14,7 @@ import {
   type PublicUser,
 } from "./auth.ts"
 import { handleTokens, handleUsers } from "./users.ts"
-import { importOrAdoptLead, listLeadPage, loadFunnelsKv, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge } from "./crm-store.ts"
+import { filterLiveLeads, importOrAdoptLead, listLeadPage, loadFunnelsKv, loadRemovedFunnelIds, loadSettingsKv, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge } from "./crm-store.ts"
 import { readJsonStrict } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -389,17 +389,16 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
   if (name === "abilion_list_leads") {
     if (!env.AUTH) throw new Error("Auth ainda sem KV.")
     const query = str(args.q).trim()
-    const removed = await loadRemovedLeadIds(env.AUTH)
     if (query) {
       if (query.length > 80) throw new Error("Busca inválida.")
       const found = await lookupLeadsByQuery(env.AUTH, query)
-      return { ok: true, leads: applyRemovedLeads(found, removed).slice(0, 50).map(compactLead) }
+      return { ok: true, leads: (await filterLiveLeads(env.AUTH, found)).slice(0, 50).map(compactLead) }
     }
     const limit = Math.min(50, Math.max(1, Number(args.limit) || 20))
     const page = await listLeadPage(env.AUTH, limit, "all", str(args.cursor).trim())
     return {
       ok: true,
-      leads: applyRemovedLeads(page.leads, removed).map(compactLead),
+      leads: (await filterLiveLeads(env.AUTH, page.leads)).map(compactLead),
       nextCursor: page.stale ? undefined : page.nextCursor,
       stale: page.stale || undefined,
     }

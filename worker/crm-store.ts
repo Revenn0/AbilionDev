@@ -156,7 +156,8 @@ export async function listLeadPage(
     start = at + 1
   }
   const slice = rows.slice(start, start + Math.max(1, limit))
-  const leads = (await Promise.all(slice.map((item) => loadLead(kv, item.id)))).filter((lead): lead is Lead => Boolean(lead))
+  const removed = new Set(await loadRemovedLeadIds(kv))
+  const leads = (await Promise.all(slice.map((item) => loadLead(kv, item.id, removed)))).filter((lead): lead is Lead => Boolean(lead))
   await rememberLeadNames(kv, leads)
   const last = slice.at(-1)
   return {
@@ -337,18 +338,41 @@ export async function forgetSentLead(kv: KvLike, id: string) {
   if (key) await kv.delete?.(key)
 }
 
-export async function loadLead(kv: KvLike, id: string): Promise<Lead | null> {
+async function leadIsGone(kv: KvLike, id: string, removedIds?: ReadonlySet<string>) {
+  const next = id.trim()
+  if (!next) return false
+  if (removedIds?.has(next)) return true
+  const key = goneLeadKey(next)
+  if (key && (await kv.get(key, "json"))) return true
+  if (removedIds) return false
+  return (await loadRemovedLeadIds(kv)).includes(next)
+}
+
+export async function loadLead(kv: KvLike, id: string, removedIds?: ReadonlySet<string>): Promise<Lead | null> {
+  if (await leadIsGone(kv, id, removedIds)) {
+    await forgetSentLead(kv, id)
+    return null
+  }
   const raw = await kv.get(leadKey(id), "json")
   const stored = raw && typeof raw === "object" ? migrateLead(raw as Lead) : null
   const sentRaw = await kv.get(sentLeadKey(id), "json")
   const sent = sentRaw && typeof sentRaw === "object" ? migrateLead(sentRaw as Lead) : null
-  if (sent && (await isLeadRemoved(kv, id))) {
-    await forgetSentLead(kv, id)
-    return stored
-  }
   if (!stored) return sent
   if (!sent) return stored
   return sent.updatedAt > stored.updatedAt ? sent : stored
+}
+
+export async function filterLiveLeads(kv: KvLike, leads: Lead[]): Promise<Lead[]> {
+  if (!leads.length) return leads
+  const removed = new Set(await loadRemovedLeadIds(kv))
+  const live = new Set<string>()
+  await Promise.all(
+    leads.map(async (lead) => {
+      if (!(await leadIsGone(kv, lead.id, removed))) live.add(lead.id)
+    })
+  )
+  const next = leads.filter((lead) => live.has(lead.id))
+  return next.length === leads.length ? leads : next
 }
 
 export async function listLeads(kv: KvLike, limit = 80, channel: Lead["channel"] | "all" = "telegram"): Promise<Lead[]> {
@@ -451,10 +475,7 @@ export async function loadRemovedLeadIds(kv: KvLike): Promise<string[]> {
 }
 
 export async function isLeadRemoved(kv: KvLike, id: string): Promise<boolean> {
-  const key = goneLeadKey(id)
-  if (key && (await kv.get(key, "json"))) return true
-  const next = id.trim()
-  return Boolean(next) && (await loadRemovedLeadIds(kv)).includes(next)
+  return leadIsGone(kv, id)
 }
 
 export async function rememberRemovedLead(kv: KvLike, id: string) {
@@ -616,7 +637,8 @@ export async function releaseCronLock(kv: KvLike, owner?: string) {
 export async function dueLeadsKv(kv: KvLike, nowIso: string): Promise<Lead[]> {
   const index = await loadIndex(kv)
   const ids = index.entries.filter((item) => item.waitUntil && item.waitUntil <= nowIso).map((item) => item.id)
-  const leads = await Promise.all(ids.map((id) => loadLead(kv, id)))
+  const removed = new Set(await loadRemovedLeadIds(kv))
+  const leads = await Promise.all(ids.map((id) => loadLead(kv, id, removed)))
   return leads.filter((lead): lead is Lead => Boolean(lead))
 }
 

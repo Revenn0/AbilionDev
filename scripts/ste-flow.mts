@@ -78,7 +78,7 @@ import { applyEvent, canAdvanceRemoteWait, eventFromOrigin, pickLiveDueLead, pub
 import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
-import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, deleteLeadKv, dueLeadsKv, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
@@ -2010,6 +2010,9 @@ assert(await isLeadRemoved(durableGone, "old-id"), "chave gone sobrevive ao reco
 assert((await importOrAdoptLead(durableGone, lead("old-id", "@oldgone"))) === null, "import não ressuscita id apagado")
 assert(await isLeadRemoved(durableGone, "old-id"), "import recusado não limpa o gone")
 assert((await loadLead(durableGone, "old-id")) === null, "id gone não volta pelo import")
+await durableGone.put(leadKey("old-id"), JSON.stringify(lead("old-id", "@oldgone")))
+assert((await loadLead(durableGone, "old-id")) === null, "crm:lead leftover com gone não volta")
+assert((await filterLiveLeads(durableGone, [lead("old-id", "@oldgone"), lead("vivo", "@vivo")])).map((item) => item.id).join() === "vivo", "filterLiveLeads tira o gone e deixa o vivo")
 assert((await claimLeadAlias(durableGone, "contact", "@oldgone", "fresh-id")) === "fresh-id", "alias de id gone cede o contacto")
 const olderIdx = { id: "a", contact: "@a", updatedAt: "2020-01-01T00:00:00.000Z", channel: "telegram" as const }
 const newerIdx = { id: "a", contact: "@a", updatedAt: "2026-01-01T00:00:00.000Z", channel: "telegram" as const }
@@ -3807,33 +3810,32 @@ const ghostEnv = {
   ABILION_ENV: "development",
 } as Env
 await deleteLeadKv(ghostEnv.AUTH, ghostDue.id)
+await ghostEnv.AUTH.put(CRM_REMOVED, JSON.stringify({ ids: [] }))
+assert(!(await loadRemovedLeadIds(ghostEnv.AUTH)).includes(ghostDue.id), "lista do ghost rolou")
+assert(await isLeadRemoved(ghostEnv.AUTH, ghostDue.id), "gone do ghost sobrevive à lista")
+const ghostRow = {
+  id: ghostDue.id,
+  name: ghostDue.name,
+  contact: ghostDue.contact,
+  channel: ghostDue.channel,
+  campaign: ghostDue.campaign,
+  origin: ghostDue.origin,
+  temperature: ghostDue.temperature,
+  stage: ghostDue.stage,
+  memory: ghostDue.memory,
+  facts: {},
+  events: [],
+  messages: [],
+  telegram_chat_id: ghostDue.telegramChatId,
+  wait_until: ghostDue.waitUntil,
+  updated_at: ghostDue.updatedAt,
+  created_at: ghostDue.createdAt,
+}
 const ghostFetch = globalThis.fetch
 globalThis.fetch = (async (input: RequestInfo | URL) => {
   const url = String(input)
   if (url.includes("/rest/v1/leads") && url.includes("wait_until")) {
-    return new Response(
-      JSON.stringify([
-        {
-          id: ghostDue.id,
-          name: ghostDue.name,
-          contact: ghostDue.contact,
-          channel: ghostDue.channel,
-          campaign: ghostDue.campaign,
-          origin: ghostDue.origin,
-          temperature: ghostDue.temperature,
-          stage: ghostDue.stage,
-          memory: ghostDue.memory,
-          facts: {},
-          events: [],
-          messages: [],
-          telegram_chat_id: ghostDue.telegramChatId,
-          wait_until: ghostDue.waitUntil,
-          updated_at: ghostDue.updatedAt,
-          created_at: ghostDue.createdAt,
-        },
-      ]),
-      { status: 200, headers: { "content-type": "application/json" } }
-    )
+    return new Response(JSON.stringify([ghostRow]), { status: 200, headers: { "content-type": "application/json" } })
   }
   return new Response("[]", { status: 200, headers: { "content-type": "application/json" } })
 }) as typeof fetch
@@ -3844,6 +3846,96 @@ try {
   assert((await loadLead(ghostEnv.AUTH, ghostDue.id)) === null, "cron nao ressuscita lead apagado")
 } finally {
   globalThis.fetch = ghostFetch
+}
+
+const goneRemote = lead("gone-remote", "@goneremote")
+goneRemote.telegramChatId = "9901"
+const goneRemoteKv = memoryKv()
+await rememberRemovedLead(goneRemoteKv, goneRemote.id)
+await goneRemoteKv.put(CRM_REMOVED, JSON.stringify({ ids: [] }))
+const goneRemoteEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://example.supabase.co",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: goneRemoteKv,
+  TELEGRAM_WEBHOOK_SECRET: "hook-secret",
+  TELEGRAM_BOT_TOKEN: "000:gone",
+  CRON_SECRET: "cron",
+  ABILION_ENV: "development",
+} as Env
+const goneRemoteRow = {
+  id: goneRemote.id,
+  name: goneRemote.name,
+  contact: goneRemote.contact,
+  channel: "telegram",
+  campaign: goneRemote.campaign,
+  origin: goneRemote.origin,
+  temperature: "novo",
+  stage: "welcome",
+  memory: "nota antiga",
+  facts: {},
+  messages: [{ id: "old-ste", at: goneRemote.updatedAt, role: "ste", text: "fala antiga" }],
+  telegram_chat_id: "9901",
+  updated_at: goneRemote.updatedAt,
+  created_at: goneRemote.createdAt,
+  wait_until: new Date(Date.now() - 2000).toISOString(),
+}
+const goneRemotePrev = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL) => {
+  const url = String(input)
+  if (url.includes("api.telegram.org")) {
+    return new Response(JSON.stringify({ ok: true }), { status: 200 })
+  }
+  if (url.includes("/rest/v1/leads")) {
+    return new Response(JSON.stringify([goneRemoteRow]), { status: 200, headers: { "content-type": "application/json" } })
+  }
+  return new Response("[]", { status: 200, headers: { "content-type": "application/json" } })
+}) as typeof fetch
+try {
+  const goneHookCtx = backgroundCtx()
+  assert(
+    (
+      await handleRequest(
+        new Request("http://local.test/api/telegram", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+          body: JSON.stringify({
+            update_id: 8801,
+            message: {
+              chat: { id: 9901 },
+              text: "/start fb_gone",
+              from: { id: 9901, username: "goneremote", first_name: "Gil" },
+            },
+          }),
+        }),
+        goneRemoteEnv,
+        goneHookCtx
+      )
+    ).status === 200,
+    "webhook do id gone ainda é 200"
+  )
+  await goneHookCtx.flush()
+  assert((await loadLead(goneRemoteKv, "gone-remote")) === null, "webhook não ressuscita id gone do Supabase")
+  const revived = await findLeadInKv(goneRemoteKv, "@goneremote", 9901, "9901")
+  assert(!revived || revived.id !== "gone-remote", "webhook não reusa o id apagado")
+  const goneLogin = await handleRequest(
+    new Request("http://local.test/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+    }),
+    goneRemoteEnv,
+    backgroundCtx()
+  )
+  assert(goneLogin.status === 200, "login para GET do gone remoto")
+  const goneCookie = goneLogin.headers.get("set-cookie") || ""
+  const goneList = (await (
+    await handleRequest(new Request("http://local.test/api/leads", { headers: { cookie: goneCookie } }), goneRemoteEnv, backgroundCtx())
+  ).json()) as { leads?: Array<{ id?: string; memory?: string }> }
+  assert(!goneList.leads?.some((item) => item.id === "gone-remote"), "GET não devolve id gone do Supabase")
+  assert(!goneList.leads?.some((item) => item.memory === "nota antiga"), "GET não devolve a ficha apagada do Supabase")
+} finally {
+  globalThis.fetch = goneRemotePrev
 }
 
 const nativeImport = importFunnel({

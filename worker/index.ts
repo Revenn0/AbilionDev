@@ -34,6 +34,7 @@ import { kvTrackStore, memoryTrackStore, readTrackBody, recordTrack, summaryFrom
 import {
   deleteLeadKv,
   dueLeadsKv,
+  filterLiveLeads,
   findLeadInKv,
   lookupLeadsByQuery,
   isLeadPageCursor,
@@ -457,8 +458,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (query) {
       if (query.length > 80) return json({ error: "Busca inválida." }, 400)
       const found = await lookupLeadsByQuery(env.AUTH, query)
-      const removed = await loadRemovedLeadIds(env.AUTH)
-      const leads = await attachLeadEvents(env, applyRemovedLeads(found, removed))
+      const leads = await attachLeadEvents(env, await filterLiveLeads(env.AUTH, found))
       return json({ ok: true, leads })
     }
     const cursor = (url.searchParams.get("cursor") || "").trim()
@@ -699,7 +699,9 @@ async function processWaits(env: Env) {
     const restRows = (await rest<LeadRow[]>(env, `leads?workspace_id=eq.${WORKSPACE}&wait_until=lte.${now}&select=*`)) ?? []
     const kvDue = env.AUTH ? await dueLeadsKv(env.AUTH, now) : []
     const removed = env.AUTH ? await loadRemovedLeadIds(env.AUTH) : []
-    const byId = new Map(adoptDueLeads(kvDue, restRows.map(rowToLead), removed).map((lead) => [lead.id, lead]))
+    const adopted = adoptDueLeads(kvDue, restRows.map(rowToLead), removed)
+    const liveDue = env.AUTH ? await filterLiveLeads(env.AUTH, adopted) : adopted
+    const byId = new Map(liveDue.map((lead) => [lead.id, lead]))
     if (!byId.size) return 0
     const funnels = await loadFunnels(env)
     const settings = await loadSettings(env)
@@ -849,7 +851,10 @@ async function loadSettings(env: Env): Promise<Settings> {
 
 async function findLead(env: Env, contact: string, telegramId: number, chatId: string): Promise<Lead | null> {
   const kvLead = env.AUTH ? await findLeadInKv(env.AUTH, contact, telegramId, chatId) : null
-  if (kvLead) return kvLead
+  if (kvLead) {
+    if (env.AUTH && (await isLeadRemoved(env.AUTH, kvLead.id))) return null
+    return kvLead
+  }
   const filter = [
     `contact.eq.${quote(contact)}`,
     `contact.eq.${quote(`tg:${telegramId}`)}`,
@@ -857,6 +862,8 @@ async function findLead(env: Env, contact: string, telegramId: number, chatId: s
   ].join(",")
   const rows = (await rest<LeadRow[]>(env, `leads?workspace_id=eq.${WORKSPACE}&or=(${filter})&select=*&limit=1`)) ?? []
   if (!rows[0]) return null
+  const hydratedId = rows[0].id
+  if (env.AUTH && hydratedId && (await isLeadRemoved(env.AUTH, hydratedId))) return null
   const removed = env.AUTH ? await loadRemovedLeadIds(env.AUTH) : []
   const [hydrated] = await attachLeadEvents(env, [rowToLead(rows[0])])
   return resolveLeadLookup(null, hydrated, removed)
@@ -946,8 +953,9 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
   const remote = applyRemovedLeads(rows.map(rowToLead), removed)
   const keep = new Set(kv.map((lead) => lead.id))
   const scoped = kv.length || cursor ? remote.filter((lead) => keep.has(lead.id)) : remote
+  const live = env.AUTH ? await filterLiveLeads(env.AUTH, scoped) : scoped
   return {
-    leads: adoptLeadStores(kv, await attachLeadEvents(env, scoped)).slice(0, limit),
+    leads: adoptLeadStores(kv, await attachLeadEvents(env, live)).slice(0, limit),
     nextCursor: page.stale ? undefined : page.nextCursor,
     stale: page.stale,
   }
@@ -956,9 +964,13 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
 async function removeLead(env: Env, id: string) {
   if (env.AUTH) await deleteLeadKv(env.AUTH, id)
   if (!env.SUPABASE_SERVICE_ROLE) return
-  const leadGone = await rest(env, `leads?id=eq.${encodeURIComponent(id)}&workspace_id=eq.${WORKSPACE}`, { method: "DELETE" })
-  const eventsGone = await rest(env, `lead_events?lead_id=eq.${encodeURIComponent(id)}`, { method: "DELETE" })
-  if (leadGone === null || eventsGone === null) console.error("supabase delete incompleto")
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const leadGone = await rest(env, `leads?id=eq.${encodeURIComponent(id)}&workspace_id=eq.${WORKSPACE}`, { method: "DELETE" })
+    const eventsGone = await rest(env, `lead_events?lead_id=eq.${encodeURIComponent(id)}`, { method: "DELETE" })
+    if (leadGone !== null && eventsGone !== null) return
+    if (attempt < 3) await sleep(40 * (attempt + 1))
+  }
+  console.error("supabase delete incompleto")
 }
 
 async function persistLeadAfterSend(env: Env, lead: Lead) {
