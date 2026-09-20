@@ -398,13 +398,13 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!parsed.ok) return jsonReadError(parsed)
     const body = parsed.value
     const rows = (body.leads?.length ? body.leads : body.lead ? [body.lead] : []).slice(0, 120)
+    const removed = await loadRemovedLeadIds(env.AUTH)
     let saved = 0
     for (const row of rows) {
       const lead = sanitizeIncomingLead(row)
-      if (!lead) continue
-      const prev = env.AUTH ? await loadLead(env.AUTH, lead.id) : null
-      await saveLead(env, adoptOperatorLead(prev, lead))
-      saved += 1
+      if (!lead || removed.includes(lead.id)) continue
+      const prev = await loadLead(env.AUTH, lead.id)
+      if (await saveLead(env, adoptOperatorLead(prev, lead))) saved += 1
     }
     return json({ ok: true, saved })
   }
@@ -825,13 +825,15 @@ async function removeLead(env: Env, id: string) {
 
 async function saveLead(env: Env, lead: Lead) {
   let bounded = sanitizeIncomingLead(lead)
-  if (!bounded) return
+  if (!bounded) return false
   if (env.AUTH) {
+    const removed = await loadRemovedLeadIds(env.AUTH)
+    if (removed.includes(bounded.id)) return false
     const prev = await loadLead(env.AUTH, bounded.id)
     bounded = prev ? adoptStoredLead(prev, bounded) : bounded
     await upsertLeadKv(env.AUTH, bounded)
   }
-  if (!env.SUPABASE_SERVICE_ROLE) return
+  if (!env.SUPABASE_SERVICE_ROLE) return true
   await rest(env, "leads", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates" },
@@ -883,6 +885,7 @@ async function saveLead(env: Env, lead: Lead) {
       ),
     })
   }
+  return true
 }
 
 async function rest<T>(env: Env, path: string, init?: RequestInit): Promise<T | null> {

@@ -89,7 +89,9 @@ export function SalesCanvas({
   const [cursor, setCursor] = useState<string | undefined>()
   const [mobilePanel, setMobilePanel] = useState<"none" | "blocks" | "props">("none")
   const [publishError, setPublishError] = useState("")
+  const [saving, setSaving] = useState(false)
   const keepDropSelection = useRef(false)
+  const persistLock = useRef(false)
   const didFit = useRef(false)
   const skipAutoSave = useRef(true)
   const dirty = useRef(false)
@@ -315,25 +317,32 @@ export function SalesCanvas({
             size="sm"
             variant="outline"
             className="h-8 rounded-full border-slate-200 bg-white text-[12px] text-slate-700 hover:bg-slate-50"
-            disabled={readOnly}
+            disabled={readOnly || saving}
             onClick={() => {
+              if (persistLock.current) return
+              persistLock.current = true
+              setSaving(true)
               persist()
-              void (onFlush?.() ?? Promise.resolve({ ok: true as const, queued: false as boolean | undefined, error: undefined as string | undefined })).then(
-                (result) => {
+              void (onFlush?.() ?? Promise.resolve({ ok: true as const, queued: false as boolean | undefined, error: undefined as string | undefined }))
+                .then((result) => {
                   if (result.ok && result.queued) toast.message("Rascunho no painel. A gravar no Worker…")
                   else if (result.ok) toast.success("Rascunho salvo.")
                   else toast.error(result.error || "Não gravei o rascunho no Worker.")
-                }
-              )
+                })
+                .finally(() => {
+                  persistLock.current = false
+                  setSaving(false)
+                })
             }}
           >
-            Salvar rascunho
+            {saving ? "A gravar…" : "Salvar rascunho"}
           </Button>
           <Button
             size="sm"
             className="h-8 rounded-full bg-[#2f6bff] text-[12px] text-white hover:bg-[#2458d6]"
-            disabled={readOnly}
+            disabled={readOnly || saving}
             onClick={() => {
+              if (persistLock.current) return
               const draftNodes = nodes.map((n) => ({
                 id: n.id,
                 type: (n.type as SalesKind) || "message",
@@ -352,6 +361,8 @@ export function SalesCanvas({
                 toast.error(issues[0].message)
                 return
               }
+              persistLock.current = true
+              setSaving(true)
               setPublishError("")
               const snap: SalesSnapshot = {
                 name,
@@ -364,23 +375,28 @@ export function SalesCanvas({
               setProduction(snap)
               persist(snap, "active")
               const pending = onFlush?.() ?? Promise.resolve({ ok: true, queued: false as boolean | undefined, error: undefined as string | undefined })
-              void pending.then((result) => {
-                if (result.ok && result.queued) {
-                  toast.message("Publicado no painel. A gravar no Worker…")
-                  return
-                }
-                if (result.ok) {
-                  toast.success("Fluxo publicado. Isto é o que corre.")
-                  return
-                }
-                setProduction(previous ?? null)
-                persist(previous ?? null, previousStatus)
-                setPublishError(result.error || "Não publiquei no Worker.")
-                toast.error(result.error || "Não publiquei no Worker.")
-              })
+              void pending
+                .then((result) => {
+                  if (result.ok && result.queued) {
+                    toast.message("Publicado no painel. A gravar no Worker…")
+                    return
+                  }
+                  if (result.ok) {
+                    toast.success("Fluxo publicado. Isto é o que corre.")
+                    return
+                  }
+                  setProduction(previous ?? null)
+                  persist(previous ?? null, previousStatus)
+                  setPublishError(result.error || "Não publiquei no Worker.")
+                  toast.error(result.error || "Não publiquei no Worker.")
+                })
+                .finally(() => {
+                  persistLock.current = false
+                  setSaving(false)
+                })
             }}
           >
-            Publicar
+            {saving ? "A gravar…" : "Publicar"}
           </Button>
         </div>
         {publishError ? (

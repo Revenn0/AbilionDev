@@ -197,6 +197,27 @@ export function leadsStillOnRemote(removedIds: Iterable<string>, remote: Array<{
   return remote.filter((item) => drop.has(item.id)).map((item) => item.id)
 }
 
+/** GET do CRM não pisa username/grupo/plugins ainda por gravar nesta sessão. */
+export function adoptHydrateSettings(
+  local: Settings,
+  remote: Partial<Settings> | undefined,
+  dirty: boolean,
+  runtime: { telegramBotUsername?: string; telegramGroupUrl?: string; telegram?: boolean; ok?: boolean }
+): Settings {
+  return {
+    ...local,
+    ...(remote && !dirty ? remote : {}),
+    telegramBotToken: "",
+    telegramBotUsername: dirty ? local.telegramBotUsername : runtime.telegramBotUsername || local.telegramBotUsername,
+    telegramGroupUrl: dirty ? local.telegramGroupUrl : runtime.telegramGroupUrl || local.telegramGroupUrl,
+    plugins: {
+      ...local.plugins,
+      ...(remote?.plugins && !dirty ? remote.plugins : {}),
+      telegram: dirty ? local.plugins.telegram : runtime.ok ? Boolean(runtime.telegram) : local.plugins.telegram,
+    },
+  }
+}
+
 export function mergeLeadEvents(local: LeadEvent[], remote: LeadEvent[], cap = 80): LeadEvent[] {
   if (!remote.length) return local
   if (!local.length) return remote.slice(-cap)

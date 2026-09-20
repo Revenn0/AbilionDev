@@ -4,6 +4,7 @@ import { clearSessionExpired, noteSessionExpired, subscribeSessionExpired } from
 import { toast } from "sonner"
 import {
   activatePublishedFunnels,
+  adoptHydrateSettings,
   adoptOperatorLead,
   applyRemovedFunnels,
   applyRemovedLeads,
@@ -31,6 +32,7 @@ const REMOVED_LEADS = "abilion.dev.removed-leads"
 const REMOVED_FUNNELS = "abilion.dev.removed-funnels"
 const PENDING_LEADS = "abilion.dev.pending-leads"
 const PENDING_FUNNELS = "abilion.dev.pending-funnels"
+const PENDING_SETTINGS = "abilion.dev.pending-settings"
 
 const empty: AppState = {
   user: null,
@@ -80,6 +82,23 @@ function loadIdSet(key: string): Set<string> {
 function persistIdSet(key: string, ids: Set<string>) {
   try {
     localStorage.setItem(key, JSON.stringify([...ids].slice(0, 400)))
+  } catch {
+    /* quota */
+  }
+}
+
+function loadFlag(key: string) {
+  try {
+    return localStorage.getItem(key) === "1"
+  } catch {
+    return false
+  }
+}
+
+function persistFlag(key: string, on: boolean) {
+  try {
+    if (on) localStorage.setItem(key, "1")
+    else localStorage.removeItem(key)
   } catch {
     /* quota */
   }
@@ -147,15 +166,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const removedFunnelIds = useRef(loadIdSet(REMOVED_FUNNELS))
   const removedLeadIds = useRef(loadIdSet(REMOVED_LEADS))
   const crmHydrated = useRef(false)
-  const settingsDirty = useRef(false)
+  const settingsDirty = useRef(loadFlag(PENDING_SETTINGS))
   const lastGoodFunnels = useRef<SalesFunnel[]>([])
   const stateRef = useRef(state)
+  const leadFlushRef = useRef(Promise.resolve(true))
 
   const flushLeadWrites = (): Promise<boolean> => {
     window.clearTimeout(leadWriteTimer.current)
     const batch = [...pendingLeadWrites.current.values()].filter((lead) => !removedLeadIds.current.has(lead.id))
-    if (!batch.length) return Promise.resolve(true)
-    return persistLeads(batch).then((ok) => {
+    if (!batch.length) return leadFlushRef.current
+    const pending = persistLeads(batch).then((ok) => {
       const raced = batch.filter((lead) => removedLeadIds.current.has(lead.id))
       if (raced.length) void Promise.all(raced.map((lead) => removeRemoteLead(lead.id)))
       if (ok) {
@@ -169,6 +189,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setPersistSync(ok ? "ok" : "error")
       return ok
     })
+    leadFlushRef.current = pending
+    return pending
   }
 
   const flushRemovedLeads = (ids: string[]) => {
@@ -212,6 +234,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         pendingFunnelIds.current.clear()
         persistIdSet(PENDING_FUNNELS, pendingFunnelIds.current)
         settingsDirty.current = false
+        persistFlag(PENDING_SETTINGS, false)
         lastGoodFunnels.current = current.funnels
       } else {
         const reverted = revertPublishedFunnels(stateRef.current.funnels, lastGoodFunnels.current)
@@ -300,7 +323,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           for (const id of pendingSeedFunnelIds(remoteFunnels, funnels)) pendingFunnelIds.current.add(id)
           for (const id of recoverPendingFunnelIds(funnels, remoteFunnels)) pendingFunnelIds.current.add(id)
         }
-        const remoteSettings = crm.ok && crm.settings && !settingsDirty.current ? migrateSettings({ ...crm.settings, telegramBotToken: "" }) : {}
+        const remoteSettings =
+          crm.ok && crm.settings && !settingsDirty.current ? migrateSettings({ ...crm.settings, telegramBotToken: "" }) : undefined
         const next = {
           ...prev,
           funnels,
@@ -316,18 +340,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               : prev.leads,
             pendingLeadWrites.current
           ),
-          settings: {
-            ...prev.settings,
-            ...remoteSettings,
-            telegramBotToken: "",
-            telegramBotUsername: runtime.telegramBotUsername || prev.settings.telegramBotUsername,
-            telegramGroupUrl: runtime.telegramGroupUrl || prev.settings.telegramGroupUrl,
-            plugins: {
-              ...prev.settings.plugins,
-              ...(crm.ok && crm.settings?.plugins && !settingsDirty.current ? crm.settings.plugins : {}),
-              telegram: runtime.ok ? Boolean(runtime.telegram) : prev.settings.plugins.telegram,
-            },
-          },
+          settings: adoptHydrateSettings(prev.settings, remoteSettings, settingsDirty.current, runtime),
         }
         stateRef.current = next
         if (crm.ok) lastGoodFunnels.current = funnels
@@ -576,13 +589,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         persistIdSet(REMOVED_LEADS, removedLeadIds.current)
         const prev = stateRef.current
         commitState({ ...prev, leads: prev.leads.filter((item) => item.id !== id) })
-        return removeRemoteLead(id).then((ok) => {
+        return leadFlushRef.current.then(() => removeRemoteLead(id)).then((ok) => {
           setPersistSync(ok ? "ok" : "error")
           return ok
         })
       },
       saveSettings: (patch) => {
         settingsDirty.current = true
+        persistFlag(PENDING_SETTINGS, true)
         const prev = stateRef.current
         commitState({
           ...prev,

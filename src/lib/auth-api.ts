@@ -25,7 +25,10 @@ export function logoutRequest() {
 }
 
 export function meRequest() {
-  return parse<{ user: User | null }>(fetch("/api/auth/me", { credentials: "include", cache: "no-store" }))
+  return parse<{ user: User | null }>(
+    fetch("/api/auth/me", { credentials: "include", cache: "no-store" }),
+    true
+  )
 }
 
 export function forgotPasswordRequest(email: string) {

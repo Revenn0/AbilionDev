@@ -39,6 +39,7 @@ import {
   applyRemovedFunnels,
   applyRemovedLeads,
   leadsStillOnRemote,
+  adoptHydrateSettings,
   canDeleteFunnel,
   canFlushCrm,
   clipRemovedIds,
@@ -722,6 +723,37 @@ assert(
   ).length === 0,
   "funil só local sem pending não entra na fila — o tombstone do outro operador manda"
 )
+const dirtyLocal = {
+  ...defaultSettings,
+  telegramBotUsername: "@novo",
+  telegramGroupUrl: "https://t.me/grupo",
+  plugins: { ...defaultSettings.plugins, telegram: true, forms: true },
+}
+const staleRemote = {
+  ...defaultSettings,
+  telegramBotUsername: "@velho",
+  telegramGroupUrl: "https://t.me/old",
+  plugins: { ...defaultSettings.plugins, telegram: false, reports: true },
+}
+const keptDirty = adoptHydrateSettings(dirtyLocal, staleRemote, true, {
+  ok: true,
+  telegram: false,
+  telegramBotUsername: "@runtime",
+  telegramGroupUrl: "https://t.me/rt",
+})
+assert(keptDirty.telegramBotUsername === "@novo", "settings sujo não pisa o username local")
+assert(keptDirty.telegramGroupUrl === "https://t.me/grupo", "settings sujo não pisa o grupo local")
+assert(keptDirty.plugins.telegram === true && keptDirty.plugins.forms === true, "settings sujo não pisa os plugins locais")
+assert(!keptDirty.plugins.reports, "settings sujo não adopta plugin remoto")
+const adoptedClean = adoptHydrateSettings(dirtyLocal, staleRemote, false, {
+  ok: true,
+  telegram: true,
+  telegramBotUsername: "@runtime",
+  telegramGroupUrl: "https://t.me/rt",
+})
+assert(adoptedClean.telegramBotUsername === "@runtime", "runtime ganha username quando o CRM já gravou")
+assert(adoptedClean.plugins.reports, "settings limpo adopta plugin remoto")
+assert(adoptedClean.plugins.telegram === true, "runtime ganha o plugin telegram quando o CRM já gravou")
 const olderLead = lead("merge-1")
 olderLead.updatedAt = "2020-01-01T00:00:00.000Z"
 olderLead.events = [{ id: "ev-1", at: olderLead.updatedAt, kind: "entered", title: "entrou" }]
@@ -2263,6 +2295,51 @@ assert(
   ).status === 400,
   "DELETE com id longo é 400"
 )
+const zombie = lead("zombie", "@zombie")
+zombie.memory = "apagar"
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/leads", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: liveCookie },
+        body: JSON.stringify({ lead: zombie }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 200,
+  "POST cria o lead que vai ser apagado"
+)
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/leads?id=zombie", { method: "DELETE", headers: { cookie: liveCookie } }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 200,
+  "DELETE do lead tombstoneia"
+)
+assert((await loadLead(liveEnv.AUTH, "zombie")) === null, "lead apagado some do KV")
+assert((await loadRemovedLeadIds(liveEnv.AUTH)).includes("zombie"), "DELETE grava tombstone")
+const zombieBack = await handleRequest(
+  new Request("http://local.test/api/leads", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: liveCookie },
+    body: JSON.stringify({ lead: { ...zombie, memory: "ressuscita", updatedAt: new Date().toISOString() } }),
+  }),
+  liveEnv,
+  backgroundCtx()
+)
+const zombieSaved = (await zombieBack.json()) as { ok?: boolean; saved?: number }
+assert(zombieBack.status === 200 && zombieSaved.saved === 0, "POST depois do DELETE não conta o lead apagado")
+assert((await loadLead(liveEnv.AUTH, "zombie")) === null, "POST atrasado não ressuscita lead apagado")
+assert((await loadRemovedLeadIds(liveEnv.AUTH)).includes("zombie"), "POST atrasado não limpa o tombstone")
+const listedAfterZombie = (await (
+  await handleRequest(new Request("http://local.test/api/leads", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
+).json()) as { leads?: Array<{ id?: string }> }
+assert(!listedAfterZombie.leads?.some((item) => item.id === "zombie"), "GET não devolve lead tombstoned")
 const hugeCrm = await handleRequest(
   new Request("http://local.test/api/crm", {
     method: "POST",
