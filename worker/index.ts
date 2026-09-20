@@ -464,25 +464,31 @@ async function processWaits(env: Env) {
   const { resolved } = await runtimeOf(env)
   const token = resolved.telegramBotToken
   const due = dueWaits([...byId.values()])
+  let advanced = 0
   for (const lead of due) {
-    if (isSteWait(lead)) {
-      const talked = advanceSteIfDue(lead, Date.now(), ste)
-      if (token && lead.telegramChatId) await sendSteReplies(env, token, lead.telegramChatId, talked.replies, talked.beat)
-      await saveLead(env, talked.lead)
+    try {
+      if (isSteWait(lead)) {
+        const talked = advanceSteIfDue(lead, Date.now(), ste)
+        if (token && lead.telegramChatId) await sendSteReplies(env, token, lead.telegramChatId, talked.replies, talked.beat)
+        await saveLead(env, talked.lead)
+      } else {
+        const result = applyEvent(snapshot, lead, { type: "timer" }, Date.now())
+        await saveLead(env, result.lead)
+        for (const effect of result.effects) {
+          if (effect.kind === "offer" && token && lead.telegramChatId) {
+            await telegram(token, "sendMessage", { chat_id: lead.telegramChatId, text: effect.body || "Oferta do produto" })
+          }
+          if (effect.kind === "notify_ester" && token) {
+            await notifyEster(env, token, effect.body, settings)
+          }
+        }
+      }
+      advanced += 1
+    } catch {
       continue
     }
-    const result = applyEvent(snapshot, lead, { type: "timer" }, Date.now())
-    await saveLead(env, result.lead)
-    for (const effect of result.effects) {
-      if (effect.kind === "offer" && token && lead.telegramChatId) {
-        await telegram(token, "sendMessage", { chat_id: lead.telegramChatId, text: effect.body || "Oferta do produto" })
-      }
-      if (effect.kind === "notify_ester" && token) {
-        await notifyEster(env, token, effect.body, settings)
-      }
-    }
   }
-  return due.length
+  return advanced
 }
 
 async function notifyEster(env: Env, token: string, body: string, settings: Settings) {
@@ -771,15 +777,19 @@ async function sendSteReplies(env: Env, token: string, chatId: string, replies: 
 }
 
 async function telegram(token: string, method: string, body: Record<string, unknown>) {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    })
-    if (res.status !== 429) return
-    const retryAfter = Number(res.headers.get("retry-after") ?? "1")
-    await sleep(Math.min(Math.max(retryAfter, 1), 8) * 1000)
+  try {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      if (res.status !== 429) return
+      const retryAfter = Number(res.headers.get("retry-after") ?? "1")
+      await sleep(Math.min(Math.max(retryAfter, 1), 8) * 1000)
+    }
+  } catch {
+    return
   }
 }
 

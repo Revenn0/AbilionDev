@@ -798,6 +798,17 @@ const downEnv = {
 } as Env
 const downCrm = await handleRequest(new Request("http://local.test/api/crm", { headers: { cookie: liveCookie } }), downEnv, backgroundCtx())
 assert(downCrm.status === 200, "CRM lê o KV se o Supabase cair")
+const cronEnv = { ...liveEnv, CRON_SECRET: "cron" } as Env
+await upsertLeadKv(cronEnv.AUTH, {
+  ...lead("due-cron"),
+  channel: "telegram",
+  waitUntil: new Date(Date.now() - 2000).toISOString(),
+  memory: "ste:remarketing",
+  stePhase: "offer",
+})
+const cronRes = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), cronEnv, backgroundCtx())
+const cronBody = (await cronRes.json()) as { ok?: boolean; advanced?: number }
+assert(cronRes.status === 200 && cronBody.ok && (cronBody.advanced ?? 0) >= 1, "cron avança espera vencida")
 
 const inboxLead = simulateOpenLead([emptySalesFunnel("inbox")])
 assert(!inboxLead.steBlocked && !inboxLead.steQuiet, "simular conversa não encerra")
