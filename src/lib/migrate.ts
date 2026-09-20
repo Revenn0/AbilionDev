@@ -141,20 +141,28 @@ function sanitizeGraph(nodes: unknown, edges: unknown) {
 
 function clipFunnel(funnel: SalesFunnel): SalesFunnel {
   const clipNodes = (nodes: SalesFunnel["nodes"]) =>
-    nodes.slice(0, 200).map((node) => ({
-      ...node,
-      id: node.id.slice(0, 80),
-      data: {
-        ...node.data,
-        title: (node.data.title || "Bloco").slice(0, 80),
-        tag: clipText(node.data.tag, 40),
-        url: cleanHttpUrl(node.data.url) || undefined,
-        body: clipText(node.data.body, 4000),
-        cta: clipText(node.data.cta, 80),
-        conditionValue: clipText(node.data.conditionValue, 80),
-        delayHours: node.data.delayHours === undefined ? undefined : clipDelayHours(node.data.delayHours),
-      },
-    }))
+    nodes.slice(0, 200).flatMap((node) => {
+      if (!node || typeof node !== "object" || typeof node.id !== "string") return []
+      const id = node.id.trim().slice(0, 80)
+      if (!id) return []
+      const data = node.data && typeof node.data === "object" ? node.data : { title: "Bloco" }
+      return [
+        {
+          ...node,
+          id,
+          data: {
+            ...data,
+            title: (data.title || "Bloco").slice(0, 80),
+            tag: clipText(data.tag, 40),
+            url: cleanHttpUrl(data.url) || undefined,
+            body: clipText(data.body, 4000),
+            cta: clipText(data.cta, 80),
+            conditionValue: clipText(data.conditionValue, 80),
+            delayHours: data.delayHours === undefined ? undefined : clipDelayHours(data.delayHours),
+          },
+        },
+      ]
+    })
   return {
     ...funnel,
     name: funnel.name.slice(0, 80),

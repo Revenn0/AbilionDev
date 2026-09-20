@@ -259,7 +259,9 @@ function BotPane() {
                   plugins: { ...state.settings.plugins, telegram: Boolean(next.telegram) },
                 })
                 if (next.warning) toast.warning(next.warning)
-                else toast.success(next.telegram ? "Telegram ligado no Worker." : "Username gravado. Falta o token.")
+                else if (next.telegram) toast.success("Telegram ligado no Worker.")
+                else if (cleanUser) toast.success("Username gravado. Falta o token.")
+                else toast.success("Runtime gravado no Worker.")
               })
               .catch((error: Error) => {
                 toast.error(error.message)

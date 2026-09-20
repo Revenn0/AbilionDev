@@ -1,6 +1,8 @@
-import { useParams } from "react-router-dom"
+import { Link, useParams } from "react-router-dom"
 import { SalesCanvas } from "@/components/sales/canvas"
+import { HydratePanel } from "@/components/layout/hydrate-panel"
 import { SyncBanner } from "@/components/layout/sync-banner"
+import { Button } from "@/components/ui/button"
 import { NotFoundPage } from "@/pages/not-found"
 import { useStore } from "@/lib/store"
 
@@ -13,6 +15,22 @@ export function FunnelEditorPage() {
     return (
       <div className="grid h-full place-items-center bg-background" role="status" aria-live="polite">
         <p className="text-[13px] text-muted-foreground">A carregar o quadro…</p>
+      </div>
+    )
+  }
+
+  if (!funnel && crmSync === "error") {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <SyncBanner items={[{ ok: false, message: "Não consegui ler os funis do Worker. O quadro local pode estar desactualizado." }]} />
+        <HydratePanel className="flex-1">
+          Não consegui ler este quadro no Worker. Volta à lista ou tenta outra vez.
+        </HydratePanel>
+        <div className="flex justify-center pb-10">
+          <Button asChild className="rounded-full">
+            <Link to="/fluxo">Voltar aos funis</Link>
+          </Button>
+        </div>
       </div>
     )
   }

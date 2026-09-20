@@ -128,6 +128,28 @@ export function clipRemovedIds(ids: unknown, cap = CAP): string[] {
   return out
 }
 
+/** A fila do painel manda na ficha: a inbox não pisa nota, nome ou temperatura a meio do debounce. */
+export function overlayPendingLeads(leads: Lead[], pending: Map<string, Lead> | Iterable<Lead>): Lead[] {
+  const queued = pending instanceof Map ? pending : new Map([...pending].map((lead) => [lead.id, lead]))
+  if (!queued.size) return leads
+  let changed = false
+  const seen = new Set<string>()
+  const next = leads.map((lead) => {
+    const draft = queued.get(lead.id)
+    seen.add(lead.id)
+    if (!draft) return lead
+    const overlaid = adoptOperatorLead(lead, draft)
+    if (overlaid !== lead) changed = true
+    return overlaid
+  })
+  for (const draft of queued.values()) {
+    if (seen.has(draft.id)) continue
+    next.unshift(draft)
+    changed = true
+  }
+  return changed ? next : leads
+}
+
 export function reconcileLeads(current: Lead[], incoming: Lead[], pendingIds: Iterable<string> = []): Lead[] {
   if (!incoming.length) return current
   const merged = mergeLeads(current, incoming)

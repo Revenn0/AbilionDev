@@ -48,6 +48,7 @@ import {
   mergeFunnels,
   mergeLeadEvents,
   mergeLeads,
+  overlayPendingLeads,
   publicSettings,
   reconcileFunnels,
   reconcileLeads,
@@ -487,6 +488,13 @@ assert(aliasKey("chat", "9".repeat(200)).length <= "crm:alias:chat:".length + 80
 assert(sanitizeIncomingFunnel({ id: "funil-1", name: "Quadro", nodes: [], edges: [] })?.id === "funil-1", "funil válido passa")
 assert(sanitizeIncomingFunnel({ id: "" }) === null, "funil sem id cai")
 assert(sanitizeIncomingFunnel({ id: "funil-1", nodes: "nope" }) === null, "funil com nodes inválidos cai")
+const brokenNode = sanitizeIncomingFunnel({
+  id: "funil-broken",
+  name: "Quadro",
+  nodes: [{ type: "message", data: { title: "sem id" } }, { id: "ok", type: "message", position: { x: 0, y: 0 }, data: { title: "Ok" } }],
+  edges: [],
+})
+assert(brokenNode?.nodes.length === 1 && brokenNode.nodes[0]?.id === "ok", "nó sem id não derruba o sanitize")
 const fatProduction = sanitizeIncomingFunnel({
   id: "funil-fat",
   name: "Gordo",
@@ -733,6 +741,19 @@ assert(operatorKept.stage === "welcome", "painel não muda o passo do Telegram")
 assert(!operatorKept.printAt, "painel não marca print no chat real")
 assert(operatorKept.memory === "nova", "painel ainda grava a nota do Telegram")
 assert(operatorKept.temperature === "quente", "painel ainda grava a temperatura")
+const inboxNewer = {
+  ...telegramWait,
+  updatedAt: "2026-09-23T00:00:00.000Z",
+  temperature: "morno" as const,
+  memory: "nota",
+  messages: [{ id: "in-1", at: "2026-09-23T00:00:00.000Z", role: "lead" as const, text: "oi" }],
+}
+const pendingDrawer = new Map([[telegramWait.id, operatorKept]])
+const overlaidInbox = overlayPendingLeads([inboxNewer], pendingDrawer)[0]
+assert(overlaidInbox?.temperature === "quente", "inbox não pisa a temperatura ainda por gravar")
+assert(overlaidInbox?.memory === "nova", "inbox não pisa a nota ainda por gravar")
+assert(overlaidInbox?.messages?.some((item) => item.id === "in-1"), "fala nova da inbox entra por cima da fila")
+assert(overlaidInbox?.waitUntil === telegramWait.waitUntil, "overlay não avança a espera do Telegram")
 const localWait = { ...olderLead, id: "local-flow", waitUntil: "2026-09-21T00:00:00.000Z" }
 const localAdvanced = adoptOperatorLead(localWait, { ...localWait, waitUntil: undefined, updatedAt: "2026-09-22T00:00:00.000Z" })
 assert(!localAdvanced.waitUntil, "simulação local ainda avança a espera")
@@ -2208,6 +2229,25 @@ const badCrm = await handleRequest(
   backgroundCtx()
 )
 assert(badCrm.status === 400, "CRM recusa JSON inválido")
+const brokenCrm = await handleRequest(
+  new Request("http://local.test/api/crm", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: liveCookie },
+    body: JSON.stringify({
+      funnels: [
+        {
+          id: "funil-broken-node",
+          name: "Ok",
+          nodes: [{ type: "message" }, { id: "n1", type: "message", position: { x: 0, y: 0 }, data: { title: "Oi" } }],
+          edges: [],
+        },
+      ],
+    }),
+  }),
+  liveEnv,
+  backgroundCtx()
+)
+assert(brokenCrm.status === 200, "CRM com nó sem id continua 200")
 const badLogin = await handleRequest(
   new Request("http://local.test/api/auth/login", {
     method: "POST",

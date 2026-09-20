@@ -818,11 +818,8 @@ async function removeLead(env: Env, id: string) {
 }
 
 async function saveLead(env: Env, lead: Lead) {
-  let bounded = sanitizeIncomingLead(lead) ?? {
-    ...lead,
-    events: lead.events.slice(-80),
-    messages: (lead.messages ?? []).slice(-80),
-  }
+  let bounded = sanitizeIncomingLead(lead)
+  if (!bounded) return
   if (env.AUTH) {
     const prev = await loadLead(env.AUTH, bounded.id)
     bounded = prev ? adoptStoredLead(prev, bounded) : bounded

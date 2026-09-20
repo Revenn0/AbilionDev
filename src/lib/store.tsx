@@ -12,6 +12,7 @@ import {
   clipRemovedIds,
   hydrateFunnels,
   mergeLeads,
+  overlayPendingLeads,
   revertPublishedFunnels,
   pendingSeedFunnelIds,
   recoverPendingFunnelIds,
@@ -292,15 +293,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const next = {
           ...prev,
           funnels,
-          leads: remoteLeads.ok
-            ? remoteLeads.leads.length
-              ? reconcileLeads(
-                  prev.leads,
-                  applyRemovedLeads(remoteLeads.leads.map(migrateLead), removedLeadIds.current),
-                  pendingLeadWrites.current.keys()
-                )
-              : prev.leads.filter((lead) => pendingLeadWrites.current.has(lead.id))
-            : prev.leads,
+          leads: overlayPendingLeads(
+            remoteLeads.ok
+              ? remoteLeads.leads.length
+                ? reconcileLeads(
+                    prev.leads,
+                    applyRemovedLeads(remoteLeads.leads.map(migrateLead), removedLeadIds.current),
+                    pendingLeadWrites.current.keys()
+                  )
+                : prev.leads.filter((lead) => pendingLeadWrites.current.has(lead.id))
+              : prev.leads,
+            pendingLeadWrites.current
+          ),
           settings: {
             ...prev.settings,
             ...remoteSettings,
@@ -340,8 +344,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const incoming = applyRemovedLeads(inbox.leads.map((lead) => migrateLead(lead)), removedLeadIds.current)
       if (!incoming.length) return
       setState((prev) => {
-        const leads = mergeLeads(applyRemovedLeads(prev.leads, removedLeadIds.current), incoming)
-        return leads === prev.leads ? prev : { ...prev, leads }
+        const leads = overlayPendingLeads(
+          mergeLeads(applyRemovedLeads(prev.leads, removedLeadIds.current), incoming),
+          pendingLeadWrites.current
+        )
+        if (leads === prev.leads) return prev
+        const next = { ...prev, leads }
+        stateRef.current = next
+        return next
       })
     }
     void pull()
@@ -365,10 +375,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setPersistSync("ok")
       setState((prev) => {
         const incoming = applyRemovedLeads(remoteLeads.leads.map(migrateLead), removedLeadIds.current)
-        const leads = remoteLeads.leads.length
-          ? reconcileLeads(prev.leads, incoming, pendingLeadWrites.current.keys())
-          : prev.leads.filter((lead) => pendingLeadWrites.current.has(lead.id))
-        return leads === prev.leads ? prev : { ...prev, leads }
+        const leads = overlayPendingLeads(
+          remoteLeads.leads.length
+            ? reconcileLeads(prev.leads, incoming, pendingLeadWrites.current.keys())
+            : prev.leads.filter((lead) => pendingLeadWrites.current.has(lead.id)),
+          pendingLeadWrites.current
+        )
+        if (leads === prev.leads) return prev
+        const next = { ...prev, leads }
+        stateRef.current = next
+        return next
       })
     }
     const timer = window.setInterval(() => void reconcile(), 30_000)
@@ -513,15 +529,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
         const prev = stateRef.current
         commitState({ ...prev, leads: [lead, ...prev.leads] })
-        return persistLeads([lead]).then((ok) => {
-          if (ok) {
-            const latest = pendingLeadWrites.current.get(lead.id)
-            if (latest && latest.updatedAt === lead.updatedAt) pendingLeadWrites.current.delete(lead.id)
-          }
-          persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
-          setPersistSync(ok ? "ok" : "error")
-          return ok
-        })
+        return flushLeadWrites()
       },
       createLeads: (leads) => {
         for (const lead of leads) {
@@ -532,17 +540,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
         const prev = stateRef.current
         commitState({ ...prev, leads: [...leads, ...prev.leads] })
-        return persistLeads(leads).then((ok) => {
-          if (ok) {
-            for (const lead of leads) {
-              const latest = pendingLeadWrites.current.get(lead.id)
-              if (latest && latest.updatedAt === lead.updatedAt) pendingLeadWrites.current.delete(lead.id)
-            }
-          }
-          persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
-          setPersistSync(ok ? "ok" : "error")
-          return ok
-        })
+        return flushLeadWrites()
       },
       saveLead: (lead) => {
         const prev = stateRef.current
