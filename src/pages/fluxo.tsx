@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom"
 import { Pencil, Plus, Trash2, Workflow } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
+import { HydratePanel } from "@/components/layout/hydrate-panel"
 import { SyncBanner } from "@/components/layout/sync-banner"
 import { FunnelPreview } from "@/components/sales/preview"
 import { RenameFunnelDialog } from "@/components/sales/rename-dialog"
@@ -45,7 +46,9 @@ export function FluxoPage() {
         </PageChrome>
 
         <div className="grid gap-3 md:grid-cols-2">
-          {funnels.length === 0 && (
+          {funnels.length === 0 && crmSync === "idle" ? (
+            <HydratePanel className="surface md:col-span-2">A carregar os funis…</HydratePanel>
+          ) : funnels.length === 0 ? (
             <div className="surface px-6 py-16 text-center md:col-span-2">
               <p className="text-[14px] font-medium">Nenhum funil</p>
               <p className="mx-auto mt-1 max-w-md text-[13.5px] text-muted-foreground">
@@ -55,7 +58,7 @@ export function FluxoPage() {
                 <Plus /> Novo funil
               </Button>
             </div>
-          )}
+          ) : null}
           {funnels.map((funnel) => {
             const gate = canDeleteFunnel(funnels, funnel.id)
             return (

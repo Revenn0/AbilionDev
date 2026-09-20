@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { MessagesSquare } from "lucide-react"
 import { FilterChip, PageChrome, StatusPill } from "@/components/layout/chrome"
+import { HydratePanel } from "@/components/layout/hydrate-panel"
 import { SyncBanner } from "@/components/layout/sync-banner"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
@@ -143,7 +144,11 @@ export function ConversationsPage() {
           talking={all.filter((item) => (item.messages ?? []).some((msg) => msg.role === "lead") && !item.steBlocked && !item.steQuiet).length}
           premium={all.filter((item) => item.stePhase === "offer" || item.steQuiet).length}
         />
-        {all.length === 0 ? (
+        {all.length === 0 && persistSync === "idle" ? (
+          <section className="surface">
+            <HydratePanel>A carregar as conversas…</HydratePanel>
+          </section>
+        ) : all.length === 0 ? (
           <section className="surface grid place-items-center px-6 py-16 text-center">
             <p className="text-[14px] font-medium">Nenhuma conversa no Telegram</p>
             <p className="mt-1 max-w-md text-[13px] text-muted-foreground">

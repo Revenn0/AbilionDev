@@ -212,7 +212,7 @@ Estes itens dependem de credenciais ou de uma decisão humana. O código não in
 - Eventos do lead no Supabase unem-se aos do KV por id (não só quando o KV está vazio). A leitura vai em blocos de 50 ids.
 - Apagar lead/funil nesta sessão fica no `localStorage`. Outro separador some o cartão sem esperar refresh. A lista de leads reconcilia com o Worker a cada 30 s.
 - O Worker impõe um só funil `active`+`production` ao gravar. Tombstone de funil também fica no KV.
-- Dashboard, Analytics e Conversas mostram "—" / "…" no pixel quando a leitura ainda não veio ou falhou. Não tratam zero como dado real.
+- Dashboard, Analytics e Conversas mostram "—" / "…" no pixel quando a leitura ainda não veio ou falhou. Não tratam zero como dado real. Funis, leads e conversas mostram “A carregar…” enquanto o Worker ainda não respondeu — não fingem lista vazia.
 - `/t.js` passa pelos mesmos headers de segurança do Worker (HSTS, CSP, `X-Frame-Options`). O CORS aberto fica só no pixel.
 
 ## Auditoria

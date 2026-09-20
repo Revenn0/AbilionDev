@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Plus, Users } from "lucide-react"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
+import { HydratePanel } from "@/components/layout/hydrate-panel"
 import { SyncBanner } from "@/components/layout/sync-banner"
 import { validateCapture } from "@/lib/capture"
 import { Button } from "@/components/ui/button"
@@ -125,7 +126,9 @@ export function LeadsPage() {
             <p>Quando</p>
           </div>
 
-          {rows.length === 0 ? (
+          {rows.length === 0 && persistSync === "idle" && !query.trim() && filter === "all" ? (
+            <HydratePanel>A carregar os leads…</HydratePanel>
+          ) : rows.length === 0 ? (
             <div className="grid place-items-center px-6 py-16 text-center">
               <p className="text-[14px] font-medium">
                 {query.trim() ? "Nada nesta busca" : filter !== "all" ? "Nada neste recorte" : "Nenhum lead"}

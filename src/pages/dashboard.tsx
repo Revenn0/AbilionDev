@@ -14,7 +14,8 @@ export function DashboardPage() {
   const { summary, status, hasData } = useTrackSummary(8000)
   const facebook = facebookOf(summary)
   const ops = deriveOps(state.leads)
-  const empty = ops.leads === 0
+  const hydrating = persistSync === "idle"
+  const empty = !hydrating && ops.leads === 0
   const facebookTotal = Math.max(facebook.adClicks, facebook.pageViews, facebook.buttonClicks)
   const line = seriesLast30(state.leads, () => true)
   const spark = line.slice(-12)
@@ -40,19 +41,19 @@ export function DashboardPage() {
         </PageChrome>
 
         <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
-          <Kpi href="/leads" label="Leads" value={ops.leads} hint={empty ? "à espera de captura" : "na base"} bars={spark} />
+          <Kpi href="/leads" label="Leads" value={hydrating ? "…" : ops.leads} hint={hydrating ? "a carregar" : empty ? "à espera de captura" : "na base"} bars={spark} />
           <Kpi
             href="/conversas"
             label="Conversas"
-            value={ops.conversations}
-            hint={empty ? "nenhuma iniciada" : "eventos do fluxo"}
+            value={hydrating ? "…" : ops.conversations}
+            hint={hydrating ? "a carregar" : empty ? "nenhuma iniciada" : "eventos do fluxo"}
             bars={spark}
           />
           <Kpi href="/analytics" label="Anúncio" value={pixelFigure(status, hasData, facebook.adClicks)} hint="clique no ads" bars={spark} />
           <Kpi href="/analytics" label="Page views" value={pixelFigure(status, hasData, facebook.pageViews)} hint="landing do Facebook" bars={spark} />
           <Kpi href="/analytics" label="Botão TG" value={pixelFigure(status, hasData, facebook.buttonClicks)} hint="clique no Telegram" bars={spark} />
-          <Kpi href="/leads" label="Aguardando" value={ops.waiting} hint="espera do fluxo" bars={waitSpark} />
-          <Kpi href="/leads" label="Ofertas" value={ops.offered} hint="disparadas pelo quadro" bars={offerSpark} />
+          <Kpi href="/leads" label="Aguardando" value={hydrating ? "…" : ops.waiting} hint={hydrating ? "a carregar" : "espera do fluxo"} bars={waitSpark} />
+          <Kpi href="/leads" label="Ofertas" value={hydrating ? "…" : ops.offered} hint={hydrating ? "a carregar" : "disparadas pelo quadro"} bars={offerSpark} />
         </section>
 
         <section className="surface p-6">
@@ -89,8 +90,8 @@ export function DashboardPage() {
           <div className="surface p-6">
             <p className="text-[12.5px] text-muted-foreground">Campanha · Telegram</p>
             <div className="mt-5 space-y-5">
-              <ChannelRow label="Telegram · convite" value={ops.telegram} total={ops.leads} />
-              <ChannelRow label="Facebook → Telegram" value={ops.facebook} total={ops.leads} />
+              <ChannelRow label="Telegram · convite" value={hydrating ? "…" : ops.telegram} total={ops.leads} />
+              <ChannelRow label="Facebook → Telegram" value={hydrating ? "…" : ops.facebook} total={ops.leads} />
               <ChannelRow label="Clique no anúncio" value={pixelFigure(status, hasData, facebook.adClicks)} total={facebookTotal} />
               <ChannelRow label="Page views Facebook" value={pixelFigure(status, hasData, facebook.pageViews)} total={facebookTotal} />
               <ChannelRow label="Clique no botão" value={pixelFigure(status, hasData, facebook.buttonClicks)} total={facebookTotal} />
@@ -99,9 +100,9 @@ export function DashboardPage() {
           <div className="surface p-6">
             <p className="text-[12.5px] text-muted-foreground">Temperatura</p>
             <div className="mt-5 grid grid-cols-3 gap-3">
-              <Heat label="Novos" value={ops.novo} />
-              <Heat label="Mornos" value={ops.morno} />
-              <Heat label="Quentes" value={ops.quente} />
+              <Heat label="Novos" value={hydrating ? "…" : ops.novo} />
+              <Heat label="Mornos" value={hydrating ? "…" : ops.morno} />
+              <Heat label="Quentes" value={hydrating ? "…" : ops.quente} />
             </div>
             <Link to="/leads" className="mt-5 inline-flex text-[12.5px] text-muted-foreground hover:text-foreground">
               Abrir leads
@@ -158,7 +159,7 @@ function ChannelRow({ label, value, total }: { label: string; value: string | nu
   )
 }
 
-function Heat({ label, value }: { label: string; value: number }) {
+function Heat({ label, value }: { label: string; value: string | number }) {
   return (
     <div>
       <p className="text-[12.5px] text-muted-foreground">{label}</p>

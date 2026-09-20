@@ -322,7 +322,8 @@ try {
     assert(
       inboxCopy.includes("Simular lead") ||
         inboxCopy.includes("Nada neste recorte") ||
-        inboxCopy.includes("Escreve como o lead"),
+        inboxCopy.includes("Escreve como o lead") ||
+        inboxCopy.includes("A carregar as conversas"),
       "conversas vazias, filtro vazio ou simulação explícita"
     )
   }
