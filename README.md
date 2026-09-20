@@ -209,7 +209,9 @@ npm run build
 npx tsx scripts/ui-audit.mts
 ```
 
-`scripts/ui-audit.mts` percorre login, rotas do painel, 404, skip-link, captura, logout → forgot/reset e as larguras 320 / 375 / 768 / 1024 / 1440. Precisa do `npm run dev` em `http://127.0.0.1:43173`.
+`scripts/ui-audit.mts` percorre login, rotas do painel, 404, skip-link, teclado das tabs, captura, logout → forgot/reset e as larguras 320 / 375 / 768 / 1024 / 1440. Precisa do `npm run dev` em `http://127.0.0.1:43173`.
+
+`scripts/ste-flow.mts` também manda um `/start fb_aabbcc` assinado e confirma que o lead Facebook nasce com as boas-vindas da Sté — sem tratar o `/start` como fala do lead.
 
 ```bash
 npx tsx scripts/ui-audit.mts
