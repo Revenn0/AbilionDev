@@ -604,6 +604,7 @@ export function safeHttpUrl(url: string): string | null {
   try {
     const parsed = new URL(next)
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null
+    if (parsed.username || parsed.password) return null
     return parsed.href
   } catch {
     return null

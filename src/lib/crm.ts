@@ -4,7 +4,7 @@ import { defaultSettings, type Lead, type LeadEvent, type SalesFunnel, type Sett
 const CAP = 400
 
 export function publicSettings(settings: Settings): Settings {
-  return { ...settings, telegramBotToken: "" }
+  return { ...settings, telegramBotToken: "", esterTelegramChatId: "" }
 }
 
 export function adoptStoredLead(prev: Lead, incoming: Lead): Lead {

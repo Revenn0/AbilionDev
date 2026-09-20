@@ -107,34 +107,44 @@ export async function fetchCrm() {
   }
 }
 
+async function writeOk(run: () => Promise<Response>) {
+  try {
+    const res = await run()
+    noteUnauthorized(res)
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 export async function persistLeads(leads: Lead[]) {
   if (!leads.length) return true
-  const res = await fetch("/api/leads", {
-    method: "POST",
-    credentials: "include",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ leads: leads.slice(0, 120) }),
-  })
-  noteUnauthorized(res)
-  return res.ok
+  return writeOk(() =>
+    fetch("/api/leads", {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ leads: leads.slice(0, 120) }),
+    })
+  )
 }
 
 export async function removeRemoteLead(id: string) {
-  const res = await fetch(`/api/leads?id=${encodeURIComponent(id)}`, {
-    method: "DELETE",
-    credentials: "include",
-  })
-  noteUnauthorized(res)
-  return res.ok
+  return writeOk(() =>
+    fetch(`/api/leads?id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      credentials: "include",
+    })
+  )
 }
 
 export async function saveCrm(body: { funnels?: SalesFunnel[]; settings?: Settings; removedFunnelIds?: string[] }) {
-  const res = await fetch("/api/crm", {
-    method: "POST",
-    credentials: "include",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  })
-  noteUnauthorized(res)
-  return res.ok
+  return writeOk(() =>
+    fetch("/api/crm", {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    })
+  )
 }

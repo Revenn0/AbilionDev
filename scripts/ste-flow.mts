@@ -40,13 +40,14 @@ import {
   mergeFunnels,
   mergeLeadEvents,
   mergeLeads,
+  publicSettings,
   reconcileFunnels,
   reconcileLeads,
   resolveLeadLookup,
 } from "../src/lib/crm.ts"
 import { publishedFunnel } from "../src/lib/runtime.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
-import type { Lead } from "../src/lib/types.ts"
+import { defaultSettings, type Lead } from "../src/lib/types.ts"
 import { CRM_CRON_LOCK, CRM_FUNNELS, aliasKey, claimCronLock, deleteLeadKv, dueLeadsKv, findLeadInKv, listLeads, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, releaseCronLock, saveSettingsKv, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
@@ -175,8 +176,14 @@ assert(html.includes("<a href=\"https://mundoaviator.com.br/mini-curso/\">"), "h
 assert(!html.includes("]("), "markdown nao vaza")
 assert(safeHttpUrl("https://t.me/bot")?.startsWith("https://t.me/bot"), "https passa")
 assert(safeHttpUrl("javascript:alert(1)") === null, "javascript nao passa")
+assert(safeHttpUrl("https://user:pass@evil.test/") === null, "userinfo no link da Sté cai")
 assert(splitSteMarkup("[x](javascript:alert(1))")[0]?.type === "text", "markup recusa javascript")
+assert(splitSteMarkup("[x](https://user:pass@evil.test/)")[0]?.type === "text", "markup recusa userinfo")
 assert(!toTelegramHtml("[x](javascript:alert(1))").includes("href"), "html recusa javascript")
+assert(!toTelegramHtml("[x](https://user:pass@evil.test/)").includes("href"), "html recusa userinfo")
+const published = publicSettings({ ...defaultSettings, telegramBotToken: "123:abc", esterTelegramChatId: "999001" })
+assert(published.telegramBotToken === "", "settings públicas não levam o token")
+assert(published.esterTelegramChatId === "", "settings públicas não levam o chat da Ester")
 
 assert(flagEmoji("BR") === "🇧🇷", "bandeira BR")
 assert(stateLabel("São Paulo", "SP", "BR") === "São Paulo (SP)", "estado SP")
@@ -1415,6 +1422,24 @@ const crmGet = (await (
   await handleRequest(new Request("http://local.test/api/crm", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
 ).json()) as { funnels?: Array<{ id?: string; name?: string }> }
 assert(crmGet.funnels?.some((item) => item.id === persistFunnel.id), "CRM GET devolve o funil gravado")
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/crm", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: liveCookie },
+        body: JSON.stringify({ settings: { ...defaultSettings, esterTelegramChatId: "999001" } }),
+      }),
+      liveEnv,
+      backgroundCtx()
+    )
+  ).status === 200,
+  "CRM POST com chat da Ester é 200"
+)
+const crmSettings = (await (
+  await handleRequest(new Request("http://local.test/api/crm", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
+).json()) as { settings?: { esterTelegramChatId?: string } }
+assert(!crmSettings.settings?.esterTelegramChatId, "GET CRM não devolve o chat da Ester")
 const extraFunnel = emptySalesFunnel("extra")
 extraFunnel.updatedAt = "2099-01-01T00:00:00.000Z"
 assert(

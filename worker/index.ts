@@ -587,7 +587,7 @@ async function processWaits(env: Env) {
               await telegram(token, "sendMessage", { chat_id: lead.telegramChatId, text: effect.body || "Oferta do produto" })
             }
             if (effect.kind === "notify_ester" && token) {
-              await notifyEster(env, token, effect.body, settings)
+              await notifyEster(env, token, effect.body)
             }
           }
         }
@@ -603,8 +603,8 @@ async function processWaits(env: Env) {
   }
 }
 
-async function notifyEster(env: Env, token: string, body: string, settings: Settings) {
-  const chat = env.ESTER_CHAT_ID || settings.esterTelegramChatId
+async function notifyEster(env: Env, token: string, body: string) {
+  const chat = env.ESTER_CHAT_ID
   if (!chat) return
   await telegram(token, "sendMessage", { chat_id: chat, text: body || BANCA_FIXED })
 }

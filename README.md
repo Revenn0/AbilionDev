@@ -195,9 +195,11 @@ Estes itens dependem de credenciais ou de uma decisão humana. O código não in
 - **Supabase** só entra com `SUPABASE_SERVICE_ROLE`. Sem isso a operação corre no KV `abilion-auth`. Corre `005_worker_only_rls.sql` no SQL editor do projecto Abilion (`eyjgmkmaixmpmeeahxon`) para fechar as policies anónimas. Não é o projecto alecrim.
 - **Senhas dos operadores** em produção já estão no KV. Não estão neste repositório. Primeiro acesso local define a senha (6+).
 - Plugin **Agenda** e **webhooks de saída** são “Em breve” de propósito. Relatórios exporta CSV da base de leads. Captura abre Leads. Telegram mostra o estado do Worker — sem interruptores que não fazem nada.
-- **Notificações** na conta também são “Em breve”. O aviso da Ester no print continua a sair pelo funil quando há `ESTER_CHAT_ID`.
+- **Notificações** na conta também são “Em breve”. O aviso da Ester no print só sai com o secret `ESTER_CHAT_ID` no Worker — um POST do CRM não define o chat.
 - **Primeiro login em produção** recusa criar senha se o Worker não tiver `ABILION_OPERATOR_PASSWORD`. Localmente o primeiro acesso ainda define a senha (6+).
-- `ESTER_CHAT_ID` só é preciso se a Ester receber aviso no Telegram.
+- `ESTER_CHAT_ID` só é preciso se a Ester receber aviso no Telegram. O campo não existe na UI e o GET `/api/crm` não o devolve.
+- Links da Sté (markup e HTML do Telegram) recusam `javascript:` e URLs com userinfo, como o funil.
+- Gravar CRM ou leads com a rede em baixo devolve erro no banner — não rebenta a Promise no browser.
 - Apagar um lead grava um tombstone no KV (`crm:removed`). O webhook e o cron não voltam a puxar essa linha do Supabase. Sem `SUPABASE_SERVICE_ROLE` isto não muda nada.
 - O índice do CRM lista 400 leads; o contacto/chat fica num alias permanente e as esperas não saem do índice. O Telegram não cria um lead novo só porque o recorte da lista encheu.
 - JSON inválido em `/api/crm`, `/api/leads`, `/api/runtime` e login devolve 400 — não grava objeto vazio.
@@ -224,7 +226,7 @@ npx tsx scripts/ui-audit.mts
 
 `scripts/ui-audit.mts` percorre login, rotas do painel, 404, skip-link, teclado das tabs, captura, logout → forgot/reset e as larguras 320 / 375 / 768 / 1024 / 1440. Precisa do `npm run dev` em `http://127.0.0.1:43173`.
 
-`scripts/ste-flow.mts` cobre o webhook assinado (`/start fb`, segundo `/start` sem spam, fala do lead, join no grupo), recusa do Telegram que não grava boas-vindas, `update_id` repetido (incluindo dois claims ao mesmo tempo), inbox autenticada, runtime sem vazar o token, DELETE do lead, cron com duas esperas, recusa de JSON enorme (413), hydrate que não ressuscita lead/funil apagado, tombstone de funil e de lead (KV ganha do Supabase no webhook e no cron), a regra de que simulação/lote não inventam `telegramChatId`, o pixel que não finge zero quando a leitura falha, o envio Telegram que não trata 403 como sucesso, o lock do cron com dono, a união de eventos do lead, a corrida login/troca de senha, a memória que sobrevive a um POST mais novo vazio, o HSTS do `/t.js`, e os limites de escrita do CRM/leads.
+`scripts/ste-flow.mts` cobre o webhook assinado (`/start fb`, segundo `/start` sem spam, fala do lead, join no grupo), recusa do Telegram que não grava boas-vindas, `update_id` repetido (incluindo dois claims ao mesmo tempo), inbox autenticada, runtime sem vazar o token, DELETE do lead, cron com duas esperas, recusa de JSON enorme (413), hydrate que não ressuscita lead/funil apagado, tombstone de funil e de lead (KV ganha do Supabase no webhook e no cron), a regra de que simulação/lote não inventam `telegramChatId`, o pixel que não finge zero quando a leitura falha, o envio Telegram que não trata 403 como sucesso, o lock do cron com dono, a união de eventos do lead, a corrida login/troca de senha, a memória que sobrevive a um POST mais novo vazio, o HSTS do `/t.js`, links da Sté sem userinfo, settings sem chat da Ester, e os limites de escrita do CRM/leads.
 
 ```bash
 npx tsx scripts/ui-audit.mts
