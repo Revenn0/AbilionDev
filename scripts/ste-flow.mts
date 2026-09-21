@@ -7313,11 +7313,11 @@ assert(removedGetFunnelData.unread === true, "MCP get_funnel tombstone unread ma
 const removedPublish = await removedFunnelsMcp(237, "abilion_publish_funnel", { id: "funil-throw" })
 const removedPublishData = JSON.parse(
   ((await removedPublish.json()) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
-) as { error?: string; funnel?: { id?: string; production?: { publishedAt?: string } } }
+) as { error?: string; funnel?: { id?: string; published?: boolean } }
 assert(removedPublish.status === 200, "MCP publish tombstone unread não cai em 500")
 assert(!removedPublishData.error, "MCP publish tombstone unread não pede 503")
 assert(removedPublishData.funnel?.id === "funil-throw", "MCP publish tombstone unread ainda publica o leftover")
-assert(removedPublishData.funnel?.production?.publishedAt, "MCP publish tombstone unread grava production no leftover")
+assert(removedPublishData.funnel?.published === true, "MCP publish tombstone unread marca o leftover publicado")
 assert((await loadFunnelsKv(runtimeHoleKv)).some((item) => item.id === "funil-throw" && item.production?.publishedAt), "MCP publish tombstone unread não apaga o leftover")
 const removedPublishMiss = await removedFunnelsMcp(238, "abilion_publish_funnel", { id: "funil-missing" })
 const removedPublishMissData = JSON.parse(
