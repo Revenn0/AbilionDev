@@ -328,9 +328,8 @@ async function saveSettingsOf(env: McpEnv, incoming: Settings, unread: string) {
 
 async function publishFunnel(env: McpEnv, id: string) {
   const loaded = await workspaceFunnelsOf(env)
-  if (loaded.unread) throw new Error("Não confirmei os funis.")
   const current = loaded.funnels.find((item) => item.id === id)
-  if (!current) throw new Error("Este funil já não está no CRM.")
+  if (!current) throw new Error(loaded.unread ? "Não confirmei os funis." : "Este funil já não está no CRM.")
   const issue =
     firstInvalidPublishUrl(current.nodes) ?? validatePublish(current.nodes, current.edges)[0]
   if (issue) throw new Error(issue.message)

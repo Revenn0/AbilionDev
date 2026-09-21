@@ -7292,6 +7292,45 @@ const removedFunnelsDrop = await handleRequest(
 )
 assert(removedFunnelsDrop.status === 503, "POST CRM tombstone unread não apaga funil")
 assert((await loadFunnelsKv(runtimeHoleKv)).some((item) => item.id === "funil-throw"), "POST CRM tombstone unread não pisa o leftover")
+const removedFunnelsMcp = async (id: number, name: string, args: Record<string, unknown> = {}) =>
+  handleRequest(
+    new Request("http://local.test/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.193" },
+      body: JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } }),
+    }),
+    removedFunnelsThrowEnv,
+    backgroundCtx()
+  )
+const removedGetFunnel = await removedFunnelsMcp(236, "abilion_get_funnel", { id: "funil-throw" })
+const removedGetFunnelData = JSON.parse(
+  ((await removedGetFunnel.json()) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string; funnel?: { id?: string }; unread?: boolean }
+assert(removedGetFunnel.status === 200, "MCP get_funnel tombstone unread não cai em 500")
+assert(!removedGetFunnelData.error, "MCP get_funnel tombstone unread não pede 503")
+assert(removedGetFunnelData.funnel?.id === "funil-throw", "MCP get_funnel tombstone unread ainda manda o leftover")
+assert(removedGetFunnelData.unread === true, "MCP get_funnel tombstone unread marca unread")
+const removedPublish = await removedFunnelsMcp(237, "abilion_publish_funnel", { id: "funil-throw" })
+const removedPublishData = JSON.parse(
+  ((await removedPublish.json()) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string; funnel?: { id?: string; production?: { publishedAt?: string } } }
+assert(removedPublish.status === 200, "MCP publish tombstone unread não cai em 500")
+assert(!removedPublishData.error, "MCP publish tombstone unread não pede 503")
+assert(removedPublishData.funnel?.id === "funil-throw", "MCP publish tombstone unread ainda publica o leftover")
+assert(removedPublishData.funnel?.production?.publishedAt, "MCP publish tombstone unread grava production no leftover")
+assert((await loadFunnelsKv(runtimeHoleKv)).some((item) => item.id === "funil-throw" && item.production?.publishedAt), "MCP publish tombstone unread não apaga o leftover")
+const removedPublishMiss = await removedFunnelsMcp(238, "abilion_publish_funnel", { id: "funil-missing" })
+const removedPublishMissData = JSON.parse(
+  ((await removedPublishMiss.json()) as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string }
+assert(removedPublishMissData.error === "Não confirmei os funis.", "MCP publish miss tombstone unread pede confirmação")
+const removedCreate = await removedFunnelsMcp(239, "abilion_create_funnel", { name: "Novo unread mcp" })
+const removedCreateData = JSON.parse(
+  ((await removedCreate.json()) as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string; id?: string }
+assert(removedCreateData.error === "Não confirmei os funis.", "MCP create tombstone unread ainda pede confirmação")
+assert(!removedCreateData.id, "MCP create tombstone unread não inventa id")
+assert(!(await loadFunnelsKv(runtimeHoleKv)).some((item) => item.name === "Novo unread mcp"), "MCP create tombstone unread não grava funil novo")
 const kvDownMcpFunnels = await funnelsThrowMcp(230, "abilion_list_funnels")
 const kvDownMcpFunnelsBody = (await kvDownMcpFunnels.json()) as {
   result?: { isError?: boolean; content?: Array<{ text?: string }> }
