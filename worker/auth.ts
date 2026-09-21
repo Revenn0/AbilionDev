@@ -505,6 +505,17 @@ export function clientIp(request: Request) {
   return forwarded.split(",")[0]?.trim() || "local"
 }
 
+const ACCOUNTS_UNREAD = "Não confirmei as contas."
+
+/** KV throw não é snapshot vazio: forgot/login não fingem primeiro acesso. */
+async function readAuthSnapshot(store: AuthStore): Promise<{ snapshot: AuthSnapshot; unread: boolean }> {
+  try {
+    return { snapshot: prune(await store.load()), unread: false }
+  } catch {
+    return { snapshot: emptySnapshot(), unread: true }
+  }
+}
+
 function prune(snapshot: AuthSnapshot, now = Date.now()): AuthSnapshot {
   const revoked = clipAuthTokens(snapshot.revoked, AUTH_REVOKED_CAP)
   const revokedApi = clipAuthTokens(snapshot.revokedApi, AUTH_REVOKED_API_CAP)
@@ -529,7 +540,9 @@ function prune(snapshot: AuthSnapshot, now = Date.now()): AuthSnapshot {
 
 export async function ensureOperatorUsers(store: AuthStore, password: string) {
   if (password.length < 6) return
-  const snapshot = prune(await store.load())
+  const loaded = await readAuthSnapshot(store)
+  if (loaded.unread) return
+  const snapshot = loaded.snapshot
   let changed = false
   for (const operator of OPERATORS) {
     const current = snapshot.users.find((user) => user.email === operator.email)
@@ -717,7 +730,9 @@ export async function readActor(
   const cookie = readCookie(request)
   const bearer = readBearer(request)
   if (!cookie && !bearer) return { user: null, unread: false }
-  const snapshot = prune(await store.load())
+  const loaded = await readAuthSnapshot(store)
+  if (loaded.unread) return { user: null, unread: true }
+  const snapshot = loaded.snapshot
   if (!snapshot.users.length) return { user: null, unread: true }
   if (cookie) {
     const session = snapshot.sessions.find((item) => item.token === cookie)
@@ -744,7 +759,7 @@ export async function gateActor(
   store: AuthStore
 ): Promise<{ ok: true; user: PublicUser } | { ok: false; response: Response }> {
   const read = await readActor(request, store)
-  if (read.unread) return { ok: false, response: json({ error: "Não confirmei as contas." }, 503) }
+  if (read.unread) return { ok: false, response: json({ error: ACCOUNTS_UNREAD }, 503) }
   if (!read.user) return { ok: false, response: json({ error: "Sessão expirada." }, 401) }
   return { ok: true, user: read.user }
 }
@@ -766,7 +781,9 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     if (!email || password.length < 6) {
       return loginFail(request, "Informe um e-mail e uma senha com 6+ caracteres.", 400, body)
     }
-    let snapshot = prune(await store.load())
+    const loaded = await readAuthSnapshot(store)
+    if (loaded.unread) return loginFail(request, ACCOUNTS_UNREAD, 503, body)
+    let snapshot = loaded.snapshot
     const guard = consumeThrottle(snapshot, `login:${clientIp(request)}:${email}`, 8, 15 * 60 * 1000)
     snapshot = guard.snapshot
     if (!guard.ok) {
@@ -822,8 +839,9 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
 
   if (path === "/api/auth/logout" && request.method === "POST") {
     const token = readCookie(request)
-    const snapshot = prune(await store.load())
-    if (snapshot.users.length) {
+    const loaded = await readAuthSnapshot(store)
+    if (!loaded.unread && loaded.snapshot.users.length) {
+      const snapshot = loaded.snapshot
       if (token) snapshot.revoked = clipAuthTokens([token, ...(snapshot.revoked ?? [])], AUTH_REVOKED_CAP)
       snapshot.sessions = snapshot.sessions.filter((item) => item.token !== token)
       await store.save(snapshot)
@@ -833,7 +851,7 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
 
   if (path === "/api/auth/me" && request.method === "GET") {
     const read = await readActor(request, store)
-    if (read.unread) return json({ error: "Não confirmei as contas." }, 503)
+    if (read.unread) return json({ error: ACCOUNTS_UNREAD }, 503)
     return json({ user: read.user })
   }
 
@@ -847,7 +865,13 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
         ? authHtml(authForgotDocument({ next: parsed.body.next, error: "Informe o e-mail." }), 400)
         : json({ error: "Informe o e-mail." }, 400)
     }
-    let snapshot = prune(await store.load())
+    const loaded = await readAuthSnapshot(store)
+    if (loaded.unread) {
+      return html
+        ? authHtml(authForgotDocument({ next: parsed.body.next, error: ACCOUNTS_UNREAD }), 503)
+        : json({ error: ACCOUNTS_UNREAD }, 503)
+    }
+    let snapshot = loaded.snapshot
     if (!snapshot.users.length) {
       return html
         ? authHtml(
@@ -894,8 +918,10 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
 
   if (path === "/api/auth/password" && request.method === "POST") {
     const token = readCookie(request)
-    let snapshot = prune(await store.load())
-    if (token && !snapshot.users.length) return json({ error: "Não confirmei as contas." }, 503)
+    const loaded = await readAuthSnapshot(store)
+    if (loaded.unread) return json({ error: ACCOUNTS_UNREAD }, 503)
+    let snapshot = loaded.snapshot
+    if (token && !snapshot.users.length) return json({ error: ACCOUNTS_UNREAD }, 503)
     const session = snapshot.sessions.find((item) => item.token === token)
     const user = session ? snapshot.users.find((item) => item.id === session.userId) : null
     if (!user) return json({ error: "Sessão expirada." }, 401)
@@ -936,7 +962,9 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     const token = body.token || ""
     const password = body.password || ""
     if (!token || password.length < 6) return resetFail(request, "Token ou senha inválidos.", 400, body)
-    let snapshot = prune(await store.load())
+    const loaded = await readAuthSnapshot(store)
+    if (loaded.unread) return resetFail(request, ACCOUNTS_UNREAD, 503, body)
+    let snapshot = loaded.snapshot
     const guard = consumeThrottle(snapshot, `reset:${clientIp(request)}`, 5, 15 * 60 * 1000)
     snapshot = guard.snapshot
     if (!guard.ok) {

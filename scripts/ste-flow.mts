@@ -2522,6 +2522,103 @@ const hollowGate = await gateActor(
 )
 assert(!hollowGate.ok && hollowGate.response.status === 503, "gateActor recusa snapshot oco com 503")
 assert(!noteUnauthorized({ status: 503 }), "503 de contas unread não é sessão expirada")
+const boomAuthStore = {
+  async load() {
+    throw new Error("kv down")
+  },
+  async save() {},
+}
+const boomMe = await handleAuth(
+  new Request("http://local.test/api/auth/me", { headers: { cookie: "abilion_session=oco" } }),
+  boomAuthStore,
+  { ABILION_ENV: "development" }
+)
+assert(boomMe.status === 503, "me com KV throw não é Falha interna")
+assert(((await boomMe.json()) as { error?: string }).error === "Não confirmei as contas.", "me KV throw pede confirmação")
+const boomMeAnon = await handleAuth(new Request("http://local.test/api/auth/me"), boomAuthStore, { ABILION_ENV: "development" })
+const boomMeAnonBody = (await boomMeAnon.json()) as { user: unknown }
+assert(boomMeAnon.status === 200 && boomMeAnonBody.user === null, "me sem cookie não lê o snapshot")
+const boomForgot = await handleAuth(
+  new Request("http://local.test/api/auth/forgot", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com" }),
+  }),
+  boomAuthStore,
+  { ABILION_ENV: "development" }
+)
+assert(boomForgot.status === 503, "forgot KV throw não finge que não há contas")
+assert(((await boomForgot.json()) as { error?: string }).error === "Não confirmei as contas.", "forgot KV throw pede confirmação")
+const boomLogin = await handleAuth(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  boomAuthStore,
+  { ABILION_ENV: "development", ABILION_OPERATOR_PASSWORD: "seedpass" }
+)
+assert(boomLogin.status === 503, "login KV throw não é 500 nem cria conta")
+assert(((await boomLogin.json()) as { error?: string }).error === "Não confirmei as contas.", "login KV throw pede confirmação")
+const boomLogout = await handleAuth(
+  new Request("http://local.test/api/auth/logout", { method: "POST", headers: { cookie: "abilion_session=oco" } }),
+  boomAuthStore,
+  { ABILION_ENV: "development" }
+)
+assert(boomLogout.status === 200, "logout KV throw ainda limpa o cookie")
+assert((boomLogout.headers.get("set-cookie") || "").toLowerCase().includes("abilion_session="), "logout KV throw manda cookie vazio")
+const boomReset = await handleAuth(
+  new Request("http://local.test/api/auth/reset", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token: "abc", password: "senhaok" }),
+  }),
+  boomAuthStore,
+  { ABILION_ENV: "development" }
+)
+assert(boomReset.status === 503, "reset KV throw não finge link inválido")
+assert(((await boomReset.json()) as { error?: string }).error === "Não confirmei as contas.", "reset KV throw pede confirmação")
+const boomPassword = await handleAuth(
+  new Request("http://local.test/api/auth/password", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: "abilion_session=oco" },
+    body: JSON.stringify({ currentPassword: "senhaok", password: "senhaok" }),
+  }),
+  boomAuthStore,
+  { ABILION_ENV: "development" }
+)
+assert(boomPassword.status === 503, "password KV throw não é sessão expirada")
+assert(((await boomPassword.json()) as { error?: string }).error === "Não confirmei as contas.", "password KV throw pede confirmação")
+const boomActor = await readActor(
+  new Request("http://local.test/api/auth/me", { headers: { cookie: "abilion_session=oco" } }),
+  boomAuthStore
+)
+assert(boomActor.unread && !boomActor.user, "readActor marca KV throw como unread")
+const boomGate = await gateActor(
+  new Request("http://local.test/api/leads", { headers: { cookie: "abilion_session=oco" } }),
+  boomAuthStore
+)
+assert(!boomGate.ok && boomGate.response.status === 503, "gateActor KV throw é 503")
+const boomKv = {
+  async get() {
+    throw new Error("kv down")
+  },
+  async put() {},
+}
+const boomMeHttp = await handleRequest(
+  new Request("http://local.test/api/auth/me", { headers: { cookie: "abilion_session=oco" } }),
+  { ASSETS: { fetch: async () => new Response("ok") }, AUTH: boomKv } as Env,
+  backgroundCtx()
+)
+const boomMeHttpBody = (await boomMeHttp.json()) as { error?: string }
+assert(boomMeHttp.status === 503 && boomMeHttpBody.error === "Não confirmei as contas.", "GET /me KV throw não cai em Falha interna")
+const boomLeadsHttp = await handleRequest(
+  new Request("http://local.test/api/leads", { headers: { cookie: "abilion_session=oco" } }),
+  { ASSETS: { fetch: async () => new Response("ok") }, AUTH: boomKv } as Env,
+  backgroundCtx()
+)
+assert(boomLeadsHttp.status === 503, "GET /api/leads com snapshot KV throw é 503")
+assert(((await boomLeadsHttp.json()) as { error?: string }).error === "Não confirmei as contas.", "leads KV throw pede as contas")
 const passwordWrong = await handleAuth(
   new Request("http://local.test/api/auth/password", {
     method: "POST",
