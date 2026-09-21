@@ -128,6 +128,7 @@ import { usersWriteBlocked } from "../src/lib/users-api.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, RUNTIME_KEY, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { kvTrackStore, memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
 import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, confirmKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, gateActor, handleAuth, hashApiToken, hashPassword, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, readActor, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
+import { handleUsers } from "../worker/users.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
 import { ensureVoiceClip, VOICE_STORE_KEY, voiceClipStatus } from "../worker/ste-voice.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTelegramClaims, telegramCall, telegramJoinActor, telegramUpdateActor, TG_UPDATES } from "../worker/telegram.ts"
@@ -2298,6 +2299,11 @@ assert(safeAppPath("/leads") === "/leads", "rota interna passa")
 assert(safeAppPath("/Leads") === "/leads", "next /Leads não cai no dashboard")
 assert(safeAppPath("/FLUXO/funil/AbC") === "/fluxo/funil/AbC", "next do editor maiúsculo conserva o id")
 assert(safeAppPath("/configuracoes?tab=conta") === "/configuracoes?tab=conta", "query da conta passa")
+assert(safeAppPath("/conta") === "/conta", "rota da conta passa")
+assert(safeAppPath("/Conta") === "/conta", "next /Conta não cai no dashboard")
+assert(safeAppPath("/contafoo") === "/", "prefixo de conta nao passa")
+assert(foldStudioPath("/Conta") === "/conta", "Conta maiúsculo dobra")
+assert(foldStudioPath("/conta") === null, "conta canónica não redirecciona")
 assert(safeAppPath("//evil.com") === "/", "protocol-relative nao redireciona")
 assert(safeAppPath("/\\evil") === "/", "backslash nao redireciona")
 assert(safeAppPath("https://evil.com") === "/", "url absoluta cai no inicio")
@@ -2498,6 +2504,38 @@ const overflowMerge = mergeAuthSnapshots(
 )
 assert(overflowMerge.revoked?.includes("tok-stale"), "tombstone novo ganha do tecto cheio")
 assert(!overflowMerge.sessions.some((item) => item.token === "tok-stale"), "sessão ainda viva no snapshot velho não volta")
+const movedEmail = {
+  ...victorUser,
+  email: "victor.novo@abilion.com",
+  aliases: ["victor@abilion.com"],
+  accountUpdatedAt: 5000,
+  role: "owner" as const,
+}
+const emailMerge = mergeAuthSnapshots(
+  { users: [movedEmail], sessions: [victorSession], resets: {} },
+  { users: [victorUser], sessions: [victorSession], resets: {} }
+)
+assert(emailMerge.users.length === 1, "troca de e-mail não duplica a conta")
+assert(emailMerge.users[0]?.email === "victor.novo@abilion.com", "e-mail mais novo ganha no merge")
+assert(emailMerge.users[0]?.aliases?.includes("victor@abilion.com"), "e-mail inicial fica reservado no merge")
+assert(emailMerge.users[0]?.role === "owner", "dono inicial continua dono depois da troca")
+const emailMergeReverse = mergeAuthSnapshots(
+  { users: [victorUser], sessions: [victorSession], resets: {} },
+  { users: [movedEmail], sessions: [victorSession], resets: {} }
+)
+assert(emailMergeReverse.users.length === 1 && emailMergeReverse.users[0]?.email === "victor.novo@abilion.com", "e-mail novo ganha mesmo no snapshot da direita")
+const emailClone = mergeAuthSnapshots(
+  { users: [movedEmail], sessions: [], resets: {} },
+  {
+    users: [{ id: "clone-victor", email: "victor@abilion.com", name: "Clone", passwordHash: "h", createdAt: "2026-01-01T00:00:00.000Z", passwordUpdatedAt: 9 }],
+    sessions: [{ token: "tok-clone", userId: "clone-victor", expiresAt: sessionExp, issuedAt: 9 }],
+    resets: {},
+  }
+)
+assert(emailClone.users.length === 1, "clone do e-mail inicial funde na conta que saiu")
+assert(emailClone.users[0]?.email === "victor.novo@abilion.com", "clone não recupera o e-mail inicial")
+assert(emailClone.users[0]?.passwordHash === "h1", "clone não pisa a senha da conta")
+assert(!emailClone.sessions.some((item) => item.token === "tok-clone"), "sessão do clone não entra na conta")
 
 const authStore = memoryAuthStore()
 const loginAttempt = (password: string) =>
@@ -2669,6 +2707,17 @@ const boomPassword = await handleAuth(
 )
 assert(boomPassword.status === 503, "password KV throw não é sessão expirada")
 assert(((await boomPassword.json()) as { error?: string }).error === "Não confirmei as contas.", "password KV throw pede confirmação")
+const boomEmail = await handleAuth(
+  new Request("http://local.test/api/auth/email", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: "abilion_session=oco" },
+    body: JSON.stringify({ currentPassword: "senhaok", email: "novo@abilion.com" }),
+  }),
+  boomAuthStore,
+  { ABILION_ENV: "development" }
+)
+assert(boomEmail.status === 503, "email KV throw não é sessão expirada")
+assert(((await boomEmail.json()) as { error?: string }).error === "Não confirmei as contas.", "email KV throw pede confirmação")
 const boomActor = await readActor(
   new Request("http://local.test/api/auth/me", { headers: { cookie: "abilion_session=oco" } }),
   boomAuthStore
@@ -2753,6 +2802,174 @@ const staleSeed = await handleAuth(
   { ABILION_ENV: "development", ABILION_OPERATOR_PASSWORD: "seedpass" }
 )
 assert(staleSeed.status === 401, "senha antiga do seed já não entra")
+
+const emailStore = memoryAuthStore()
+const emailLogin = await handleAuth(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.77" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  emailStore,
+  { ABILION_ENV: "development" }
+)
+assert(emailLogin.status === 200, "login para trocar o e-mail")
+const emailCookie = emailLogin.headers.get("set-cookie") || ""
+const emailChange = await handleAuth(
+  new Request("http://local.test/api/auth/email", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: emailCookie, "x-forwarded-for": "203.0.113.77" },
+    body: JSON.stringify({ currentPassword: "senhaok", email: "Victor.Novo@abilion.com" }),
+  }),
+  emailStore,
+  { ABILION_ENV: "development" }
+)
+assert(emailChange.status === 200, "troca de e-mail")
+const emailBody = (await emailChange.json()) as { user?: { email?: string; role?: string } }
+assert(emailBody.user?.email === "victor.novo@abilion.com", "resposta normaliza o e-mail novo")
+assert(emailBody.user?.role === "owner", "sair do e-mail inicial mantém o papel de dono")
+const emailMe = await handleAuth(new Request("http://local.test/api/auth/me", { headers: { cookie: emailCookie } }), emailStore)
+assert(((await emailMe.json()) as { user?: { email?: string } }).user?.email === "victor.novo@abilion.com", "a sessão fica no e-mail novo")
+const emailOld = await handleAuth(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.78" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  emailStore,
+  { ABILION_ENV: "development" }
+)
+assert(emailOld.status === 401, "e-mail inicial já não abre outra conta")
+const emailUsers = await emailStore.load()
+assert(emailUsers.users.length === 1, "troca de e-mail não cria uma segunda conta")
+assert(emailUsers.users[0]?.aliases?.includes("victor@abilion.com"), "e-mail inicial fica reservado")
+const emailAgain = await handleAuth(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.79" },
+    body: JSON.stringify({ email: "victor.novo@abilion.com", password: "senhaok" }),
+  }),
+  emailStore,
+  { ABILION_ENV: "development" }
+)
+assert(emailAgain.status === 200, "o e-mail novo entra com a mesma senha")
+const emailWrong = await handleAuth(
+  new Request("http://local.test/api/auth/email", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: emailCookie, "x-forwarded-for": "203.0.113.77" },
+    body: JSON.stringify({ currentPassword: "errada1", email: "livre@abilion.com" }),
+  }),
+  emailStore,
+  { ABILION_ENV: "development" }
+)
+assert(emailWrong.status === 400, "senha errada não troca o e-mail")
+const emailInvalid = await handleAuth(
+  new Request("http://local.test/api/auth/email", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: emailCookie, "x-forwarded-for": "203.0.113.77" },
+    body: JSON.stringify({ currentPassword: "senhaok", email: "sem-arroba" }),
+  }),
+  emailStore,
+  { ABILION_ENV: "development" }
+)
+assert(emailInvalid.status === 400, "e-mail inválido não grava")
+const emailSame = await handleAuth(
+  new Request("http://local.test/api/auth/email", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: emailCookie, "x-forwarded-for": "203.0.113.77" },
+    body: JSON.stringify({ currentPassword: "senhaok", email: "victor.novo@abilion.com" }),
+  }),
+  emailStore,
+  { ABILION_ENV: "development" }
+)
+assert(emailSame.status === 200, "repetir o e-mail actual responde ok")
+await ensureOperatorUsers(emailStore, "seedpass")
+const emailAfterSeed = await emailStore.load()
+assert(!emailAfterSeed.users.some((item) => item.email === "victor@abilion.com"), "seed não recria o e-mail inicial")
+assert(emailAfterSeed.users.some((item) => item.email === "gabriel@abilion.com"), "seed ainda cria o operador que não saiu")
+const emailTaken = await handleAuth(
+  new Request("http://local.test/api/auth/email", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: emailCookie, "x-forwarded-for": "203.0.113.77" },
+    body: JSON.stringify({ currentPassword: "senhaok", email: "gabriel@abilion.com" }),
+  }),
+  emailStore,
+  { ABILION_ENV: "development" }
+)
+assert(emailTaken.status === 409, "e-mail de outra conta é 409")
+const reservedCreate = await handleUsers(
+  new Request("http://local.test/api/users", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com", name: "Clone", password: "senhaok" }),
+  }),
+  emailStore,
+  { id: emailBody.user?.email ? "actor" : "actor", email: "victor.novo@abilion.com", name: "Victor", role: "owner" }
+)
+assert(reservedCreate.status === 409, "criar conta com o e-mail inicial reservado é 409")
+const emailStill = await emailStore.load()
+assert(
+  emailStill.users.find((item) => item.aliases?.includes("victor@abilion.com"))?.email === "victor.novo@abilion.com",
+  "falhas não revertem o e-mail"
+)
+const putBase = memoryAuthStore()
+const putLogin = await handleAuth(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.70" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  putBase,
+  { ABILION_ENV: "development" }
+)
+const putCookie = putLogin.headers.get("set-cookie") || ""
+const putFlaky = {
+  async load() {
+    return putBase.load()
+  },
+  async save() {
+    throw new Error("put")
+  },
+}
+const putEmail = await handleAuth(
+  new Request("http://local.test/api/auth/email", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: putCookie, "x-forwarded-for": "203.0.113.70" },
+    body: JSON.stringify({ currentPassword: "senhaok", email: "nao-grava@abilion.com" }),
+  }),
+  putFlaky,
+  { ABILION_ENV: "development" }
+)
+assert(putEmail.status === 503, "email persist throw é 503")
+assert((await putBase.load()).users[0]?.email === "victor@abilion.com", "email persist throw não grava o e-mail")
+const raceEmailKv = memoryKv()
+const raceEmailStore = kvAuthStore(raceEmailKv)
+const raceEmailLogin = await handleAuth(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.71" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  raceEmailStore,
+  { ABILION_ENV: "development" }
+)
+assert(raceEmailLogin.status === 200, "login no KV para a corrida do e-mail")
+const raceEmailCookie = raceEmailLogin.headers.get("set-cookie") || ""
+const raceEmailStale = await raceEmailStore.load()
+const raceEmailChange = await handleAuth(
+  new Request("http://local.test/api/auth/email", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: raceEmailCookie, "x-forwarded-for": "203.0.113.71" },
+    body: JSON.stringify({ currentPassword: "senhaok", email: "victor.race@abilion.com" }),
+  }),
+  raceEmailStore,
+  { ABILION_ENV: "development" }
+)
+assert(raceEmailChange.status === 200, "troca de e-mail no KV")
+await raceEmailStore.save(raceEmailStale)
+const raceEmailAfter = await raceEmailStore.load()
+assert(raceEmailAfter.users.some((item) => item.email === "victor.race@abilion.com"), "KV não reverte o e-mail na escrita velha")
+assert(!raceEmailAfter.users.some((item) => item.email === "victor@abilion.com"), "KV não duplica o e-mail antigo")
 
 const sessionStore = memoryAuthStore()
 const sessionCookies: string[] = []

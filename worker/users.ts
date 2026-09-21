@@ -4,6 +4,8 @@ import {
   clipAuthTokens,
   hashApiToken,
   hashPassword,
+  emailInUse,
+  holdsOperatorSeat,
   isOperatorEmail,
   isOwner,
   isValidEmail,
@@ -33,7 +35,7 @@ function json(data: unknown, status = 200) {
 }
 
 function ownerCount(users: StoredUser[]) {
-  return users.filter((user) => !user.disabled && (user.role === "owner" || isOperatorEmail(user.email))).length
+  return users.filter((user) => !user.disabled && (user.role === "owner" || holdsOperatorSeat(user))).length
 }
 
 async function loadAccounts(store: AuthStore) {
@@ -87,7 +89,7 @@ export async function handleUsers(request: Request, store: AuthStore, actor: Pub
     const loaded = await loadAccounts(store)
     if (loaded.unread || !loaded.snapshot) return json({ error: ACCOUNTS_UNREAD }, 503)
     const snapshot = loaded.snapshot
-    if (snapshot.users.some((item) => item.email === email)) return json({ error: "Já existe uma conta com este e-mail." }, 409)
+    if (emailInUse(snapshot.users, email)) return json({ error: "Já existe uma conta com este e-mail." }, 409)
     if (snapshot.users.length >= USER_CAP) return json({ error: `O estúdio aceita no máximo ${USER_CAP} contas.` }, 400)
     const user: StoredUser = {
       id: randomToken(8),
@@ -128,18 +130,18 @@ export async function handleUsers(request: Request, store: AuthStore, actor: Pub
       user.name = name
     }
     if (parsed.value.role === "owner" || parsed.value.role === "operator") {
-      if (isOperatorEmail(user.email) && parsed.value.role !== "owner") {
+      if (holdsOperatorSeat(user) && parsed.value.role !== "owner") {
         return json({ error: "As contas iniciais da Abilion ficam como dono." }, 400)
       }
-      if (parsed.value.role === "operator" && ownerCount(snapshot.users) <= 1 && (user.role === "owner" || isOperatorEmail(user.email))) {
+      if (parsed.value.role === "operator" && ownerCount(snapshot.users) <= 1 && (user.role === "owner" || holdsOperatorSeat(user))) {
         return json({ error: "Mantém pelo menos um dono." }, 400)
       }
       user.role = parsed.value.role
     }
     if (typeof parsed.value.disabled === "boolean") {
       if (user.id === actor.id) return json({ error: "Não desligues a tua própria conta." }, 400)
-      if (isOperatorEmail(user.email)) return json({ error: "As contas iniciais da Abilion não desligam." }, 400)
-      if (parsed.value.disabled && ownerCount(snapshot.users) <= 1 && (user.role === "owner" || isOperatorEmail(user.email))) {
+      if (holdsOperatorSeat(user)) return json({ error: "As contas iniciais da Abilion não desligam." }, 400)
+      if (parsed.value.disabled && ownerCount(snapshot.users) <= 1 && (user.role === "owner" || holdsOperatorSeat(user))) {
         return json({ error: "Mantém pelo menos um dono activo." }, 400)
       }
       user.disabled = parsed.value.disabled

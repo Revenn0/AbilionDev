@@ -1,6 +1,6 @@
 import type { ComponentType } from "react"
 import { Link, useLocation } from "react-router-dom"
-import { ChartNoAxesCombined, LayoutDashboard, LogOut, MessagesSquare, PanelLeft, PanelLeftClose, Send, Settings, UserRoundCog, Users, Workflow } from "lucide-react"
+import { ChartNoAxesCombined, CircleUser, LayoutDashboard, LogOut, MessagesSquare, PanelLeft, PanelLeftClose, Send, Settings, UserRoundCog, Users, Workflow } from "lucide-react"
 import { ThemeToggle } from "@/components/theme/toggle"
 import { LogoMark } from "@/components/brand/logo"
 import { Button } from "@/components/ui/button"
@@ -23,6 +23,7 @@ const NAV: NavItem[] = [
   { href: "/telegram", label: "Telegram", icon: Send },
   { href: "/utilizadores", label: "Utilizadores", icon: UserRoundCog },
   { href: "/configuracoes", label: "Configurações", icon: Settings },
+  { href: "/conta", label: "Conta", icon: CircleUser },
 ]
 
 function isActive(pathname: string, href: string) {

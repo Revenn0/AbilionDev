@@ -174,6 +174,7 @@ type Store = {
   state: AppState
   login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
+  noteUser: (user: User) => void
   createFunnel: (funnel: SalesFunnel) => void
   saveFunnel: (funnel: SalesFunnel) => void
   flushCrmNow: () => Promise<{ ok: boolean; error?: string; queued?: boolean }>
@@ -738,6 +739,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setSettingsSync("idle")
         setEventsSync("idle")
         commitState(crmStateAfterActorChange(stateRef.current, data.user))
+      },
+      noteUser: (user) => {
+        commitState({ ...stateRef.current, user })
       },
       logout: async () => {
         await flushLeadWrites()

@@ -22,6 +22,7 @@ function pageTitle(pathname: string) {
   if (pathname.startsWith("/telegram")) return "Telegram"
   if (pathname.startsWith("/utilizadores")) return "Utilizadores"
   if (pathname.startsWith("/configuracoes")) return "Configurações"
+  if (pathname.startsWith("/conta")) return "Conta"
   return "Dashboard"
 }
 

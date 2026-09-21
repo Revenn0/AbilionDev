@@ -7,10 +7,7 @@ import {
   Calendar,
   FileSpreadsheet,
   FormInput,
-  Eye,
-  EyeOff,
   Moon,
-  KeyRound,
   Plug,
   Send,
   Settings as SettingsIcon,
@@ -27,7 +24,7 @@ import { downloadLeadsCsv } from "@/lib/leads-export"
 import { leadCatalogClipped, leadsExportBlocked } from "@/lib/ops"
 import { cleanBotUsername, cleanTelegramGroupUrl } from "@/lib/migrate"
 import { useStore } from "@/lib/store"
-import { changePasswordRequest } from "@/lib/auth-api"
+import { AccountPanel } from "@/components/account/account-panel"
 import { PixelSnippet } from "@/components/layout/pixel-snippet"
 import { McpPane } from "@/components/settings/mcp-pane"
 import { workerUrl } from "@/lib/channel"
@@ -159,7 +156,7 @@ export function SettingsPage() {
 
         <div role="tabpanel" id={`settings-panel-${tab}`} aria-labelledby={`settings-tab-${tab}`} tabIndex={0}>
           {tab === "bot" && <BotPane />}
-          {tab === "conta" && <AccountPane />}
+          {tab === "conta" && <AccountPanel />}
           {tab === "mcp" && <McpPane />}
           {tab === "plugins" && <PluginsPane />}
           {tab === "notificacoes" && <NotifyPane />}
@@ -649,137 +646,6 @@ function BotPane() {
         botUsername={cleanBotUsername(username) || runtime.telegramBotUsername || state.settings.telegramBotUsername}
       />
     </div>
-  )
-}
-
-function AccountPane() {
-  const { state } = useStore()
-  const [current, setCurrent] = useState("")
-  const [next, setNext] = useState("")
-  const [showCurrent, setShowCurrent] = useState(false)
-  const [showNext, setShowNext] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState("")
-  const lock = useRef(false)
-
-  return (
-    <section className="surface max-w-3xl p-6">
-      <p className="text-[14px] font-medium">Conta do operador</p>
-      <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
-        Em produção o “Esqueceu a senha?” não envia e-mail. Troca a senha aqui com a senha actual. Contas novas e o token
-        do agente ficam em{" "}
-        <Link to="/utilizadores" className="underline underline-offset-3">
-          Utilizadores
-        </Link>
-        . O URL do MCP e o que o agente pode fazer estão em{" "}
-        <Link to="/configuracoes?tab=mcp" className="underline underline-offset-3">
-          MCP
-        </Link>
-        .
-      </p>
-      <dl className="mt-4 space-y-2 text-[12.5px]">
-        <div className="flex flex-wrap justify-between gap-2">
-          <dt className="text-muted-foreground">Operador</dt>
-          <dd className="font-medium">{state.user?.name}</dd>
-        </div>
-        <div className="flex flex-wrap justify-between gap-2">
-          <dt className="text-muted-foreground">E-mail</dt>
-          <dd className="font-medium">{state.user?.email}</dd>
-        </div>
-        <div className="flex flex-wrap justify-between gap-2">
-          <dt className="text-muted-foreground">Papel</dt>
-          <dd className="font-medium">{state.user?.role === "operator" ? "Operador" : "Dono"}</dd>
-        </div>
-      </dl>
-      <form
-        className="mt-5 space-y-4"
-        onSubmit={(event) => {
-          event.preventDefault()
-          if (lock.current || busy) return
-          if (!current.trim()) {
-            setError("Informa a senha actual.")
-            return
-          }
-          if (next.length < 6) {
-            setError("A nova senha precisa de 6+ caracteres.")
-            return
-          }
-          setError("")
-          lock.current = true
-          setBusy(true)
-          void changePasswordRequest(current, next)
-            .then(() => {
-              setCurrent("")
-              setNext("")
-              toast.success("Senha actualizada.")
-            })
-            .catch((err: Error) => {
-              setError(err.message)
-              toast.error(err.message)
-            })
-            .finally(() => {
-              lock.current = false
-              setBusy(false)
-            })
-        }}
-      >
-        <div className="space-y-1.5">
-          <Label htmlFor="current-password">Senha actual</Label>
-          <div className="relative">
-            <Input
-              id="current-password"
-              type={showCurrent ? "text" : "password"}
-              autoComplete="current-password"
-              value={current}
-              className="pr-10"
-              aria-invalid={Boolean(error) && (error.includes("actual") || error.includes("inválida"))}
-              aria-describedby={error ? "password-error" : undefined}
-              onChange={(event) => setCurrent(event.target.value)}
-            />
-            <button
-              type="button"
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              onClick={() => setShowCurrent((value) => !value)}
-              aria-label={showCurrent ? "Ocultar senha actual" : "Mostrar senha actual"}
-            >
-              {showCurrent ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-            </button>
-          </div>
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="new-password">Nova senha</Label>
-          <div className="relative">
-            <Input
-              id="new-password"
-              type={showNext ? "text" : "password"}
-              autoComplete="new-password"
-              value={next}
-              className="pr-10"
-              aria-invalid={error.includes("6+")}
-              aria-describedby={error ? "password-error" : undefined}
-              onChange={(event) => setNext(event.target.value)}
-            />
-            <button
-              type="button"
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              onClick={() => setShowNext((value) => !value)}
-              aria-label={showNext ? "Ocultar nova senha" : "Mostrar nova senha"}
-            >
-              {showNext ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-            </button>
-          </div>
-        </div>
-        {error ? (
-          <p id="password-error" role="alert" className="text-[12px] text-destructive">
-            {error}
-          </p>
-        ) : null}
-        <Button type="submit" className="rounded-full" disabled={busy}>
-          <KeyRound className="size-3.5" />
-          {busy ? "A gravar…" : "Guardar senha"}
-        </Button>
-      </form>
-    </section>
   )
 }
 

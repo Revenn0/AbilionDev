@@ -7,6 +7,7 @@ const ALLOWED = new Set([
   "/telegram",
   "/utilizadores",
   "/configuracoes",
+  "/conta",
   "/privacidade",
 ])
 
@@ -28,7 +29,7 @@ export function isWorkerPublicPath(pathname: string) {
   return WORKER_PUBLIC.has(path) || path.startsWith("/api/")
 }
 
-const STUDIO = new Set(["/analytics", "/fluxo", "/leads", "/conversas", "/telegram", "/utilizadores", "/configuracoes"])
+const STUDIO = new Set(["/analytics", "/fluxo", "/leads", "/conversas", "/telegram", "/utilizadores", "/configuracoes", "/conta"])
 
 const STUDIO_ALIASES: Record<string, string> = {
   "/settings": "/configuracoes",

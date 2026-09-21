@@ -38,6 +38,8 @@ export type StoredUser = {
   createdAt: string
   passwordUpdatedAt?: number
   accountUpdatedAt?: number
+  /** E-mails iniciais da Abilion que esta conta deixou. Continuam reservados. */
+  aliases?: string[]
   role?: UserRole
   disabled?: boolean
   tokens?: ApiToken[]
@@ -143,12 +145,27 @@ export function isOperatorEmail(email: string) {
   return OPERATORS.some((item) => item.email === email)
 }
 
+export function holdsOperatorSeat(user: Pick<StoredUser, "email" | "aliases">) {
+  if (isOperatorEmail(user.email)) return true
+  return (user.aliases ?? []).some((item) => isOperatorEmail(item))
+}
+
+export function emailInUse(users: StoredUser[], email: string, exceptId = "") {
+  const value = normalizeEmail(email)
+  if (!value) return false
+  return users.some(
+    (user) =>
+      user.id !== exceptId &&
+      (normalizeEmail(user.email) === value || (user.aliases ?? []).some((item) => normalizeEmail(item) === value))
+  )
+}
+
 export function operatorName(email: string) {
   return OPERATORS.find((item) => item.email === email)?.name ?? email
 }
 
-export function userRole(user: Pick<StoredUser, "email" | "role">): UserRole {
-  if (isOperatorEmail(user.email)) return "owner"
+export function userRole(user: Pick<StoredUser, "email" | "role" | "aliases">): UserRole {
+  if (holdsOperatorSeat(user)) return "owner"
   return user.role === "owner" ? "owner" : "operator"
 }
 
@@ -163,9 +180,9 @@ export function publicUser(user: StoredUser): PublicUser {
 export function publicManagedUser(user: StoredUser): ManagedUser {
   return {
     ...publicUser(user),
-    disabled: Boolean(user.disabled) && !isOperatorEmail(user.email),
+    disabled: Boolean(user.disabled) && !holdsOperatorSeat(user),
     createdAt: user.createdAt,
-    seeded: isOperatorEmail(user.email),
+    seeded: holdsOperatorSeat(user),
     tokenCount: (user.tokens ?? []).length,
   }
 }
@@ -208,8 +225,8 @@ export function mergeTokens(left?: ApiToken[], right?: ApiToken[], drop: Iterabl
 }
 
 export function clipUsers(users: StoredUser[], cap = USER_CAP): StoredUser[] {
-  const seeded = users.filter((user) => user?.email && isOperatorEmail(user.email))
-  const rest = users.filter((user) => user?.email && !isOperatorEmail(user.email)).slice(0, Math.max(0, cap - seeded.length))
+  const seeded = users.filter((user) => user?.email && holdsOperatorSeat(user))
+  const rest = users.filter((user) => user?.email && !holdsOperatorSeat(user)).slice(0, Math.max(0, cap - seeded.length))
   return [...seeded, ...rest]
 }
 
@@ -291,6 +308,16 @@ function accountAt(user: StoredUser | undefined) {
   return user?.accountUpdatedAt ?? 0
 }
 
+function reservedOperatorAliases(values: Array<string | undefined>, email: string) {
+  const out: string[] = []
+  for (const item of values) {
+    const value = normalizeEmail(item || "")
+    if (!value || value === email || !isOperatorEmail(value) || out.includes(value)) continue
+    out.push(value)
+  }
+  return out.slice(0, 8)
+}
+
 function preferUser(prev: StoredUser, next: StoredUser): StoredUser {
   const prevAt = passwordAt(prev)
   const nextAt = passwordAt(next)
@@ -303,11 +330,14 @@ function preferUser(prev: StoredUser, next: StoredUser): StoredUser {
   const prevAcc = accountAt(prev)
   const nextAcc = accountAt(next)
   const account = nextAcc > prevAcc ? next : prevAcc > nextAcc ? prev : winner
-  const seeded = isOperatorEmail(prev.email) || isOperatorEmail(next.email)
+  const email = normalizeEmail((nextAcc > prevAcc ? next.email : prev.email) || prev.email)
+  const aliases = reservedOperatorAliases([prev.email, next.email, ...(prev.aliases ?? []), ...(next.aliases ?? [])], email)
+  const seeded = isOperatorEmail(email) || aliases.length > 0
   return {
     ...winner,
     id: prev.id,
-    email: prev.email,
+    email,
+    aliases: aliases.length ? aliases : undefined,
     role: seeded ? "owner" : account.role === "owner" ? "owner" : "operator",
     disabled: seeded ? false : nextAcc !== prevAcc ? Boolean(account.disabled) : Boolean(prev.disabled || next.disabled),
     accountUpdatedAt: Math.max(prevAcc, nextAcc, winner.accountUpdatedAt ?? 0) || undefined,
@@ -317,22 +347,71 @@ function preferUser(prev: StoredUser, next: StoredUser): StoredUser {
 
 export function mergeAuthSnapshots(left: AuthSnapshot, right: AuthSnapshot): AuthSnapshot {
   const remap = new Map<string, string>()
-  const byEmail = new Map<string, StoredUser>()
-  for (const user of left.users) {
-    if (user?.id && user.email) byEmail.set(user.email, user)
-  }
-  for (const user of right.users) {
-    if (!user?.id || !user.email) continue
-    const prev = byEmail.get(user.email)
-    if (!prev) {
-      byEmail.set(user.email, user)
-      continue
+  const absorbed = new Set<string>()
+  const byId = new Map<string, StoredUser>()
+  const emailOwner = new Map<string, string>()
+
+  const seatForAlias = (email: string) => {
+    for (const [id, user] of byId) {
+      if ((user.aliases ?? []).some((item) => normalizeEmail(item) === email)) return id
     }
-    if (prev.id !== user.id) remap.set(user.id, prev.id)
-    byEmail.set(user.email, preferUser(prev, { ...user, id: prev.id }))
+    return ""
   }
 
-  const users = clipUsers([...byEmail.values()])
+  const reindex = (previous: StoredUser, merged: StoredUser) => {
+    const previousEmail = normalizeEmail(previous.email)
+    if (emailOwner.get(previousEmail) === previous.id) emailOwner.delete(previousEmail)
+    byId.set(merged.id, merged)
+    emailOwner.set(normalizeEmail(merged.email), merged.id)
+  }
+
+  const adopt = (user: StoredUser) => {
+    const email = normalizeEmail(user.email)
+    if (!user.id || !email) return
+    const normalized = email === user.email ? user : { ...user, email }
+    const sameId = byId.get(normalized.id)
+    if (sameId) {
+      let merged = preferUser(sameId, normalized)
+      const taken = emailOwner.get(merged.email)
+      if (taken && taken !== sameId.id) {
+        const aliases = reservedOperatorAliases(
+          [sameId.email, normalized.email, ...(sameId.aliases ?? []), ...(normalized.aliases ?? [])],
+          sameId.email
+        ).filter((item) => {
+          const owner = emailOwner.get(item)
+          return !owner || owner === sameId.id
+        })
+        merged = { ...merged, email: sameId.email, aliases: aliases.length ? aliases : undefined }
+      }
+      reindex(sameId, merged)
+      return
+    }
+    const sameEmailId = emailOwner.get(email)
+    if (sameEmailId) {
+      if (sameEmailId !== normalized.id) remap.set(normalized.id, sameEmailId)
+      const prev = byId.get(sameEmailId)
+      if (!prev) return
+      reindex(prev, preferUser(prev, { ...normalized, id: sameEmailId }))
+      return
+    }
+    const aliasId = seatForAlias(email)
+    if (aliasId && aliasId !== normalized.id) {
+      remap.set(normalized.id, aliasId)
+      absorbed.add(normalized.id)
+      return
+    }
+    byId.set(normalized.id, normalized)
+    emailOwner.set(email, normalized.id)
+  }
+
+  for (const user of left.users) {
+    if (user?.id && user.email) adopt(user)
+  }
+  for (const user of right.users) {
+    if (user?.id && user.email) adopt(user)
+  }
+
+  const users = clipUsers([...byId.values()])
   const winAt = new Map(users.map((user) => [user.id, passwordAt(user)]))
   const freshByUser = new Map<string, Set<string> | null>()
   const tokensFor = (userId: string) => {
@@ -355,7 +434,7 @@ export function mergeAuthSnapshots(left: AuthSnapshot, right: AuthSnapshot): Aut
 
   const sessions = new Map<string, Session>()
   for (const session of [...left.sessions, ...right.sessions]) {
-    if (!session?.token) continue
+    if (!session?.token || absorbed.has(session.userId)) continue
     const userId = remap.get(session.userId) ?? session.userId
     const allowed = tokensFor(userId)
     if (allowed && !allowed.has(session.token)) continue
@@ -585,7 +664,9 @@ export async function ensureOperatorUsers(store: AuthStore, password: string) {
   const snapshot = loaded.snapshot
   let changed = false
   for (const operator of OPERATORS) {
-    const current = snapshot.users.find((user) => user.email === operator.email)
+    const current = snapshot.users.find(
+      (user) => user.email === operator.email || (user.aliases ?? []).some((item) => normalizeEmail(item) === operator.email)
+    )
     if (!current) {
       snapshot.users.push({
         id: randomToken(8),
@@ -600,7 +681,7 @@ export async function ensureOperatorUsers(store: AuthStore, password: string) {
       changed = true
       continue
     }
-    if (current.name !== operator.name) {
+    if (current.email === operator.email && current.name !== operator.name) {
       current.name = operator.name
       changed = true
     }
@@ -841,7 +922,8 @@ async function routeAuth(request: Request, store: AuthStore, env?: { ABILION_OPE
     }
     let user = snapshot.users.find((item) => item.email === email)
     if (!user) {
-      if (!isOperatorEmail(email)) {
+      const retired = snapshot.users.some((item) => (item.aliases ?? []).some((alias) => normalizeEmail(alias) === email))
+      if (retired || !isOperatorEmail(email)) {
         await persistAuthSnapshot(store, snapshot)
         return loginFail(request, "E-mail ou senha inválidos.", 401, body)
       }
@@ -1002,6 +1084,52 @@ async function routeAuth(request: Request, store: AuthStore, env?: { ABILION_OPE
     dropUserApiTokens(snapshot, user)
     await persistAuthSnapshot(store, snapshot)
     return json({ ok: true })
+  }
+
+  if (path === "/api/auth/email" && request.method === "POST") {
+    const token = readCookie(request)
+    const loaded = await readAuthSnapshot(store)
+    if (loaded.unread) return json({ error: ACCOUNTS_UNREAD }, 503)
+    let snapshot = loaded.snapshot
+    if (token && !snapshot.users.length) return json({ error: ACCOUNTS_UNREAD }, 503)
+    const session = snapshot.sessions.find((item) => item.token === token)
+    const user = session ? snapshot.users.find((item) => item.id === session.userId) : null
+    if (!user) return json({ error: "Sessão expirada." }, 401)
+    const guard = consumeThrottle(snapshot, `email:${clientIp(request)}:${user.id}`, 5, 15 * 60 * 1000)
+    snapshot = guard.snapshot
+    if (!guard.ok) {
+      await persistAuthSnapshot(store, snapshot)
+      return json({ error: "Muitas tentativas. Espera uns minutos e tenta de novo." }, 429)
+    }
+    const parsed = await readBody(request)
+    if (!parsed.ok) return parsed.response
+    const currentPassword = parsed.body.currentPassword || ""
+    const email = normalizeEmail(parsed.body.email || "")
+    if (!(await verifyPassword(currentPassword, user.passwordHash))) {
+      await persistAuthSnapshot(store, snapshot)
+      return json({ error: "Senha atual inválida." }, 400)
+    }
+    if (!isValidEmail(email)) {
+      await persistAuthSnapshot(store, snapshot)
+      return json({ error: "Informa um e-mail válido." }, 400)
+    }
+    if (emailInUse(snapshot.users, email, user.id)) {
+      await persistAuthSnapshot(store, snapshot)
+      return json({ error: "Já existe uma conta com este e-mail." }, 409)
+    }
+    if (email !== user.email) {
+      const aliases = reservedOperatorAliases([user.email, ...(user.aliases ?? [])], email)
+      user.email = email
+      user.aliases = aliases.length ? aliases : undefined
+      user.accountUpdatedAt = Date.now()
+      if (holdsOperatorSeat(user)) {
+        user.role = "owner"
+        user.disabled = false
+      }
+    }
+    snapshot = clearThrottle(snapshot, `email:${clientIp(request)}:${user.id}`)
+    await persistAuthSnapshot(store, snapshot)
+    return json({ ok: true, user: publicUser(user) })
   }
 
   if (path === "/api/auth/reset" && request.method === "POST") {

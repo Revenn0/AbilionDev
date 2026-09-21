@@ -12,7 +12,7 @@ const VIEWPORTS = [
   { name: "1440", width: 1440, height: 900 },
 ] as const
 
-const ROUTES = ["/", "/analytics", "/fluxo", "/leads", "/conversas", "/telegram", "/utilizadores", "/configuracoes"] as const
+const ROUTES = ["/", "/analytics", "/fluxo", "/leads", "/conversas", "/telegram", "/utilizadores", "/configuracoes", "/conta"] as const
 
 function assert(cond: unknown, message: string) {
   if (!cond) throw new Error(message)
@@ -339,6 +339,43 @@ try {
   await clickNamed(page, "Vincular Telegram")
   await page.waitForSelector("#bot-user-error", { timeout: 4_000 })
 
+  await open(page, "/")
+  await page.waitForSelector("a[aria-label='Conta']", { timeout: 8_000 })
+  await page.click("a[aria-label='Conta']")
+  await page.waitForFunction(() => location.pathname === "/conta", { timeout: 8_000 })
+  await page.waitForSelector("#account-email", { timeout: 8_000 })
+  await page.waitForSelector("#new-password", { timeout: 8_000 })
+  assert(((await page.$eval("h1", (el) => el.textContent || "")) || "").includes("Conta"), "conta tem título")
+  await page.click("#account-email-submit")
+  await page.waitForSelector("#account-email-error", { timeout: 4_000 })
+  await page.click("#account-email", { clickCount: 3 })
+  await page.type("#account-email", "sem-arroba")
+  await page.type("#account-email-password", PASSWORD)
+  await page.click("#account-email-submit")
+  await page.waitForFunction(
+    () => (document.querySelector("#account-email-error")?.textContent || "").includes("válido"),
+    { timeout: 4_000 }
+  )
+  await page.click("#account-email", { clickCount: 3 })
+  await page.keyboard.press("Backspace")
+  await page.type("#account-email", "outro.audit@abilion.com")
+  await page.click("#account-email-password", { clickCount: 3 })
+  await page.type("#account-email-password", "errada1")
+  await page.click("#account-email-submit")
+  await page.waitForFunction(
+    () => (document.querySelector("#account-email-error")?.textContent || "").toLowerCase().includes("senha"),
+    { timeout: 8_000 }
+  )
+  await page.click("#current-password", { clickCount: 3 })
+  await page.type("#current-password", PASSWORD)
+  await page.click("#new-password", { clickCount: 3 })
+  await page.type("#new-password", "123")
+  await page.click("#account-password-submit")
+  await page.waitForFunction(
+    () => (document.querySelector("#password-error")?.textContent || "").includes("6+"),
+    { timeout: 4_000 }
+  )
+
   await open(page, "/utilizadores")
   await page.waitForSelector("#user-password", { timeout: 8_000 })
   await page.waitForFunction(
@@ -602,7 +639,7 @@ try {
 
   for (const viewport of VIEWPORTS) {
     await page.setViewport({ width: viewport.width, height: viewport.height })
-    for (const route of ["/", "/analytics", "/leads", "/conversas", "/telegram", "/utilizadores", "/configuracoes", "/fluxo", editorPath, "/l", "/privacidade"] as const) {
+    for (const route of ["/", "/analytics", "/leads", "/conversas", "/telegram", "/utilizadores", "/configuracoes", "/conta", "/fluxo", editorPath, "/l", "/privacidade"] as const) {
       await open(page, route)
       const box = await overflow(page)
       assert(!box.overflow, `overflow ${viewport.name}px em ${route} (${box.scrollWidth}>${box.clientWidth})`)
