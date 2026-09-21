@@ -5738,6 +5738,7 @@ assert(!metricPending("idle", 4), "KPI de conversas com cache Telegram já conta
 assert(metricPending("ok", 0, true), "KPI de conversas com inbox falhada não finge zero")
 assert(!metricPending("ok", 0), "KPI de conversas vazio depois do GET é zero")
 assert(!metricPending("error", 3), "KPI de conversas com cache ainda mostra o número")
+assert(metricPending("error", 0), "campanha Telegram/Facebook sem recorte e GET falho fica …")
 assert(leadMatchesFilter(lead("wa-1"), "telegram"), "lead Telegram entra no filtro Telegram")
 assert(!leadMatchesFilter({ ...lead("wa-2"), channel: "whatsapp", origin: "import" }, "telegram"), "WhatsApp não entra no filtro Telegram")
 assert(leadFilterCount([{ ...lead("wa-3"), channel: "whatsapp", origin: "import" }], "telegram") === 0, "recorte Telegram vazio com WhatsApp")
