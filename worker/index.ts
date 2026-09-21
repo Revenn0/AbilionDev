@@ -14,7 +14,7 @@ import { foldPublicPath, foldStudioPath, safeAppPath } from "../src/lib/safe-pat
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { BANCA_FIXED, type Lead, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types.ts"
 import { compactGeo, factsFromGeo } from "../src/lib/geo.ts"
-import { parseDevice } from "../src/lib/track.ts"
+import { parseDevice, summarizeTrack } from "../src/lib/track.ts"
 import {
   adoptDueLeads,
   adoptLeadStores,
@@ -65,7 +65,7 @@ import {
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
 import { readJsonObject, readJsonStrict, type JsonFail } from "./json-body.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall, telegramJoinActor, telegramUpdateActor } from "./telegram.ts"
-import { attachWorkspaceLeadEvents, fetchRemoteDueLeads, fetchRemoteLeadPage, fetchRemoteLeadsByIds, fillLeadHoles, findWorkspaceLead, hydrateWorkspaceLead, leadCatalogUnread, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, readWorkspaceFunnels, readWorkspaceSettings, resolveWorkspaceLeadWrite, rowToLead, searchWorkspaceLeads, summarizeWorkspaceTrack, type LeadRow } from "./workspace-settings.ts"
+import { attachWorkspaceLeadEvents, fetchRemoteDueLeads, fetchRemoteLeadPage, fetchRemoteLeadsByIds, fetchRemotePageEvents, fillLeadHoles, findWorkspaceLead, hydrateWorkspaceLead, leadCatalogUnread, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, readWorkspaceFunnels, readWorkspaceSettings, resolveWorkspaceLeadWrite, rowToLead, searchWorkspaceLeads, summarizeWorkspaceTrack, type LeadRow } from "./workspace-settings.ts"
 import type { KvLike } from "./kv.ts"
 
 type Fetcher = { fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> }
@@ -420,16 +420,21 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       regionCode: typeof body.regionCode === "string" ? body.regionCode : undefined,
     })
     const store = trackStore(env)
-    const last = await recordTrack(
-      store,
-      {
-        ...body,
-        ...compactGeo(geo),
-        visitorId: String(body.visitorId ?? ""),
-        device: parseDevice(request.headers.get("user-agent") || ""),
-      },
-      Date.now()
-    )
+    let last
+    try {
+      last = await recordTrack(
+        store,
+        {
+          ...body,
+          ...compactGeo(geo),
+          visitorId: String(body.visitorId ?? ""),
+          device: parseDevice(request.headers.get("user-agent") || ""),
+        },
+        Date.now()
+      )
+    } catch {
+      return new Response(null, { status: 503, headers: corsHeaders() })
+    }
     if (last && env.SUPABASE_SERVICE_ROLE) {
       await rest(env, "page_events", {
         method: "POST",
@@ -457,7 +462,15 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     const gate = await requireStudioUser(request, env)
     if (!gate.ok) return gate.response
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
-    const result = await summarizeWorkspaceTrack(env, await trackStore(env).load())
+    let kvEvents
+    try {
+      kvEvents = await trackStore(env).load()
+    } catch {
+      const remote = await fetchRemotePageEvents(env)
+      if (!remote?.length) return json({ error: "Não confirmei os eventos do pixel." }, 503)
+      return json({ ok: true, summary: summarizeTrack(remote), trackUnread: true })
+    }
+    const result = await summarizeWorkspaceTrack(env, kvEvents)
     if (!result.ok) return json({ error: "Não li os eventos do Postgres." }, 503)
     return json({ ok: true, summary: result.summary, trackUnread: result.unread || undefined })
   }

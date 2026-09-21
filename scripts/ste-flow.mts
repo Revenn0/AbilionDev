@@ -7549,6 +7549,74 @@ assert(
   )?.passwordHash === leftoverAuthHash,
   "password persist KV throw não pisa o hash leftover"
 )
+await recordTrack(kvTrackStore(runtimeHoleKv), { kind: "view", visitorId: "aabbcc99", path: "/l" }, Date.now())
+const leftoverTrack = await kvTrackStore(runtimeHoleKv).load()
+assert(leftoverTrack.some((item) => item.visitorId === "aabbcc99"), "KV do runtime hole ainda tem o pixel leftover")
+const trackKvDownEnv = { ...runtimeHoleBase, AUTH: kvThrowsOn(runtimeHoleKv, "track:events") } as Env
+const trackKvDownPost = await handleRequest(
+  new Request("http://local.test/api/track", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.160" },
+    body: JSON.stringify({ kind: "click", visitorId: "aabbcc00" }),
+  }),
+  trackKvDownEnv,
+  backgroundCtx()
+)
+assert(trackKvDownPost.status === 503, "POST pixel KV throw é 503")
+assert(trackKvDownPost.status !== 500, "POST pixel KV throw não é Falha interna")
+assert(trackKvDownPost.status !== 204, "POST pixel KV throw não finge que gravou")
+assert(!(await trackKvDownPost.text()).includes("Falha interna."), "POST pixel KV throw não vaza Falha interna")
+assert(trackKvDownPost.headers.get("access-control-allow-origin") === "*", "POST pixel KV throw manda CORS")
+assert((await kvTrackStore(runtimeHoleKv).load()).some((item) => item.visitorId === "aabbcc99"), "POST pixel KV throw não apaga o leftover")
+assert(!(await kvTrackStore(runtimeHoleKv).load()).some((item) => item.visitorId === "aabbcc00"), "POST pixel KV throw não grava o clique unread")
+const trackKvDownSummary = await handleRequest(
+  new Request("http://local.test/api/track/summary", { headers: { cookie: runtimeHoleCookie } }),
+  trackKvDownEnv,
+  backgroundCtx()
+)
+const trackKvDownSummaryBody = (await trackKvDownSummary.json()) as { error?: string; summary?: { views?: number }; ok?: boolean }
+assert(trackKvDownSummary.status === 503, "GET summary KV throw é 503")
+assert(trackKvDownSummaryBody.error === "Não confirmei os eventos do pixel.", "GET summary KV throw pede confirmação")
+assert(!trackKvDownSummaryBody.summary, "GET summary KV throw não devolve zeros")
+assert(trackKvDownSummaryBody.ok !== true, "GET summary KV throw não finge ok")
+const trackRemotePrevFetch = globalThis.fetch
+let trackKvDownRemote: Response
+let trackKvDownRemoteBody: { ok?: boolean; summary?: { views?: number }; trackUnread?: boolean }
+try {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("/rest/v1/page_events")) {
+      return new Response(
+        JSON.stringify([
+          {
+            id: "pg-pix-1",
+            visitor_id: "aabbcc99",
+            kind: "view",
+            path: "/l",
+            at: "2026-09-21T00:00:00.000Z",
+          },
+        ]),
+        { status: 200 }
+      )
+    }
+    return trackRemotePrevFetch(input, init)
+  }) as typeof fetch
+  trackKvDownRemote = await handleRequest(
+    new Request("http://local.test/api/track/summary", { headers: { cookie: runtimeHoleCookie } }),
+    { ...trackKvDownEnv, SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env,
+    backgroundCtx()
+  )
+  trackKvDownRemoteBody = (await trackKvDownRemote.json()) as {
+    ok?: boolean
+    summary?: { views?: number }
+    trackUnread?: boolean
+  }
+} finally {
+  globalThis.fetch = trackRemotePrevFetch
+}
+assert(trackKvDownRemote.status === 200 && trackKvDownRemoteBody.ok, "GET summary KV throw ainda lê page_events")
+assert((trackKvDownRemoteBody.summary?.views ?? 0) >= 1, "GET summary KV throw não esconde o pixel do Postgres")
+assert(trackKvDownRemoteBody.trackUnread === true, "GET summary KV throw marca trackUnread")
+assert((await kvTrackStore(runtimeHoleKv).load()).some((item) => item.visitorId === "aabbcc99"), "GET summary KV throw não pisa o leftover")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()
