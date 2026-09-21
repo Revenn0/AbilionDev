@@ -24,7 +24,6 @@ import {
   clipRemovedIds,
   enforceSinglePublished,
   mergeLeadEvents,
-  emptySettings,
   linkRuntimeSettings,
   publicSettings,
   FUNNEL_CAP,
@@ -181,10 +180,12 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext) {
     let html = adsLandingDocument({ scriptId })
     try {
       const { resolved } = await runtimeOf(env, webhookUrl(request, env))
-      const settings = await loadSettings(env).catch(() => emptySettings())
+      const loaded = await readWorkspaceSettings(env)
+      const botUsername = cleanBotUsername(resolved.telegramBotUsername || loaded.settings.telegramBotUsername)
       html = adsLandingDocument({
-        botUsername: cleanBotUsername(resolved.telegramBotUsername || settings.telegramBotUsername),
+        botUsername,
         scriptId,
+        unread: loaded.unread && !botUsername,
       })
     } catch {
       html = adsLandingDocument({ scriptId })
@@ -287,10 +288,12 @@ async function handleMcpRoute(request: Request, env: Env) {
 async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionContext) {
   if (url.pathname === "/api/health") {
     const { resolved } = await runtimeOf(env, webhookUrl(request, env))
-    const settings = await loadSettings(env).catch(() => emptySettings())
+    const loaded = await readWorkspaceSettings(env)
+    const telegramBotUsername = cleanBotUsername(resolved.telegramBotUsername || loaded.settings.telegramBotUsername)
     return json({
       ok: true,
-      telegramBotUsername: cleanBotUsername(resolved.telegramBotUsername || settings.telegramBotUsername),
+      telegramBotUsername,
+      telegramBotUnread: loaded.unread && !telegramBotUsername ? true : undefined,
     })
   }
 

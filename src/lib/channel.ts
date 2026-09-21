@@ -13,6 +13,7 @@ export async function fetchHealth() {
       ok: boolean
       unreachable?: boolean
       telegramBotUsername?: string
+      telegramBotUnread?: boolean
     }
   } catch {
     return { ok: false as const, unreachable: true }

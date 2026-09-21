@@ -171,7 +171,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 
 | Rota | Quem |
 | --- | --- |
-| `GET /api/health` | público: só `{ ok, telegramBotUsername }` |
+| `GET /api/health` | público: `{ ok, telegramBotUsername }` e `telegramBotUnread` se as definições não confirmarem e o username estiver vazio. Não finge “bot desligado” |
 | `POST /api/auth/login` | público, 8 tentativas / 15 min por IP |
 | `POST /api/auth/logout` | sessão |
 | `GET /api/auth/me` | sessão |
@@ -194,7 +194,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `POST /api/telegram` | Telegram; `secret_token` do webhook. `/start fb_sID_vid` com settings unread e o script só no Postgres não fala o funil publicado nem mint o lead nessa campanha — o update é libertado para o Telegram repetir |
 | `GET /api/cron` | `CRON_SECRET` obrigatório; cada espera corre isolada |
 | `GET /t.js` | pixel. `/T.js` também. O Vite local manda a mesma rota ao Worker |
-| `GET /l` | público: HTML da landing do anúncio (`t.js` + CTA + skip-link). `?s=` escolhe o script. `/L` e `/L/` também. O Vite local já não serve o SPA nestas rotas |
+| `GET /l` | público: HTML da landing do anúncio (`t.js` + CTA + skip-link). `?s=` escolhe o script. `/L` e `/L/` também. O Vite local já não serve o SPA nestas rotas. Settings unread sem username não dizem “ainda não está ligado” — o pixel grava e o texto pede confirmação |
 | `GET /login` | público: HTML do formulário com skip-link e Mostrar senha (`/auth.js`, sem script inline — o CSP é `script-src 'self'`). Com sessão, 303 para o `next` seguro. `/Login` também. `/Leads`, `/FLUXO` e o resto do painel em maiúsculas fazem 303 para a rota canónica — o React não mostra 404. O `next` do login também dobra `/Leads` → `/leads`. Sair, cookie apagado e um Link do SPA para `/login` `/forgot` `/reset` `/l` `/privacidade` fazem `location.replace` para este HTML — o painel já não fica no login React. Em local o Vite encaminha `/login`, `/forgot`, `/reset` e `/privacidade` (e as variantes em maiúsculas) para o mesmo HTML |
 | `GET /forgot` | público: HTML do pedido de reset. `/Forgot` também |
 | `GET /reset` | público: HTML da nova senha (`?token=`). Sem token mostra o empty state. `/Reset` também |

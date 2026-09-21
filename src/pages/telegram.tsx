@@ -32,6 +32,7 @@ export function TelegramPage() {
   const [runtime, setRuntime] = useState<RuntimeStatus | null>(null)
   const [burstLock, setBurstLock] = useState(false)
   const botName = runtime?.telegramBotUsername || settings.telegramBotUsername
+  const botUnread = health?.telegramBotUnread === true && !botName
   const ads = adsLandingUrl()
   const landingCta = adsDeepLink(botName)
   useHashScroll("pixel")
@@ -125,13 +126,13 @@ export function TelegramPage() {
         <section className="grid gap-3 md:grid-cols-4">
           <article className="surface p-5">
             <p className="text-[12.5px] text-muted-foreground">Bot</p>
-            <p className="mt-2 text-[18px] font-medium">{botName || "Por configurar"}</p>
+            <p className="mt-2 text-[18px] font-medium">{botUnread ? "…" : botName || "Por configurar"}</p>
             <div className="mt-3 flex flex-wrap gap-1.5">
               <StatusPill tone={botName || runtime?.telegram ? "success" : "muted"}>
-                {!healthReady ? "A verificar…" : botName || runtime?.telegram ? "Configurado" : "Ainda sem bot"}
+                {!healthReady ? "A verificar…" : botUnread ? "Não confirmei o bot" : botName || runtime?.telegram ? "Configurado" : "Ainda sem bot"}
               </StatusPill>
               <StatusPill tone={runtime?.telegram ? "success" : "muted"}>
-                {!healthReady ? "A verificar…" : runtime?.telegram ? "Telegram ligado" : "À espera do token"}
+                {!healthReady ? "A verificar…" : runtime?.telegram ? "Telegram ligado" : botUnread ? "Não confirmei o token" : "À espera do token"}
               </StatusPill>
             </div>
           </article>

@@ -665,6 +665,8 @@ assert(
   "HTML da /l leva t.js e CTA no primeiro byte"
 )
 assert(!adsLandingDocument({}).includes("<a data-abilion-cta"), "HTML da /l sem bot não inventa CTA")
+assert(adsLandingDocument({ unread: true }).includes("Não confirmei o Telegram"), "HTML unread não diz que o bot não está ligado")
+assert(!adsLandingDocument({ unread: true }).includes("ainda não está ligado"), "unread não usa a cópia de bot desligado")
 assert(
   adsLandingDocument({ botUsername: "@ste_bot", scriptId: "deadbeef" }).includes("/t.js?v=2&s=deadbeef") &&
     adsLandingDocument({ botUsername: "@ste_bot", scriptId: "deadbeef" }).includes("start=fb_sdeadbeef"),
@@ -3320,6 +3322,14 @@ const pgFailCrm = await handleRequest(
 assert(pgFailCrm.status === 503, "GET CRM não finge funis vazios quando o Postgres falha")
 const pgFailHealth = await handleRequest(new Request("http://local.test/api/health"), pgFailEnv, backgroundCtx())
 assert(pgFailHealth.status === 200, "health público continua de pé se o Postgres falhar")
+const pgFailHealthBody = (await pgFailHealth.json()) as { telegramBotUsername?: string; telegramBotUnread?: boolean }
+assert(pgFailHealthBody.telegramBotUnread === true && !pgFailHealthBody.telegramBotUsername, "health unread não finge bot desligado")
+const pgFailLanding = await handleRequest(new Request("http://local.test/l"), pgFailEnv, backgroundCtx())
+const pgFailLandingHtml = await pgFailLanding.text()
+assert(pgFailLanding.status === 200 && pgFailLandingHtml.includes("/t.js"), "GET /l unread ainda serve o pixel")
+assert(pgFailLandingHtml.includes("Não confirmei o Telegram"), "GET /l unread não diz que o bot não está ligado")
+assert(!pgFailLandingHtml.includes("ainda não está ligado"), "GET /l unread não usa a cópia de bot desligado")
+assert(!pgFailLandingHtml.includes("<a data-abilion-cta"), "GET /l unread sem username não inventa CTA")
 globalThis.fetch = pgFailPrev
 const orphanKv = memoryKv()
 await orphanKv.put(
@@ -6410,6 +6420,51 @@ const mcpDeleteUnreadBody = (await mcpDeleteUnread.json()) as { result?: { isErr
 const mcpDeleteUnreadData = JSON.parse(mcpDeleteUnreadBody.result?.content?.[0]?.text || "{}") as { error?: string }
 assert(mcpDeleteUnread.status === 200 && mcpDeleteUnreadBody.result?.isError, "MCP não apaga script unread em falta")
 assert(mcpDeleteUnreadData.error === "Não confirmei o script desta página.", "MCP delete unread pede confirmação")
+const mcpHealthUnread = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 96,
+      method: "tools/call",
+      params: { name: "abilion_health", arguments: {} },
+    }),
+  }),
+  mcpInstallDownEnv,
+  backgroundCtx()
+)
+const mcpHealthUnreadBody = (await mcpHealthUnread.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const mcpHealthUnreadData = JSON.parse(mcpHealthUnreadBody.result?.content?.[0]?.text || "{}") as {
+  ok?: boolean
+  telegramBound?: boolean
+  unread?: boolean
+  telegramBotUsername?: string
+}
+assert(mcpHealthUnread.status === 200 && !mcpHealthUnreadBody.result?.isError && mcpHealthUnreadData.ok, "MCP health unread continua de pé")
+assert(mcpHealthUnreadData.unread === true && !mcpHealthUnreadData.telegramBotUsername, "MCP health unread não finge bot desligado")
+assert(mcpHealthUnreadData.telegramBound === false, "MCP health sem token no KV nem no env")
+await saveSecrets(mcpInstallDownEnv.AUTH, { telegramBotToken: "000:kv-token" })
+const mcpHealthBound = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 97,
+      method: "tools/call",
+      params: { name: "abilion_health", arguments: {} },
+    }),
+  }),
+  mcpInstallDownEnv,
+  backgroundCtx()
+)
+const mcpHealthBoundData = JSON.parse(
+  ((await mcpHealthBound.json()) as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { telegramBound?: boolean }
+assert(mcpHealthBoundData.telegramBound === true, "MCP health lê o token gravado no KV")
 
 const mcpImport = await handleRequest(
   new Request("http://local.test/mcp", {

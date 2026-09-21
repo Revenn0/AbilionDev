@@ -15,6 +15,7 @@ import {
 } from "./auth.ts"
 import { handleTokens, handleUsers } from "./users.ts"
 import { filterLiveLeads, importOrAdoptLead, leadPageFromRemote, listLeadPage } from "./crm-store.ts"
+import { emptySecrets, loadSecrets, resolveRuntime } from "./runtime-secrets.ts"
 import { fetchRemoteLeadPage, fillLeadHoles, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceSettings, searchWorkspaceLeads } from "./workspace-settings.ts"
 import { readJsonStrict } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
@@ -315,11 +316,15 @@ async function callHttp(
 
 async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name: string, args: Record<string, unknown>) {
   if (name === "abilion_health") {
-    const settings = env.AUTH ? await loadWorkspaceSettings(env) : null
+    const loaded = env.AUTH ? await readWorkspaceSettings(env) : { settings: { telegramBotUsername: "" }, unread: false }
+    const secrets = env.AUTH ? await loadSecrets(env.AUTH) : emptySecrets()
+    const resolved = resolveRuntime(env, secrets)
+    const telegramBotUsername = cleanBotUsername(resolved.telegramBotUsername || loaded.settings.telegramBotUsername)
     return {
       ok: true,
-      telegramBotUsername: cleanBotUsername(settings?.telegramBotUsername),
-      telegramBound: Boolean(env.TELEGRAM_BOT_TOKEN),
+      telegramBotUsername,
+      telegramBound: resolved.telegram,
+      unread: loaded.unread && !telegramBotUsername ? true : undefined,
     }
   }
   if (name === "abilion_list_users") {
