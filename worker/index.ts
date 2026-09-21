@@ -1016,7 +1016,12 @@ async function deliverTelegram(
   }
 
   const incoming = joinUser || start.isStart ? null : (message?.text ?? null)
-  const boards = await readWorkspaceFunnels(env)
+  let boards: { funnels: SalesFunnel[]; unread: boolean }
+  try {
+    boards = await readWorkspaceFunnels(env)
+  } catch {
+    boards = { funnels: [], unread: true }
+  }
   const funnels = boards.funnels
   let loaded: { settings: Settings; unread: boolean }
   try {
@@ -1028,15 +1033,19 @@ async function deliverTelegram(
   const startPayload = start.isStart && start.payload ? start.payload : lead.startPayload
   const scriptId = scriptIdFromStart(startPayload || "")
   const script = pageScriptById(settings.pageScripts, scriptId)
-  if (installSettingsBlocked(loaded.unread, scriptId, script)) {
-    throw new Error("Não confirmei o script desta página.")
-  }
   if (start.isStart && start.payload && script) {
     lead.funnelId = script.funnelId
     lead.campaign = `Facebook · ${script.name}`.slice(0, 120)
   }
-  if (!joinUser && leadFunnelUnread(boards.unread, lead.funnelId, funnels)) {
-    throw new Error("Não confirmei o funil deste script.")
+  if (
+    installSettingsBlocked(loaded.unread, scriptId, script) ||
+    (!joinUser && (leadFunnelUnread(boards.unread, lead.funnelId, funnels) || (boards.unread && !funnels.length)))
+  ) {
+    if (found) {
+      lead = rememberLeadTalk(lead, incoming)
+      if (!(await persistLeadAfterSend(env, lead))) console.error("telegram lead após recusa não gravou")
+    }
+    return { sent: true }
   }
   const ste = steRuntimeFromFunnels(funnels, settings, lead.funnelId)
   const shouldTalk = ste.talking !== false && !joinUser
