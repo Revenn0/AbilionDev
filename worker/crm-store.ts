@@ -1,5 +1,6 @@
 import { contactLookups } from "../src/lib/capture.ts"
 import {
+  adoptLeadKvStores,
   adoptOperatorLead,
   adoptSettingsStores,
   applyRemovedFunnels,
@@ -419,7 +420,7 @@ export async function loadLead(kv: KvLike, id: string, removedIds?: ReadonlySet<
   const sent = sentRaw && typeof sentRaw === "object" ? migrateLead(sentRaw as Lead) : null
   if (!stored) return sent
   if (!sent) return stored
-  return sent.updatedAt > stored.updatedAt ? sent : stored
+  return adoptLeadKvStores(stored, sent)
 }
 
 export async function filterLiveLeads(kv: KvLike, leads: Lead[]): Promise<Lead[]> {

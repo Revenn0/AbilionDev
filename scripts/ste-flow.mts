@@ -35,6 +35,7 @@ import {
   activatePublishedFunnels,
   enforceSinglePublished,
   adoptDueLeads,
+  adoptLeadKvStores,
   adoptLeadStores,
   adoptStoredLead,
   adoptOperatorLead,
@@ -2719,6 +2720,33 @@ await sentOnly.put(
   JSON.stringify({ ...lead("sent-1", "@sent"), updatedAt: "2026-01-01T00:00:00.000Z", messages: [] })
 )
 assert((await loadLead(sentOnly, "sent-1"))?.messages?.some((item) => item.id === "m-ste"), "loadLead prefere crm:sent mais novo")
+const storedTalk = {
+  ...lead("talk", "@talk"),
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  messages: [
+    { id: "m1", at: "2026-01-01T00:00:00.000Z", role: "ste" as const, text: "oi" },
+    { id: "m2", at: "2026-01-01T00:01:00.000Z", role: "lead" as const, text: "sim" },
+    { id: "m3", at: "2026-01-01T00:02:00.000Z", role: "ste" as const, text: "link" },
+  ],
+}
+const sentThin = {
+  ...lead("talk", "@talk"),
+  updatedAt: "2026-01-02T00:00:00.000Z",
+  waitUntil: "2026-01-03T00:00:00.000Z",
+  messages: [{ id: "m4", at: "2026-01-02T00:00:00.000Z", role: "ste" as const, text: "retry" }],
+}
+const mergedTalk = adoptLeadKvStores(storedTalk, sentThin)
+assert(mergedTalk?.messages?.map((item) => item.id).join(",") === "m1,m2,m3,m4", "crm:sent novo não apaga o histórico do crm:lead")
+assert(mergedTalk?.waitUntil === "2026-01-03T00:00:00.000Z", "crm:sent novo ainda manda a espera")
+assert(adoptLeadKvStores(null, sentThin)?.messages?.some((item) => item.id === "m4"), "só crm:sent")
+assert(adoptLeadKvStores(storedTalk, null)?.messages?.length === 3, "só crm:lead")
+const forkKv = memoryKv()
+await forkKv.put(leadKey("talk"), JSON.stringify(storedTalk))
+await forkKv.put(sentLeadKey("talk"), JSON.stringify(sentThin))
+assert(
+  (await loadLead(forkKv, "talk"))?.messages?.map((item) => item.id).join(",") === "m1,m2,m3,m4",
+  "loadLead junta crm:lead e crm:sent"
+)
 await upsertLeadKv(sentOnly, { ...sentNewer, updatedAt: "2026-01-03T00:00:00.000Z", memory: "ste:welcome" })
 assert(!(await sentOnly.get(sentLeadKey("sent-1"), "json")), "upsert canónico apaga o crm:sent")
 const sentGone = memoryKv()

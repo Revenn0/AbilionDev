@@ -147,6 +147,13 @@ export function adoptStoredLead(prev: Lead, incoming: Lead): Lead {
   }
 }
 
+/** crm:lead e crm:sent: junta o histórico. updatedAt novo não apaga falas do outro blob. */
+export function adoptLeadKvStores(stored: Lead | null | undefined, sent: Lead | null | undefined): Lead | null {
+  if (!stored) return sent ?? null
+  if (!sent) return stored
+  return adoptStoredLead(stored, sent)
+}
+
 /** POST do painel: em chat real ou lista importada só actualiza nota, nome e temperatura. */
 export function adoptOperatorLead(prev: Lead | null, incoming: Lead): Lead {
   if (!prev) return incoming
