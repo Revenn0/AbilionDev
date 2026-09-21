@@ -2755,6 +2755,23 @@ assert(await claimTelegramUpdate(evictKv, 9), "update_id novo ainda entra")
 const raceTg = memoryKv()
 const racedClaims = await Promise.all([claimTelegramUpdate(raceTg, 88), claimTelegramUpdate(raceTg, 88)])
 assert(racedClaims.filter(Boolean).length === 1, "só um claim do mesmo update_id ganha")
+const staleVerify = memoryKv()
+let hideClaim = 0
+const staleVerifyKv = {
+  get: async (key: string, type?: "json") => {
+    if (key === "tg:updates" && hideClaim === 1) {
+      hideClaim = 0
+      return null
+    }
+    return staleVerify.get(key, type)
+  },
+  put: async (key: string, value: string) => {
+    if (key === "tg:updates") hideClaim = 1
+    return staleVerify.put(key, value)
+  },
+}
+assert(await claimTelegramUpdate(staleVerifyKv, 77), "claim retenta se o verify do KV vier vazio")
+assert(await claimTelegramUpdate(staleVerifyKv, 77) === false, "claim confirmado não entra outra vez")
 const keepOther = forgetTelegramId({ ids: [10, 11], owners: { "10": "a", "11": "b" } }, 10)
 assert(keepOther.ids.includes(11) && !keepOther.ids.includes(10), "esquecer um update_id não apaga o outro")
 const forgetRace = memoryKv()
@@ -2773,6 +2790,38 @@ const startLogin = await handleRequest(
 )
 assert(startLogin.status === 200, "login no KV do webhook")
 const startCookie = startLogin.headers.get("set-cookie") || ""
+const pgFailEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://example.supabase.co",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: memoryKv(),
+  ABILION_ENV: "development",
+} as Env
+const pgFailLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  pgFailEnv,
+  backgroundCtx()
+)
+assert(pgFailLogin.status === 200, "login no KV vazio para o GET de leads")
+const pgFailCookie = pgFailLogin.headers.get("set-cookie") || ""
+const pgFailPrev = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("/rest/v1/leads")) throw new Error("postgres down")
+  return pgFailPrev(input, init)
+}) as typeof fetch
+const pgFailList = await handleRequest(
+  new Request("http://local.test/api/leads", { headers: { cookie: pgFailCookie } }),
+  pgFailEnv,
+  backgroundCtx()
+)
+const pgFailBody = (await pgFailList.json()) as { ok?: boolean; leads?: unknown[]; clipped?: boolean }
+assert(pgFailList.status === 200 && pgFailBody.ok && pgFailBody.clipped === true, "KV vazio + Postgres em baixo marca clipped")
+assert(collectLeadPages([{ leads: [], clipped: true }]).complete === false, "clipped vazio não é lista completa")
+globalThis.fetch = pgFailPrev
 const inbox = (await (
   await handleRequest(new Request("http://local.test/api/inbox", { headers: { cookie: startCookie } }), startEnv, backgroundCtx())
 ).json()) as { leads?: Array<{ contact?: string }> }

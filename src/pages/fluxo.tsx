@@ -141,7 +141,8 @@ export function FluxoPage() {
                         }
                         saveSettings({ pageScripts: made.scripts })
                         void flushCrmNow().then((result) => {
-                          if (result.ok) toast.success("Script desta página criado. Cola o snippet no Pixel.")
+                          if (result.ok && result.queued) toast.message("Script no painel. A gravar no Worker…")
+                          else if (result.ok) toast.success("Script desta página criado. Cola o snippet no Pixel.")
                           else toast.error(result.error || "Não gravei o script no Worker.")
                         })
                         navigate("/telegram#pixel")
@@ -186,8 +187,12 @@ export function FluxoPage() {
         onOpenChange={setImporting}
         onImported={(funnel) => {
           createFunnel(funnel)
-          toast.success("Funil importado como rascunho.")
           navigate(`/fluxo/funil/${funnel.id}`)
+          void flushCrmNow().then((result) => {
+            if (result.ok && result.queued) toast.message("Funil importado. A gravar no Worker…")
+            else if (result.ok) toast.success("Funil importado como rascunho.")
+            else toast.error(result.error || "Não gravei o funil no Worker.")
+          })
         }}
       />
       <RenameFunnelDialog

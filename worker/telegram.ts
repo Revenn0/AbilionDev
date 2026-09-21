@@ -69,18 +69,34 @@ export function mergeTelegramClaims(
 
 export async function claimTelegramUpdate(kv: KvLike, id: number): Promise<boolean> {
   if (!Number.isFinite(id) || id < 1) return true
-  const current = readTelegramUpdates(await kv.get(TG_UPDATES, "json"))
-  if ((current.seenBelow ?? 0) >= id && !current.owners[String(id)]) return false
-  if (current.ids.includes(id) || current.owners[String(id)]) return false
   const owner = crypto.randomUUID()
-  const next: TelegramUpdateStore = {
-    ids: [id, ...current.ids],
-    owners: { ...current.owners, [String(id)]: owner },
-    seenBelow: current.seenBelow,
+  for (let attempt = 0; attempt < 16; attempt++) {
+    if (attempt) await new Promise((resolve) => setTimeout(resolve, attempt * 2))
+    const current = readTelegramUpdates(await kv.get(TG_UPDATES, "json"))
+    if ((current.seenBelow ?? 0) >= id && !current.owners[String(id)]) return false
+    const existing = current.owners[String(id)]
+    if (existing) return existing === owner
+    if (current.ids.includes(id)) return false
+    const next: TelegramUpdateStore = {
+      ids: [id, ...current.ids],
+      owners: { ...current.owners, [String(id)]: owner },
+      seenBelow: current.seenBelow,
+    }
+    const latest = readTelegramUpdates(await kv.get(TG_UPDATES, "json"))
+    const latestOwner = latest.owners[String(id)]
+    if (latestOwner) return latestOwner === owner
+    if ((latest.seenBelow ?? 0) >= id && !latestOwner) return false
+    await kv.put(TG_UPDATES, JSON.stringify(mergeTelegramClaims(latest, next)))
+    const stored = readTelegramUpdates(await kv.get(TG_UPDATES, "json"))
+    if (stored.owners[String(id)] === owner) {
+      const confirm = readTelegramUpdates(await kv.get(TG_UPDATES, "json"))
+      if (confirm.owners[String(id)] === owner) return true
+      if (confirm.owners[String(id)] && confirm.owners[String(id)] !== owner) return false
+      continue
+    }
+    if (stored.owners[String(id)] && stored.owners[String(id)] !== owner) return false
   }
-  const merged = mergeTelegramClaims(readTelegramUpdates(await kv.get(TG_UPDATES, "json")), next)
-  await kv.put(TG_UPDATES, JSON.stringify(merged))
-  return readTelegramUpdates(await kv.get(TG_UPDATES, "json")).owners[String(id)] === owner
+  return false
 }
 
 export function forgetTelegramId(store: TelegramUpdateStore, id: number): TelegramUpdateStore {

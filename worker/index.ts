@@ -889,13 +889,13 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
   const page = env.AUTH ? await listLeadPage(env.AUTH, limit, channel, cursor) : { leads: [] as Lead[], clipped: false }
   const kv = page.leads
   const filter = channel === "telegram" ? "&channel=eq.telegram" : ""
-  const rows =
-    (await rest<LeadRow[]>(
-      env,
-      `leads?workspace_id=eq.${WORKSPACE}${filter}&select=*&order=updated_at.desc&limit=${limit}`
-    )) ?? []
-  const removed = env.AUTH ? await loadRemovedLeadIds(env.AUTH) : []
-  const remote = applyRemovedLeads(rows.map(rowToLead), removed)
+  const canReachRemote = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE)
+  const rows = await rest<LeadRow[]>(
+    env,
+    `leads?workspace_id=eq.${WORKSPACE}${filter}&select=*&order=updated_at.desc&limit=${limit}`
+  )
+  const remoteFailed = canReachRemote && rows === null
+  const remote = applyRemovedLeads((rows ?? []).map(rowToLead), env.AUTH ? await loadRemovedLeadIds(env.AUTH) : [])
   const keep = new Set(kv.map((lead) => lead.id))
   const scoped = kv.length || cursor ? remote.filter((lead) => keep.has(lead.id)) : remote
   const live = env.AUTH ? await filterLiveLeads(env.AUTH, scoped) : scoped
@@ -903,7 +903,7 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
     leads: adoptLeadStores(kv, await attachLeadEvents(env, live)).slice(0, limit),
     nextCursor: page.stale ? undefined : page.nextCursor,
     stale: page.stale,
-    clipped: page.clipped === true,
+    clipped: page.clipped === true || (remoteFailed && !kv.length && !cursor),
   }
 }
 

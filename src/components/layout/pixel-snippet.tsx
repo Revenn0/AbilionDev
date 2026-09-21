@@ -30,7 +30,8 @@ export function PixelSnippet({ origin, botUsername }: { origin: string; botUsern
     saveSettings({ pageScripts: next, ...(removed ? { removedPageScripts: removed } : {}) })
     void flushCrmNow()
       .then((result) => {
-        if (result.ok) toast.success(ok)
+        if (result.ok && result.queued) toast.message("No painel. A gravar no Worker…")
+        else if (result.ok) toast.success(ok)
         else toast.error(result.error || fail)
       })
       .finally(() => setBusy(false))
