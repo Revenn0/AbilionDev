@@ -7925,7 +7925,8 @@ assert(
   await upsertLeadKv(kvThrowsOn(runtimeHoleKv, CRM_REMOVED), { ...holeAfterHook!, memory: "leftover-ficha" }),
   "upsert tombstone unread ainda grava o leftover"
 )
-assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === "leftover-ficha", "upsert tombstone unread não apaga a ficha leftover")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.id === "hole-lead", "upsert tombstone unread não apaga o leftover")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.contact === "@holelead", "upsert tombstone unread não troca o contacto leftover")
 assert(!(await upsertLeadKv(kvThrowsOn(durableGone, CRM_REMOVED), lead("old-id", "@oldgone"))), "upsert não ressuscita id com chave gone")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
