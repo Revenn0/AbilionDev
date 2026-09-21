@@ -103,7 +103,7 @@ import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, mig
 import { adsDeepLink, campaignFromStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument, wantsAuthHtml } from "../src/lib/auth-pages.ts"
 import { addPageScript, adsLandingDocument, adsLandingUrl, adsStartToken, installSettingsBlocked, pageInstallManual, pageScriptsListBlocked, pageScriptsMutationBlocked, pageScriptsWriteBlocked, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
-import { leadCategoriesListBlocked, leadCategoriesWriteBlocked, leadFromImport, leadImportGroupBlocked, parseLeadImportLine, parseLeadImportText } from "../src/lib/lead-category.ts"
+import { leadCategoriesListBlocked, leadCategoriesMutationBlocked, leadCategoriesWriteBlocked, leadFromImport, leadImportGroupBlocked, parseLeadImportLine, parseLeadImportText } from "../src/lib/lead-category.ts"
 import { burstFacebookLeads, burstStartsBlocked, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
@@ -1584,6 +1584,10 @@ assert(!leadCategoriesListBlocked(true, ["VIP"]), "categorias unread com lista n
 assert(!leadCategoriesListBlocked(false, []), "categorias lidas vazias não bloqueiam criar")
 assert(leadCategoriesWriteBlocked(true), "categorias unread bloqueiam criar mesmo com leftover")
 assert(!leadCategoriesWriteBlocked(false), "categorias confirmadas deixam criar")
+assert(leadCategoriesMutationBlocked(true, ["VIP"], ["VIP", "Gold"]), "categoria nova com leftover unread bloqueia o POST")
+assert(!leadCategoriesMutationBlocked(true, ["VIP"], ["VIP"]), "username/rascunho com as mesmas categorias unread ainda grava")
+assert(!leadCategoriesMutationBlocked(true, ["VIP"], ["vip"]), "categoria leftover não distingue maiúsculas")
+assert(!leadCategoriesMutationBlocked(false, ["VIP"], ["VIP", "Gold"]), "categorias confirmadas deixam o POST criar")
 assert(leadsToCsv([importedGroup]).includes("category"), "CSV exporta categoria")
 assert(!canFlushCrm(false), "sem hydrate o painel não grava CRM")
 assert(canFlushCrm(true), "depois do GET o painel pode gravar")
@@ -5521,7 +5525,11 @@ const leftoverScript = {
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
 }
-const leftoverSettings = migrateSettings({ ...downCrmSettingsBefore, pageScripts: [leftoverScript] })
+const leftoverSettings = migrateSettings({
+  ...downCrmSettingsBefore,
+  pageScripts: [leftoverScript],
+  leadCategories: ["VIP"],
+})
 await saveSettingsKv(liveEnv.AUTH, leftoverSettings)
 const downCrmScriptKeep = await handleRequest(
   new Request("http://local.test/api/crm", {
@@ -5572,6 +5580,30 @@ const downCrmScriptDrop = await handleRequest(
   backgroundCtx()
 )
 assert(downCrmScriptDrop.status === 503, "POST CRM não apaga script com leftover unread")
+const downCrmCatKeep = await handleRequest(
+  new Request("http://local.test/api/crm", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: liveCookie },
+    body: JSON.stringify({ funnels: downCrmBoards, settings: leftoverSettings }),
+  }),
+  downEnv,
+  backgroundCtx()
+)
+assert(downCrmCatKeep.status === 200, "POST CRM ainda grava username com as categorias leftover unread")
+const downCrmCatAdd = await handleRequest(
+  new Request("http://local.test/api/crm", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: liveCookie },
+    body: JSON.stringify({
+      funnels: downCrmBoards,
+      settings: migrateSettings({ ...leftoverSettings, leadCategories: ["VIP", "Gold"] }),
+    }),
+  }),
+  downEnv,
+  backgroundCtx()
+)
+assert(downCrmCatAdd.status === 503, "POST CRM não cria categoria nova com leftover unread")
+assert(((await downCrmCatAdd.json()) as { error?: string }).error === "Não confirmei as categorias.", "POST CRM categoria unread pede confirmação")
 await saveSettingsKv(liveEnv.AUTH, downCrmSettingsBefore)
 const downRuntime = await handleRequest(new Request("http://local.test/api/runtime", { headers: { cookie: liveCookie } }), downEnv, backgroundCtx())
 const downRuntimeBody = (await downRuntime.json()) as {

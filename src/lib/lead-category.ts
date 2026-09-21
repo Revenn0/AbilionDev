@@ -127,6 +127,17 @@ export function leadCategoriesWriteBlocked(unread: boolean) {
   return unread
 }
 
+/** POST do CRM: username ainda grava; categoria nova espera o GET. */
+export function leadCategoriesMutationBlocked(
+  unread: boolean,
+  stored?: string[],
+  incoming?: string[]
+) {
+  if (!unread) return false
+  const known = new Set(migrateLeadCategories(stored).map((item) => item.toLocaleLowerCase("pt-BR")))
+  return migrateLeadCategories(incoming).some((item) => !known.has(item.toLocaleLowerCase("pt-BR")))
+}
+
 export function leadFromImport(
   row: { name: string; contact: string },
   input: { category?: string; toGroup?: boolean; groupUrl?: string } = {}

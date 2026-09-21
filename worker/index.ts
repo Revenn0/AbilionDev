@@ -7,6 +7,7 @@ import { linkFollowUp, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { campaignFromStart, originFromStart, parseTelegramStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { applyEvent, canAdvanceRemoteWait, dueWaits, pickLiveDueLead, snapshotForLead } from "../src/lib/runtime.ts"
+import { leadCategoriesMutationBlocked } from "../src/lib/lead-category.ts"
 import { adsLandingDocument, installSettingsBlocked, pageInstallManual, pageScriptById, pageScriptsMutationBlocked } from "../src/lib/page-script.ts"
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument } from "../src/lib/auth-pages.ts"
 import { foldPublicPath, foldStudioPath, safeAppPath } from "../src/lib/safe-path.ts"
@@ -555,6 +556,9 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
         )
       ) {
         return json({ error: "Não confirmei os scripts desta página." }, 503)
+      }
+      if (leadCategoriesMutationBlocked(loaded.unread, loaded.settings.leadCategories, body.settings.leadCategories)) {
+        return json({ error: "Não confirmei as categorias." }, 503)
       }
     }
     if (incoming && rawFunnels) {
