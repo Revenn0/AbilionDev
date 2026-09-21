@@ -107,7 +107,7 @@ import { leadCategoriesListBlocked, leadCategoriesWriteBlocked, leadFromImport, 
 import { burstFacebookLeads, burstStartsBlocked, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
-import { barShare, funnelsWriteBlocked, hasConversation, isImportedLead, isOperatorLockedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadWritesBlocked, leadsHydrating, leadsLoadFailed, metricPending } from "../src/lib/ops.ts"
+import { barShare, crmSyncAfterFlush, funnelsWriteBlocked, hasConversation, isImportedLead, isOperatorLockedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadWritesBlocked, leadsHydrating, leadsLoadFailed, metricPending } from "../src/lib/ops.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
 import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, handleAuth, hashApiToken, hashPassword, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
@@ -732,6 +732,10 @@ assert(!funnelsListBlocked(false, []), "funis lidos vazios não bloqueiam criar"
 assert(funnelsWriteBlocked("idle"), "CRM idle bloqueia escrita contra o quadro")
 assert(funnelsWriteBlocked("error"), "CRM error bloqueia escrita contra o quadro")
 assert(!funnelsWriteBlocked("ok"), "CRM confirmado deixa escrever contra o quadro")
+assert(crmSyncAfterFlush(true, true) === "ok", "persist com GET confirmado mantém o CRM")
+assert(crmSyncAfterFlush(true, false) === "error", "persist de rascunho não confirma funis unread")
+assert(crmSyncAfterFlush(false, true) === "error", "persist falho não confirma o CRM")
+assert(funnelsWriteBlocked(crmSyncAfterFlush(true, false)), "rascunho gravado com leftover não solta Publicar")
 assert(burstStartsBlocked("idle", false), "hydrate ainda não solta o lote de 100")
 assert(burstStartsBlocked("error", false), "GET falhou não solta o lote de 100")
 assert(burstStartsBlocked("ok", true), "funis unread ocas bloqueiam o lote de 100")

@@ -101,6 +101,12 @@ export function funnelsWriteBlocked(crmSync: "idle" | "ok" | "error") {
   return crmSync !== "ok"
 }
 
+/** Só o GET confirma o universo. Gravar rascunho (ou falhar o persist) não solta Publicar. */
+export function crmSyncAfterFlush(wrote: boolean, funnelsConfirmed: boolean): "ok" | "error" {
+  if (!wrote) return "error"
+  return funnelsConfirmed ? "ok" : "error"
+}
+
 /** Captura, import e lote: GET unread não é catálogo vazio. `funnelsUnread` bloqueia o que precisa do quadro. */
 export function leadWritesBlocked(
   persistSync: "idle" | "ok" | "error",

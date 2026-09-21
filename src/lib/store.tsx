@@ -30,6 +30,7 @@ import {
   recoverPendingFunnelIds,
   settingsWriteFingerprint,
 } from "@/lib/crm"
+import { crmSyncAfterFlush } from "@/lib/ops"
 import { sameLeadContact } from "@/lib/capture"
 import { migrateFunnel, migrateLead, migrateSettings } from "@/lib/migrate"
 import { fetchCrm, fetchInbox, fetchLeads, fetchRuntime, persistLeads, removeRemoteLead, saveCrm } from "@/lib/runtime-api"
@@ -183,6 +184,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const removedFunnelIds = useRef(loadIdSet(REMOVED_FUNNELS))
   const removedLeadIds = useRef(loadIdSet(REMOVED_LEADS, LEAD_REMOVED_CAP))
   const crmHydrated = useRef(false)
+  const funnelsConfirmed = useRef(false)
   const leadReadKnown = useRef(false)
   const lastLeadReadOk = useRef(false)
   const lastLeadWriteOk = useRef(true)
@@ -350,7 +352,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
         if (!opts?.silent) toast.error(result.error || "Não gravei o CRM no Worker.")
       }
-      setCrmSync(result.ok ? "ok" : "error")
+      setCrmSync(crmSyncAfterFlush(result.ok, funnelsConfirmed.current))
       return result
     }
     const pending = crmFlushRef.current.then(run, run)
@@ -371,7 +373,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (hydrateLock.current) return hydrateLock.current
     const pending = Promise.all([fetchCrm(), fetchRuntime(), fetchLeads(), fetchInbox(INBOX_LIST_PAGES)]).then(
       ([crm, runtime, remoteLeads, inbox]) => {
-      setCrmSync(crm.ok ? (crm.funnelsUnread ? "error" : "ok") : "error")
+      funnelsConfirmed.current = crm.ok && !crm.funnelsUnread
+      setCrmSync(funnelsConfirmed.current ? "ok" : "error")
       setSettingsSync(crm.ok ? (crm.settingsUnread ? "error" : "ok") : "error")
       markLeadRead(remoteLeads.ok)
       if (remoteLeads.ok) ingestRemoteRemoved(remoteLeads.removed)
@@ -453,6 +456,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const expire = () => {
       crmHydrated.current = false
+      funnelsConfirmed.current = false
       lastGoodFunnels.current = []
       setCrmSync("idle")
       setInboxSync("idle")
@@ -658,6 +662,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         await flushLeadWrites()
         await flushCrm()
         crmHydrated.current = false
+        funnelsConfirmed.current = false
         lastGoodFunnels.current = []
         await logoutRequest().catch(() => undefined)
         setCrmSync("idle")
