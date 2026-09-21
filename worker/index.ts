@@ -1216,9 +1216,14 @@ async function attachLeadEvents(env: Env, leads: Lead[]) {
 }
 
 async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "all", cursor = "") {
-  const page = env.AUTH
-    ? await listLeadPage(env.AUTH, limit, channel, cursor)
-    : { leads: [] as Lead[], clipped: false, empty: true, missingIds: [] as string[] }
+  let page
+  try {
+    page = env.AUTH
+      ? await listLeadPage(env.AUTH, limit, channel, cursor)
+      : { leads: [] as Lead[], clipped: false, empty: true, missingIds: [] as string[] }
+  } catch {
+    return { leads: [] as Lead[], clipped: true, failed: true }
+  }
   const canReachRemote = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE)
   if (page.empty) {
     const remote = await fetchRemoteLeadPage(env, limit, channel, cursor)
@@ -1255,7 +1260,15 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
       `leads?workspace_id=eq.${WORKSPACE}${filter}&select=*&order=updated_at.desc&limit=${limit}`
     )
     const remoteFailed = canReachRemote && rows === null
-    const remote = applyRemovedLeads((rows ?? []).map(rowToLead), env.AUTH ? await loadRemovedLeadIds(env.AUTH) : [])
+    let removed: string[] = []
+    if (env.AUTH) {
+      try {
+        removed = await loadRemovedLeadIds(env.AUTH)
+      } catch {
+        /* lista unread — o gone ainda segura o tombstone no filtro seguinte */
+      }
+    }
+    const remote = applyRemovedLeads((rows ?? []).map(rowToLead), removed)
     if (remoteFailed) return { leads: [], clipped: true, failed: !cursor, stale: Boolean(cursor) }
     if (!cursor) {
       const folded = leadPageFromRemote(remote, limit, canReachRemote)

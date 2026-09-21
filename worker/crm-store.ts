@@ -522,8 +522,17 @@ export async function lookupLeadsByQuery(kv: KvLike, query: string): Promise<Lea
   }
   const removed = await removedIdsForRead(kv)
   push(await loadLead(kv, needle, removed))
-  push(await findLeadInKv(kv, needle, 0, needle, removed))
-  const index = await loadIndex(kv)
+  try {
+    push(await findLeadInKv(kv, needle, 0, needle, removed))
+  } catch {
+    /* índice unread — o hit por id/alias já ficou */
+  }
+  let index: CrmIndex
+  try {
+    index = await loadIndex(kv)
+  } catch {
+    return hits
+  }
   const names = await loadLeadNames(kv)
   const matchIds: string[] = []
   for (const entry of index.entries) {

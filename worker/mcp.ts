@@ -481,7 +481,12 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     }
     const limit = Math.min(50, Math.max(1, Number(args.limit) || 20))
     const cursor = str(args.cursor).trim()
-    const page = await listLeadPage(env.AUTH, limit, "all", cursor)
+    let page
+    try {
+      page = await listLeadPage(env.AUTH, limit, "all", cursor)
+    } catch {
+      throw new Error("Não li os leads do Postgres.")
+    }
     const missing = page.missingIds ?? []
     if (!page.empty && missing.length && !page.leads.length) {
       const extras = await fetchRemoteLeadsByIds(env, missing)

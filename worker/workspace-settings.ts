@@ -163,12 +163,21 @@ export async function searchWorkspaceLeads(
   query: string
 ): Promise<{ ok: true; leads: Lead[] } | { ok: false }> {
   if (!env.AUTH) return { ok: true, leads: [] }
-  const found = await lookupLeadsByQuery(env.AUTH, query)
+  let found: Lead[]
+  try {
+    found = await lookupLeadsByQuery(env.AUTH, query)
+  } catch {
+    return { ok: false }
+  }
   const remote = await fetchRemoteLeadSearch(env, query)
   if (remote === null) {
     if (found.length) return { ok: true, leads: found }
-    const page = await listLeadPage(env.AUTH, 1, "all")
-    return page.empty ? { ok: false } : { ok: true, leads: [] }
+    try {
+      const page = await listLeadPage(env.AUTH, 1, "all")
+      return page.empty ? { ok: false } : { ok: true, leads: [] }
+    } catch {
+      return { ok: false }
+    }
   }
   return { ok: true, leads: adoptSearchLeads(found, remote) }
 }
@@ -435,7 +444,12 @@ export async function fetchRemoteLeadPage(
 export async function leadCatalogUnread(env: SettingsEnv): Promise<boolean> {
   if (!env.AUTH) return false
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return false
-  const page = await listLeadPage(env.AUTH, 1, "all")
+  let page
+  try {
+    page = await listLeadPage(env.AUTH, 1, "all")
+  } catch {
+    return true
+  }
   if (!page.empty) return false
   const remote = await fetchRemoteLeadPage(env, 1, "all")
   return remote === null

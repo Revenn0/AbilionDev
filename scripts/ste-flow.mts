@@ -7760,6 +7760,82 @@ const removedDownSearchMcpData = JSON.parse(
 assert(removedDownSearchMcp.status === 200, "MCP list busca KV throw não cai em 500")
 assert(!removedDownSearchMcpData.error, "MCP list busca tombstone unread não pede 503")
 assert(removedDownSearchMcpData.leads?.some((item) => item.id === "hole-lead"), "MCP list busca tombstone unread ainda manda o leftover")
+const indexDownEnv = { ...runtimeHoleBase, AUTH: kvThrowsOn(runtimeHoleKv, CRM_INDEX) } as Env
+assert(
+  (await lookupLeadsByQuery(kvThrowsOn(runtimeHoleKv, CRM_INDEX), "@holelead")).some((item) => item.id === "hole-lead"),
+  "busca KV com índice unread ainda acha o leftover pelo alias"
+)
+const indexDownList = await handleRequest(
+  new Request("http://local.test/api/leads", { headers: { cookie: runtimeHoleCookie } }),
+  indexDownEnv,
+  backgroundCtx()
+)
+const indexDownListBody = (await indexDownList.json()) as { ok?: boolean; leads?: Array<{ id?: string }>; error?: string }
+assert(indexDownList.status === 503, "GET leads índice KV throw é 503")
+assert(indexDownList.status !== 500, "GET leads índice KV throw não é Falha interna")
+assert(indexDownListBody.error === "Não li os leads do Postgres.", "GET leads índice KV throw pede confirmação")
+assert(!Array.isArray(indexDownListBody.leads), "GET leads índice KV throw não manda lista vazia")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === "leftover-ficha", "GET leads índice KV throw não pisa a ficha leftover")
+const indexDownInbox = await handleRequest(
+  new Request("http://local.test/api/inbox", { headers: { cookie: runtimeHoleCookie } }),
+  indexDownEnv,
+  backgroundCtx()
+)
+const indexDownInboxBody = (await indexDownInbox.json()) as { ok?: boolean; leads?: Array<{ id?: string }>; error?: string }
+assert(indexDownInbox.status === 503, "GET inbox índice KV throw é 503")
+assert(indexDownInbox.status !== 500, "GET inbox índice KV throw não é Falha interna")
+assert(indexDownInboxBody.error === "Não li os leads do Postgres.", "GET inbox índice KV throw pede confirmação")
+assert(!Array.isArray(indexDownInboxBody.leads), "GET inbox índice KV throw não manda lista vazia")
+const indexDownSearch = await handleRequest(
+  new Request("http://local.test/api/leads?q=@holelead", { headers: { cookie: runtimeHoleCookie } }),
+  indexDownEnv,
+  backgroundCtx()
+)
+const indexDownSearchBody = (await indexDownSearch.json()) as { ok?: boolean; leads?: Array<{ id?: string }>; error?: string }
+assert(indexDownSearch.status === 200 && indexDownSearchBody.ok, "GET ?q= índice unread ainda manda o leftover do alias")
+assert(indexDownSearch.status !== 500, "GET ?q= índice unread não é Falha interna")
+assert(indexDownSearchBody.leads?.some((item) => item.id === "hole-lead"), "GET ?q= índice unread não esconde a ficha leftover")
+const indexDownMcpList = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.184" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 262,
+      method: "tools/call",
+      params: { name: "abilion_list_leads", arguments: { limit: 5 } },
+    }),
+  }),
+  indexDownEnv,
+  backgroundCtx()
+)
+const indexDownMcpListData = JSON.parse(
+  ((await indexDownMcpList.json()) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string; leads?: Array<{ id?: string }> }
+assert(indexDownMcpList.status === 200, "MCP list índice KV throw não cai em 500")
+assert(indexDownMcpListData.error === "Não li os leads do Postgres.", "MCP list índice KV throw pede confirmação")
+assert(!indexDownMcpListData.leads, "MCP list índice KV throw não finge lista vazia")
+const indexDownMcpSearch = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.185" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 263,
+      method: "tools/call",
+      params: { name: "abilion_list_leads", arguments: { q: "@holelead" } },
+    }),
+  }),
+  indexDownEnv,
+  backgroundCtx()
+)
+const indexDownMcpSearchData = JSON.parse(
+  ((await indexDownMcpSearch.json()) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string; leads?: Array<{ id?: string }> }
+assert(indexDownMcpSearch.status === 200, "MCP busca índice unread não cai em 500")
+assert(!indexDownMcpSearchData.error, "MCP busca índice unread com alias não pede 503")
+assert(indexDownMcpSearchData.leads?.some((item) => item.id === "hole-lead"), "MCP busca índice unread ainda manda o leftover")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === "leftover-ficha", "índice KV throw não pisa a ficha leftover")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()
