@@ -504,6 +504,22 @@ export function emptySettings(): Settings {
   }
 }
 
+/** Vincular o bot: se o GET das settings falhou, não grava um objecto oco por cima dos scripts. */
+export function linkRuntimeSettings(
+  settings: Settings | null,
+  next: { telegramBotUsername?: string; telegramGroupUrl?: string; telegramBotToken?: string }
+): Settings | null {
+  if (!settings) return null
+  return {
+    ...settings,
+    telegramBotUsername: next.telegramBotUsername || settings.telegramBotUsername,
+    telegramGroupUrl: next.telegramGroupUrl || settings.telegramGroupUrl,
+    telegramBotToken: "",
+    steLinkedTelegram: settings.steLinkedTelegram !== false,
+    plugins: { ...settings.plugins, telegram: Boolean(next.telegramBotToken) },
+  }
+}
+
 export function mergeFunnels(current: SalesFunnel[], incoming: SalesFunnel[]): SalesFunnel[] {
   if (!incoming.length) return current
   const incomingIds = new Set(incoming.map((item) => item.id))

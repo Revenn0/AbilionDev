@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { simulateOpenLead } from "@/lib/burst"
 import { useStore } from "@/lib/store"
 import { pixelFigure } from "@/lib/analytics-view"
-import { hasConversation, leadsHydrating } from "@/lib/ops"
+import { hasConversation, leadsHydrating, leadsLoadFailed } from "@/lib/ops"
 import { ORIGIN_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { GeoBadge } from "@/components/crm/geo-badge"
 import { factsWithTrack } from "@/lib/geo"
@@ -55,7 +55,6 @@ function matchesFilter(lead: Lead, filter: FilterId) {
 
 export function ConversationsPage() {
   const { state, saveLead, createLead, flushLeadNow, inboxSync, persistSync } = useStore()
-  const hydrating = leadsHydrating(persistSync, state.leads.length)
   const { summary, status, hasData } = useTrackSummary(4000)
   const runtime = steRuntimeFromFunnels(state.funnels, state.settings)
   const runtimeKey = publishedFunnel(state.funnels)?.production?.publishedAt ?? ""
@@ -80,6 +79,9 @@ export function ConversationsPage() {
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     [state.leads]
   )
+  const hydrating = leadsHydrating(persistSync, all.length)
+  const failed = leadsLoadFailed(persistSync, all.length, inboxSync === "error")
+  const pending = hydrating || failed
 
   const counts = useMemo(
     () => ({
@@ -175,26 +177,26 @@ export function ConversationsPage() {
         <PageChrome icon={MessagesSquare} title="Conversas">
           {FILTERS.map((item) => (
             <FilterChip key={item.id} active={filter === item.id} onClick={() => setFilter(item.id)}>
-              {item.label} {(hydrating || persistSync === "error") && all.length === 0 ? "…" : counts[item.id]}
+              {item.label} {pending ? "…" : counts[item.id]}
             </FilterChip>
           ))}
         </PageChrome>
         <FlowStrip
           page={pixelFigure(status, hasData, summary.visitors)}
           click={pixelFigure(status, hasData, summary.clicks)}
-          telegram={(hydrating || persistSync === "error") && all.length === 0 ? "…" : all.length}
+          telegram={pending ? "…" : all.length}
           talking={
-            (hydrating || persistSync === "error") && all.length === 0
+            pending
               ? "…"
               : all.filter((item) => (item.messages ?? []).some((msg) => msg.role === "lead") && !item.steBlocked && !item.steQuiet).length
           }
-          premium={(hydrating || persistSync === "error") && all.length === 0 ? "…" : all.filter((item) => item.stePhase === "offer" || item.steQuiet).length}
+          premium={pending ? "…" : all.filter((item) => item.stePhase === "offer" || item.steQuiet).length}
         />
         {all.length === 0 && hydrating ? (
           <section className="surface">
             <HydratePanel>A carregar as conversas…</HydratePanel>
           </section>
-        ) : all.length === 0 && persistSync === "error" ? (
+        ) : all.length === 0 && failed ? (
           <section className="surface grid place-items-center px-6 py-16 text-center" role="alert">
             <p className="text-[14px] font-medium">Não li as conversas</p>
             <p className="mt-1 max-w-md text-[13px] text-muted-foreground">

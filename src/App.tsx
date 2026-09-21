@@ -1,15 +1,10 @@
-import { lazy, Suspense } from "react"
+import { lazy, Suspense, useEffect } from "react"
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useSearchParams } from "react-router-dom"
 import { AppShell } from "@/components/layout/app-shell"
 import { OfflineBanner } from "@/components/layout/offline-banner"
 import { RouteError } from "@/components/layout/route-error"
 import { DashboardPage } from "@/pages/dashboard"
-import { ForgotPage } from "@/pages/forgot"
-import { LoginPage } from "@/pages/login"
-import { LandingPage } from "@/pages/landing"
 import { NotFoundPage } from "@/pages/not-found"
-import { PrivacyPage } from "@/pages/privacy"
-import { ResetPage } from "@/pages/reset"
 import { foldStudioPath, safeAppPath } from "@/lib/safe-path"
 import { useStore } from "@/lib/store"
 
@@ -45,6 +40,15 @@ function PageFallback() {
   )
 }
 
+/** GET destas rotas é HTML do Worker; um Link do SPA não pode ficar no login React. */
+function WorkerPublicPage() {
+  const location = useLocation()
+  useEffect(() => {
+    window.location.replace(`${location.pathname}${location.search}`)
+  }, [location.pathname, location.search])
+  return <PageFallback />
+}
+
 function AppRoutes() {
   return (
     <Routes>
@@ -52,7 +56,7 @@ function AppRoutes() {
         path="/login"
         element={
           <AuthGate>
-            <LoginPage />
+            <WorkerPublicPage />
           </AuthGate>
         }
       />
@@ -60,13 +64,13 @@ function AppRoutes() {
         path="/forgot"
         element={
           <AuthGate>
-            <ForgotPage />
+            <WorkerPublicPage />
           </AuthGate>
         }
       />
-      <Route path="/reset" element={<ResetPage />} />
-      <Route path="/privacidade" element={<PrivacyPage />} />
-      <Route path="/l" element={<LandingPage />} />
+      <Route path="/reset" element={<WorkerPublicPage />} />
+      <Route path="/privacidade" element={<WorkerPublicPage />} />
+      <Route path="/l" element={<WorkerPublicPage />} />
       <Route
         path="/*"
         element={

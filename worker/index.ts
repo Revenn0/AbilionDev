@@ -25,6 +25,7 @@ import {
   enforceSinglePublished,
   mergeLeadEvents,
   emptySettings,
+  linkRuntimeSettings,
   publicSettings,
   FUNNEL_CAP,
 } from "../src/lib/crm.ts"
@@ -462,15 +463,12 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       if (!hooked.ok) warning = "O token ficou gravado. O webhook ainda não apontou — tenta Vincular outra vez."
     }
     await saveSecrets(env.AUTH, next)
-    const settings = await loadSettings(env).catch(() => emptySettings())
-    await persistSettings(env, {
-      ...settings,
-      telegramBotUsername: next.telegramBotUsername || settings.telegramBotUsername,
-      telegramGroupUrl: next.telegramGroupUrl || settings.telegramGroupUrl,
-      telegramBotToken: "",
-      steLinkedTelegram: settings.steLinkedTelegram !== false,
-      plugins: { ...settings.plugins, telegram: Boolean(next.telegramBotToken) },
-    })
+    const settings = await loadSettings(env).then(
+      (item) => item,
+      () => null
+    )
+    const linked = linkRuntimeSettings(settings, next)
+    if (linked) await persistSettings(env, linked)
     const published = await publishedRuntime(env, resolveRuntime(env, next, hook))
     return json(warning ? { ...published, warning } : published)
   }

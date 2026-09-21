@@ -62,6 +62,7 @@ import {
   FUNNEL_CAP,
   commitStoredSettings,
   emptySettings,
+  linkRuntimeSettings,
   hydrateFunnels,
   hydrateLeads,
   leftoverPendingFunnelIds,
@@ -5517,6 +5518,25 @@ assert(!leadsHydrating("ok", 0), "KPI vazio depois do GET é zero de verdade")
 assert(leadsLoadFailed("error", 0), "GET falhou sem cache não é lista vazia")
 assert(!leadsLoadFailed("error", 3), "GET falhou com cache local ainda mostra os números")
 assert(!leadsLoadFailed("ok", 0), "GET vazio de verdade não é falha")
+assert(leadsHydrating("idle", 0), "conversas sem Telegram ainda hidratam mesmo com WhatsApp em cache")
+assert(leadsLoadFailed("ok", 0, true), "inbox falhou sem conversas não é inbox vazia")
+assert(!leadsLoadFailed("ok", 2, true), "inbox falhou com conversas em cache ainda mostra a lista")
+assert(linkRuntimeSettings(null, { telegramBotUsername: "ste" }) === null, "Vincular sem settings não inventa um objecto oco")
+assert(
+  linkRuntimeSettings(emptySettings(), { telegramBotUsername: "ste_bot", telegramBotToken: "tok" })?.telegramBotUsername ===
+    "ste_bot",
+  "Vincular copia o username para as settings"
+)
+assert(
+  linkRuntimeSettings(
+    {
+      ...emptySettings(),
+      pageScripts: [{ id: "aabbccdd", name: "Ads", funnelId: "fun-1", createdAt: "t", updatedAt: "t" }],
+    },
+    { telegramBotUsername: "ste_bot" }
+  )?.pageScripts[0]?.id === "aabbccdd",
+  "Vincular não apaga scripts de página"
+)
 
 const telegramOk = await telegramCall(
   "tok",
