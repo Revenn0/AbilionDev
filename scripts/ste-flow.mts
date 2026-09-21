@@ -6784,6 +6784,59 @@ assert(voiceDownRuntimePostBody.telegramBotUsername === "@ste_voz", "POST runtim
 assert(voiceDownRuntimePostBody.error !== "Falha interna.", "POST runtime voz unread não vira Falha interna")
 assert((await loadSecrets(runtimeHoleKv)).telegramBotToken === "000:kv-token", "POST runtime voz unread não apaga o token leftover")
 assert((await loadSecrets(runtimeHoleKv)).telegramBotUsername === "@ste_voz", "POST runtime voz unread grava o username")
+await saveSecrets(runtimeHoleKv, {
+  elevenApiKey: "sk_leftover",
+  elevenVoiceId: "voice_leftover",
+})
+let elevenHits = 0
+const voiceFetch = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("api.elevenlabs.io")) {
+    elevenHits += 1
+    return new Response("blocked", { status: 500 })
+  }
+  return voiceFetch(input, init)
+}) as typeof fetch
+const voicePostOf = (ip: string, env: Env) =>
+  handleRequest(
+    new Request("http://local.test/api/runtime/voice", {
+      method: "POST",
+      headers: { cookie: runtimeHoleCookie, "x-forwarded-for": ip },
+    }),
+    env,
+    backgroundCtx()
+  )
+const kvDownVoicePost = await voicePostOf("203.0.113.94", secretsOnlyDownEnv)
+const kvDownVoicePostBody = (await kvDownVoicePost.json()) as { error?: string; ok?: boolean }
+assert(kvDownVoicePost.status === 503, "POST /api/runtime/voice KV throw não cai em 500")
+assert(kvDownVoicePostBody.error === "Não confirmei as chaves do Worker.", "POST voice KV throw pede confirmação")
+assert(kvDownVoicePostBody.error !== "Falta a chave da ElevenLabs e o voice id da Sté.", "POST voice KV throw não finge chave em falta")
+assert(kvDownVoicePostBody.error !== "Falha interna.", "POST voice KV throw não vira Falha interna")
+assert(elevenHits === 0, "POST voice KV throw não gasta ElevenLabs")
+assert((await loadSecrets(runtimeHoleKv)).elevenApiKey === "sk_leftover", "POST voice KV throw não apaga a chave leftover")
+assert((await loadSecrets(runtimeHoleKv)).elevenVoiceId === "voice_leftover", "POST voice KV throw não apaga o voice id leftover")
+const throttleDownVoicePost = await voicePostOf(
+  "203.0.113.95",
+  { ...runtimeHoleBase, AUTH: kvThrowsOn(runtimeHoleKv, "track:throttles") } as Env
+)
+const throttleDownVoicePostBody = (await throttleDownVoicePost.json()) as { error?: string }
+assert(throttleDownVoicePost.status === 503, "POST voice throttle throw não cai em 500")
+assert(throttleDownVoicePostBody.error === "Não confirmei as chaves do Worker.", "POST voice throttle throw pede confirmação")
+assert(elevenHits === 0, "POST voice throttle throw não gasta ElevenLabs")
+const storeDownVoicePost = await voicePostOf(
+  "203.0.113.96",
+  { ...runtimeHoleBase, AUTH: kvThrowsOn(runtimeHoleKv, VOICE_STORE_KEY) } as Env
+)
+const storeDownVoicePostBody = (await storeDownVoicePost.json()) as { error?: string }
+assert(storeDownVoicePost.status === 503, "POST voice store throw não cai em 400 da ElevenLabs")
+assert(storeDownVoicePostBody.error === "Não confirmei a voz do Worker.", "POST voice store throw pede confirmação da voz")
+assert(
+  storeDownVoicePostBody.error !== "A ElevenLabs não gerou os áudios. Confere a chave e o voice id.",
+  "POST voice store throw não culpa a ElevenLabs"
+)
+assert(elevenHits === 0, "POST voice store throw não gasta ElevenLabs")
+assert((await loadSecrets(runtimeHoleKv)).elevenApiKey === "sk_leftover", "POST voice store throw não pisa a chave leftover")
+globalThis.fetch = voiceFetch
 const kvDownMcpHealth = await handleRequest(
   new Request("http://local.test/mcp", {
     method: "POST",

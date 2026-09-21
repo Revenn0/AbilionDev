@@ -472,18 +472,34 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = gate.user
     if (!isOwner(user)) return json({ error: "Só o dono gera a voz da Sté." }, 403)
-    if (!(await consumeKvThrottle(env.AUTH, `voice:${user.id}:${clientIp(request)}`, 5, 15 * 60_000))) {
+    let allowed: boolean
+    try {
+      allowed = await consumeKvThrottle(env.AUTH, `voice:${user.id}:${clientIp(request)}`, 5, 15 * 60_000)
+    } catch {
+      return json({ error: "Não confirmei as chaves do Worker." }, 503)
+    }
+    if (!allowed) {
       return json({ error: "Demasiados pedidos de voz. Espera um pouco." }, 429)
     }
-    const { resolved } = await runtimeOf(env, webhookUrl(request, env))
+    let resolved
+    try {
+      resolved = (await runtimeOf(env, webhookUrl(request, env))).resolved
+    } catch {
+      return json({ error: "Não confirmei as chaves do Worker." }, 503)
+    }
     if (!resolved.elevenApiKey || !resolved.elevenVoiceId) {
       return json({ error: "Falta a chave da ElevenLabs e o voice id da Sté." }, 400)
+    }
+    try {
+      await loadVoiceStore(env.AUTH)
+    } catch {
+      return json({ error: "Não confirmei a voz do Worker." }, 503)
     }
     const clips = await prepareVoiceClips(env.AUTH, resolved.elevenApiKey, resolved.elevenVoiceId)
     if (!clips.some((item) => item.ready)) {
       return json({ error: "A ElevenLabs não gerou os áudios. Confere a chave e o voice id." }, 400)
     }
-    return json(await publishedRuntime(env, resolved))
+    return json(publicRuntime(resolved, clips))
   }
 
   if (url.pathname === "/api/runtime" && request.method === "POST") {
