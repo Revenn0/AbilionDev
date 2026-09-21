@@ -5451,6 +5451,38 @@ const downCrmBody = (await downCrm.json()) as { settingsUnread?: boolean; funnel
 assert(Array.isArray(downCrmBody.funnels), "CRM com Postgres em baixo ainda manda os funis do KV")
 assert(downCrmBody.settingsUnread === true, "CRM marca definições por confirmar se o Postgres cair")
 assert(downCrmBody.funnelsUnread === true, "CRM marca funis por confirmar se o Postgres cair")
+const downCrmBoards = Array.isArray(downCrmBody.funnels) ? downCrmBody.funnels : []
+const downCrmAdd = await handleRequest(
+  new Request("http://local.test/api/crm", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: liveCookie },
+    body: JSON.stringify({ funnels: [...downCrmBoards, emptySalesFunnel("Novo unread")] }),
+  }),
+  downEnv,
+  backgroundCtx()
+)
+assert(downCrmAdd.status === 503, "POST CRM não cria funil novo com a lista unread")
+assert(((await downCrmAdd.json()) as { error?: string }).error === "Não confirmei os funis.", "POST CRM unread pede confirmação")
+const downCrmKeep = await handleRequest(
+  new Request("http://local.test/api/crm", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: liveCookie },
+    body: JSON.stringify({ funnels: downCrmBoards }),
+  }),
+  downEnv,
+  backgroundCtx()
+)
+assert(downCrmKeep.status === 200, "POST CRM ainda grava o quadro que já estava no KV unread")
+const downCrmDrop = await handleRequest(
+  new Request("http://local.test/api/crm", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: liveCookie },
+    body: JSON.stringify({ funnels: downCrmBoards, removedFunnelIds: ["ghost-board"] }),
+  }),
+  downEnv,
+  backgroundCtx()
+)
+assert(downCrmDrop.status === 503, "POST CRM não apaga funil com a lista unread")
 const downRuntime = await handleRequest(new Request("http://local.test/api/runtime", { headers: { cookie: liveCookie } }), downEnv, backgroundCtx())
 const downRuntimeBody = (await downRuntime.json()) as {
   ok?: boolean
@@ -5507,6 +5539,44 @@ const downInstallFound = await handleRequest(new Request("http://local.test/api/
 const downInstallFoundBody = (await downInstallFound.json()) as { ok?: boolean; script?: { id?: string; funnelName?: string } }
 assert(downInstallFound.status === 200 && downInstallFoundBody.script?.id === "deadbeef", "script no KV sobrevive ao Postgres unread")
 assert(downInstallFoundBody.script?.funnelName === "Quadro do script", "funil no KV entra no manual mesmo unread")
+await saveFunnelsKv(installHollowKv, [{ ...emptySalesFunnel("Outro quadro"), id: "fun-other" }])
+const downInstallOther = await handleRequest(new Request("http://local.test/api/install?s=deadbeef"), installUnreadEnv, backgroundCtx())
+assert(downInstallOther.status === 503, "script cujo funil não está no KV leftover é unread")
+assert(
+  ((await downInstallOther.json()) as { error?: string }).error === "Não confirmei o funil deste script.",
+  "503 do install não omite o nome do funil que só está no Postgres"
+)
+const leftoverInstallLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  installUnreadEnv,
+  backgroundCtx()
+)
+assert(leftoverInstallLogin.status === 200, "login no KV do install leftover")
+const leftoverInstallCookie = leftoverInstallLogin.headers.get("set-cookie") || ""
+const leftoverInstallMcp = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: leftoverInstallCookie },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 102,
+      method: "tools/call",
+      params: { name: "abilion_page_install_manual", arguments: { scriptId: "deadbeef" } },
+    }),
+  }),
+  installUnreadEnv,
+  backgroundCtx()
+)
+const leftoverInstallMcpBody = (await leftoverInstallMcp.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const leftoverInstallMcpData = JSON.parse(leftoverInstallMcpBody.result?.content?.[0]?.text || "{}") as { error?: string }
+assert(leftoverInstallMcp.status === 200 && leftoverInstallMcpBody.result?.isError, "MCP não omite o funil unread do script")
+assert(leftoverInstallMcpData.error === "Não confirmei o funil deste script.", "MCP leftover pede confirmação do funil")
 const scriptHookPrev = globalThis.fetch
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = String(input)

@@ -8,7 +8,7 @@ import { HydratePanel } from "@/components/layout/hydrate-panel"
 import { SyncBanner } from "@/components/layout/sync-banner"
 import { FunnelPreview } from "@/components/sales/preview"
 import { RenameFunnelDialog } from "@/components/sales/rename-dialog"
-import { canCreateFunnel, canDeleteFunnel, funnelsListBlocked } from "@/lib/crm"
+import { canCreateFunnel, canDeleteFunnel } from "@/lib/crm"
 import { addPageScript, funnelHasInstallableBoard, pageScriptsListBlocked } from "@/lib/page-script"
 import { useStore } from "@/lib/store"
 import { emptySalesFunnel } from "@/lib/templates"
@@ -23,11 +23,10 @@ export function FluxoPage() {
   const [renaming, setRenaming] = useState<SalesFunnel | null>(null)
   const [importing, setImporting] = useState(false)
   const creating = useRef(false)
-  const funnelsUnread = funnelsListBlocked(crmSync !== "ok", funnels)
-  const importBlocked = crmSync !== "ok"
+  const boardsBlocked = crmSync !== "ok"
   const scriptsUnread = pageScriptsListBlocked(settingsSync !== "ok", state.settings.pageScripts)
 
-  const createGate = funnelsUnread
+  const createGate = boardsBlocked
     ? { ok: false as const, reason: "Não confirmei os funis no Worker." }
     : canCreateFunnel(funnels)
 
@@ -66,11 +65,11 @@ export function FluxoPage() {
             type="button"
             variant="outline"
             className="h-8 rounded-full px-3.5"
-            data-funnel-import={importBlocked ? (crmSync === "idle" ? "loading" : "error") : "ok"}
-            disabled={importBlocked}
-            title={importBlocked ? "Não confirmei os funis no Worker." : undefined}
+            data-funnel-import={boardsBlocked ? (crmSync === "idle" ? "loading" : "error") : "ok"}
+            disabled={boardsBlocked}
+            title={boardsBlocked ? "Não confirmei os funis no Worker." : undefined}
             onClick={() => {
-              if (importBlocked) return
+              if (boardsBlocked) return
               setImporting(true)
             }}
           >
@@ -109,11 +108,11 @@ export function FluxoPage() {
                   type="button"
                   variant="outline"
                   className="rounded-full"
-                  data-funnel-import={importBlocked ? (crmSync === "idle" ? "loading" : "error") : "ok"}
-                  disabled={importBlocked}
-                  title={importBlocked ? "Não confirmei os funis no Worker." : undefined}
+                  data-funnel-import={boardsBlocked ? (crmSync === "idle" ? "loading" : "error") : "ok"}
+                  disabled={boardsBlocked}
+                  title={boardsBlocked ? "Não confirmei os funis no Worker." : undefined}
                   onClick={() => {
-                    if (importBlocked) return
+                    if (boardsBlocked) return
                     setImporting(true)
                   }}
                 >
@@ -194,10 +193,14 @@ export function FluxoPage() {
                     variant="ghost"
                     size="icon-sm"
                     className="rounded-full"
-                    disabled={!gate.ok}
-                    title={gate.ok ? "Excluir funil" : gate.reason}
-                    aria-label={gate.ok ? "Excluir funil" : gate.reason}
+                    disabled={!gate.ok || boardsBlocked}
+                    title={boardsBlocked ? "Não confirmei os funis no Worker." : gate.ok ? "Excluir funil" : gate.reason}
+                    aria-label={boardsBlocked ? "Não confirmei os funis no Worker." : gate.ok ? "Excluir funil" : gate.reason}
                     onClick={() => {
+                      if (boardsBlocked) {
+                        toast.error("Não confirmei os funis no Worker.")
+                        return
+                      }
                       if (!gate.ok) {
                         toast.error(gate.reason)
                         return
@@ -223,7 +226,7 @@ export function FluxoPage() {
         open={importing}
         onOpenChange={setImporting}
         onImported={(funnel) => {
-          if (importBlocked) {
+          if (boardsBlocked) {
             toast.error("Não confirmei os funis no Worker.")
             return
           }

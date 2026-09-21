@@ -561,8 +561,12 @@ async function installManualOf(env: McpEnv, scriptId?: string) {
   let funnelName: string | undefined
   if (script) {
     try {
-      funnelName = (await funnelsOf(env)).find((item) => item.id === script.funnelId)?.name
-    } catch {
+      const boards = await readWorkspaceFunnels(env)
+      const named = boards.funnels.find((item) => item.id === script.funnelId)
+      if (!named && boards.unread) throw new Error("Não confirmei o funil deste script.")
+      funnelName = named?.name
+    } catch (error) {
+      if (error instanceof Error && error.message === "Não confirmei o funil deste script.") throw error
       throw new Error("Não confirmei o funil deste script.")
     }
   }

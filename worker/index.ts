@@ -308,7 +308,10 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     let funnelName: string | undefined
     if (script) {
       try {
-        funnelName = (await loadFunnels(env)).find((item) => item.id === script.funnelId)?.name
+        const boards = await readWorkspaceFunnels(env)
+        const named = boards.funnels.find((item) => item.id === script.funnelId)
+        if (!named && boards.unread) return json({ error: "Não confirmei o funil deste script." }, 503)
+        funnelName = named?.name
       } catch {
         return json({ error: "Não confirmei o funil deste script." }, 503)
       }
@@ -524,7 +527,19 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       const rawFunnels = body.funnels
       const incoming = rawFunnels.map(sanitizeIncomingFunnel).filter((item): item is NonNullable<typeof item> => Boolean(item))
       const incomingRemoved = clipRemovedIds(body.removedFunnelIds, 400)
-      const stored = await loadFunnels(env)
+      let stored: SalesFunnel[]
+      try {
+        const boards = await readWorkspaceFunnels(env)
+        if (
+          boards.unread &&
+          (incomingRemoved.length || incoming.some((item) => !boards.funnels.some((row) => row.id === item.id)))
+        ) {
+          return json({ error: "Não confirmei os funis." }, 503)
+        }
+        stored = boards.funnels
+      } catch {
+        return json({ error: "Não confirmei os funis." }, 503)
+      }
       for (const funnel of incoming) {
         if (funnel.status !== "active" || !funnel.production) continue
         const raw = rawFunnels.find((item) => item && typeof item === "object" && "id" in item && item.id === funnel.id) as
