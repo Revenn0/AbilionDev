@@ -6,7 +6,7 @@ import { migrateSettings, sanitizeIncomingFunnel } from "../src/lib/migrate.ts"
 import { sanitizeVisitorId, summarizeTrack, type TrackEvent, type TrackKind, type TrackSummary } from "../src/lib/track.ts"
 import type { Lead, LeadEvent, SalesFunnel, Settings } from "../src/lib/types.ts"
 import { mergeTrackEvents } from "./track-store.ts"
-import { filterLiveLeads, findLeadInKv, isLeadPageCursor, isLeadRemoved, leadRemovedForRead, listLeadPage, loadAdoptedSettings, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge, removedIdsForRead, resolveLeadWrite } from "./crm-store.ts"
+import { filterLiveLeads, findLeadInKv, isLeadPageCursor, leadRemovedForRead, listLeadPage, loadAdoptedSettings, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge, removedIdsForRead, resolveLeadWrite } from "./crm-store.ts"
 import type { KvLike } from "./kv.ts"
 
 const WORKSPACE = "local"
@@ -269,8 +269,8 @@ export async function findWorkspaceLead(
   if (!hydrated) return null
   if (env.AUTH) {
     try {
-      if (await isLeadRemoved(env.AUTH, hydrated.id)) return null
-      return resolveLeadLookup(null, hydrated, await loadRemovedLeadIds(env.AUTH))
+      if (await leadRemovedForRead(env.AUTH, hydrated.id)) return null
+      return resolveLeadLookup(null, hydrated, await removedIdsForRead(env.AUTH))
     } catch {
       throw new Error("Não li o lead do Postgres.")
     }

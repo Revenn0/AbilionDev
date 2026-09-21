@@ -8007,6 +8007,41 @@ assert(
   "webhook novo tombstone unread ainda cria o lead"
 )
 assert((await loadLead(runtimeHoleKv, "hole-lead"))?.contact === "@holelead", "webhook novo tombstone unread não pisa o leftover")
+const pgOnlyRemovedPrev = globalThis.fetch
+try {
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.includes("/rest/v1/leads") && url.includes("or=(")) {
+      if (url.includes("oldgone")) {
+        return new Response(
+          JSON.stringify([{ ...identityRow, id: "old-id", contact: "@oldgone", telegram_chat_id: "" }]),
+          { status: 200 }
+        )
+      }
+      return new Response(JSON.stringify([identityRow]), { status: 200 })
+    }
+    return new Response("[]", { status: 200 })
+  }) as typeof fetch
+  const pgOnlyRemoved = await findWorkspaceLead(
+    { SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role", AUTH: kvThrowsOn(memoryKv(), CRM_REMOVED) } as Env,
+    "@pgana",
+    8802,
+    "8802"
+  )
+  assert(pgOnlyRemoved?.id === "pg-ana", "lookup webhook Postgres-only tombstone unread ainda devolve o backup")
+  assert(pgOnlyRemoved?.contact === "@pgana", "lookup webhook Postgres-only tombstone unread não esconde o contacto")
+  const goneOnlyKv = memoryKv()
+  await goneOnlyKv.put("crm:gone:old-id", JSON.stringify({ at: "2026-01-01T00:00:00.000Z" }))
+  const pgGoneRemoved = await findWorkspaceLead(
+    { SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role", AUTH: kvThrowsOn(goneOnlyKv, CRM_REMOVED) } as Env,
+    "@oldgone",
+    0,
+    ""
+  )
+  assert(pgGoneRemoved === null, "lookup webhook tombstone unread não ressuscita id gone")
+} finally {
+  globalThis.fetch = pgOnlyRemovedPrev
+}
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()
