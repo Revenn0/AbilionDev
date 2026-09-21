@@ -7124,6 +7124,94 @@ assert(kvDownCrmSettingsBody.error !== "Falha interna.", "POST CRM settings KV t
 assert(kvDownCrmSettingsBody.ok !== true, "POST CRM settings KV throw não finge gravado")
 assert((await loadSettingsKv(runtimeHoleKv)).telegramBotUsername === settingsBeforeThrow.telegramBotUsername, "POST CRM settings KV throw não pisa o username leftover")
 assert((await loadSettingsKv(runtimeHoleKv)).telegramBotUsername !== "@ste_defs", "POST CRM settings KV throw não grava username unread")
+const funnelsThrowEnv = { ...runtimeHoleBase, AUTH: kvThrowsOn(runtimeHoleKv, CRM_FUNNELS) } as Env
+const funnelsThrowMcp = async (id: number, name: string, args: Record<string, unknown> = {}) =>
+  handleRequest(
+    new Request("http://local.test/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.120" },
+      body: JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } }),
+    }),
+    funnelsThrowEnv,
+    backgroundCtx()
+  )
+const funnelsBeforeThrow = await loadFunnelsKv(runtimeHoleKv)
+assert(funnelsBeforeThrow.some((item) => item.id === "funil-throw"), "leftover do funil throw está no KV")
+const kvDownMcpFunnels = await funnelsThrowMcp(230, "abilion_list_funnels")
+const kvDownMcpFunnelsBody = (await kvDownMcpFunnels.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const kvDownMcpFunnelsData = JSON.parse(kvDownMcpFunnelsBody.result?.content?.[0]?.text || "{}") as {
+  error?: string
+  ok?: boolean
+  funnels?: unknown[]
+}
+assert(kvDownMcpFunnels.status === 200 && kvDownMcpFunnelsBody.result?.isError, "MCP list_funnels KV throw não finge lista vazia")
+assert(kvDownMcpFunnelsData.error === "Não confirmei os funis.", "MCP list_funnels KV throw pede confirmação")
+assert(kvDownMcpFunnelsData.error !== "kv down", "MCP list_funnels KV throw não vaza o erro interno")
+assert(kvDownMcpFunnelsData.ok !== true && !kvDownMcpFunnelsData.funnels, "MCP list_funnels KV throw não devolve catálogo oco")
+const kvDownMcpGetFunnel = await funnelsThrowMcp(231, "abilion_get_funnel", { id: "funil-throw" })
+const kvDownMcpGetFunnelData = JSON.parse(
+  ((await kvDownMcpGetFunnel.json()) as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string }
+assert(kvDownMcpGetFunnelData.error === "Não confirmei os funis.", "MCP get_funnel KV throw pede confirmação")
+assert(kvDownMcpGetFunnelData.error !== "Este funil já não está no CRM.", "MCP get_funnel KV throw não finge funil apagado")
+const kvDownMcpCreateFunnel = await funnelsThrowMcp(232, "abilion_create_funnel", { name: "Novo throw" })
+const kvDownMcpCreateFunnelData = JSON.parse(
+  ((await kvDownMcpCreateFunnel.json()) as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string; id?: string }
+assert(kvDownMcpCreateFunnelData.error === "Não confirmei os funis.", "MCP create_funnel KV throw pede confirmação")
+assert(!kvDownMcpCreateFunnelData.id, "MCP create_funnel KV throw não inventa id")
+const kvDownMcpImportFunnel = await funnelsThrowMcp(233, "abilion_import_funnel", {
+  name: "Import throw",
+  payload: { messages: ["Passo A", "Passo B"] },
+})
+const kvDownMcpImportFunnelData = JSON.parse(
+  ((await kvDownMcpImportFunnel.json()) as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string }
+assert(kvDownMcpImportFunnelData.error === "Não confirmei os funis.", "MCP import_funnel KV throw pede confirmação")
+const kvDownMcpPublish = await funnelsThrowMcp(234, "abilion_publish_funnel", { id: "funil-throw" })
+const kvDownMcpPublishData = JSON.parse(
+  ((await kvDownMcpPublish.json()) as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string }
+assert(kvDownMcpPublishData.error === "Não confirmei os funis.", "MCP publish_funnel KV throw pede confirmação")
+const kvDownMcpScriptFunnel = await funnelsThrowMcp(235, "abilion_create_page_script", {
+  name: "Landing funnel throw",
+  funnelId: "funil-throw",
+})
+const kvDownMcpScriptFunnelData = JSON.parse(
+  ((await kvDownMcpScriptFunnel.json()) as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string; script?: { id?: string } }
+assert(kvDownMcpScriptFunnelData.error === "Não confirmei os funis.", "MCP create_page_script funnel KV throw pede confirmação")
+assert(!kvDownMcpScriptFunnelData.script, "MCP create_page_script funnel KV throw não inventa script")
+assert(
+  (await loadFunnelsKv(runtimeHoleKv)).length === funnelsBeforeThrow.length,
+  "MCP funnel KV throw não pisa o leftover"
+)
+assert(
+  !(await loadFunnelsKv(runtimeHoleKv)).some((item) => item.name === "Novo throw" || item.name === "Import throw"),
+  "MCP funnel KV throw não grava funil novo"
+)
+const kvDownCrmFunnels = await handleRequest(
+  new Request("http://local.test/api/crm", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: runtimeHoleCookie,
+      "x-forwarded-for": "203.0.113.121",
+    },
+    body: JSON.stringify({
+      funnels: [{ ...emptySalesFunnel("CRM throw"), id: "funil-crm-throw" }],
+    }),
+  }),
+  funnelsThrowEnv,
+  backgroundCtx()
+)
+const kvDownCrmFunnelsBody = (await kvDownCrmFunnels.json()) as { error?: string }
+assert(kvDownCrmFunnels.status === 503, "POST CRM funnels KV throw não cai em 500")
+assert(kvDownCrmFunnelsBody.error === "Não confirmei os funis.", "POST CRM funnels KV throw pede confirmação")
+assert(kvDownCrmFunnelsBody.error !== "Falha interna.", "POST CRM funnels KV throw não vira Falha interna")
+assert(!(await loadFunnelsKv(runtimeHoleKv)).some((item) => item.id === "funil-crm-throw"), "POST CRM funnels KV throw não grava")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()

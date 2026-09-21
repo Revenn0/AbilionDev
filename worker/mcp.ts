@@ -300,12 +300,20 @@ async function workspaceSettingsOf(env: McpEnv, unread: string) {
   }
 }
 
+async function workspaceFunnelsOf(env: McpEnv, unread = "Não confirmei os funis.") {
+  try {
+    return await readWorkspaceFunnels(env)
+  } catch {
+    throw new Error(unread)
+  }
+}
+
 async function saveFunnels(env: McpEnv, funnels: SalesFunnel[]) {
   await persistWorkspaceFunnels(env, funnels)
 }
 
 async function publishFunnel(env: McpEnv, id: string) {
-  const loaded = await readWorkspaceFunnels(env)
+  const loaded = await workspaceFunnelsOf(env)
   if (loaded.unread) throw new Error("Não confirmei os funis.")
   const current = loaded.funnels.find((item) => item.id === id)
   if (!current) throw new Error("Este funil já não está no CRM.")
@@ -407,18 +415,18 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     return data
   }
   if (name === "abilion_list_funnels") {
-    const loaded = await readWorkspaceFunnels(env)
+    const loaded = await workspaceFunnelsOf(env)
     return { ok: true, funnels: loaded.funnels.map(compactFunnel), unread: loaded.unread || undefined }
   }
   if (name === "abilion_get_funnel") {
     const id = str(args.id).trim()
-    const loaded = await readWorkspaceFunnels(env)
+    const loaded = await workspaceFunnelsOf(env)
     const funnel = loaded.funnels.find((item) => item.id === id)
     if (!funnel) throw new Error(loaded.unread ? "Não confirmei os funis." : "Este funil já não está no CRM.")
     return { ok: true, funnel, unread: loaded.unread || undefined }
   }
   if (name === "abilion_create_funnel") {
-    const loaded = await readWorkspaceFunnels(env)
+    const loaded = await workspaceFunnelsOf(env)
     if (loaded.unread) throw new Error("Não confirmei os funis.")
     const funnels = loaded.funnels
     if (funnels.length >= FUNNEL_CAP) throw new Error(`O estúdio aceita no máximo ${FUNNEL_CAP} funis.`)
@@ -429,7 +437,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
   if (name === "abilion_import_funnel") {
     const imported = importFunnel(args.payload, clipName(str(args.name), "Funil importado"))
     if (!imported.ok) throw new Error(imported.error)
-    const loaded = await readWorkspaceFunnels(env)
+    const loaded = await workspaceFunnelsOf(env)
     if (loaded.unread) throw new Error("Não confirmei os funis.")
     const funnels = loaded.funnels
     if (funnels.length >= FUNNEL_CAP) throw new Error(`O estúdio aceita no máximo ${FUNNEL_CAP} funis.`)
@@ -544,7 +552,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     if (pageScriptsListBlocked(loaded.unread, loaded.settings.pageScripts)) {
       throw new Error("Não confirmei os scripts desta página.")
     }
-    const boards = await readWorkspaceFunnels(env)
+    const boards = await workspaceFunnelsOf(env, "Não confirmei o funil deste script.")
     if (pageScriptsFunnelUnread(boards.unread, loaded.settings.pageScripts, boards.funnels)) {
       throw new Error("Não confirmei o funil deste script.")
     }
@@ -560,7 +568,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
   }
   if (name === "abilion_create_page_script") {
     if (!env.AUTH) throw new Error("Auth ainda sem KV.")
-    const boards = await readWorkspaceFunnels(env)
+    const boards = await workspaceFunnelsOf(env)
     if (boards.unread) throw new Error("Não confirmei os funis.")
     const funnel = boards.funnels.find((item) => item.id === str(args.funnelId).trim())
     if (!funnel?.production) {
