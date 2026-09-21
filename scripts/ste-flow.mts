@@ -101,7 +101,7 @@ import { applyEvent, canAdvanceRemoteWait, eventFromOrigin, leadFunnelUnread, pi
 import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
-import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_INDEX, CRM_REMOVED, CRM_REMOVED_FUNNELS, CRM_SETTINGS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, goneFunnelKey, goneLeadKey, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, leadPageCursor, leadPageFromRemote, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_INDEX, CRM_NAMES, CRM_REMOVED, CRM_REMOVED_FUNNELS, CRM_SETTINGS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, goneFunnelKey, goneLeadKey, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, leadPageCursor, leadPageFromRemote, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberLeadNames, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { fetchRemoteDueLeads, fetchRemoteLeadByIdentity, fetchRemoteLeadsByIds, fetchRemotePageEvents, findWorkspaceLead, findWorkspaceLeadById, hydrateWorkspaceLead, leadCatalogUnread, leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceFunnels, readWorkspaceSettings, remoteLeadDuePath, remoteLeadIdentityPath, remoteLeadListPath, remoteLeadSearchPath, resolveWorkspaceLeadWrite, rowToLead, rowToTrackEvent, sanitizeRemoteSearchNeedle, searchWorkspaceLeads, summarizeWorkspaceTrack, telegramIdFromLead } from "../worker/workspace-settings.ts"
@@ -8545,6 +8545,130 @@ assert(
     (holeAfterAlias?.messages ?? []).some((item) => item.role === "ste"),
   "webhook alias unread grava a fala no leftover"
 )
+const namesMapKv = memoryKv()
+await namesMapKv.put(CRM_NAMES, JSON.stringify({ "hole-lead": "Hole leftover", "other-name": "Outro leftover" }))
+await rememberLeadNames(kvThrowsOn(namesMapKv, CRM_NAMES), [{ id: "hole-lead", name: "Hole novo" }])
+const namesAfterUnread = (await namesMapKv.get(CRM_NAMES, "json")) as Record<string, string> | null
+assert(namesAfterUnread?.["other-name"] === "Outro leftover", "names unread não pisa o mapa leftover")
+assert(namesAfterUnread?.["hole-lead"] === "Hole leftover", "names unread não grava nome em cima do unread")
+const namesDownKv = kvThrowsOn(runtimeHoleKv, CRM_NAMES)
+assert((await listLeads(namesDownKv, 40, "all")).some((item) => item.id === "hole-lead"), "lista names unread ainda lê o leftover")
+assert((await listLeadPage(namesDownKv, 40, "all")).leads.some((item) => item.contact === "@holelead"), "página names unread não esconde o leftover")
+assert((await lookupLeadsByQuery(namesDownKv, "@holelead")).some((item) => item.id === "hole-lead"), "busca names unread ainda manda o leftover")
+const namesUpsertKv = memoryKv()
+await upsertLeadKv(namesUpsertKv, { ...lead("names-up", "@namesup"), memory: "antes" })
+assert(
+  await upsertLeadKv(kvThrowsOn(namesUpsertKv, CRM_NAMES), { ...lead("names-up", "@namesup"), memory: "names-unread" }),
+  "upsert names unread ainda grava o leftover"
+)
+assert((await loadLead(namesUpsertKv, "names-up"))?.memory === "names-unread", "upsert names unread actualiza a memória leftover")
+assert((await loadLead(namesUpsertKv, "names-up"))?.contact === "@namesup", "upsert names unread não troca o contacto leftover")
+const namesDownEnv = { ...runtimeHoleBase, AUTH: namesDownKv } as Env
+const namesDownList = await handleRequest(
+  new Request("http://local.test/api/leads", { headers: { cookie: runtimeHoleCookie } }),
+  namesDownEnv,
+  backgroundCtx()
+)
+const namesDownListBody = (await namesDownList.json()) as { ok?: boolean; leads?: Array<{ id?: string; contact?: string }>; error?: string }
+assert(namesDownList.status === 200, "GET leads names unread não é 503")
+assert(namesDownList.status !== 500, "GET leads names unread não é Falha interna")
+assert(namesDownListBody.leads?.some((item) => item.id === "hole-lead"), "GET leads names unread ainda manda o leftover")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.contact === "@holelead", "GET names unread não pisa a ficha leftover")
+const namesDownSearch = await handleRequest(
+  new Request("http://local.test/api/leads?q=@holelead", { headers: { cookie: runtimeHoleCookie } }),
+  namesDownEnv,
+  backgroundCtx()
+)
+const namesDownSearchBody = (await namesDownSearch.json()) as { ok?: boolean; leads?: Array<{ id?: string }>; error?: string }
+assert(namesDownSearch.status === 200, "GET ?q= names unread não é 503")
+assert(namesDownSearchBody.leads?.some((item) => item.id === "hole-lead"), "GET ?q= names unread ainda manda o leftover")
+const namesDownMcpList = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.244" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 266,
+      method: "tools/call",
+      params: { name: "abilion_list_leads", arguments: { limit: 5 } },
+    }),
+  }),
+  namesDownEnv,
+  backgroundCtx()
+)
+const namesDownMcpListData = JSON.parse(
+  ((await namesDownMcpList.json()) as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string; leads?: Array<{ id?: string }> }
+assert(namesDownMcpList.status === 200, "MCP list names unread não cai em 500")
+assert(!namesDownMcpListData.error, "MCP list names unread não pede 503")
+assert(namesDownMcpListData.leads?.some((item) => item.id === "hole-lead"), "MCP list names unread ainda manda o leftover")
+const namesDownMcpSearch = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.245" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 267,
+      method: "tools/call",
+      params: { name: "abilion_list_leads", arguments: { q: "@holelead" } },
+    }),
+  }),
+  namesDownEnv,
+  backgroundCtx()
+)
+const namesDownMcpSearchData = JSON.parse(
+  ((await namesDownMcpSearch.json()) as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string; leads?: Array<{ id?: string }> }
+assert(namesDownMcpSearch.status === 200, "MCP busca names unread não cai em 500")
+assert(namesDownMcpSearchData.leads?.some((item) => item.id === "hole-lead"), "MCP busca names unread ainda manda o leftover")
+const holeLeadIdsBeforeNames = (await listLeads(runtimeHoleKv, 40, "all")).filter((item) => item.contact === "@holelead").map((item) => item.id)
+const hookNamesCtx = backgroundCtx()
+const hookNamesPrevFetch = globalThis.fetch
+try {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("api.telegram.org")) {
+      return new Response(JSON.stringify({ ok: true }), { status: 200 })
+    }
+    return hookNamesPrevFetch(input, init)
+  }) as typeof fetch
+  const hookNames = await handleRequest(
+    new Request("http://local.test/api/telegram", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-kv" },
+      body: JSON.stringify({
+        update_id: 88007,
+        message: {
+          chat: { id: 88007 },
+          text: "oi names unread",
+          from: { id: 88007, username: "holelead", first_name: "Hole" },
+        },
+      }),
+    }),
+    namesDownEnv,
+    hookNamesCtx
+  )
+  const hookNamesBody = (await hookNames.json()) as { ok?: boolean }
+  assert(hookNames.status === 200, "webhook names unread ainda acks o Telegram")
+  assert(hookNames.status !== 500, "webhook names unread não é Falha interna")
+  assert(hookNamesBody.ok === true, "webhook names unread não mente falha no ack")
+  await hookNamesCtx.flush()
+} finally {
+  globalThis.fetch = hookNamesPrevFetch
+}
+const holeLeadIdsAfterNames = (await listLeads(runtimeHoleKv, 40, "all")).filter((item) => item.contact === "@holelead").map((item) => item.id)
+assert(holeLeadIdsAfterNames.join() === holeLeadIdsBeforeNames.join(), "webhook names unread não mint o segundo UUID")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.contact === "@holelead", "webhook names unread não troca o contacto leftover")
+const holeAfterNames = await loadLead(runtimeHoleKv, "hole-lead")
+assert(
+  (holeAfterNames?.messages ?? []).some((item) => item.role === "lead" && item.text === "oi names unread") ||
+    (holeAfterNames?.messages ?? []).some((item) => item.role === "ste"),
+  "webhook names unread grava a fala no leftover"
+)
+const goneNamesKv = memoryKv()
+await upsertLeadKv(goneNamesKv, lead("names-gone", "@namesgone"))
+await deleteLeadKv(kvThrowsOn(goneNamesKv, CRM_NAMES), "names-gone")
+assert(await isLeadRemoved(goneNamesKv, "names-gone"), "DELETE names unread ainda tombstoneia")
+assert((await loadLead(goneNamesKv, "names-gone")) === null, "DELETE names unread ainda apaga a ficha")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()

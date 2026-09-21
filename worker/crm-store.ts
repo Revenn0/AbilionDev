@@ -529,9 +529,18 @@ export async function loadLeadNames(kv: KvLike): Promise<Record<string, string>>
   return readNameMap(await kv.get(CRM_NAMES, "json"))
 }
 
+async function loadLeadNamesForRead(kv: KvLike): Promise<Record<string, string> | null> {
+  try {
+    return await loadLeadNames(kv)
+  } catch {
+    return null
+  }
+}
+
 export async function rememberLeadNames(kv: KvLike, leads: Array<Pick<Lead, "id" | "name">>) {
   if (!leads.length) return
-  const names = await loadLeadNames(kv)
+  const names = await loadLeadNamesForRead(kv)
+  if (!names) return
   let changed = false
   for (const lead of leads) {
     const next = lead.name.trim().slice(0, 80)
@@ -540,12 +549,16 @@ export async function rememberLeadNames(kv: KvLike, leads: Array<Pick<Lead, "id"
     changed = true
   }
   if (!changed) return
-  const keep = new Set((await loadIndex(kv)).entries.map((item) => item.id))
-  const clipped: Record<string, string> = {}
-  for (const [id, name] of Object.entries(names)) {
-    if (keep.has(id) || leads.some((lead) => lead.id === id)) clipped[id] = name
+  try {
+    const keep = new Set((await loadIndex(kv)).entries.map((item) => item.id))
+    const clipped: Record<string, string> = {}
+    for (const [id, name] of Object.entries(names)) {
+      if (keep.has(id) || leads.some((lead) => lead.id === id)) clipped[id] = name
+    }
+    await kv.put(CRM_NAMES, JSON.stringify(clipped))
+  } catch {
+    /* names unread — o leftover do mapa fica */
   }
-  await kv.put(CRM_NAMES, JSON.stringify(clipped))
 }
 
 export async function lookupLeadsByQuery(kv: KvLike, query: string): Promise<Lead[]> {
@@ -571,7 +584,7 @@ export async function lookupLeadsByQuery(kv: KvLike, query: string): Promise<Lea
   } catch {
     return hits
   }
-  const names = await loadLeadNames(kv)
+  const names = (await loadLeadNamesForRead(kv)) ?? {}
   const matchIds: string[] = []
   for (const entry of index.entries) {
     const name = entry.name || names[entry.id] || ""
@@ -639,10 +652,14 @@ export async function deleteLeadKv(kv: KvLike, id: string) {
   const entry = index.entries.find((item) => item.id === id)
   await rememberRemovedLead(kv, id)
   await clearAliases(kv, prev, entry)
-  const names = await loadLeadNames(kv)
-  if (names[id]) {
-    delete names[id]
-    await kv.put(CRM_NAMES, JSON.stringify(names))
+  try {
+    const names = await loadLeadNames(kv)
+    if (names[id]) {
+      delete names[id]
+      await kv.put(CRM_NAMES, JSON.stringify(names))
+    }
+  } catch {
+    /* names unread — o tombstone já ficou */
   }
   await kv.delete?.(leadKey(id))
   await commitIndex(kv, [], [id])
