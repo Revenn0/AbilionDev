@@ -3358,6 +3358,14 @@ assert(
   !("llm" in healthBody) && !("model" in healthBody) && !("persist" in healthBody) && !("telegram" in healthBody),
   "health público não expõe o runtime"
 )
+const releaseHealth = (await (
+  await handleRequest(new Request("http://local.test/api/health"), { ...apiEnv, ABILION_ENV: "staging", GIT_SHA: "ABC1234DEF56" } as Env, backgroundCtx())
+).json()) as { env?: string; version?: string }
+assert(releaseHealth.env === "staging" && releaseHealth.version === "abc1234def56", "health diz o ambiente e o commit no ar")
+const junkReleaseHealth = (await (
+  await handleRequest(new Request("http://local.test/api/health"), { ...apiEnv, GIT_SHA: "<script>" } as Env, backgroundCtx())
+).json()) as { version?: string }
+assert(junkReleaseHealth.version === undefined, "health não ecoa GIT_SHA que não é hash")
 await saveSettingsKv(apiEnv.AUTH, migrateSettings({ telegramBotUsername: "good_bot" }))
 const namedHealth = (await (await handleRequest(new Request("http://local.test/api/health"), apiEnv, backgroundCtx())).json()) as {
   telegramBotUsername?: string

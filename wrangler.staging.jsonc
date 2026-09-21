@@ -1,11 +1,12 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "abiliondev-staging",
+  "name": "abilion-staging",
   "account_id": "73dd2cecfc9c7f0220a36fe999e3edf1",
   "main": "worker/index.ts",
   "compatibility_date": "2026-08-23",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
+  "preview_urls": true,
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
@@ -18,8 +19,11 @@
   "triggers": {
     "crons": ["*/5 * * * *"]
   },
+  "routes": [{ "pattern": "staging.abilion.lol", "custom_domain": true }],
+  // Sem SUPABASE_URL de propósito: staging nunca aponta para o Postgres de produção.
+  // Para testar o caminho Postgres, cria um projecto Supabase só de staging e mete
+  // SUPABASE_URL aqui + `wrangler secret put SUPABASE_SERVICE_ROLE --config wrangler.staging.jsonc`.
   "vars": {
-    "SUPABASE_URL": "https://eyjgmkmaixmpmeeahxon.supabase.co",
     "ABILION_ENV": "staging",
     "OPENAI_BASE_URL": "https://openrouter.ai/api/v1",
     "OPENCODE_BASE_URL": "https://opencode.ai/zen/go/v1",

@@ -76,8 +76,13 @@ npx wrangler secret put ABILION_OPERATOR_PASSWORD
 ```bash
 npm install
 npx wrangler login
-npm run deploy
+npm run deploy:staging                      # staging.abilion.lol — qualquer branch
+npm run deploy:prod -- --approved <sha>     # www.abilion.lol — só no main, só o que staging já serviu
 ```
+
+## Ambientes
+
+Desenvolvimento → **staging** (`https://staging.abilion.lol`, Worker `abilion-staging`, KV próprio, bot de staging) → **produção** (`https://www.abilion.lol`). Toda a alteração passa por staging; produção só sobe com o PR `staging → main` aprovado pelo Victor, e o `scripts/deploy.mts` recusa publicar em produção uma árvore que staging não esteja a servir. `npm run deploy` publica **staging** por defeito. `GET /api/health` devolve `env` e `version` (commit) em cada ambiente. Detalhes, secrets por ambiente, regras do branch e CI em [`docs/ambientes.md`](docs/ambientes.md).
 
 Domínio **abilion.lol** já aponta para o Worker (`coco.ns.cloudflare.com` / `etienne.ns.cloudflare.com`). Apex, `www` e `abilion.vsanches1060.workers.dev` servem o mesmo painel.
 

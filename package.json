@@ -11,7 +11,12 @@
     "test:ui": "npx tsx scripts/ui-audit.mts",
     "typecheck": "tsc -b",
     "preview": "vite preview --host 127.0.0.1 --port 43173",
-    "deploy": "npm run build && wrangler deploy --keep-vars",
+    "dev:worker": "npm run build && wrangler dev --config wrangler.staging.jsonc --var ABILION_ENV:development --port 43174",
+    "deploy": "npm run deploy:staging",
+    "deploy:staging": "npx tsx scripts/deploy.mts staging",
+    "deploy:prod": "npx tsx scripts/deploy.mts production",
+    "smoke": "npx tsx scripts/smoke.mts",
+    "staging:reset": "npx tsx scripts/staging-reset.mts",
     "mcp": "npx tsx mcp/server.mts",
     "postinstall": "mkdir -p node_modules/.bin && ln -sfn ../../tools/opennext-shim/cli.mjs node_modules/.bin/opennextjs-cloudflare"
   },

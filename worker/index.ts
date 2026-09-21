@@ -100,6 +100,7 @@ export interface Env {
   AUTH?: KVNamespace
   ABILION_OPERATOR_PASSWORD?: string
   ABILION_ENV?: string
+  GIT_SHA?: string
 }
 
 const WORKSPACE = "local"
@@ -131,6 +132,16 @@ export function backgroundCtx(): WorkerContext {
 async function runtimeOf(env: Env, webhookFallback = "") {
   const secrets = kvOf(env) ? await loadSecrets(kvOf(env)!) : {}
   return { secrets, resolved: resolveRuntime(env, secrets, webhookFallback) }
+}
+
+/** `/api/health`: qual ambiente e qual commit estão no ar. O deploy injecta `GIT_SHA`. */
+function releaseInfo(env: Env) {
+  const environment = (env.ABILION_ENV || "").trim().slice(0, 32)
+  const version = (env.GIT_SHA || "").trim().slice(0, 40)
+  return {
+    env: environment || undefined,
+    version: /^[a-f0-9]{7,40}$/i.test(version) ? version.toLowerCase() : undefined,
+  }
 }
 
 /** Público: secrets unread não apagam username/scripts leftover das settings. */
@@ -329,15 +340,17 @@ async function handleMcpRoute(request: Request, env: Env) {
 
 async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionContext) {
   if (url.pathname === "/api/health") {
+    const release = releaseInfo(env)
     try {
       const { telegramBotUsername, settingsUnread } = await publicWorkspaceBot(env, webhookUrl(request, env))
       return json({
         ok: true,
+        ...release,
         telegramBotUsername,
         telegramBotUnread: settingsUnread && !telegramBotUsername ? true : undefined,
       })
     } catch {
-      return json({ ok: true, telegramBotUsername: "", telegramBotUnread: true })
+      return json({ ok: true, ...release, telegramBotUsername: "", telegramBotUnread: true })
     }
   }
 
