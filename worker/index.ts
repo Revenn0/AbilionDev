@@ -791,7 +791,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       const { incoming, prev } = resolved
       let gone
       try {
-        gone = (await isLeadRemoved(env.AUTH, incoming.id)) || (await isLeadRemoved(env.AUTH, lead.id))
+        gone = (await leadRemovedForRead(env.AUTH, incoming.id)) || (await leadRemovedForRead(env.AUTH, lead.id))
       } catch {
         return json({ error: "Não li o lead do Postgres." }, 503)
       }
@@ -1112,7 +1112,7 @@ async function processWaits(env: Env): Promise<{ advanced: number; remoteUnread:
         let live: Lead | null = queued
         if (env.AUTH) {
           try {
-            live = await loadLead(env.AUTH, queued.id)
+            live = await loadLead(env.AUTH, queued.id, await removedIdsForRead(env.AUTH))
           } catch {
             live = null
           }

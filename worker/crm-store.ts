@@ -725,7 +725,7 @@ export async function releaseCronLock(kv: KvLike, owner?: string) {
 export async function dueLeadsKv(kv: KvLike, nowIso: string): Promise<{ leads: Lead[]; missingIds: string[] }> {
   const index = await loadIndex(kv)
   const ids = index.entries.filter((item) => item.waitUntil && item.waitUntil <= nowIso).map((item) => item.id)
-  const removed = new Set(await loadRemovedLeadIds(kv))
+  const removed = await removedIdsForRead(kv)
   const loaded = await Promise.all(ids.map(async (id) => ({ id, lead: await loadLead(kv, id, removed) })))
   const leads: Lead[] = []
   const missingIds: string[] = []

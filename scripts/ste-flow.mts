@@ -7969,6 +7969,60 @@ const writeRemovedDown = await resolveWorkspaceLeadWrite(removedDownEnv, {
 })
 assert(writeRemovedDown.ok && writeRemovedDown.incoming.id === "hole-lead", "POST/MCP write tombstone unread ainda adopta o leftover")
 assert(writeRemovedDown.ok && writeRemovedDown.prev?.id === "hole-lead", "POST/MCP write tombstone unread não esconde a ficha leftover")
+const removedDownPost = await handleRequest(
+  new Request("http://local.test/api/leads", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.187" },
+    body: JSON.stringify({ lead: { ...lead("hole-lead", "@holelead"), memory: "post-unread" } }),
+  }),
+  removedDownEnv,
+  backgroundCtx()
+)
+const removedDownPostBody = (await removedDownPost.json()) as { ok?: boolean; saved?: number; ids?: string[]; error?: string }
+assert(removedDownPost.status === 200 && removedDownPostBody.ok, "POST lead tombstone unread ainda grava o leftover")
+assert(removedDownPost.status !== 503, "POST lead tombstone unread não pede 503")
+assert(removedDownPostBody.saved === 1 && removedDownPostBody.ids?.includes("hole-lead"), "POST lead tombstone unread não esconde a ficha leftover")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === "post-unread", "POST lead tombstone unread actualiza a memória leftover")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.contact === "@holelead", "POST lead tombstone unread não troca o contacto leftover")
+const goneOnlyPostKv = memoryKv()
+await goneOnlyPostKv.put("crm:gone:old-id", JSON.stringify({ at: "2026-01-01T00:00:00.000Z" }))
+await goneOnlyPostKv.put("snapshot", JSON.stringify(await runtimeHoleKv.get("snapshot", "json")))
+const goneOnlyPost = await handleRequest(
+  new Request("http://local.test/api/leads", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.188" },
+    body: JSON.stringify({ lead: lead("old-id", "@oldgone") }),
+  }),
+  { ...runtimeHoleBase, AUTH: kvThrowsOn(goneOnlyPostKv, CRM_REMOVED) } as Env,
+  backgroundCtx()
+)
+const goneOnlyPostBody = (await goneOnlyPost.json()) as { ok?: boolean; saved?: number; ids?: string[] }
+assert(goneOnlyPost.status === 200 && goneOnlyPostBody.ok, "POST id gone tombstone unread ainda responde")
+assert(goneOnlyPostBody.saved !== 1 && !goneOnlyPostBody.ids?.includes("old-id"), "POST id gone tombstone unread não ressuscita")
+assert((await loadLead(goneOnlyPostKv, "old-id")) === null, "POST id gone tombstone unread não grava a ficha")
+const dueRemovedWait = new Date(Date.now() - 2000).toISOString()
+const dueRemovedKv = memoryKv()
+await upsertLeadKv(dueRemovedKv, {
+  ...lead("due-removed", "@dueremoved"),
+  waitUntil: dueRemovedWait,
+  memory: "ste:remarketing",
+  stePhase: "offer",
+})
+assert(
+  (await dueLeadsKv(kvThrowsOn(dueRemovedKv, CRM_REMOVED), new Date().toISOString())).leads.some((item) => item.id === "due-removed"),
+  "cron lê a espera leftover quando o KV dos removidos falha"
+)
+const dueRemovedEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  AUTH: kvThrowsOn(dueRemovedKv, CRM_REMOVED),
+  CRON_SECRET: "cron",
+  ABILION_ENV: "development",
+} as Env
+const dueRemovedCron = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), dueRemovedEnv, backgroundCtx())
+const dueRemovedCronBody = (await dueRemovedCron.json()) as { ok?: boolean; advanced?: number; remoteUnread?: boolean }
+assert(dueRemovedCron.status === 200 && dueRemovedCronBody.ok, "cron tombstone unread ainda corre")
+assert((dueRemovedCronBody.advanced ?? 0) >= 1, "cron tombstone unread ainda avança a espera leftover")
+assert((await loadLead(dueRemovedKv, "due-removed"))?.waitUntil !== dueRemovedWait, "cron tombstone unread come a espera leftover")
 const hookNewRemovedCtx = backgroundCtx()
 const hookNewRemovedPrevFetch = globalThis.fetch
 try {
