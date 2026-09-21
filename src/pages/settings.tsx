@@ -775,8 +775,10 @@ function PluginsPane() {
                       size="sm"
                       variant="outline"
                       className="rounded-full"
-                      disabled={!state.leads.length}
+                      disabled={persistSync !== "ok" || !state.leads.length}
+                      title={persistSync !== "ok" ? "Não confirmei os leads no Worker." : undefined}
                       onClick={() => {
+                        if (persistSync !== "ok" || !state.leads.length) return
                         downloadLeadsCsv(state.leads)
                         toast.success(
                           state.leads.length >= LEAD_LIST_CAP

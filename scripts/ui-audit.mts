@@ -323,6 +323,14 @@ try {
   )
   const showInitial = await page.$("[aria-label='Mostrar senha inicial']")
   assert(showInitial, "criar conta mostra a senha")
+  assert(
+    (await page.$eval("#user-password", (el) => (el as HTMLInputElement).disabled)) === false,
+    "criar conta com a lista confirmada deixa preencher a senha"
+  )
+  assert(
+    (await page.$eval("#token-name", (el) => (el as HTMLInputElement).disabled)) === false,
+    "gerar token com a lista confirmada deixa preencher o nome"
+  )
   await showInitial!.click()
   const revealed = await page.$eval("#user-password", (el) => (el as HTMLInputElement).type)
   assert(revealed === "text", "toggle revela a senha inicial")

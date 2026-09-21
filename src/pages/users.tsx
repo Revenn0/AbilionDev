@@ -58,19 +58,27 @@ export function UsersPage() {
     reload()
   }, [])
 
+  const usersUnread = users === null
+  const tokensUnread = tokens === null
+
   const create = (event: React.FormEvent) => {
     event.preventDefault()
     if (lock.current || busy) return
+    if (usersUnread) {
+      toast.error("Não confirmei as contas.")
+      return
+    }
     lock.current = true
     setBusy(true)
     void createUserRequest({ name: name.trim(), email: email.trim(), password, role })
       .then((result) => {
-        setUsers((prev) => [...(prev ?? []), result.user])
+        setUsers((prev) => (prev ? [...prev, result.user] : prev))
         setName("")
         setEmail("")
         setPassword("")
         setRole("operator")
         toast.success("Conta criada. Já pode entrar com esta senha.")
+        reload()
       })
       .catch((err: Error) => toast.error(err.message))
       .finally(() => {
@@ -193,6 +201,7 @@ export function UsersPage() {
             <p className="text-[14px] font-medium">Nova conta</p>
             <p className="mt-1 text-[12.5px] text-muted-foreground">A pessoa entra com o e-mail e a senha que definires.</p>
             <form className="mt-4 space-y-3" onSubmit={create}>
+              <fieldset disabled={usersUnread} className="min-w-0 space-y-3 border-0 p-0">
               <div className="space-y-1.5">
                 <Label htmlFor="user-name">Nome</Label>
                 <Input
@@ -250,9 +259,15 @@ export function UsersPage() {
                   <option value="owner">Dono</option>
                 </select>
               </div>
-              <Button type="submit" className="rounded-full" disabled={busy}>
+              <Button type="submit" className="rounded-full" disabled={busy || usersUnread}>
                 Criar conta
               </Button>
+              </fieldset>
+              {usersUnread ? (
+                <p className="text-[12.5px] text-muted-foreground" data-users-create="unread" role="alert">
+                  Não confirmei as contas no Worker.
+                </p>
+              ) : null}
             </form>
           </section>
         ) : (
@@ -273,13 +288,17 @@ export function UsersPage() {
             onSubmit={(event) => {
               event.preventDefault()
               if (tokenLock.current || tokenBusy) return
+              if (tokensUnread) {
+                toast.error("Não confirmei os tokens.")
+                return
+              }
               tokenLock.current = true
               setTokenBusy(true)
               void createTokenRequest(tokenName.trim() || "Agente")
                 .then((result) => {
-                  setTokens((prev) => [...(prev ?? []), result.item])
                   setFreshToken(result.token)
                   toast.success("Token criado. Copia agora — não volta a aparecer.")
+                  reload()
                 })
                 .catch((err: Error) => toast.error(err.message))
                 .finally(() => {
@@ -290,12 +309,23 @@ export function UsersPage() {
           >
             <div className="min-w-[12rem] flex-1 space-y-1.5">
               <Label htmlFor="token-name">Nome do agente</Label>
-              <Input id="token-name" value={tokenName} onChange={(event) => setTokenName(event.target.value)} maxLength={60} />
+              <Input
+                id="token-name"
+                value={tokenName}
+                onChange={(event) => setTokenName(event.target.value)}
+                maxLength={60}
+                disabled={tokensUnread}
+              />
             </div>
-            <Button type="submit" className="rounded-full" disabled={tokenBusy}>
+            <Button type="submit" className="rounded-full" disabled={tokenBusy || tokensUnread}>
               {tokenBusy ? "A gerar…" : "Gerar token"}
             </Button>
           </form>
+          {tokensUnread ? (
+            <p className="mt-2 text-[12.5px] text-muted-foreground" data-tokens-create="unread" role="alert">
+              Não confirmei os tokens no Worker.
+            </p>
+          ) : null}
           {freshToken ? (
             <div className="mt-4 rounded-xl bg-muted/60 p-3">
               <p className="text-[12px] text-muted-foreground">Copia e guarda. Depois disto só vês o prefixo.</p>
