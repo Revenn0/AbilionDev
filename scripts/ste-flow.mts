@@ -8957,6 +8957,91 @@ try {
 assert(funnelsBeforePg.some((item) => item.id === "funil-throw"), "funnels KV throw + backup parte do leftover no KV")
 assert((await loadFunnelsKv(runtimeHoleKv)).some((item) => item.id === "funil-throw"), "funnels KV throw + backup não pisa o funil leftover")
 assert(!(await loadFunnelsKv(runtimeHoleKv)).some((item) => item.id === "funil-pg"), "funnels KV throw + backup não grava o funil do Postgres em cima do KV unread")
+const leadPgPrev = globalThis.fetch
+const leadBeforePg = await loadLead(runtimeHoleKv, "hole-lead")
+assert(leadBeforePg?.id === "hole-lead", "ficha leftover ainda está no KV antes do backup")
+const leadPgEnv = {
+  ...runtimeHoleBase,
+  AUTH: kvThrowsOn(runtimeHoleKv, leadKey("hole-lead")),
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+} as Env
+const leadPgRow = {
+  id: "hole-lead",
+  name: "Hole leftover",
+  contact: "@holelead",
+  channel: "telegram",
+  campaign: "facebook",
+  origin: "facebook",
+  temperature: "novo",
+  stage: "welcome",
+  memory: "leftover-pg",
+  facts: {},
+  messages: [],
+  telegram_chat_id: "88001",
+  updated_at: "2026-01-01T00:00:00.000Z",
+  created_at: "2026-01-01T00:00:00.000Z",
+}
+try {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url.includes("/rest/v1/leads")) {
+      return new Response(JSON.stringify([leadPgRow]), { status: 200 })
+    }
+    if (url.includes("/rest/v1/lead_events")) return new Response("[]", { status: 200 })
+    return leadPgPrev(input, init)
+  }) as typeof fetch
+  const leadPgById = await findWorkspaceLeadById(leadPgEnv, "hole-lead")
+  assert(leadPgById?.id === "hole-lead", "get_lead KV throw ainda lê o id leftover do Postgres")
+  assert(leadPgById?.memory === "leftover-pg", "get_lead KV throw ainda lê a memória leftover do Postgres")
+  assert(leadPgById?.contact === "@holelead", "get_lead KV throw não esconde o contacto leftover do Postgres")
+  const leadPgByContact = await findWorkspaceLead(leadPgEnv, "@holelead", 88001, "88001")
+  assert(leadPgByContact?.id === "hole-lead", "lookup webhook KV throw ainda lê o leftover do Postgres")
+  assert(leadPgByContact?.memory === "leftover-pg", "lookup webhook KV throw não esconde a memória leftover do Postgres")
+  const leadPgMcp = await handleRequest(
+    new Request("http://local.test/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.249" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 271,
+        method: "tools/call",
+        params: { name: "abilion_get_lead", arguments: { id: "hole-lead" } },
+      }),
+    }),
+    leadPgEnv,
+    backgroundCtx()
+  )
+  const leadPgMcpData = JSON.parse(
+    ((await leadPgMcp.json()) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+  ) as { error?: string; lead?: { id?: string; memory?: string; contact?: string } }
+  assert(leadPgMcp.status === 200, "MCP get_lead KV throw + backup não cai em 500")
+  assert(!leadPgMcpData.error, "MCP get_lead KV throw + backup não pede 503")
+  assert(leadPgMcpData.lead?.id === "hole-lead", "MCP get_lead KV throw ainda manda o leftover do Postgres")
+  assert(leadPgMcpData.lead?.memory === "leftover-pg", "MCP get_lead KV throw não esconde a memória leftover do Postgres")
+  assert(leadPgMcpData.lead?.contact === "@holelead", "MCP get_lead KV throw + backup não esconde o contacto leftover")
+  const leadPgPost = await handleRequest(
+    new Request("http://local.test/api/leads", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: runtimeHoleCookie },
+      body: JSON.stringify({ lead: { ...writeHoleLead, memory: "unread-write-pg" } }),
+    }),
+    leadPgEnv,
+    backgroundCtx()
+  )
+  const leadPgPostBody = (await leadPgPost.json()) as { error?: string; ok?: boolean; saved?: number }
+  assert(leadPgPost.status === 503, "POST lead KV throw + backup ainda é 503")
+  assert(
+    leadPgPostBody.error === "Não li o lead do Postgres." || leadPgPostBody.error === "Não li os leads do Postgres.",
+    "POST lead KV throw + backup não grava sem confirmar o KV"
+  )
+  assert(leadPgPostBody.ok !== true && leadPgPostBody.saved !== 1, "POST lead KV throw + backup não finge gravar")
+} finally {
+  globalThis.fetch = leadPgPrev
+}
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === leadBeforePg?.memory, "get_lead KV throw + backup não pisa a ficha leftover")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory !== "leftover-pg", "get_lead KV throw + backup não grava a ficha do Postgres em cima do KV unread")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory !== "unread-write-pg", "POST lead KV throw + backup não pisa a ficha leftover")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()

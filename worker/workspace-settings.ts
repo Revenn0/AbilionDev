@@ -240,6 +240,7 @@ export function hydrateWorkspaceLead(kv: Lead, remote?: Lead | null): Lead {
  * KV primeiro. Miss cai no Postgres.
  * Falha do backup (credenciais + `null`) lança — o webhook não mint um segundo UUID.
  * Hit no KV + backup em baixo devolve o KV — não lança, não mint UUID.
+ * KV unread + ficha leftover no Postgres devolve o leftover — não lança, não mint UUID.
  */
 export async function findWorkspaceLead(
   env: SettingsEnv,
@@ -262,11 +263,13 @@ export async function findWorkspaceLead(
     if (extras === null) return kvLead
     return hydrateWorkspaceLead(kvLead, extras[0])
   }
-  if (kvUnread) throw new Error("Não li o lead do Postgres.")
   const remote = await fetchRemoteLeadByIdentity(env, contact, telegramId, chatId)
   if (remote === null) throw new Error("Não li o lead do Postgres.")
   const hydrated = remote[0]
-  if (!hydrated) return null
+  if (!hydrated) {
+    if (kvUnread) throw new Error("Não li o lead do Postgres.")
+    return null
+  }
   if (env.AUTH) {
     try {
       if (await leadRemovedForRead(env.AUTH, hydrated.id)) return null
@@ -282,10 +285,12 @@ export async function findWorkspaceLead(
  * MCP get_lead: KV primeiro. Miss cai no Postgres pelo id.
  * Falha do backup (credenciais + `null`) lança — não finge que a ficha não existe.
  * Hit no KV + backup em baixo devolve o KV.
+ * Chave do lead unread + ficha leftover no Postgres devolve o leftover — não finge que já não está.
  */
 export async function findWorkspaceLeadById(env: SettingsEnv, id: string): Promise<Lead | null> {
   const needle = id.trim()
   if (!needle || needle.length > 80) return null
+  let kvUnread = false
   if (env.AUTH) {
     try {
       const removed = await removedIdsForRead(env.AUTH)
@@ -298,17 +303,21 @@ export async function findWorkspaceLeadById(env: SettingsEnv, id: string): Promi
       }
     } catch (error) {
       if (error instanceof Error && error.message === "Não li o lead do Postgres.") throw error
-      throw new Error("Não li o lead do Postgres.")
+      kvUnread = true
     }
   }
   const extras = await fetchRemoteLeadsByIds(env, [needle])
   if (extras === null) throw new Error("Não li o lead do Postgres.")
   const remote = extras[0]
-  if (!remote) return null
+  if (!remote) {
+    if (kvUnread) throw new Error("Não li o lead do Postgres.")
+    return null
+  }
   if (env.AUTH) {
     try {
       if (await leadRemovedForRead(env.AUTH, remote.id)) return null
     } catch {
+      if (kvUnread) return remote
       throw new Error("Não li o lead do Postgres.")
     }
   }
