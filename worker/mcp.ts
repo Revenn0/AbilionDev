@@ -5,7 +5,7 @@ import { importFunnel } from "../src/lib/funnel-import.ts"
 import { emptySalesFunnel, publishSnapshot } from "../src/lib/templates.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { cleanBotUsername } from "../src/lib/migrate.ts"
-import type { Lead, SalesFunnel } from "../src/lib/types.ts"
+import type { Lead, SalesFunnel, Settings } from "../src/lib/types.ts"
 import {
   isOwner,
   isValidEmail,
@@ -309,7 +309,21 @@ async function workspaceFunnelsOf(env: McpEnv, unread = "Não confirmei os funis
 }
 
 async function saveFunnels(env: McpEnv, funnels: SalesFunnel[]) {
-  await persistWorkspaceFunnels(env, funnels)
+  try {
+    await persistWorkspaceFunnels(env, funnels)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : ""
+    if (message === "Mantém pelo menos um funil." || message.startsWith("O estúdio aceita no máximo")) throw error
+    throw new Error("Não confirmei os funis.")
+  }
+}
+
+async function saveSettingsOf(env: McpEnv, incoming: Settings, unread: string) {
+  try {
+    await persistWorkspaceSettings(env, incoming)
+  } catch {
+    throw new Error(unread)
+  }
 }
 
 async function publishFunnel(env: McpEnv, id: string) {
@@ -591,7 +605,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
       settings.removedPageScripts
     )
     if (!made.ok) throw new Error(made.error)
-    await persistWorkspaceSettings(env, { ...settings, pageScripts: made.scripts })
+    await saveSettingsOf(env, { ...settings, pageScripts: made.scripts }, "Não confirmei os scripts desta página.")
     return { ...pageInstallManual({ botUsername: settings.telegramBotUsername, script: made.script, funnelName: funnel.name }), script: made.script }
   }
   if (name === "abilion_delete_page_script") {
@@ -606,11 +620,11 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     }
     const next = removePageScript(settings.pageScripts, id)
     if (next.length === settings.pageScripts.length) throw new Error("Este script já não está no estúdio.")
-    await persistWorkspaceSettings(env, {
+    await saveSettingsOf(env, {
       ...settings,
       pageScripts: next,
       removedPageScripts: clipNewestIds([...(settings.removedPageScripts ?? []), id], PAGE_SCRIPT_REMOVED_CAP),
-    })
+    }, "Não confirmei o script desta página.")
     return { ok: true }
   }
   if (name === "abilion_import_leads") {
@@ -629,7 +643,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
       if (leadCategoriesWriteBlocked(loaded.unread)) {
         throw new Error("Não confirmei as categorias.")
       }
-      await persistWorkspaceSettings(env, { ...settings, leadCategories: named.categories })
+      await saveSettingsOf(env, { ...settings, leadCategories: named.categories }, "Não confirmei as categorias.")
     }
     if (await leadCatalogUnread(env)) throw new Error("Não li os leads do Postgres.")
     const imported = []

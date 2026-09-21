@@ -7341,6 +7341,90 @@ assert(
   ).users?.some((item) => item.email === "putdown@abilion.com"),
   "POST users put throw não cria conta"
 )
+const settingsBeforePersist = await loadSettingsKv(runtimeHoleKv)
+const persistSettingsDownEnv = { ...runtimeHoleBase, AUTH: kvThrowsAfter(runtimeHoleKv, CRM_SETTINGS, 1) } as Env
+const persistSettingsDown = await handleRequest(
+  new Request("http://local.test/api/crm", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: runtimeHoleCookie,
+      "x-forwarded-for": "203.0.113.140",
+    },
+    body: JSON.stringify({ settings: { telegramBotUsername: "@ste_persist" } }),
+  }),
+  persistSettingsDownEnv,
+  backgroundCtx()
+)
+const persistSettingsDownBody = (await persistSettingsDown.json()) as { error?: string; ok?: boolean }
+assert(persistSettingsDown.status === 503, "POST CRM persist settings KV throw não cai em 500")
+assert(persistSettingsDownBody.error === "Não confirmei as definições no Postgres.", "POST CRM persist settings pede confirmação")
+assert(persistSettingsDownBody.error !== "kv down", "POST CRM persist settings não vaza o erro interno")
+assert(persistSettingsDownBody.error !== "Falha interna.", "POST CRM persist settings não vira Falha interna")
+assert(persistSettingsDownBody.ok !== true, "POST CRM persist settings não finge gravado")
+assert((await loadSettingsKv(runtimeHoleKv)).telegramBotUsername === settingsBeforePersist.telegramBotUsername, "POST CRM persist settings não pisa o leftover")
+assert((await loadSettingsKv(runtimeHoleKv)).telegramBotUsername !== "@ste_persist", "POST CRM persist settings não grava username unread")
+const funnelsBeforePersist = await loadFunnelsKv(runtimeHoleKv)
+const persistFunnelsDown = await handleRequest(
+  new Request("http://local.test/api/crm", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: runtimeHoleCookie,
+      "x-forwarded-for": "203.0.113.141",
+    },
+    body: JSON.stringify({
+      funnels: [...funnelsBeforePersist, { ...emptySalesFunnel("Persist throw"), id: "funil-persist-throw" }],
+    }),
+  }),
+  { ...runtimeHoleBase, AUTH: kvThrowsAfter(runtimeHoleKv, CRM_FUNNELS, 1) } as Env,
+  backgroundCtx()
+)
+const persistFunnelsDownBody = (await persistFunnelsDown.json()) as { error?: string }
+assert(persistFunnelsDown.status === 503, "POST CRM persist funnels KV throw não cai em 400")
+assert(persistFunnelsDownBody.error === "Não confirmei os funis.", "POST CRM persist funnels pede confirmação")
+assert(persistFunnelsDownBody.error !== "kv down", "POST CRM persist funnels não vaza o erro interno")
+assert(!(await loadFunnelsKv(runtimeHoleKv)).some((item) => item.id === "funil-persist-throw"), "POST CRM persist funnels não grava")
+const persistMcpScript = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.142" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 250,
+      method: "tools/call",
+      params: { name: "abilion_create_page_script", arguments: { name: "Persist script", funnelId: "funil-throw" } },
+    }),
+  }),
+  { ...runtimeHoleBase, AUTH: kvThrowsAfter(runtimeHoleKv, CRM_SETTINGS, 1) } as Env,
+  backgroundCtx()
+)
+const persistMcpScriptData = JSON.parse(
+  ((await persistMcpScript.json()) as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string; script?: { id?: string } }
+assert(persistMcpScriptData.error === "Não confirmei os scripts desta página.", "MCP persist settings KV throw pede confirmação")
+assert(persistMcpScriptData.error !== "kv down", "MCP persist settings não vaza o erro interno")
+assert(!persistMcpScriptData.script, "MCP persist settings não inventa script")
+const persistMcpFunnel = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.143" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 251,
+      method: "tools/call",
+      params: { name: "abilion_create_funnel", arguments: { name: "Persist funnel" } },
+    }),
+  }),
+  { ...runtimeHoleBase, AUTH: kvThrowsAfter(runtimeHoleKv, CRM_FUNNELS, 1) } as Env,
+  backgroundCtx()
+)
+const persistMcpFunnelData = JSON.parse(
+  ((await persistMcpFunnel.json()) as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string; id?: string }
+assert(persistMcpFunnelData.error === "Não confirmei os funis.", "MCP persist funnels KV throw pede confirmação")
+assert(!persistMcpFunnelData.id, "MCP persist funnels não inventa id")
+assert(!(await loadFunnelsKv(runtimeHoleKv)).some((item) => item.name === "Persist funnel"), "MCP persist funnels não grava")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()

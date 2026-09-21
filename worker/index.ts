@@ -697,10 +697,20 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       try {
         await persistFunnels(env, incoming, incomingRemoved)
       } catch (error) {
-        return json({ error: error instanceof Error ? error.message : "Não gravei os funis." }, 400)
+        const message = error instanceof Error ? error.message : ""
+        if (message === "Mantém pelo menos um funil." || message.startsWith("O estúdio aceita no máximo")) {
+          return json({ error: message }, 400)
+        }
+        return json({ error: "Não confirmei os funis." }, 503)
       }
     }
-    if (body.settings) await persistSettings(env, body.settings)
+    if (body.settings) {
+      try {
+        await persistSettings(env, body.settings)
+      } catch {
+        return json({ error: "Não confirmei as definições no Postgres." }, 503)
+      }
+    }
     return json({ ok: true })
   }
 
