@@ -16,7 +16,7 @@ import {
 import { handleTokens, handleUsers } from "./users.ts"
 import { filterLiveLeads, importOrAdoptLead, leadPageFromRemote, listLeadPage } from "./crm-store.ts"
 import { emptySecrets, loadSecrets, resolveRuntime } from "./runtime-secrets.ts"
-import { fetchRemoteLeadPage, fetchRemoteLeadsByIds, fillLeadHoles, findWorkspaceLeadById, leadCatalogUnread, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceFunnels, readWorkspaceSettings, resolveWorkspaceLeadWrite, searchWorkspaceLeads } from "./workspace-settings.ts"
+import { attachWorkspaceLeadEvents, fetchRemoteLeadPage, fetchRemoteLeadsByIds, fillLeadHoles, findWorkspaceLeadById, leadCatalogUnread, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceFunnels, readWorkspaceSettings, resolveWorkspaceLeadWrite, searchWorkspaceLeads } from "./workspace-settings.ts"
 import { readJsonStrict } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -487,7 +487,9 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
       throw new Error("Não li o lead do Postgres.")
     }
     if (!lead) throw new Error("Este lead já não está no CRM.")
-    return { ok: true, lead: detailLead(lead) }
+    const attached = await attachWorkspaceLeadEvents(env, [lead])
+    const next = attached.leads[0] ?? lead
+    return { ok: true, lead: detailLead(next), eventsUnread: attached.unread || undefined }
   }
   if (name === "abilion_get_settings") {
     if (!env.AUTH) throw new Error("Auth ainda sem KV.")

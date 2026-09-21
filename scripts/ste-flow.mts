@@ -4772,12 +4772,78 @@ const mcpGetLead = await handleRequest(
 const mcpGetLeadBody = (await mcpGetLead.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
 const mcpGetLeadText = JSON.parse(mcpGetLeadBody.result?.content?.[0]?.text || "{}") as {
   ok?: boolean
+  eventsUnread?: boolean
   lead?: { id?: string; name?: string; stage?: string; messages?: Array<{ id?: string }>; events?: Array<{ id?: string }> }
 }
 assert(mcpGetLead.status === 200 && !mcpGetLeadBody.result?.isError && mcpGetLeadText.ok, "MCP get_lead hidrata a ficha")
 assert(mcpGetLeadText.lead?.name === "Ana Souza" && mcpGetLeadText.lead.stage === "welcome", "MCP get_lead lê nome e passo do Postgres")
 assert(mcpGetLeadText.lead?.messages?.some((item) => item.id === "m-pg"), "MCP get_lead devolve as falas que a lista compacta esconde")
 assert(mcpGetLeadText.lead?.events?.some((item) => item.id === "ev-get"), "MCP get_lead lê a timeline no jsonb")
+assert(!mcpGetLeadText.eventsUnread, "jsonb + lead_events vazio não marca unread")
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  if (url.includes("/rest/v1/lead_events") && (init?.method || "GET").toUpperCase() === "GET") {
+    return new Response(
+      JSON.stringify([
+        {
+          id: "ev-table",
+          lead_id: "mcp-stale",
+          at: "2026-07-02T00:00:00.000Z",
+          kind: "offer",
+          title: "Grupo",
+        },
+      ]),
+      { status: 200 }
+    )
+  }
+  if (url.includes("/rest/v1/leads") && url.includes("id=in.") && (init?.method || "GET").toUpperCase() === "GET") {
+    return new Response(
+      JSON.stringify([
+        {
+          id: "mcp-stale",
+          name: "Ana Souza",
+          contact: "@mcpstale",
+          channel: "telegram",
+          campaign: "facebook",
+          origin: "facebook",
+          temperature: "quente",
+          stage: "welcome",
+          memory: "",
+          facts: {},
+          messages: [],
+          updated_at: "2026-08-01T00:00:00.000Z",
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+      ]),
+      { status: 200 }
+    )
+  }
+  if (url.includes("/rest/v1/")) return new Response("[]", { status: 200 })
+  return mcpHydratePrev(input, init)
+}) as typeof fetch
+const mcpGetLeadTable = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mcpHydrateMinted.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 87.5,
+      method: "tools/call",
+      params: { name: "abilion_get_lead", arguments: { id: "mcp-stale" } },
+    }),
+  }),
+  mcpHydrateEnv,
+  backgroundCtx()
+)
+const mcpGetLeadTableBody = (await mcpGetLeadTable.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
+const mcpGetLeadTableText = JSON.parse(mcpGetLeadTableBody.result?.content?.[0]?.text || "{}") as {
+  ok?: boolean
+  eventsUnread?: boolean
+  lead?: { events?: Array<{ id?: string; title?: string }> }
+}
+assert(mcpGetLeadTable.status === 200 && !mcpGetLeadTableBody.result?.isError && mcpGetLeadTableText.ok, "MCP get_lead junta lead_events")
+assert(mcpGetLeadTableText.lead?.events?.some((item) => item.id === "ev-table"), "MCP get_lead lê a timeline da tabela, não só o jsonb")
+assert(!mcpGetLeadTableText.eventsUnread, "lead_events lido não marca unread")
 globalThis.fetch = (async (input: RequestInfo | URL) => {
   if (String(input).includes("/rest/v1/")) throw new Error("postgres down")
   return mcpHydratePrev(input)
@@ -4799,10 +4865,12 @@ const mcpGetLeadKv = await handleRequest(
 const mcpGetLeadKvBody = (await mcpGetLeadKv.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
 const mcpGetLeadKvText = JSON.parse(mcpGetLeadKvBody.result?.content?.[0]?.text || "{}") as {
   ok?: boolean
+  eventsUnread?: boolean
   lead?: { id?: string; name?: string }
 }
 assert(mcpGetLeadKv.status === 200 && !mcpGetLeadKvBody.result?.isError && mcpGetLeadKvText.ok, "MCP get_lead com KV não falha se o Postgres cair")
 assert(mcpGetLeadKvText.lead?.name === "Rita Backup", "MCP get_lead conserva o leftover se o backup cair")
+assert(mcpGetLeadKvText.eventsUnread === true, "MCP get_lead marca timeline unread se lead_events falhar")
 const mcpGetMiss = await handleRequest(
   new Request("http://local.test/mcp", {
     method: "POST",

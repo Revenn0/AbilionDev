@@ -1,4 +1,4 @@
-import { adoptFunnelStores, adoptSearchLeads, applyRemovedFunnels, commitStoredLead, commitStoredSettings, emptySettings, factsWithoutRemoteKeys, publicSettings, resolveLeadLookup, sanitizeLeadEvents } from "../src/lib/crm.ts"
+import { adoptFunnelStores, adoptSearchLeads, applyRemovedFunnels, commitStoredLead, commitStoredSettings, emptySettings, factsWithoutRemoteKeys, mergeLeadEvents, publicSettings, resolveLeadLookup, sanitizeLeadEvents } from "../src/lib/crm.ts"
 import { sanitizeLeadCategory } from "../src/lib/lead-category.ts"
 import { leadMatchesQuery } from "../src/lib/lead-name.ts"
 import { countryName, normalizeCountryCode, normalizeRegionCode } from "../src/lib/geo.ts"
@@ -323,6 +323,68 @@ export async function fetchRemoteLeadsByIds(env: SettingsEnv, ids: string[]): Pr
   )
   if (rows === null || !Array.isArray(rows)) return null
   return rows.map(rowToLead)
+}
+
+type LeadEventRow = {
+  id: string
+  lead_id: string
+  at: string
+  kind: LeadEvent["kind"]
+  node_id?: string | null
+  title?: string | null
+  body?: string | null
+  effect?: string | null
+}
+
+/** GET e MCP: junta `lead_events` à ficha. Tabela unread não zera a timeline do jsonb. */
+export async function attachWorkspaceLeadEvents(
+  env: SettingsEnv,
+  leads: Lead[]
+): Promise<{ leads: Lead[]; unread: boolean }> {
+  if (!leads.length) return { leads, unread: false }
+  const canReach = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE)
+  const ids = [...new Set(leads.map((lead) => lead.id).filter(Boolean))]
+  const rows: LeadEventRow[] = []
+  let unread = false
+  for (let i = 0; i < ids.length; i += 50) {
+    const slice = ids.slice(i, i + 50)
+    const batch = await restWorkspace<LeadEventRow[]>(
+      env,
+      `lead_events?lead_id=in.(${slice.map(quoteRemoteId).join(",")})&select=*&order=at.asc`
+    )
+    if (batch === null) {
+      if (canReach) unread = true
+      continue
+    }
+    if (!Array.isArray(batch)) {
+      if (canReach) unread = true
+      continue
+    }
+    rows.push(...batch)
+  }
+  if (!rows.length) return { leads, unread }
+  const byLead = new Map<string, LeadEvent[]>()
+  for (const row of rows) {
+    const list = byLead.get(row.lead_id) ?? []
+    list.push({
+      id: row.id,
+      at: row.at,
+      kind: row.kind,
+      nodeId: row.node_id ?? undefined,
+      title: row.title ?? undefined,
+      body: row.body ?? undefined,
+      effect: row.effect ?? undefined,
+    })
+    byLead.set(row.lead_id, list)
+  }
+  return {
+    leads: leads.map((lead) => {
+      const events = byLead.get(lead.id)
+      if (!events?.length) return lead
+      return { ...lead, events: mergeLeadEvents(lead.events, events) }
+    }),
+    unread,
+  }
 }
 
 /** Junta no KV os ids órfãos que o Postgres ainda tem. `holesOpen` se algum id ficar por resolver. */

@@ -12,7 +12,7 @@ import { adsLandingDocument, installSettingsBlocked, pageInstallManual, pageScri
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument } from "../src/lib/auth-pages.ts"
 import { foldPublicPath, foldStudioPath, safeAppPath } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
-import { BANCA_FIXED, type Lead, type LeadEvent, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types.ts"
+import { BANCA_FIXED, type Lead, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types.ts"
 import { compactGeo, factsFromGeo } from "../src/lib/geo.ts"
 import { parseDevice } from "../src/lib/track.ts"
 import {
@@ -24,7 +24,6 @@ import {
   applyRemovedLeads,
   clipRemovedIds,
   enforceSinglePublished,
-  mergeLeadEvents,
   linkRuntimeSettings,
   publicSettings,
   FUNNEL_CAP,
@@ -64,7 +63,7 @@ import {
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
 import { readJsonObject, readJsonStrict, type JsonFail } from "./json-body.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall, telegramJoinActor, telegramUpdateActor } from "./telegram.ts"
-import { fetchRemoteDueLeads, fetchRemoteLeadPage, fetchRemoteLeadsByIds, fillLeadHoles, findWorkspaceLead, hydrateWorkspaceLead, leadCatalogUnread, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, readWorkspaceFunnels, readWorkspaceSettings, resolveWorkspaceLeadWrite, rowToLead, searchWorkspaceLeads, summarizeWorkspaceTrack, type LeadRow } from "./workspace-settings.ts"
+import { attachWorkspaceLeadEvents, fetchRemoteDueLeads, fetchRemoteLeadPage, fetchRemoteLeadsByIds, fillLeadHoles, findWorkspaceLead, hydrateWorkspaceLead, leadCatalogUnread, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, readWorkspaceFunnels, readWorkspaceSettings, resolveWorkspaceLeadWrite, rowToLead, searchWorkspaceLeads, summarizeWorkspaceTrack, type LeadRow } from "./workspace-settings.ts"
 import type { KvLike } from "./kv.ts"
 
 type Fetcher = { fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> }
@@ -991,51 +990,8 @@ async function findLead(env: Env, contact: string, telegramId: number, chatId: s
   return attached.leads[0] ?? found
 }
 
-function quote(value: string) {
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
-}
-
-async function attachLeadEvents(env: Env, leads: Lead[]): Promise<{ leads: Lead[]; unread: boolean }> {
-  if (!leads.length) return { leads, unread: false }
-  const canReach = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE)
-  const ids = [...new Set(leads.map((lead) => lead.id).filter(Boolean))]
-  const rows: LeadEventRow[] = []
-  let unread = false
-  for (let i = 0; i < ids.length; i += 50) {
-    const slice = ids.slice(i, i + 50)
-    const batch = await rest<LeadEventRow[]>(
-      env,
-      `lead_events?lead_id=in.(${slice.map(quote).join(",")})&select=*&order=at.asc`
-    )
-    if (batch === null) {
-      if (canReach) unread = true
-      continue
-    }
-    rows.push(...batch)
-  }
-  if (!rows.length) return { leads, unread }
-  const byLead = new Map<string, LeadEvent[]>()
-  for (const row of rows) {
-    const list = byLead.get(row.lead_id) ?? []
-    list.push({
-      id: row.id,
-      at: row.at,
-      kind: row.kind,
-      nodeId: row.node_id ?? undefined,
-      title: row.title ?? undefined,
-      body: row.body ?? undefined,
-      effect: row.effect ?? undefined,
-    })
-    byLead.set(row.lead_id, list)
-  }
-  return {
-    leads: leads.map((lead) => {
-      const events = byLead.get(lead.id)
-      if (!events?.length) return lead
-      return { ...lead, events: mergeLeadEvents(lead.events, events) }
-    }),
-    unread,
-  }
+async function attachLeadEvents(env: Env, leads: Lead[]) {
+  return attachWorkspaceLeadEvents(env, leads)
 }
 
 async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "all", cursor = "") {
@@ -1308,16 +1264,5 @@ type TelegramUpdate = {
     chat: { id: number }
     new_chat_member: { status: string; user: TelegramUser }
   }
-}
-
-type LeadEventRow = {
-  id: string
-  lead_id: string
-  at: string
-  kind: LeadEvent["kind"]
-  node_id?: string | null
-  title?: string | null
-  body?: string | null
-  effect?: string | null
 }
 
