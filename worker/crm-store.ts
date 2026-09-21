@@ -175,7 +175,12 @@ export async function listLeadPage(
     start = at + 1
   }
   const slice = rows.slice(start, start + Math.max(1, limit))
-  const removed = new Set(await loadRemovedLeadIds(kv))
+  let removed = new Set<string>()
+  try {
+    removed = new Set(await loadRemovedLeadIds(kv))
+  } catch {
+    removed = new Set()
+  }
   const loaded = await Promise.all(slice.map(async (item) => ({ id: item.id, lead: await loadLead(kv, item.id, removed) })))
   const leads = loaded.map((row) => row.lead).filter((lead): lead is Lead => Boolean(lead))
   await rememberLeadNames(kv, leads)
