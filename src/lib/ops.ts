@@ -69,6 +69,15 @@ export function metricPending(
   return leadsHydrating(persistSync, count) || leadsLoadFailed(persistSync, count, extraFailed)
 }
 
+/** Chat do funil e joins no grupo vêm do GET /api/leads. Inbox 5xx não esconde o zero. */
+export function catalogMetricPending(
+  persistSync: "idle" | "ok" | "error",
+  count: number,
+  _inboxFailed = false
+) {
+  return metricPending(persistSync, count)
+}
+
 /** Filtros de Leads: Telegram vazio com cache WhatsApp ainda não é recorte vazio. */
 export function leadMatchesFilter(lead: Lead, filter: string) {
   if (!filter || filter === "all") return true

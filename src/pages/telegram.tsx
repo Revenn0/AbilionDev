@@ -12,7 +12,7 @@ import { fetchRuntime, type RuntimeStatus } from "@/lib/runtime-api"
 import { adsDeepLink } from "@/lib/telegram-start"
 import { adsLandingUrl } from "@/lib/page-script"
 import { burstFacebookLeads, burstStartsBlocked, burstStats } from "@/lib/burst"
-import { funnelsWriteBlocked, metricPending } from "@/lib/ops"
+import { catalogMetricPending, funnelsWriteBlocked, metricPending } from "@/lib/ops"
 import { toast } from "sonner"
 
 export function TelegramPage() {
@@ -27,7 +27,7 @@ export function TelegramPage() {
     day.setHours(0, 0, 0, 0)
     return new Date(lead.createdAt).getTime() >= day.getTime()
   }).length
-  const groupPending = metricPending(persistSync, inGroup, inboxSync === "error")
+  const groupPending = catalogMetricPending(persistSync, inGroup, inboxSync === "error")
   const facebookPending = metricPending(persistSync, facebookToday)
   const hook = `${workerUrl()}/api/telegram`
   const [health, setHealth] = useState<Awaited<ReturnType<typeof fetchHealth>> | null>(null)

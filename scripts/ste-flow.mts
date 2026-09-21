@@ -107,7 +107,7 @@ import { leadCategoriesListBlocked, leadCategoriesWriteBlocked, leadFromImport, 
 import { burstFacebookLeads, burstStartsBlocked, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
-import { barShare, crmSyncAfterFlush, funnelsWriteBlocked, hasConversation, isImportedLead, isOperatorLockedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadWritesBlocked, leadsHydrating, leadsLoadFailed, metricPending } from "../src/lib/ops.ts"
+import { barShare, catalogMetricPending, crmSyncAfterFlush, funnelsWriteBlocked, hasConversation, isImportedLead, isOperatorLockedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadWritesBlocked, leadsHydrating, leadsLoadFailed, metricPending } from "../src/lib/ops.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
 import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, handleAuth, hashApiToken, hashPassword, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
@@ -6051,6 +6051,10 @@ assert(leadFilterPending("ok", 0, "telegram", true), "filtro Telegram com inbox 
 assert(!leadFilterPending("ok", 0, "whatsapp", true), "filtro WhatsApp vazio depois do GET é vazio")
 assert(!leadFilterPending("ok", 0, "facebook", true), "filtro Facebook vazio depois do GET é vazio")
 assert(!leadFilterPending("ok", 0, "import", true), "filtro Importados vazio depois do GET é vazio")
+assert(!catalogMetricPending("ok", 0, true), "passo Chat / joins com GET ok e inbox falha é zero")
+assert(catalogMetricPending("idle", 0, true), "passo Chat / joins hidrata sem recorte")
+assert(catalogMetricPending("error", 0, true), "passo Chat / joins sem GET fica …")
+assert(!catalogMetricPending("ok", 3, true), "passo Chat / joins com cache mostra o número")
 assert(linkRuntimeSettings(null, { telegramBotUsername: "ste" }) === null, "Vincular sem settings não inventa um objecto oco")
 assert(
   linkRuntimeSettings(emptySettings(), { telegramBotUsername: "ste_bot", telegramBotToken: "tok" })?.telegramBotUsername ===
