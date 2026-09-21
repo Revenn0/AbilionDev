@@ -564,12 +564,13 @@ function funnelRowForRemote(funnel: SalesFunnel) {
   }
 }
 
-/** Painel e MCP: junta o KV com o backup. Só apaga tombstone — um quadro no KV não limpa os outros. */
+/** Painel e MCP: junta o KV com o backup. GET falho não POSTa o leftover — settings e leads já recusam. Só apaga tombstone. */
 export async function persistRemoteFunnels(env: SettingsEnv, funnels: SalesFunnel[]) {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return
   const remote = await fetchRemoteFunnels(env)
+  if (remote === null) return
   const removed = env.AUTH ? await loadRemovedFunnelIds(env.AUTH) : []
-  const keep = remote === null ? funnels : adoptFunnelStores(funnels, remote, removed)
+  const keep = adoptFunnelStores(funnels, remote, removed)
   if (keep.length) {
     const wrote = await restWorkspace(env, "funnels", {
       method: "POST",
@@ -578,7 +579,6 @@ export async function persistRemoteFunnels(env: SettingsEnv, funnels: SalesFunne
     })
     if (wrote === null) return
   }
-  if (remote === null) return
   const gone = new Set(removed)
   for (const row of remote.filter((item) => item.id && gone.has(item.id)).slice(0, 40)) {
     await restWorkspace(env, `funnels?id=eq.${encodeURIComponent(row.id)}&workspace_id=eq.${WORKSPACE}`, { method: "DELETE" })

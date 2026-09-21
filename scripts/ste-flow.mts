@@ -1604,6 +1604,19 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 }) as typeof fetch
 await persistRemoteFunnels(remoteEnv, [remoteBoard])
 assert(failDeletes.length === 0, "POST falho dos funis não apaga o backup")
+const unreadFunnelPosts: string[] = []
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  const method = (init?.method || "GET").toUpperCase()
+  if (url.includes("/rest/v1/funnels") && method === "GET") return new Response("nope", { status: 500 })
+  if (url.includes("/rest/v1/funnels") && method === "POST") {
+    unreadFunnelPosts.push(String(init?.body || ""))
+    return new Response("", { status: 201 })
+  }
+  return remotePrev(input, init)
+}) as typeof fetch
+await persistRemoteFunnels(remoteEnv, [{ ...remoteBoard, name: "Quadro velho do KV", updatedAt: "2026-01-01T00:00:00.000Z" }])
+assert(unreadFunnelPosts.length === 0, "GET falho dos funis não grava o quadro velho do KV no Postgres")
 globalThis.fetch = remotePrev
 assert(
   !settingsPersistSettled(
