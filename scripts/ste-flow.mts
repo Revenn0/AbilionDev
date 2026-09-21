@@ -102,7 +102,7 @@ import { displayContact, draftLeadField, formatPhoneContact, isPhoneLikeName, is
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, migrateLeadOrigin, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink, campaignFromStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument, wantsAuthHtml } from "../src/lib/auth-pages.ts"
-import { addPageScript, adsLandingDocument, adsLandingUrl, adsStartToken, installSettingsBlocked, pageInstallManual, pageScriptsListBlocked, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
+import { addPageScript, adsLandingDocument, adsLandingUrl, adsStartToken, installSettingsBlocked, pageInstallManual, pageScriptsListBlocked, pageScriptsMutationBlocked, pageScriptsWriteBlocked, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
 import { leadCategoriesListBlocked, leadCategoriesWriteBlocked, leadFromImport, leadImportGroupBlocked, parseLeadImportLine, parseLeadImportText } from "../src/lib/lead-category.ts"
 import { burstFacebookLeads, burstStartsBlocked, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
@@ -725,6 +725,25 @@ assert(
 assert(pageScriptsListBlocked(true, []), "lista unread e oca bloqueia")
 assert(!pageScriptsListBlocked(true, [{ id: "deadbeef", name: "Landing", funnelId: "f1", createdAt: "t", updatedAt: "t" }]), "lista unread com script no KV segue")
 assert(!pageScriptsListBlocked(false, []), "lista lida vazia não bloqueia")
+assert(pageScriptsWriteBlocked(true), "settings unread bloqueia criar script")
+assert(!pageScriptsWriteBlocked(false), "settings lidas deixam criar script")
+assert(
+  pageScriptsMutationBlocked(true, [{ id: "deadbeef", name: "Landing", funnelId: "f1", createdAt: "t", updatedAt: "t" }], [
+    { id: "deadbeef", name: "Landing", funnelId: "f1", createdAt: "t", updatedAt: "t" },
+    { id: "cafebabe", name: "Nova", funnelId: "f1", createdAt: "t", updatedAt: "t" },
+  ]),
+  "script novo com leftover unread bloqueia o POST"
+)
+assert(
+  !pageScriptsMutationBlocked(true, [{ id: "deadbeef", name: "Landing", funnelId: "f1", createdAt: "t", updatedAt: "t" }], [
+    { id: "deadbeef", name: "Landing", funnelId: "f1", createdAt: "t", updatedAt: "t" },
+  ]),
+  "username/rascunho com os mesmos scripts unread ainda grava"
+)
+assert(
+  pageScriptsMutationBlocked(true, [{ id: "deadbeef", name: "Landing", funnelId: "f1", createdAt: "t", updatedAt: "t" }], [], [], ["deadbeef"]),
+  "tombstone novo com leftover unread bloqueia o POST"
+)
 assert(FUNNEL_CAP === 20 && !canCreateFunnel(Array.from({ length: 20 }, () => emptySalesFunnel("x"))).ok, "criar o 21.º funil é recusado")
 assert(funnelsListBlocked(true, []), "funis unread e ocas bloqueiam criar")
 assert(!funnelsListBlocked(true, [emptySalesFunnel("x")]), "funis unread com lista no KV seguem")
@@ -5494,6 +5513,66 @@ const downCrmDrop = await handleRequest(
   backgroundCtx()
 )
 assert(downCrmDrop.status === 503, "POST CRM não apaga funil com a lista unread")
+const downCrmSettingsBefore = await loadSettingsKv(liveEnv.AUTH)
+const leftoverScript = {
+  id: "cafebabe",
+  name: "Landing leftover",
+  funnelId: "f1",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+}
+const leftoverSettings = migrateSettings({ ...downCrmSettingsBefore, pageScripts: [leftoverScript] })
+await saveSettingsKv(liveEnv.AUTH, leftoverSettings)
+const downCrmScriptKeep = await handleRequest(
+  new Request("http://local.test/api/crm", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: liveCookie },
+    body: JSON.stringify({ funnels: downCrmBoards, settings: leftoverSettings }),
+  }),
+  downEnv,
+  backgroundCtx()
+)
+assert(downCrmScriptKeep.status === 200, "POST CRM ainda grava username com os scripts leftover unread")
+const downCrmScriptAdd = await handleRequest(
+  new Request("http://local.test/api/crm", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: liveCookie },
+    body: JSON.stringify({
+      funnels: downCrmBoards,
+      settings: migrateSettings({
+        ...leftoverSettings,
+        pageScripts: [
+          leftoverScript,
+          {
+            id: "deadbeef",
+            name: "Landing nova",
+            funnelId: "f1",
+            createdAt: "2026-01-02T00:00:00.000Z",
+            updatedAt: "2026-01-02T00:00:00.000Z",
+          },
+        ],
+      }),
+    }),
+  }),
+  downEnv,
+  backgroundCtx()
+)
+assert(downCrmScriptAdd.status === 503, "POST CRM não cria script novo com leftover unread")
+assert(((await downCrmScriptAdd.json()) as { error?: string }).error === "Não confirmei os scripts desta página.", "POST CRM script unread pede confirmação")
+const downCrmScriptDrop = await handleRequest(
+  new Request("http://local.test/api/crm", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: liveCookie },
+    body: JSON.stringify({
+      funnels: downCrmBoards,
+      settings: migrateSettings({ ...leftoverSettings, pageScripts: [], removedPageScripts: ["cafebabe"] }),
+    }),
+  }),
+  downEnv,
+  backgroundCtx()
+)
+assert(downCrmScriptDrop.status === 503, "POST CRM não apaga script com leftover unread")
+await saveSettingsKv(liveEnv.AUTH, downCrmSettingsBefore)
 const downRuntime = await handleRequest(new Request("http://local.test/api/runtime", { headers: { cookie: liveCookie } }), downEnv, backgroundCtx())
 const downRuntimeBody = (await downRuntime.json()) as {
   ok?: boolean
@@ -7081,6 +7160,60 @@ const mcpCreateUnreadBody = (await mcpCreateUnread.json()) as { result?: { isErr
 const mcpCreateUnreadData = JSON.parse(mcpCreateUnreadBody.result?.content?.[0]?.text || "{}") as { error?: string }
 assert(mcpCreateUnread.status === 200 && mcpCreateUnreadBody.result?.isError, "MCP não cria script com funil leftover unread")
 assert(mcpCreateUnreadData.error === "Não confirmei os funis.", "MCP create unread pede confirmação dos funis mesmo com quadro no KV")
+const mcpSettingsBefore = await loadSettingsKv(teamEnv.AUTH)
+await saveSettingsKv(
+  teamEnv.AUTH,
+  migrateSettings({
+    ...mcpSettingsBefore,
+    pageScripts: [
+      {
+        id: "cafebabe",
+        name: "Landing leftover",
+        funnelId: mcpCreated.id,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+  })
+)
+const prevFetch = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+  if (url.includes("/rest/v1/settings")) throw new Error("settings down")
+  if (url.includes("/rest/v1/funnels")) {
+    return new Response("[]", { status: 200, headers: { "content-type": "application/json" } })
+  }
+  return prevFetch(input, init)
+}) as typeof fetch
+const mcpSettingsSplitEnv = { ...teamEnv, SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env
+let mcpCreateScriptLeftover: Response
+try {
+  mcpCreateScriptLeftover = await handleRequest(
+    new Request("http://local.test/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 198,
+        method: "tools/call",
+        params: { name: "abilion_create_page_script", arguments: { name: "Landing leftover create", funnelId: mcpCreated.id } },
+      }),
+    }),
+    mcpSettingsSplitEnv,
+    backgroundCtx()
+  )
+} finally {
+  globalThis.fetch = prevFetch
+  await saveSettingsKv(teamEnv.AUTH, mcpSettingsBefore)
+}
+const mcpCreateScriptLeftoverBody = (await mcpCreateScriptLeftover.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const mcpCreateScriptLeftoverData = JSON.parse(mcpCreateScriptLeftoverBody.result?.content?.[0]?.text || "{}") as {
+  error?: string
+}
+assert(mcpCreateScriptLeftover.status === 200 && mcpCreateScriptLeftoverBody.result?.isError, "MCP não cria script com leftover unread")
+assert(mcpCreateScriptLeftoverData.error === "Não confirmei os scripts desta página.", "MCP leftover de script não solta criar outro")
 
 const mcpPageScript = await handleRequest(
   new Request("http://local.test/mcp", {

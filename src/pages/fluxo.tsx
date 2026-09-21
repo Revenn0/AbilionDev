@@ -9,7 +9,7 @@ import { SyncBanner } from "@/components/layout/sync-banner"
 import { FunnelPreview } from "@/components/sales/preview"
 import { RenameFunnelDialog } from "@/components/sales/rename-dialog"
 import { canCreateFunnel, canDeleteFunnel } from "@/lib/crm"
-import { addPageScript, funnelHasInstallableBoard, pageScriptsListBlocked } from "@/lib/page-script"
+import { addPageScript, funnelHasInstallableBoard, pageScriptsWriteBlocked } from "@/lib/page-script"
 import { useStore } from "@/lib/store"
 import { emptySalesFunnel } from "@/lib/templates"
 import { timeAgo } from "@/lib/format"
@@ -24,7 +24,7 @@ export function FluxoPage() {
   const [importing, setImporting] = useState(false)
   const creating = useRef(false)
   const boardsBlocked = crmSync !== "ok"
-  const scriptsUnread = pageScriptsListBlocked(settingsSync !== "ok", state.settings.pageScripts)
+  const scriptsUnread = pageScriptsWriteBlocked(settingsSync !== "ok")
 
   const createGate = boardsBlocked
     ? { ok: false as const, reason: "Não confirmei os funis no Worker." }

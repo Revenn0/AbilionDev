@@ -1,6 +1,6 @@
 import { clipNewestIds, FUNNEL_CAP, publicSettings } from "../src/lib/crm.ts"
 import { addLeadCategory, leadCategoriesWriteBlocked, leadFromImport, migrateLeadCategories, parseLeadImportText } from "../src/lib/lead-category.ts"
-import { addPageScript, installSettingsBlocked, pageInstallManual, pageScriptById, pageScriptsListBlocked, PAGE_SCRIPT_REMOVED_CAP, removePageScript } from "../src/lib/page-script.ts"
+import { addPageScript, installSettingsBlocked, pageInstallManual, pageScriptById, pageScriptsListBlocked, pageScriptsWriteBlocked, PAGE_SCRIPT_REMOVED_CAP, removePageScript } from "../src/lib/page-script.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
 import { emptySalesFunnel, publishSnapshot } from "../src/lib/templates.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
@@ -484,7 +484,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
       throw new Error("Publica este funil antes de criar o script da página.")
     }
     const loaded = await readWorkspaceSettings(env)
-    if (pageScriptsListBlocked(loaded.unread, loaded.settings.pageScripts)) {
+    if (pageScriptsWriteBlocked(loaded.unread)) {
       throw new Error("Não confirmei os scripts desta página.")
     }
     const settings = loaded.settings
@@ -508,7 +508,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     const loaded = await readWorkspaceSettings(env)
     const settings = loaded.settings
     const current = pageScriptById(settings.pageScripts, id)
-    if (installSettingsBlocked(loaded.unread, id, current)) {
+    if (pageScriptsWriteBlocked(loaded.unread) || installSettingsBlocked(loaded.unread, id, current)) {
       throw new Error("Não confirmei o script desta página.")
     }
     const next = removePageScript(settings.pageScripts, id)

@@ -7,7 +7,7 @@ import { linkFollowUp, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { campaignFromStart, originFromStart, parseTelegramStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { applyEvent, canAdvanceRemoteWait, dueWaits, pickLiveDueLead, snapshotForLead } from "../src/lib/runtime.ts"
-import { adsLandingDocument, installSettingsBlocked, pageInstallManual, pageScriptById } from "../src/lib/page-script.ts"
+import { adsLandingDocument, installSettingsBlocked, pageInstallManual, pageScriptById, pageScriptsMutationBlocked } from "../src/lib/page-script.ts"
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument } from "../src/lib/auth-pages.ts"
 import { foldPublicPath, foldStudioPath, safeAppPath } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
@@ -523,11 +523,13 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     const parsed = await readJsonObject<{ funnels?: SalesFunnel[]; settings?: Settings; removedFunnelIds?: string[] }>(request, 256_000)
     if (!parsed.ok) return jsonReadError(parsed)
     const body = parsed.value
-    if (Array.isArray(body.funnels)) {
-      const rawFunnels = body.funnels
-      const incoming = rawFunnels.map(sanitizeIncomingFunnel).filter((item): item is NonNullable<typeof item> => Boolean(item))
-      const incomingRemoved = clipRemovedIds(body.removedFunnelIds, 400)
-      let stored: SalesFunnel[]
+    const rawFunnels = Array.isArray(body.funnels) ? body.funnels : null
+    const incoming = rawFunnels
+      ? rawFunnels.map(sanitizeIncomingFunnel).filter((item): item is NonNullable<typeof item> => Boolean(item))
+      : null
+    const incomingRemoved = rawFunnels ? clipRemovedIds(body.removedFunnelIds, 400) : []
+    let stored: SalesFunnel[] = []
+    if (incoming) {
       try {
         const boards = await readWorkspaceFunnels(env)
         if (
@@ -540,6 +542,22 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       } catch {
         return json({ error: "Não confirmei os funis." }, 503)
       }
+    }
+    if (body.settings) {
+      const loaded = await readWorkspaceSettings(env)
+      if (
+        pageScriptsMutationBlocked(
+          loaded.unread,
+          loaded.settings.pageScripts,
+          body.settings.pageScripts,
+          loaded.settings.removedPageScripts,
+          body.settings.removedPageScripts
+        )
+      ) {
+        return json({ error: "Não confirmei os scripts desta página." }, 503)
+      }
+    }
+    if (incoming && rawFunnels) {
       for (const funnel of incoming) {
         if (funnel.status !== "active" || !funnel.production) continue
         const raw = rawFunnels.find((item) => item && typeof item === "object" && "id" in item && item.id === funnel.id) as

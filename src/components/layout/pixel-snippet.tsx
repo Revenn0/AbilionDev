@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label"
 import { adsDeepLink } from "@/lib/telegram-start"
 import { ADS_ORIGIN, pixelPageHtml } from "@/lib/tracker-script"
 import { clipNewestIds } from "@/lib/crm"
-import { addPageScript, adsStartToken, funnelHasInstallableBoard, PAGE_INSTALL_STEPS, PAGE_SCRIPT_REMOVED_CAP, pageInstallManual, removePageScript } from "@/lib/page-script"
+import { addPageScript, adsStartToken, funnelHasInstallableBoard, PAGE_INSTALL_STEPS, PAGE_SCRIPT_REMOVED_CAP, pageInstallManual, pageScriptsListBlocked, pageScriptsWriteBlocked, removePageScript } from "@/lib/page-script"
 import { useStore } from "@/lib/store"
 import { toast } from "sonner"
 
@@ -14,7 +14,8 @@ export function PixelSnippet({ origin, botUsername }: { origin: string; botUsern
   const scripts = state.settings.pageScripts ?? []
   const boards = state.funnels.filter(funnelHasInstallableBoard)
   const boardsUnread = crmSync !== "ok"
-  const scriptsUnread = scripts.length === 0 && (settingsSync === "idle" || settingsSync === "error")
+  const scriptsWriteBlocked = pageScriptsWriteBlocked(settingsSync !== "ok")
+  const scriptsUnread = pageScriptsListBlocked(settingsSync !== "ok", scripts)
   const [name, setName] = useState("")
   const [funnelId, setFunnelId] = useState(boards[0]?.id ?? "")
   const [pageUrl, setPageUrl] = useState("")
@@ -101,10 +102,10 @@ export function PixelSnippet({ origin, botUsername }: { origin: string; botUsern
       </p>
       <form
         className="mt-3 grid gap-3 sm:grid-cols-2"
-        data-pixel-create={scriptsUnread ? (settingsSync === "idle" ? "loading" : "error") : "ok"}
+        data-pixel-create={scriptsWriteBlocked ? (settingsSync === "idle" ? "loading" : "error") : "ok"}
         onSubmit={(event) => {
           event.preventDefault()
-          if (scriptsUnread || boardsUnread) return
+          if (scriptsWriteBlocked || boardsUnread) return
           const made = addPageScript(scripts, { name, funnelId: funnelId || boards[0]?.id || "", pageUrl })
           if (!made.ok) {
             toast.error(made.error)
@@ -115,7 +116,7 @@ export function PixelSnippet({ origin, botUsername }: { origin: string; botUsern
           persist(made.scripts, undefined, "Script da página criado.", "Não gravei o script no Worker.")
         }}
       >
-        <fieldset disabled={scriptsUnread} className="col-span-full grid gap-3 border-0 p-0 sm:grid-cols-2">
+        <fieldset disabled={scriptsWriteBlocked} className="col-span-full grid gap-3 border-0 p-0 sm:grid-cols-2">
         <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="page-script-name">Nome da página</Label>
           <Input id="page-script-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Landing Superbet" />
@@ -156,7 +157,18 @@ export function PixelSnippet({ origin, botUsername }: { origin: string; botUsern
           />
         </div>
         <div className="sm:col-span-2">
-          <Button type="submit" className="rounded-full" disabled={busy || !boards.length || boardsUnread || scriptsUnread}>
+          <Button
+            type="submit"
+            className="rounded-full"
+            disabled={busy || !boards.length || boardsUnread || scriptsWriteBlocked}
+            title={
+              scriptsWriteBlocked
+                ? "Não confirmei os scripts de página."
+                : boardsUnread
+                  ? "Não confirmei os funis no Worker."
+                  : undefined
+            }
+          >
             Criar script desta página
           </Button>
         </div>
@@ -223,8 +235,10 @@ export function PixelSnippet({ origin, botUsername }: { origin: string; botUsern
                     variant="ghost"
                     size="sm"
                     className="rounded-full text-destructive"
-                    disabled={busy}
+                    disabled={busy || scriptsWriteBlocked}
+                    title={scriptsWriteBlocked ? "Não confirmei os scripts de página." : undefined}
                     onClick={() => {
+                      if (scriptsWriteBlocked) return
                       if (!confirm("Remover este script? As páginas que ainda o colam passam a usar o funil publicado.")) return
                       persist(
                         removePageScript(scripts, script.id),

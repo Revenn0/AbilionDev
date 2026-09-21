@@ -216,9 +216,29 @@ export function installSettingsBlocked(unread: boolean, scriptId: string | undef
   return unread && PAGE_SCRIPT_ID.test(needle) && !script
 }
 
-/** Lista unread e KV oco: não fingir que não há scripts. Se o KV já tem algum, a lista segue. */
+/** Lista unread e KV oco: não fingir que não há scripts. Se o KV já tem algum, a lista segue — criar/apagar é `pageScriptsWriteBlocked`. */
 export function pageScriptsListBlocked(unread: boolean, scripts: PageScript[] | undefined) {
   return unread && !(scripts ?? []).length
+}
+
+/** Criar ou tombstonar script: leftover no cache não confirma o catálogo. */
+export function pageScriptsWriteBlocked(unread: boolean) {
+  return unread
+}
+
+/** POST do CRM: username ainda grava; script novo ou tombstone novo espera o GET. */
+export function pageScriptsMutationBlocked(
+  unread: boolean,
+  stored: PageScript[] | undefined,
+  incoming: PageScript[] | undefined,
+  storedRemoved?: string[],
+  incomingRemoved?: string[]
+) {
+  if (!unread) return false
+  const known = new Set(migratePageScripts(stored).map((item) => item.id))
+  if (migratePageScripts(incoming).some((item) => !known.has(item.id))) return true
+  const tombs = new Set(migrateRemovedPageScripts(storedRemoved))
+  return migrateRemovedPageScripts(incomingRemoved).some((id) => !tombs.has(id))
 }
 
 export function funnelHasInstallableBoard(funnel?: SalesFunnel | null) {
