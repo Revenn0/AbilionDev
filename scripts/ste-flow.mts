@@ -106,7 +106,7 @@ import { leadFromImport, parseLeadImportLine, parseLeadImportText } from "../src
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
-import { barShare, hasConversation, isImportedLead, isOperatorLockedLead, leadsHydrating, leadsLoadFailed } from "../src/lib/ops.ts"
+import { barShare, hasConversation, isImportedLead, isOperatorLockedLead, leadsHydrating, leadsLoadFailed, metricPending } from "../src/lib/ops.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
 import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, handleAuth, hashApiToken, hashPassword, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
@@ -5521,6 +5521,11 @@ assert(!leadsLoadFailed("ok", 0), "GET vazio de verdade não é falha")
 assert(leadsHydrating("idle", 0), "conversas sem Telegram ainda hidratam mesmo com WhatsApp em cache")
 assert(leadsLoadFailed("ok", 0, true), "inbox falhou sem conversas não é inbox vazia")
 assert(!leadsLoadFailed("ok", 2, true), "inbox falhou com conversas em cache ainda mostra a lista")
+assert(metricPending("idle", 0), "KPI de conversas hidrata sem recorte Telegram")
+assert(!metricPending("idle", 4), "KPI de conversas com cache Telegram já conta")
+assert(metricPending("ok", 0, true), "KPI de conversas com inbox falhada não finge zero")
+assert(!metricPending("ok", 0), "KPI de conversas vazio depois do GET é zero")
+assert(!metricPending("error", 3), "KPI de conversas com cache ainda mostra o número")
 assert(linkRuntimeSettings(null, { telegramBotUsername: "ste" }) === null, "Vincular sem settings não inventa um objecto oco")
 assert(
   linkRuntimeSettings(emptySettings(), { telegramBotUsername: "ste_bot", telegramBotToken: "tok" })?.telegramBotUsername ===

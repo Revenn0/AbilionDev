@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { SparkBars, TrendLine } from "@/components/ui/spark"
 import { useStore } from "@/lib/store"
 import { pixelFigure } from "@/lib/analytics-view"
-import { barShare, deriveOps, leadsHydrating, leadsLoadFailed, seriesLast30 } from "@/lib/ops"
+import { barShare, deriveOps, leadsHydrating, leadsLoadFailed, metricPending, seriesLast30 } from "@/lib/ops"
 import { facebookOf } from "@/lib/track"
 import { useTrackSummary } from "@/lib/use-track-summary"
 
@@ -19,6 +19,7 @@ export function DashboardPage() {
   const failed = leadsLoadFailed(persistSync, state.leads.length)
   const empty = !hydrating && !failed && ops.leads === 0
   const pending = hydrating || failed
+  const chatsPending = metricPending(persistSync, ops.conversations, inboxSync === "error")
   const facebookTotal = Math.max(facebook.adClicks, facebook.pageViews, facebook.buttonClicks)
   const line = seriesLast30(state.leads, () => true)
   const spark = line.slice(-12)
@@ -54,8 +55,16 @@ export function DashboardPage() {
           <Kpi
             href="/conversas"
             label="Conversas"
-            value={pending ? "…" : ops.conversations}
-            hint={hydrating ? "a carregar" : failed ? "sem leitura" : empty ? "nenhuma iniciada" : "eventos do fluxo"}
+            value={chatsPending ? "…" : ops.conversations}
+            hint={
+              chatsPending
+                ? persistSync === "idle"
+                  ? "a carregar"
+                  : "sem leitura"
+                : ops.conversations === 0
+                  ? "nenhuma iniciada"
+                  : "eventos do fluxo"
+            }
             bars={spark}
           />
           <Kpi href="/analytics" label="Anúncio" value={pixelFigure(status, hasData, facebook.adClicks)} hint="clique no ads" bars={pixelBars("facebookAds")} />

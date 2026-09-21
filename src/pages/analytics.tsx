@@ -9,6 +9,7 @@ import { PageChrome, StatusPill } from "@/components/layout/chrome"
 import { SyncBanner } from "@/components/layout/sync-banner"
 import { StudioPanel } from "@/components/layout/studio"
 import { funnelFrom, periodDelta, pixelFigure, splitSeries } from "@/lib/analytics-view"
+import { metricPending } from "@/lib/ops"
 import { useStore } from "@/lib/store"
 import { facebookOf, formatPercent, formatSession } from "@/lib/track"
 import { useTrackSummary } from "@/lib/use-track-summary"
@@ -18,7 +19,6 @@ export function AnalyticsPage() {
   const { summary, status, hasData, retry } = useTrackSummary(4000)
   const facebook = facebookOf(summary)
   const pixelReady = status === "ok" || hasData
-  const leadsReady = state.leads.length > 0 || persistSync === "ok"
   const empty =
     pixelReady &&
     persistSync === "ok" &&
@@ -31,6 +31,8 @@ export function AnalyticsPage() {
   const unreadEmpty = "Sem leitura do pixel."
   const periods = splitSeries(summary.series)
   const funnel = funnelFrom(summary, state.leads)
+  const chatStartedCount = funnel.find((item) => item.id === "chat")?.value ?? 0
+  const leadsReady = !metricPending(persistSync, chatStartedCount, inboxSync === "error")
   const viewSpark = summary.series.map((item) => item.views)
   const clickSpark = summary.series.map((item) => item.clicks)
   const telegramSpark = summary.series.map((item) => item.telegrams)

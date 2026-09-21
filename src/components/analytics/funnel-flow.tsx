@@ -37,11 +37,12 @@ export function FunnelFlow({
           const drop = prev ? stepDrop(step.value, prev.value) : null
           const meta = META[step.id]
           const Icon = meta.icon
+          const dropLabel = step.id === "chat" && !leadsReady ? "…" : pixelDropFigure(status, hasData, drop)
           return (
             <div key={step.id} className="contents">
               {index > 0 ? (
                 <div className="flex flex-col items-center justify-center px-1 text-[11px] text-muted-foreground">
-                  <span className="tabular-nums">{pixelDropFigure(status, hasData, drop)}</span>
+                  <span className="tabular-nums">{dropLabel}</span>
                   <span className="mt-2 h-px w-8 bg-sky-200" />
                 </div>
               ) : null}
@@ -75,11 +76,12 @@ export function FunnelFlow({
           const prev = steps[index - 1]
           const drop = prev ? stepDrop(step.value, prev.value) : null
           const meta = META[step.id]
+          const dropLabel = step.id === "chat" && !leadsReady ? "…" : pixelDropFigure(status, hasData, drop)
           return (
             <li key={step.id}>
               {index > 0 ? (
                 <p className="mb-2 text-center text-[11.5px] text-muted-foreground">
-                  ↓ {pixelDropFigure(status, hasData, drop)}
+                  ↓ {dropLabel}
                 </p>
               ) : null}
               <StudioMetric title={step.label} tone={meta.tone} value={figure(step)} hint={step.hint} />

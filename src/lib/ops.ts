@@ -60,6 +60,15 @@ export function leadsLoadFailed(
   return leadCount === 0 && (persistSync === "error" || extraFailed)
 }
 
+/** KPI de um recorte (conversas, joins, Facebook hoje): cache doutro canal não fecha o GET. */
+export function metricPending(
+  persistSync: "idle" | "ok" | "error",
+  count: number,
+  extraFailed = false
+) {
+  return leadsHydrating(persistSync, count) || leadsLoadFailed(persistSync, count, extraFailed)
+}
+
 export function barShare(value: number, total: number) {
   if (total <= 0) return 0
   return Math.round((value / total) * 100)

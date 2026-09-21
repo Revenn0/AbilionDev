@@ -12,15 +12,12 @@ import { fetchRuntime, type RuntimeStatus } from "@/lib/runtime-api"
 import { adsDeepLink } from "@/lib/telegram-start"
 import { adsLandingUrl } from "@/lib/page-script"
 import { burstFacebookLeads, burstStats } from "@/lib/burst"
-import { leadsHydrating, leadsLoadFailed } from "@/lib/ops"
+import { metricPending } from "@/lib/ops"
 import { toast } from "sonner"
 
 export function TelegramPage() {
-  const { state, createLeads, persistSync, settingsSync } = useStore()
+  const { state, createLeads, persistSync, settingsSync, inboxSync } = useStore()
   const { settings, leads } = state
-  const hydrating = leadsHydrating(persistSync, leads.length)
-  const failed = leadsLoadFailed(persistSync, leads.length)
-  const pending = hydrating || failed
   const inGroup = leads.filter((lead) => lead.channel === "telegram" && (lead.origin === "group_join" || lead.stage === "group")).length
   const facebookToday = leads.filter((lead) => {
     if (lead.origin !== "facebook") return false
@@ -28,6 +25,8 @@ export function TelegramPage() {
     day.setHours(0, 0, 0, 0)
     return new Date(lead.createdAt).getTime() >= day.getTime()
   }).length
+  const groupPending = metricPending(persistSync, inGroup, inboxSync === "error")
+  const facebookPending = metricPending(persistSync, facebookToday)
   const hook = `${workerUrl()}/api/telegram`
   const [health, setHealth] = useState<Awaited<ReturnType<typeof fetchHealth>> | null>(null)
   const [runtime, setRuntime] = useState<RuntimeStatus | null>(null)
@@ -143,12 +142,12 @@ export function TelegramPage() {
           </article>
           <article className="surface p-5">
             <p className="text-[12.5px] text-muted-foreground">Joins no grupo</p>
-            <p className="mt-2 text-[18px] font-medium">{pending ? "…" : inGroup}</p>
+            <p className="mt-2 text-[18px] font-medium">{groupPending ? "…" : inGroup}</p>
             <p className="mt-2 text-[12.5px] text-muted-foreground">Join cria lead da campanha Telegram.</p>
           </article>
           <article className="surface p-5">
             <p className="text-[12.5px] text-muted-foreground">Facebook hoje</p>
-            <p className="mt-2 text-[18px] font-medium">{pending ? "…" : facebookToday}</p>
+            <p className="mt-2 text-[18px] font-medium">{facebookPending ? "…" : facebookToday}</p>
             <p className="mt-2 text-[12.5px] text-muted-foreground">Landing /l. O /start fecha o visitante. Pico de 500–1000/dia.</p>
           </article>
         </section>
