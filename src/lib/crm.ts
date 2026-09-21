@@ -551,7 +551,7 @@ export function canCreateFunnel(funnels: SalesFunnel[]): { ok: true } | { ok: fa
   return { ok: true }
 }
 
-/** Lista unread e oca: não fingir que ainda não há funis. Se o KV já tem algum, criar segue. */
+/** Lista unread e oca: não fingir que ainda não há funis. Se o KV já tem algum, criar segue — não usar para gravar lead contra o quadro (aí é `funnelsWriteBlocked`). */
 export function funnelsListBlocked(unread: boolean, funnels?: SalesFunnel[]) {
   return unread && !(funnels ?? []).length
 }

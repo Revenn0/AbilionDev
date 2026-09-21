@@ -162,10 +162,20 @@ export function FluxoPage() {
                       variant="ghost"
                       size="sm"
                       className="rounded-full"
-                      disabled={scriptsUnread}
-                      title={scriptsUnread ? "Não confirmei os scripts de página." : undefined}
+                      disabled={scriptsUnread || boardsBlocked}
+                      title={
+                        boardsBlocked
+                          ? "Não confirmei os funis no Worker."
+                          : scriptsUnread
+                            ? "Não confirmei os scripts de página."
+                            : undefined
+                      }
                       data-funnel-script
                       onClick={() => {
+                        if (boardsBlocked) {
+                          toast.error("Não confirmei os funis no Worker.")
+                          return
+                        }
                         if (scriptsUnread) {
                           toast.error("Não confirmei os scripts de página.")
                           return

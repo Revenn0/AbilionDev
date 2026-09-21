@@ -12,14 +12,13 @@ import { fetchRuntime, type RuntimeStatus } from "@/lib/runtime-api"
 import { adsDeepLink } from "@/lib/telegram-start"
 import { adsLandingUrl } from "@/lib/page-script"
 import { burstFacebookLeads, burstStartsBlocked, burstStats } from "@/lib/burst"
-import { funnelsListBlocked } from "@/lib/crm"
-import { metricPending } from "@/lib/ops"
+import { funnelsWriteBlocked, metricPending } from "@/lib/ops"
 import { toast } from "sonner"
 
 export function TelegramPage() {
   const { state, createLeads, crmSync, persistSync, settingsSync, inboxSync } = useStore()
   const { settings, leads } = state
-  const funnelsUnread = funnelsListBlocked(crmSync !== "ok", state.funnels)
+  const funnelsUnread = funnelsWriteBlocked(crmSync)
   const burstBlocked = burstStartsBlocked(persistSync, funnelsUnread)
   const inGroup = leads.filter((lead) => lead.channel === "telegram" && (lead.origin === "group_join" || lead.stage === "group")).length
   const facebookToday = leads.filter((lead) => {
@@ -76,7 +75,7 @@ export function TelegramPage() {
             },
             {
               ok: crmSync !== "error",
-              message: "Não consegui ler os funis do Worker. Simular 100 /start fica bloqueado se a lista estiver oca.",
+              message: "Não consegui ler os funis do Worker. Simular 100 /start fica bloqueado — um quadro leftover no cache não conta.",
             },
             {
               ok: settingsSync !== "error",

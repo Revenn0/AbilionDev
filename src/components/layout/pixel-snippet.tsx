@@ -13,7 +13,7 @@ export function PixelSnippet({ origin, botUsername }: { origin: string; botUsern
   const { state, saveSettings, flushCrmNow, crmSync, settingsSync } = useStore()
   const scripts = state.settings.pageScripts ?? []
   const boards = state.funnels.filter(funnelHasInstallableBoard)
-  const boardsUnread = boards.length === 0 && (crmSync === "idle" || crmSync === "error")
+  const boardsUnread = crmSync !== "ok"
   const scriptsUnread = scripts.length === 0 && (settingsSync === "idle" || settingsSync === "error")
   const [name, setName] = useState("")
   const [funnelId, setFunnelId] = useState(boards[0]?.id ?? "")
@@ -124,25 +124,26 @@ export function PixelSnippet({ origin, botUsername }: { origin: string; botUsern
           <Label htmlFor="page-script-funnel">Funil</Label>
           <select
             id="page-script-funnel"
-            data-pixel-funnels={crmSync === "idle" && boards.length === 0 ? "loading" : crmSync === "error" && boards.length === 0 ? "error" : boards.length ? "ok" : "empty"}
+            data-pixel-funnels={crmSync === "idle" ? "loading" : crmSync === "error" ? "error" : boards.length ? "ok" : "empty"}
             value={funnelId || boards[0]?.id || ""}
             onChange={(event) => setFunnelId(event.target.value)}
             className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
             disabled={boardsUnread}
           >
-            {crmSync === "idle" && boards.length === 0 ? (
+            {crmSync === "idle" ? (
               <option value="">A carregar os funis…</option>
-            ) : crmSync === "error" && boards.length === 0 ? (
-              <option value="">Não li os funis</option>
+            ) : crmSync === "error" ? (
+              <option value="">Não confirmei os funis</option>
             ) : boards.length === 0 ? (
               <option value="">Publica um funil primeiro</option>
-            ) : null}
-            {boards.map((funnel) => (
-              <option key={funnel.id} value={funnel.id}>
-                {funnel.name}
-                {funnel.status === "active" && funnel.production ? " · publicado" : " · com quadro"}
-              </option>
-            ))}
+            ) : (
+              boards.map((funnel) => (
+                <option key={funnel.id} value={funnel.id}>
+                  {funnel.name}
+                  {funnel.status === "active" && funnel.production ? " · publicado" : " · com quadro"}
+                </option>
+              ))
+            )}
           </select>
         </div>
         <div className="space-y-1.5">

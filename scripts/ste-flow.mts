@@ -107,7 +107,7 @@ import { leadCategoriesListBlocked, leadFromImport, leadImportGroupBlocked, pars
 import { burstFacebookLeads, burstStartsBlocked, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
-import { barShare, hasConversation, isImportedLead, isOperatorLockedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadWritesBlocked, leadsHydrating, leadsLoadFailed, metricPending } from "../src/lib/ops.ts"
+import { barShare, funnelsWriteBlocked, hasConversation, isImportedLead, isOperatorLockedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadWritesBlocked, leadsHydrating, leadsLoadFailed, metricPending } from "../src/lib/ops.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
 import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, handleAuth, hashApiToken, hashPassword, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
@@ -729,13 +729,18 @@ assert(FUNNEL_CAP === 20 && !canCreateFunnel(Array.from({ length: 20 }, () => em
 assert(funnelsListBlocked(true, []), "funis unread e ocas bloqueiam criar")
 assert(!funnelsListBlocked(true, [emptySalesFunnel("x")]), "funis unread com lista no KV seguem")
 assert(!funnelsListBlocked(false, []), "funis lidos vazios não bloqueiam criar")
+assert(funnelsWriteBlocked("idle"), "CRM idle bloqueia escrita contra o quadro")
+assert(funnelsWriteBlocked("error"), "CRM error bloqueia escrita contra o quadro")
+assert(!funnelsWriteBlocked("ok"), "CRM confirmado deixa escrever contra o quadro")
 assert(burstStartsBlocked("idle", false), "hydrate ainda não solta o lote de 100")
 assert(burstStartsBlocked("error", false), "GET falhou não solta o lote de 100")
 assert(burstStartsBlocked("ok", true), "funis unread ocas bloqueiam o lote de 100")
+assert(burstStartsBlocked("ok", funnelsWriteBlocked("error")), "funis unread com cache leftover ainda bloqueiam o lote de 100")
 assert(!burstStartsBlocked("ok", false), "CRM confirmado deixa simular 100 /start")
 assert(leadWritesBlocked("idle"), "hydrate ainda não solta captura nem import")
 assert(leadWritesBlocked("error"), "GET falhou não solta captura nem import")
 assert(leadWritesBlocked("ok", true), "funis unread ocas bloqueiam a captura")
+assert(leadWritesBlocked("ok", funnelsWriteBlocked("error")), "funis unread com cache leftover ainda bloqueiam a captura")
 assert(!leadWritesBlocked("ok", false), "CRM confirmado deixa capturar e importar")
 const twentyOne = Array.from({ length: 21 }, (_, index) => ({ ...emptySalesFunnel(`n${index}`), id: `funil-${index}` }))
 assert(reconcileFunnels([], twentyOne).length === 21, "reconcile não corta o 21.º quadro à calada")

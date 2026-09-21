@@ -56,7 +56,7 @@ export function burstStats(leads: Lead[]) {
   }
 }
 
-/** Simular 100 /start: GET unread ou funis ocas unread não é catálogo vazio. */
+/** Simular 100 /start: GET unread ou funis unread (mesmo com cache leftover) não é universo confirmado. */
 export function burstStartsBlocked(
   persistSync: "idle" | "ok" | "error",
   funnelsUnread: boolean

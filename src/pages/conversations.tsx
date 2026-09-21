@@ -7,10 +7,9 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { simulateOpenLead } from "@/lib/burst"
-import { funnelsListBlocked } from "@/lib/crm"
 import { useStore } from "@/lib/store"
 import { pixelFigure } from "@/lib/analytics-view"
-import { hasConversation, leadsHydrating, leadsLoadFailed } from "@/lib/ops"
+import { funnelsWriteBlocked, hasConversation, leadsHydrating, leadsLoadFailed } from "@/lib/ops"
 import { ORIGIN_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { GeoBadge } from "@/components/crm/geo-badge"
 import { factsWithTrack } from "@/lib/geo"
@@ -83,7 +82,7 @@ export function ConversationsPage() {
   const hydrating = leadsHydrating(persistSync, all.length)
   const failed = leadsLoadFailed(persistSync, all.length, inboxSync === "error")
   const pending = hydrating || failed
-  const funnelsUnread = funnelsListBlocked(crmSync !== "ok", state.funnels)
+  const funnelsUnread = funnelsWriteBlocked(crmSync)
 
   const counts = useMemo(
     () => ({
@@ -174,7 +173,7 @@ export function ConversationsPage() {
           items={[
             { ok: inboxSync !== "error", message: "A inbox do Telegram não sincronizou. Conversas novas podem faltar." },
             { ok: persistSync !== "error", message: "Não consegui ler ou gravar conversas no Worker." },
-            { ok: crmSync !== "error", message: "Não consegui ler os funis do Worker. Simular conversa pode ficar sem quadro." },
+            { ok: crmSync !== "error", message: "Não consegui ler os funis do Worker. Simular conversa fica bloqueado até confirmar os funis." },
           ]}
         />
         <PageChrome icon={MessagesSquare} title="Conversas">

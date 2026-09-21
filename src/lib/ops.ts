@@ -96,6 +96,11 @@ export function leadFilterPending(
   return metricPending(persistSync, count, extra)
 }
 
+/** Escrever lead contra o quadro: leftover no cache não confirma o universo. */
+export function funnelsWriteBlocked(crmSync: "idle" | "ok" | "error") {
+  return crmSync !== "ok"
+}
+
 /** Captura, import e lote: GET unread não é catálogo vazio. `funnelsUnread` bloqueia o que precisa do quadro. */
 export function leadWritesBlocked(
   persistSync: "idle" | "ok" | "error",

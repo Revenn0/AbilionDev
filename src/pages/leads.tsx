@@ -17,11 +17,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useStore } from "@/lib/store"
-import { funnelsListBlocked } from "@/lib/crm"
 import { addLeadCategory, leadCategoriesListBlocked, leadFromImport, leadImportGroupBlocked, mergeLeadCategories, parseLeadImportText } from "@/lib/lead-category"
 import { captureAgainstFunnels } from "@/lib/templates"
 import { ORIGIN_LABEL, STAGE_LABEL, TEMP_LABEL } from "@/lib/labels"
-import { isImportedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadWritesBlocked, leadsHydrating } from "@/lib/ops"
+import { funnelsWriteBlocked, isImportedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadWritesBlocked, leadsHydrating } from "@/lib/ops"
 import { applyEvent, nodeTitle, publishedSnapshot, type RuntimeEvent } from "@/lib/runtime"
 import { canTickSteLocally } from "@/lib/ste"
 import { timeAgo } from "@/lib/format"
@@ -65,7 +64,7 @@ export function LeadsPage() {
     [state.leads, state.settings.leadCategories]
   )
   const categoriesUnread = leadCategoriesListBlocked(settingsSync !== "ok", state.settings.leadCategories)
-  const funnelsUnread = funnelsListBlocked(crmSync !== "ok", state.funnels)
+  const funnelsUnread = funnelsWriteBlocked(crmSync)
   const captureBlocked = leadWritesBlocked(persistSync, funnelsUnread)
   const importBlocked = leadWritesBlocked(persistSync)
   const createCategory = (name: string) => {
