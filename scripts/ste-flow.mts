@@ -4610,7 +4610,7 @@ try {
 const mcpHydrateKv = memoryKv()
 const mcpStaleLead = {
   ...lead("mcp-stale", "@mcpstale"),
-  name: "Nome velho do KV",
+  name: "Rita Backup",
   stage: "capture" as const,
   updatedAt: "2026-01-01T00:00:00.000Z",
 }
@@ -4652,7 +4652,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       JSON.stringify([
         {
           id: "mcp-stale",
-          name: "Nome vivo do Postgres",
+          name: "Ana Souza",
           contact: "@mcpstale",
           channel: "telegram",
           campaign: "facebook",
@@ -4693,7 +4693,7 @@ const mcpHydrateText = JSON.parse(mcpHydrateBody.result?.content?.[0]?.text || "
 }
 assert(mcpHydrateList.status === 200 && !mcpHydrateBody.result?.isError && mcpHydrateText.ok, "MCP lista hidrata a página do KV")
 assert(
-  mcpHydrateText.leads?.some((item) => item.id === "mcp-stale" && item.name === "Nome vivo do Postgres" && item.stage === "welcome"),
+  mcpHydrateText.leads?.some((item) => item.id === "mcp-stale" && item.name === "Ana Souza" && item.stage === "welcome"),
   "MCP lista lê o nome e o passo pelo id, não o leftover do KV"
 )
 globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -4722,7 +4722,7 @@ const mcpHydrateFailText = JSON.parse(mcpHydrateFailBody.result?.content?.[0]?.t
 }
 assert(mcpHydrateFail.status === 200 && !mcpHydrateFailBody.result?.isError && mcpHydrateFailText.ok, "MCP hidrata leftover se o Postgres cair")
 assert(
-  mcpHydrateFailText.leads?.some((item) => item.id === "mcp-stale" && item.name === "Nome velho do KV"),
+  mcpHydrateFailText.leads?.some((item) => item.id === "mcp-stale" && item.name === "Rita Backup"),
   "MCP lista conserva o leftover se o backup cair"
 )
 globalThis.fetch = mcpHydratePrev
