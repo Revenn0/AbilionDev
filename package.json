@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "npx tsx scripts/ste-flow.mts",
+    "test": "npx tsx scripts/ste-flow.mts && npx tsx scripts/pipeline-flow.mts",
     "test:ui": "npx tsx scripts/ui-audit.mts",
     "typecheck": "tsc -b",
     "preview": "vite preview --host 127.0.0.1 --port 43173",
@@ -17,6 +17,9 @@
     "deploy:prod": "npx tsx scripts/deploy.mts production",
     "smoke": "npx tsx scripts/smoke.mts",
     "staging:reset": "npx tsx scripts/staging-reset.mts",
+    "staging:secrets": "npx tsx scripts/staging-secrets.mts",
+    "origin:rulesets": "npx tsx scripts/origin-rulesets.mts",
+    "promote:check": "npx tsx scripts/promote-check.mts",
     "mcp": "npx tsx mcp/server.mts",
     "postinstall": "mkdir -p node_modules/.bin && ln -sfn ../../tools/opennext-shim/cli.mjs node_modules/.bin/opennextjs-cloudflare"
   },

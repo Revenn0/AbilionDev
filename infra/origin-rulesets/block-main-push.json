@@ -1,0 +1,13 @@
+{
+  "name": "block-main-push",
+  "description": "Bloqueia push directo e apagar o branch main. Produção só sobe por merge de PR.",
+  "enforcement": "active",
+  "kind": "push_branch",
+  "includedRefNames": ["refs/heads/main"],
+  "excludedRefNames": [],
+  "rules": [
+    { "ruleType": "block_direct_updates", "parameters": {} },
+    { "ruleType": "deletion", "parameters": {} }
+  ],
+  "bypassActors": []
+}

@@ -50,27 +50,45 @@ npm run deploy:staging # build + wrangler deploy staging + smoke
 npm run deploy:prod -- --approved <sha>   # só no main, só com o hash aprovado
 npm run smoke -- https://staging.abilion.lol --env staging --sha <sha>
 npm run staging:reset -- --yes            # limpa o KV de staging (recusa o de produção)
+npm run staging:secrets -- --put-cron     # CRON_SECRET de staging
+npm run origin:rulesets                   # cria os rulesets Origin (máquina do Victor)
+npm run promote:check                     # HEAD == árvore que staging está a servir?
 ```
 
 ## Regras a ligar no Origin (uma vez)
 
-No repositório → Settings → Rulesets:
+Specs em `infra/origin-rulesets/`. Na máquina do Victor (token com `repository:rulesets:write`):
 
-- **`main`** (kind `merge_branch`): exige PR, **1 aprovação** (Victor), *dismiss stale reviews on push*, *require branch up to date*, *require status checks* (CI verde), **bloqueia push directo** e apagar o branch.
-- **`staging`**: exige status checks (CI verde). Push directo permitido para o agente poder publicar rascunhos.
+```bash
+npm run origin:rulesets          # cria os que faltam
+npm run origin:rulesets -- verify
+```
+
+O token desta sessão de agente **lê** rulesets mas **não cria** — o `origin ruleset create` responde *token is not scoped*. Por isso a Fase 1 corre na tua máquina, não no agente.
+
+O que o script aplica:
+
+| Ruleset | Kind | Branch | Efeito |
+| --- | --- | --- | --- |
+| `protect-main` | `merge_branch` | `main` | PR obrigatório, **1 aprovação**, reviews velhas caem no push, branch actualizado. Sem bypass. |
+| `block-main-push` | `push_branch` | `main` | Bloqueia push directo e apagar o branch. |
+| `protect-staging` | `merge_branch` | `staging` | PRs para staging exigem branch actualizado. |
+| `keep-staging` | `push_branch` | `staging` | Impede apagar o branch. **Push directo permitido** (o agente publica rascunhos). |
+
+Status checks (CI verde) **não** entram ainda: sem o Depot ligado, exigir um check que não existe tranca o `main` para sempre. Quando o check `CI` aparecer nos PRs, acrescenta `require_status_checks` ao `protect-main` com o `actor_id` do app Depot.
 
 O mesmo pode ser feito por Terraform (`cursor_origin_repo_ruleset`).
 
 ### CI no Origin
 
-O Origin corre workflows do GitHub Actions através do **Depot** ou do **Buildkite**. Uma vez:
+O Origin corre workflows do GitHub Actions através do **Depot**. Os YAML já estão em `.depot/workflows/` (`depot-ubuntu-latest`, mesmos passos que `.github/workflows/`). Uma vez, na tua máquina:
 
-1. Repositório → Apps → ligar o Depot.
-2. Na máquina do Victor, no checkout do repo: `depot login` e `depot ci migrate workflows --forge=origin` — copia `.github/workflows/` para `.depot/workflows/` com os ajustes do Depot.
-3. `depot ci migrate secrets-and-vars` e depois definir `CLOUDFLARE_API_TOKEN` (token API com *Workers Scripts:Edit*, *Workers KV:Edit*, *Workers Routes:Edit*, *Account Settings:Read*) e `CLOUDFLARE_ACCOUNT_ID` (`73dd2cecfc9c7f0220a36fe999e3edf1`).
-4. Commit de `.depot/workflows/` e merge para `main`.
+1. Repositório → Apps → ligar o Depot ao namespace `brasileiro`.
+2. `depot login` e, se quiseres re-migrar: `depot ci migrate workflows --forge=origin --yes`.
+3. No Depot: `CLOUDFLARE_API_TOKEN` (token API com *Workers Scripts:Edit*, *Workers KV Storage:Edit*, *Workers Routes:Edit*, *Account Settings:Read*) e `CLOUDFLARE_ACCOUNT_ID` (`73dd2cecfc9c7f0220a36fe999e3edf1`).
+4. Merge de `.depot/workflows/` no `main` (via staging, como tudo o resto).
 
-Sem CI ligado, o fluxo funciona na mesma à mão: o agente publica staging com `npm run deploy:staging`; o Victor aprova o PR; quem publica produção corre `npm run deploy:prod -- --approved <sha>` a partir do `main`. As guardas são as mesmas.
+Sem o app Depot ligado, o fluxo funciona à mão: o agente publica staging com `npm run deploy:staging`; o Victor aprova o PR; quem publica produção corre `npm run deploy:prod -- --approved <sha>` a partir do `main`. As guardas são as mesmas.
 
 ## Secrets por ambiente
 
@@ -88,8 +106,8 @@ Os secrets são por Worker. Staging **nunca** reutiliza os de produção que gra
 | `ABILION_OPERATOR_PASSWORD` | opcional | opcional |
 
 ```bash
-npx wrangler secret put TELEGRAM_BOT_TOKEN --config wrangler.staging.jsonc
-npx wrangler secret put CRON_SECRET --config wrangler.staging.jsonc
+npm run staging:secrets -- --put-cron     # CRON_SECRET próprio de staging
+npx wrangler secret put TELEGRAM_BOT_TOKEN --config wrangler.staging.jsonc   # só se não vinculares pelo painel
 ```
 
 Vincular o bot de staging faz-se no próprio painel de staging (Configurações → Vincular Telegram), que aponta o webhook para `https://staging.abilion.lol/api/telegram`.
@@ -115,5 +133,5 @@ O rollback do Cloudflare repõe o Worker anterior em segundos. Para reverter tam
 ## Limites conhecidos
 
 - O snippet do pixel que se cola no anúncio aponta sempre para `https://www.abilion.lol/t.js` (`ADS_ORIGIN`), mesmo no painel de staging. A landing `/l` de staging usa `/t.js` relativo, por isso o pixel de staging grava em staging.
-- Staging sem Postgres testa só o caminho KV. Para testar a cópia Postgres, cria um projecto Supabase de staging (vazio) e aplica o esquema que o Worker usa (`leads`, `lead_events`, `funnels`, `settings`, `page_events`).
+- Staging sem Postgres testa só o caminho KV. Para testar a cópia: projecto Supabase vazio + `supabase/staging.sql` + `SUPABASE_URL` no `wrangler.staging.jsonc` + `wrangler secret put SUPABASE_SERVICE_ROLE --config wrangler.staging.jsonc`. **Não** corras `supabase/staging.sql` no projecto de produção.
 - O `GIT_SHA` é injectado pelo `scripts/deploy.mts`. Um `wrangler deploy` à mão sem `--var GIT_SHA:…` deixa a versão anterior no `/api/health` — usa sempre os scripts.

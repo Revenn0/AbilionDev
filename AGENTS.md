@@ -14,6 +14,9 @@ Antes de entregar qualquer mudança de UI, fluxo, bot ou painel:
 2. Abrir o **URL de staging** e percorrer o fluxo como utilizador: login, páginas afectadas, estados vazios e erro. `/l` e `/start` usam o bot de staging.
 3. **Tirar print** de cada ecrã relevante em staging.
 4. **Analisar** os prints: contraste, texto ilegível, ecrã preto, botões mortos, regressão.
-5. Se falhar, corrigir e repetir. Só então pedir a aprovação: PR `staging → main` com os prints e o `version` que `https://staging.abilion.lol/api/health` está a devolver.
+5. `npm run promote:check` — o HEAD tem de ser a árvore que staging está a servir.
+6. Se falhar, corrigir e repetir. Só então pedir a aprovação: PR `staging → main` com os prints e o `version` que `https://staging.abilion.lol/api/health` está a devolver.
+
+O agente **não** corre `origin ruleset create` com o token da sessão (não tem scope de escrita). O Victor aplica com `npm run origin:rulesets` na máquina dele.
 
 Localhost serve para desenvolver. Staging + print + análise é o critério de pronto para pedir aprovação. Produção é decisão do Victor.

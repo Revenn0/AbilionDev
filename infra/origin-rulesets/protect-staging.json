@@ -1,0 +1,12 @@
+{
+  "name": "protect-staging",
+  "description": "PRs para staging exigem branch actualizado. Push directo continua permitido para o agente publicar rascunhos.",
+  "enforcement": "active",
+  "kind": "merge_branch",
+  "includedRefNames": ["refs/heads/staging"],
+  "excludedRefNames": [],
+  "rules": [
+    { "ruleType": "require_branch_up_to_date", "parameters": {} }
+  ],
+  "bypassActors": []
+}

@@ -1,0 +1,35 @@
+# Migrado de .github/workflows/deploy-staging.yml para o Depot CI no Origin.
+# Cada push em staging publica em staging.abilion.lol e corre o smoke.
+name: Deploy staging
+
+on:
+  push:
+    branches:
+      - staging
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: staging.abilion.lol
+    runs-on: depot-ubuntu-latest
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: "1"
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - name: Publicar em staging e correr o smoke
+        run: npx tsx scripts/deploy.mts staging --ci

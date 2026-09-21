@@ -1,0 +1,12 @@
+{
+  "name": "keep-staging",
+  "description": "Impede apagar o branch staging. Push directo continua permitido.",
+  "enforcement": "active",
+  "kind": "push_branch",
+  "includedRefNames": ["refs/heads/staging"],
+  "excludedRefNames": [],
+  "rules": [
+    { "ruleType": "deletion", "parameters": {} }
+  ],
+  "bypassActors": []
+}

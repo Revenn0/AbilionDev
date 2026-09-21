@@ -1,0 +1,22 @@
+{
+  "name": "protect-main",
+  "description": "Nada entra em produção sem PR aprovado. 1 review, reviews velhas caem no push, branch actualizado.",
+  "enforcement": "active",
+  "kind": "merge_branch",
+  "includedRefNames": ["refs/heads/main"],
+  "excludedRefNames": [],
+  "rules": [
+    {
+      "ruleType": "pull_request",
+      "parameters": {
+        "requiredApprovingReviewCount": 1,
+        "dismissStaleReviewsOnPush": true
+      }
+    },
+    {
+      "ruleType": "require_branch_up_to_date",
+      "parameters": {}
+    }
+  ],
+  "bypassActors": []
+}

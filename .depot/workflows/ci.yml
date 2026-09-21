@@ -1,0 +1,29 @@
+# Migrado de .github/workflows/ci.yml para o Depot CI no Origin.
+# ubuntu-latest → depot-ubuntu-latest. Sem acções que falhem no Origin
+# (não há releases, code scanning nem snapshots).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore:
+      - main
+      - staging
+
+jobs:
+  verify:
+    name: typecheck · lint · test · build
+    runs-on: depot-ubuntu-latest
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build

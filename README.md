@@ -78,6 +78,8 @@ npm install
 npx wrangler login
 npm run deploy:staging                      # staging.abilion.lol — qualquer branch
 npm run deploy:prod -- --approved <sha>     # www.abilion.lol — só no main, só o que staging já serviu
+npm run origin:rulesets                     # aplica protect-main / staging no Origin (máquina do Victor)
+npm run promote:check                       # HEAD == árvore que staging está a servir?
 ```
 
 ## Ambientes
