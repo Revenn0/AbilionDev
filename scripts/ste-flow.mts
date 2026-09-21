@@ -2937,9 +2937,43 @@ const pgFailList = await handleRequest(
   pgFailEnv,
   backgroundCtx()
 )
-const pgFailBody = (await pgFailList.json()) as { ok?: boolean; leads?: unknown[]; clipped?: boolean }
-assert(pgFailList.status === 200 && pgFailBody.ok && pgFailBody.clipped === true, "KV vazio + Postgres em baixo marca clipped")
+const pgFailBody = (await pgFailList.json()) as { error?: string; ok?: boolean }
+assert(pgFailList.status === 503 && pgFailBody.error?.includes("Postgres"), "KV vazio + Postgres em baixo é 503 na lista")
 assert(collectLeadPages([{ leads: [], clipped: true }]).complete === false, "clipped vazio não é lista completa")
+const pgFailInbox = await handleRequest(
+  new Request("http://local.test/api/inbox", { headers: { cookie: pgFailCookie } }),
+  pgFailEnv,
+  backgroundCtx()
+)
+assert(pgFailInbox.status === 503, "KV vazio + Postgres em baixo é 503 na inbox")
+const pgFailMint = await handleRequest(
+  new Request("http://local.test/api/tokens", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: pgFailCookie, "x-forwarded-for": "198.51.100.78" },
+    body: JSON.stringify({ name: "Lista" }),
+  }),
+  pgFailEnv,
+  backgroundCtx()
+)
+const pgFailMinted = (await pgFailMint.json()) as { token?: string }
+assert(pgFailMint.status === 201 && pgFailMinted.token?.startsWith("abn_"), "token para a lista MCP")
+const pgFailMcp = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${pgFailMinted.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 82,
+      method: "tools/call",
+      params: { name: "abilion_list_leads", arguments: { limit: 5 } },
+    }),
+  }),
+  pgFailEnv,
+  backgroundCtx()
+)
+const pgFailMcpBody = (await pgFailMcp.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
+const pgFailMcpText = JSON.parse(pgFailMcpBody.result?.content?.[0]?.text || "{}") as { error?: string }
+assert(pgFailMcpBody.result?.isError && pgFailMcpText.error?.includes("Postgres"), "MCP lista no KV oco é erro se o Postgres falhar")
 const pgFailCrm = await handleRequest(
   new Request("http://local.test/api/crm", { headers: { cookie: pgFailCookie } }),
   pgFailEnv,

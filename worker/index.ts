@@ -533,6 +533,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     const cursor = (url.searchParams.get("cursor") || "").trim()
     if (cursor && !isLeadPageCursor(cursor)) return json({ error: "Cursor inválido." }, 400)
     const page = await loadMergedLeads(env, 400, "all", cursor)
+    if (page.failed) return json({ error: "Não li os leads do Postgres." }, 503)
     return json({
       ok: true,
       leads: page.leads,
@@ -589,6 +590,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     const cursor = (url.searchParams.get("cursor") || "").trim()
     if (cursor && !isLeadPageCursor(cursor)) return json({ error: "Cursor inválido." }, 400)
     const page = await loadMergedLeads(env, 400, "telegram", cursor)
+    if (page.failed) return json({ error: "Não li os leads do Postgres." }, 503)
     return json({
       ok: true,
       leads: page.leads,
@@ -933,6 +935,7 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
   const canReachRemote = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE)
   if (page.empty) {
     const remote = await fetchRemoteLeadPage(env, limit, channel, cursor)
+    if (canReachRemote && remote === null) return { leads: [], clipped: true, failed: true }
     const folded = leadPageFromRemote(remote, limit, canReachRemote)
     const live = env.AUTH ? await filterLiveLeads(env.AUTH, folded.leads) : folded.leads
     return {

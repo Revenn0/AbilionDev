@@ -401,6 +401,9 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     const page = await listLeadPage(env.AUTH, limit, "all", cursor)
     if (page.empty) {
       const remote = await fetchRemoteLeadPage(env, limit, "all", cursor)
+      if (remote === null && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE) {
+        throw new Error("Não li os leads do Postgres.")
+      }
       const folded = leadPageFromRemote(remote, limit, Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE))
       return {
         ok: true,
