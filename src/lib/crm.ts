@@ -1,6 +1,6 @@
 import { publishedFunnel } from "./runtime.ts"
 import { migrateSettings } from "./migrate.ts"
-import { mergeLeadCategories } from "./lead-category.ts"
+import { mergeLeadCategories, mergeLeadGroups } from "./lead-category.ts"
 import { isOperatorLockedLead } from "./ops.ts"
 import { preferLeadName } from "./lead-name.ts"
 import { applyRemovedPageScripts, mergePageScripts, PAGE_SCRIPT_REMOVED_CAP } from "./page-script.ts"
@@ -454,6 +454,7 @@ export function commitStoredSettings(stored: Settings, incoming: Settings, lates
       PAGE_SCRIPT_REMOVED_CAP
     ),
     leadCategories: mergeLeadCategories(prev.leadCategories, live.leadCategories, patch.leadCategories),
+    leadGroups: mergeLeadGroups(prev.leadGroups, live.leadGroups, patch.leadGroups),
     telegramBotToken: "",
     esterTelegramChatId: "",
   })
@@ -549,6 +550,7 @@ export function emptySettings(): Settings {
     pageScripts: [...defaultSettings.pageScripts],
     removedPageScripts: [...defaultSettings.removedPageScripts],
     leadCategories: [...defaultSettings.leadCategories],
+    leadGroups: [...defaultSettings.leadGroups],
   }
 }
 

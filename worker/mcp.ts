@@ -1,5 +1,5 @@
 import { adoptLeadStores, clipNewestIds, FUNNEL_CAP, publicSettings } from "../src/lib/crm.ts"
-import { addLeadCategory, leadCategoriesWriteBlocked, leadFromImport, migrateLeadCategories, parseLeadImportText } from "../src/lib/lead-category.ts"
+import { addLeadCategory, addLeadGroup, leadCategoriesWriteBlocked, leadFromImport, leadGroupsWriteBlocked, migrateLeadCategories, parseLeadImportText } from "../src/lib/lead-category.ts"
 import { addPageScript, installSettingsBlocked, pageInstallManual, pageScriptById, pageScriptsFunnelUnread, pageScriptsListBlocked, pageScriptsWriteBlocked, PAGE_SCRIPT_REMOVED_CAP, removePageScript } from "../src/lib/page-script.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
 import { emptySalesFunnel, publishSnapshot } from "../src/lib/templates.ts"
@@ -278,12 +278,14 @@ const TOOLS = [
   },
   {
     name: "abilion_import_leads",
-    description: "Importa uma lista (nome, contacto) para o CRM. toGroup=true mete-os na categoria Grupo e no passo group.",
+    description: "Importa uma lista (nome, contacto) para um grupo do CRM. groupName cria ou escolhe o destino; toGroup=true é o atalho da categoria Grupo.",
     inputSchema: {
       type: "object",
       properties: {
         text: { type: "string" },
         category: { type: "string" },
+        groupName: { type: "string" },
+        groupUrl: { type: "string" },
         toGroup: { type: "boolean" },
       },
       required: ["text"],
@@ -638,22 +640,47 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     if (parsed.error) throw new Error(parsed.error)
     const loaded = await workspaceSettingsOf(env, "Não confirmei as definições no Postgres.")
     const settings = loaded.settings
-    const toGroup = args.toGroup === true
-    if (toGroup && loaded.unread && !settings.telegramGroupUrl) {
+    const groupName = str(args.groupName)
+    const groupUrl = str(args.groupUrl)
+    const toGroup = args.toGroup === true || Boolean(groupName)
+    if (toGroup && loaded.unread && !settings.telegramGroupUrl && !settings.leadGroups?.length && !groupName) {
       throw new Error("Não confirmei o grupo do Telegram.")
     }
-    const named = addLeadCategory(settings.leadCategories, str(args.category) || (toGroup ? "Grupo" : ""))
+    const destination = groupName ? addLeadGroup(settings.leadGroups ?? [], { name: groupName, url: groupUrl }) : undefined
+    if (destination && !destination.ok) throw new Error(destination.error)
+    const newGroup = Boolean(destination?.ok && destination.groups.length > (settings.leadGroups ?? []).length)
+    if (newGroup && leadGroupsWriteBlocked(loaded.unread, settings.leadGroups, settings.leadCategories)) {
+      throw new Error("Não confirmei os grupos.")
+    }
+    const named = addLeadCategory(
+      settings.leadCategories,
+      str(args.category) || (destination?.ok ? destination.group.name : "") || (toGroup ? "Grupo" : "")
+    )
     const category = named.ok ? named.category : ""
-    if (named.ok && named.categories.length > migrateLeadCategories(settings.leadCategories).length) {
-      if (leadCategoriesWriteBlocked(loaded.unread)) {
-        throw new Error("Não confirmei as categorias.")
-      }
-      await saveSettingsOf(env, { ...settings, leadCategories: named.categories }, "Não confirmei as categorias.")
+    const newCategory = Boolean(named.ok && named.categories.length > migrateLeadCategories(settings.leadCategories).length)
+    if (newCategory && leadCategoriesWriteBlocked(loaded.unread)) {
+      throw new Error("Não confirmei as categorias.")
+    }
+    if (newGroup || newCategory) {
+      await saveSettingsOf(
+        env,
+        {
+          ...settings,
+          leadCategories: named.ok ? named.categories : settings.leadCategories,
+          leadGroups: destination?.ok ? destination.groups : settings.leadGroups,
+        },
+        "Não confirmei os grupos."
+      )
     }
     if (await leadCatalogUnread(env)) throw new Error("Não li os leads do Postgres.")
     const imported = []
     for (const row of parsed.rows.slice(0, 50)) {
-      const lead = leadFromImport(row, { category, toGroup, groupUrl: settings.telegramGroupUrl })
+      const lead = leadFromImport(row, {
+        category,
+        toGroup,
+        group: destination?.ok ? destination.group : undefined,
+        groupUrl: destination?.ok ? destination.group.url : settings.telegramGroupUrl,
+      })
       const resolved = await resolveWorkspaceLeadWrite(env, lead)
       if (!resolved.ok) throw new Error("Não li o lead do Postgres.")
       const saved = await importOrAdoptLead(env.AUTH, resolved.incoming)

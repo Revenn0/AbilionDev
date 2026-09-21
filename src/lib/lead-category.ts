@@ -1,7 +1,7 @@
 import { normalizeTelegramContact } from "./capture.ts"
 import { uid } from "./format.ts"
 import { isEmailName, isPhoneLikeName, resolveLeadName, resolvePersonName } from "./lead-name.ts"
-import type { Lead } from "./types.ts"
+import type { Lead, LeadGroup } from "./types.ts"
 
 export const LEAD_CATEGORY_CAP = 20
 export const LEAD_CATEGORY_LEN = 40
@@ -30,6 +30,94 @@ export function migrateLeadCategories(raw: unknown): string[] {
 
 export function mergeLeadCategories(...lists: Array<string[] | undefined>) {
   return migrateLeadCategories(lists.flatMap((list) => list ?? []))
+}
+
+function cleanGroupInvite(raw?: string) {
+  const next = (raw ?? "").trim()
+  if (!next) return ""
+  try {
+    const url = new URL(next)
+    if (url.protocol !== "https:") return ""
+    const host = url.hostname.toLowerCase()
+    if (host !== "t.me" && host !== "www.t.me" && host !== "telegram.me") return ""
+    return url.toString()
+  } catch {
+    return ""
+  }
+}
+
+export function migrateLeadGroups(raw: unknown): LeadGroup[] {
+  if (!Array.isArray(raw)) return []
+  const out: LeadGroup[] = []
+  const seen = new Set<string>()
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue
+    const row = item as { id?: unknown; name?: unknown; url?: unknown }
+    const name = sanitizeLeadCategory(row.name)
+    const key = name.toLocaleLowerCase("pt-BR")
+    if (!name || seen.has(key)) continue
+    seen.add(key)
+    const id = typeof row.id === "string" && row.id.trim() ? row.id.trim().slice(0, 64) : `group:${key}`
+    out.push({ id, name, url: cleanGroupInvite(typeof row.url === "string" ? row.url : "") })
+    if (out.length >= LEAD_CATEGORY_CAP) break
+  }
+  return out
+}
+
+export function mergeLeadGroups(...lists: Array<LeadGroup[] | undefined>) {
+  return migrateLeadGroups(lists.flatMap((list) => list ?? []))
+}
+
+export function seedLeadGroups(groups: LeadGroup[] | undefined, telegramGroupUrl?: string): LeadGroup[] {
+  const live = migrateLeadGroups(groups)
+  const url = cleanGroupInvite(telegramGroupUrl)
+  if (!url || live.some((item) => item.url === url)) return live
+  if (live.some((item) => item.name.toLocaleLowerCase("pt-BR") === GROUP_CATEGORY.toLocaleLowerCase("pt-BR"))) return live
+  if (live.length >= LEAD_CATEGORY_CAP) return live
+  return [...live, { id: "telegram-group", name: GROUP_CATEGORY, url }]
+}
+
+export function listImportGroups(groups: LeadGroup[] | undefined, categories?: string[], telegramGroupUrl?: string): LeadGroup[] {
+  const live = seedLeadGroups(groups, telegramGroupUrl)
+  const extra = migrateLeadCategories(categories).filter(
+    (name) => !live.some((item) => item.name.toLocaleLowerCase("pt-BR") === name.toLocaleLowerCase("pt-BR"))
+  )
+  return [...live, ...extra.map((name) => ({ id: `cat:${name.toLocaleLowerCase("pt-BR")}`, name, url: "" }))]
+}
+
+export function addLeadGroup(
+  current: LeadGroup[],
+  input: { name: string; url?: string }
+): { ok: true; groups: LeadGroup[]; group: LeadGroup } | { ok: false; error: string } {
+  const name = sanitizeLeadCategory(input.name)
+  if (!name) return { ok: false, error: "Dá um nome ao grupo." }
+  const rawUrl = (input.url ?? "").trim()
+  const url = cleanGroupInvite(rawUrl)
+  if (rawUrl && !url) return { ok: false, error: "O convite tem de ser um link https://t.me/…" }
+  const live = migrateLeadGroups(current)
+  const match = live.find((item) => item.name.toLocaleLowerCase("pt-BR") === name.toLocaleLowerCase("pt-BR"))
+  if (match) {
+    const group = url && !match.url ? { ...match, url } : match
+    return { ok: true, groups: live.map((item) => (item.id === match.id ? group : item)), group }
+  }
+  if (live.length >= LEAD_CATEGORY_CAP) return { ok: false, error: `O estúdio aceita no máximo ${LEAD_CATEGORY_CAP} grupos.` }
+  const group = { id: uid(), name, url }
+  return { ok: true, groups: [...live, group], group }
+}
+
+/** Criar grupo: leftover oco não inventa o primeiro. Com grupos ou categorias no KV, o select segue. */
+export function leadGroupsWriteBlocked(unread: boolean, groups?: LeadGroup[], categories?: string[]) {
+  return unread && !migrateLeadGroups(groups).length && !migrateLeadCategories(categories).length
+}
+
+export function leadGroupsMutationBlocked(unread: boolean, stored?: LeadGroup[], incoming?: LeadGroup[]) {
+  if (!unread) return false
+  const known = new Set(migrateLeadGroups(stored).map((item) => item.name.toLocaleLowerCase("pt-BR")))
+  return migrateLeadGroups(incoming).some((item) => !known.has(item.name.toLocaleLowerCase("pt-BR")))
+}
+
+export function leadImportSubmitBlocked(persistBlocked: boolean, groupId?: string) {
+  return persistBlocked || !String(groupId || "").trim()
 }
 
 export function addLeadCategory(
@@ -140,25 +228,27 @@ export function leadCategoriesMutationBlocked(
 
 export function leadFromImport(
   row: { name: string; contact: string },
-  input: { category?: string; toGroup?: boolean; groupUrl?: string } = {}
+  input: { category?: string; toGroup?: boolean; groupUrl?: string; group?: { name?: string; url?: string } } = {}
 ): Lead {
   const now = new Date().toISOString()
   const contact = row.contact.trim().slice(0, 80)
   const digits = contact.replace(/\D/g, "")
   const channel = digits.length >= 8 && !/^@|^tg:/i.test(contact) ? "whatsapp" : "telegram"
-  const category = sanitizeLeadCategory(input.category) || (input.toGroup ? GROUP_CATEGORY : "")
-  const groupUrl = (input.groupUrl || "").trim()
+  const groupName = sanitizeLeadCategory(input.group?.name)
+  const groupUrl = cleanGroupInvite(input.group?.url) || (input.groupUrl || "").trim()
+  const toGroup = Boolean(input.toGroup || groupName)
+  const category = sanitizeLeadCategory(input.category) || groupName || (input.toGroup ? GROUP_CATEGORY : "")
   return {
     id: uid(),
     name: resolveLeadName(row.name, contact),
     contact,
     channel,
-    campaign: input.toGroup ? "Grupo Telegram" : "Lista importada",
+    campaign: toGroup ? category || "Grupo Telegram" : "Lista importada",
     origin: "import",
     temperature: "novo",
-    stage: input.toGroup ? "group" : "capture",
+    stage: toGroup ? "group" : "capture",
     category: category || undefined,
-    memory: input.toGroup && groupUrl ? `Grupo: ${groupUrl}`.slice(0, 4000) : "",
+    memory: toGroup && groupUrl ? `Grupo: ${groupUrl}`.slice(0, 4000) : "",
     facts: {},
     events: [],
     messages: [],

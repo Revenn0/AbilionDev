@@ -17,7 +17,18 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useStore } from "@/lib/store"
-import { addLeadCategory, leadCategoriesWriteBlocked, leadFromImport, leadImportGroupBlocked, mergeLeadCategories, parseLeadImportText } from "@/lib/lead-category"
+import {
+  addLeadCategory,
+  addLeadGroup,
+  leadCategoriesWriteBlocked,
+  leadFromImport,
+  leadGroupsWriteBlocked,
+  leadImportSubmitBlocked,
+  listImportGroups,
+  mergeLeadCategories,
+  parseLeadImportText,
+} from "@/lib/lead-category"
+import type { Lead, LeadGroup, LeadOrigin, LeadTemp, SalesFunnel } from "@/lib/types"
 import { captureAgainstFunnels } from "@/lib/templates"
 import { ORIGIN_LABEL, STAGE_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { funnelsWriteBlocked, isImportedLead, leadCatalogClipped, leadFilterCount, leadFilterPending, leadMatchesFilter, leadTimelinePending, leadWritesBlocked, leadsHydrating } from "@/lib/ops"
@@ -26,7 +37,6 @@ import { applyEvent, leadFunnelUnread, nodeTitle, snapshotForLead, type RuntimeE
 import { canTickSteLocally } from "@/lib/ste"
 import { timeAgo } from "@/lib/format"
 import { displayContact, draftLeadField, isPhoneLikeName, leadMatchesQuery, resolvePersonName } from "@/lib/lead-name"
-import type { Lead, LeadOrigin, LeadTemp, SalesFunnel } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { GeoBadge } from "@/components/crm/geo-badge"
@@ -66,6 +76,11 @@ export function LeadsPage() {
     [state.leads, state.settings.leadCategories]
   )
   const categoriesUnread = leadCategoriesWriteBlocked(settingsSync !== "ok")
+  const importGroups = useMemo(
+    () => listImportGroups(state.settings.leadGroups, categories, state.settings.telegramGroupUrl),
+    [categories, state.settings.leadGroups, state.settings.telegramGroupUrl]
+  )
+  const groupsUnread = leadGroupsWriteBlocked(settingsSync !== "ok", state.settings.leadGroups, categories)
   const funnelsUnread = funnelsWriteBlocked(crmSync)
   const captureBlocked = leadWritesBlocked(persistSync, funnelsUnread)
   const importBlocked = leadWritesBlocked(persistSync)
@@ -73,6 +88,17 @@ export function LeadsPage() {
     if (categoriesUnread) return { ok: false as const, error: "Não confirmei as categorias." }
     const made = addLeadCategory(state.settings.leadCategories, name)
     if (made.ok) saveSettings({ leadCategories: made.categories })
+    return made
+  }
+  const createGroup = (name: string, url?: string) => {
+    if (groupsUnread) return { ok: false as const, error: "Não confirmei os grupos." }
+    const made = addLeadGroup(state.settings.leadGroups ?? [], { name, url })
+    if (!made.ok) return made
+    const named = addLeadCategory(state.settings.leadCategories, made.group.name)
+    saveSettings({
+      leadGroups: made.groups,
+      leadCategories: named.ok ? named.categories : state.settings.leadCategories,
+    })
     return made
   }
   const filterCounts = useMemo(() => {
@@ -109,12 +135,8 @@ export function LeadsPage() {
             variant="outline"
             className="h-8 rounded-full px-3.5"
             data-lead-import={importBlocked ? (persistSync === "idle" ? "loading" : "error") : "ok"}
-            disabled={importBlocked}
-            title={importBlocked ? "Não confirmei os leads no Worker." : undefined}
-            onClick={() => {
-              if (importBlocked) return
-              setImporting(true)
-            }}
+            title={importBlocked ? "Podes criar o grupo agora. Importar a lista espera a confirmação dos leads." : undefined}
+            onClick={() => setImporting(true)}
           >
             <Upload /> Importar lista
           </Button>
@@ -240,7 +262,7 @@ export function LeadsPage() {
                   ? "Nenhum nome, @user ou campanha bate com o recorte."
                   : filter !== "all"
                     ? "Este filtro está vazio. Escolhe Todos ou limpa a busca."
-                    : "Popup, join ou /start entram no fluxo publicado. Importa uma lista para uma categoria ou para o grupo."}
+                    : "Popup, join ou /start entram no fluxo publicado. Importa uma lista para um grupo."}
               </p>
             </div>
           ) : (
@@ -295,12 +317,10 @@ export function LeadsPage() {
       <ImportLeadsDialog
         open={importing}
         onOpenChange={setImporting}
-        categories={categories}
-        categoriesUnread={categoriesUnread}
-        groupUrl={state.settings.telegramGroupUrl}
-        settingsSync={settingsSync}
+        groups={importGroups}
+        groupsUnread={groupsUnread}
         blocked={importBlocked}
-        onCategory={createCategory}
+        onGroup={createGroup}
         onImport={async (leads) => createLeads(leads)}
       />
       <LeadDrawer
@@ -530,30 +550,28 @@ function CategoryField({
 function ImportLeadsDialog({
   open,
   onOpenChange,
-  categories,
-  categoriesUnread,
-  groupUrl,
-  settingsSync,
+  groups,
+  groupsUnread,
   blocked,
-  onCategory,
+  onGroup,
   onImport,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  categories: string[]
-  categoriesUnread?: boolean
-  groupUrl?: string
-  settingsSync: "idle" | "ok" | "error"
+  groups: LeadGroup[]
+  groupsUnread?: boolean
   blocked?: boolean
-  onCategory: (name: string) => { ok: true; category: string } | { ok: false; error: string }
+  onGroup: (name: string, url?: string) => { ok: true; group: LeadGroup } | { ok: false; error: string }
   onImport: (leads: Lead[]) => Promise<boolean>
 }) {
-  const groupBlocked = leadImportGroupBlocked(settingsSync, groupUrl)
   const [text, setText] = useState("")
-  const [category, setCategory] = useState("")
-  const [toGroup, setToGroup] = useState(false)
+  const [groupId, setGroupId] = useState("")
+  const [draftName, setDraftName] = useState("")
+  const [draftUrl, setDraftUrl] = useState("")
   const [error, setError] = useState("")
   const busy = useRef(false)
+  const selected = groups.find((item) => item.id === groupId)
+  const submitBlocked = leadImportSubmitBlocked(Boolean(blocked), groupId)
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
@@ -562,30 +580,24 @@ function ImportLeadsDialog({
       setError("Não confirmei os leads no Worker.")
       return
     }
+    if (!selected) {
+      setError("Cria ou escolhe o grupo para onde a lista vai.")
+      return
+    }
     const parsed = parseLeadImportText(text)
     if (parsed.error) {
       setError(parsed.error)
       return
     }
-    if (toGroup && groupBlocked) {
-      setError("Não confirmei o grupo do Telegram.")
-      return
-    }
     busy.current = true
-    const leads = parsed.rows.map((row) =>
-      leadFromImport(row, { category: category || (toGroup ? "Grupo" : ""), toGroup, groupUrl })
-    )
+    const leads = parsed.rows.map((row) => leadFromImport(row, { group: selected }))
     void onImport(leads)
       .then((ok) => {
         if (!ok) {
           toast.error("Não gravei a lista no Worker.")
           return
         }
-        toast.success(
-          toGroup
-            ? `${leads.length} contactos importados para o grupo.`
-            : `${leads.length} contactos importados.`
-        )
+        toast.success(`${leads.length} contactos importados para ${selected.name}.`)
         setText("")
         setError("")
         onOpenChange(false)
@@ -602,16 +614,15 @@ function ImportLeadsDialog({
         <DialogHeader>
           <DialogTitle>Importar lista</DialogTitle>
           <DialogDescription>
-            Uma linha por contacto: nome e telefone, ou só o @user. Importar para o grupo mete-os na categoria Grupo.
+            Uma linha por contacto: nome e telefone, ou só o @user. Cria o grupo e escolhe para onde a lista entra. A Sté não fala nestes contactos.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-3">
           {blocked ? (
             <p role="alert" className="text-[12.5px] text-destructive">
-              Não confirmei os leads no Worker.
+              Não confirmei os leads no Worker. Podes criar o grupo agora; importar espera essa confirmação.
             </p>
           ) : null}
-          <fieldset disabled={blocked} className="min-w-0 space-y-3 border-0 p-0">
           <div className="space-y-1.5">
             <Label htmlFor="lead-import-text">Lista</Label>
             <Textarea
@@ -630,51 +641,104 @@ function ImportLeadsDialog({
               </p>
             ) : null}
           </div>
-          <CategoryField
-            id="lead-import-category"
-            value={category}
-            categories={categories}
-            unread={categoriesUnread}
-            onChange={setCategory}
-            onCreate={onCategory}
-          />
-          <label className="flex items-start gap-2 text-[13px] leading-relaxed">
-            <input
+          <div className="space-y-1.5">
+            <Label htmlFor="lead-import-group">Grupo</Label>
+            <select
               id="lead-import-group"
-              type="checkbox"
-              className="mt-1"
-              checked={toGroup}
-              disabled={groupBlocked}
+              value={groupId}
               onChange={(event) => {
-                setToGroup(event.target.checked)
-                if (event.target.checked && !category) setCategory("Grupo")
+                setGroupId(event.target.value)
+                setError("")
               }}
-            />
-            <span>
-              Importar para o grupo Telegram
-              {groupUrl ? (
-                <>
-                  {" "}
-                  (
-                  <a className="underline-offset-2 hover:underline" href={groupUrl} rel="noreferrer">
-                    convite
-                  </a>
-                  )
-                </>
-              ) : groupBlocked ? (
-                " — não confirmei o link do grupo no Worker"
-              ) : (
-                " — o link do grupo está em Configurações → Bot"
-              )}
-              . Os contactos ficam no passo grupo, sem a Sté a falar.
-            </span>
-          </label>
-          </fieldset>
+              className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+            >
+              <option value="">{groupsUnread && !groups.length ? "Não confirmei os grupos" : "Escolhe o grupo"}</option>
+              {groups.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            {selected?.url ? (
+              <p className="text-[12px] text-muted-foreground">
+                Convite:{" "}
+                <a className="underline-offset-2 hover:underline" href={selected.url} rel="noreferrer">
+                  {selected.url}
+                </a>
+              </p>
+            ) : null}
+          </div>
+          <div className="space-y-1.5">
+            <p className="text-[13px] font-medium">Novo grupo</p>
+            <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+              <div>
+                <Label htmlFor="lead-import-group-new" className="sr-only">
+                  Nome do grupo
+                </Label>
+                <Input
+                  id="lead-import-group-new"
+                  value={draftName}
+                  onChange={(event) => setDraftName(event.target.value)}
+                  placeholder="Nome do grupo"
+                  disabled={groupsUnread}
+                />
+              </div>
+              <div>
+                <Label htmlFor="lead-import-group-url" className="sr-only">
+                  Convite t.me
+                </Label>
+                <Input
+                  id="lead-import-group-url"
+                  value={draftUrl}
+                  onChange={(event) => setDraftUrl(event.target.value)}
+                  placeholder="https://t.me/… (opcional)"
+                  disabled={groupsUnread}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-full"
+                data-lead-group-create
+                disabled={groupsUnread}
+                onClick={() => {
+                  const made = onGroup(draftName, draftUrl)
+                  if (!made.ok) {
+                    toast.error(made.error)
+                    return
+                  }
+                  setGroupId(made.group.id)
+                  setDraftName("")
+                  setDraftUrl("")
+                  setError("")
+                }}
+              >
+                Criar
+              </Button>
+            </div>
+            {groupsUnread ? (
+              <p className="text-[12px] text-muted-foreground" data-lead-groups="unread" role="alert">
+                Não confirmei os grupos no Worker.
+              </p>
+            ) : (
+              <p className="text-[12px] text-muted-foreground">O convite é opcional. Sem link o grupo serve só para organizar a lista.</p>
+            )}
+          </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={blocked}>
+            <Button
+              type="submit"
+              disabled={submitBlocked}
+              title={
+                blocked
+                  ? "Não confirmei os leads no Worker."
+                  : !groupId
+                    ? "Cria ou escolhe o grupo."
+                    : undefined
+              }
+            >
               Importar
             </Button>
           </DialogFooter>

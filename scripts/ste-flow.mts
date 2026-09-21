@@ -118,7 +118,7 @@ import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, mig
 import { adsDeepLink, campaignFromStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument, wantsAuthHtml } from "../src/lib/auth-pages.ts"
 import { addPageScript, adsLandingDocument, adsLandingUrl, adsStartToken, installSettingsBlocked, pageInstallManual, pageScriptFunnelLabel, pageScriptFunnelPending, pageScriptsFunnelUnread, pageScriptsListBlocked, pageScriptsMutationBlocked, pageScriptsWriteBlocked, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
-import { leadCategoriesListBlocked, leadCategoriesMutationBlocked, leadCategoriesWriteBlocked, leadFromImport, leadImportGroupBlocked, parseLeadImportLine, parseLeadImportText } from "../src/lib/lead-category.ts"
+import { addLeadGroup, leadCategoriesListBlocked, leadCategoriesMutationBlocked, leadCategoriesWriteBlocked, leadFromImport, leadGroupsMutationBlocked, leadGroupsWriteBlocked, leadImportGroupBlocked, leadImportSubmitBlocked, listImportGroups, parseLeadImportLine, parseLeadImportText, seedLeadGroups } from "../src/lib/lead-category.ts"
 import { burstFacebookLeads, burstStartsBlocked, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
@@ -1721,6 +1721,23 @@ assert(leadImportGroupBlocked("error", ""), "import toGroup bloqueia se settings
 assert(leadImportGroupBlocked("idle", ""), "import toGroup bloqueia enquanto as settings carregam sem URL")
 assert(!leadImportGroupBlocked("ok", ""), "import toGroup sem URL confirmado continua")
 assert(!leadImportGroupBlocked("error", "https://t.me/+abc"), "import toGroup unread com URL no KV segue")
+const madeVip = addLeadGroup([], { name: "VIP", url: "https://t.me/+vip" })
+assert(madeVip.ok && madeVip.group.name === "VIP" && madeVip.group.url.includes("t.me"), "cria grupo com convite")
+assert(!addLeadGroup([], { name: " " }).ok, "grupo sem nome é recusado")
+assert(!addLeadGroup([], { name: "VIP", url: "http://evil.test" }).ok, "convite que não é t.me é recusado")
+assert(seedLeadGroups([], "https://t.me/+abc").some((item) => item.id === "telegram-group"), "convite do bot vira grupo")
+assert(listImportGroups([{ id: "g1", name: "VIP", url: "" }], ["VIP", "Gold"]).some((item) => item.name === "Gold"), "categoria leftover entra no select")
+assert(leadGroupsWriteBlocked(true, [], []), "grupos unread e ocas bloqueiam criar")
+assert(!leadGroupsWriteBlocked(true, [{ id: "g1", name: "VIP", url: "" }], []), "grupos leftover deixam criar outro")
+assert(!leadGroupsWriteBlocked(false, [], []), "grupos confirmados vazios deixam criar")
+assert(leadGroupsMutationBlocked(true, [{ id: "g1", name: "VIP", url: "" }], [{ id: "g2", name: "Gold", url: "" }]), "grupo novo unread bloqueia o POST")
+assert(!leadGroupsMutationBlocked(true, [{ id: "g1", name: "VIP", url: "" }], [{ id: "g1", name: "VIP", url: "" }]), "mesmo grupo leftover ainda grava")
+assert(leadImportSubmitBlocked(false, ""), "import sem grupo escolhido não activa o botão")
+assert(leadImportSubmitBlocked(true, "g1"), "persist unread não activa o import")
+assert(!leadImportSubmitBlocked(false, "g1"), "grupo escolhido e persist ok activam o import")
+const importedNamed = leadFromImport({ name: "Bia", contact: "@bia" }, { group: { name: "VIP", url: "https://t.me/+vip" } })
+assert(importedNamed.stage === "group" && importedNamed.category === "VIP" && importedNamed.campaign === "VIP", "import escolhe o grupo criado")
+assert(importedNamed.memory.includes("t.me"), "import para o grupo criado guarda o convite")
 assert(leadCategoriesListBlocked(true, []), "categorias unread e ocas bloqueiam criar")
 assert(leadCategoriesListBlocked(true, undefined), "categorias unread sem lista bloqueiam criar")
 assert(!leadCategoriesListBlocked(true, ["VIP"]), "categorias unread com lista no KV seguem no select")

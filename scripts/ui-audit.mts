@@ -383,7 +383,22 @@ try {
   )
   await clickNamed(page, "Importar lista")
   await page.waitForSelector("#lead-import-text", { timeout: 5_000 })
-  assert(Boolean(await page.$("#lead-import-group")), "import deixa mandar a lista para o grupo")
+  assert(Boolean(await page.$("#lead-import-group")), "import deixa escolher o grupo")
+  assert(Boolean(await page.$("#lead-import-group-new")), "import deixa criar o grupo")
+  assert(
+    (await page.$eval('button[type="submit"]', (el) => (el as HTMLButtonElement).disabled)) === true,
+    "import sem grupo escolhido mantém o botão inactivo"
+  )
+  await page.type("#lead-import-group-new", "VIP Auditoria")
+  await page.click("[data-lead-group-create]")
+  await page.waitForFunction(
+    () => (document.querySelector("#lead-import-group") as HTMLSelectElement | null)?.value,
+    { timeout: 5_000 }
+  )
+  assert(
+    (await page.$eval('button[type="submit"]', (el) => (el as HTMLButtonElement).disabled)) === false,
+    "criar o grupo activa o import"
+  )
   await page.keyboard.press("Escape")
   await page.waitForFunction(() => !document.querySelector("#lead-import-text"), { timeout: 5_000 })
   await clickNamed(page, "Nova captura")

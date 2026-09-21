@@ -1,7 +1,7 @@
 import { normalizeTelegramContact } from "./capture.ts"
 import { factsWithoutRemoteKeys, sanitizeLeadEvents } from "./lead-events.ts"
 import { isEmailName, resolveLeadName } from "./lead-name.ts"
-import { migrateLeadCategories, sanitizeLeadCategory } from "./lead-category.ts"
+import { migrateLeadCategories, sanitizeLeadCategory, seedLeadGroups } from "./lead-category.ts"
 import { migratePageScripts, migrateRemovedPageScripts } from "./page-script.ts"
 import { defaultSettings, isFlowKind, isMapKind, type Lead, type LeadOrigin, type SalesFunnel, type SalesKind, type SalesSnapshot, type Settings } from "./types.ts"
 
@@ -300,5 +300,6 @@ export function migrateSettings(raw: Partial<Settings> | undefined): Settings {
     pageScripts: migratePageScripts(merged.pageScripts),
     removedPageScripts: migrateRemovedPageScripts(merged.removedPageScripts),
     leadCategories: migrateLeadCategories(merged.leadCategories),
+    leadGroups: seedLeadGroups(merged.leadGroups, merged.telegramGroupUrl),
   }
 }

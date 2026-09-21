@@ -195,6 +195,12 @@ export type PageScript = {
   updatedAt: string
 }
 
+export type LeadGroup = {
+  id: string
+  name: string
+  url: string
+}
+
 export type Settings = {
   workspaceName: string
   timezone: string
@@ -217,6 +223,7 @@ export type Settings = {
   pageScripts: PageScript[]
   removedPageScripts: string[]
   leadCategories: string[]
+  leadGroups: LeadGroup[]
 }
 
 export const defaultSettings: Settings = {
@@ -252,6 +259,7 @@ export const defaultSettings: Settings = {
   pageScripts: [],
   removedPageScripts: [],
   leadCategories: [],
+  leadGroups: [],
 }
 
 export type AppState = {
