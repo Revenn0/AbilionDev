@@ -91,6 +91,17 @@ export function pixelFigure(status: "loading" | "ok" | "error", hasData: boolean
   return value
 }
 
+/** Badge de UF: GET do pixel unread não é “sem estado”. */
+export function pixelGeoEmpty(
+  status: "loading" | "ok" | "error",
+  hasData: boolean,
+  fallback = "Sem estado"
+) {
+  if (!hasData && status === "loading") return "…"
+  if (!hasData && status === "error") return "—"
+  return fallback
+}
+
 export function pixelDropFigure(status: "loading" | "ok" | "error", hasData: boolean, drop: number | null): string {
   if (!hasData && status === "loading") return "…"
   if (!hasData && status === "error") return "—"

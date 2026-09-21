@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { simulateOpenLead } from "@/lib/burst"
 import { useStore } from "@/lib/store"
-import { pixelFigure } from "@/lib/analytics-view"
+import { pixelFigure, pixelGeoEmpty } from "@/lib/analytics-view"
 import { funnelsWriteBlocked, hasConversation, leadsHydrating, leadsLoadFailed } from "@/lib/ops"
 import { ORIGIN_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { GeoBadge } from "@/components/crm/geo-badge"
@@ -56,6 +56,7 @@ function matchesFilter(lead: Lead, filter: FilterId) {
 export function ConversationsPage() {
   const { state, saveLead, createLead, flushLeadNow, crmSync, inboxSync, persistSync } = useStore()
   const { summary, status, hasData } = useTrackSummary(4000)
+  const geoEmpty = pixelGeoEmpty(status, hasData)
   const runtime = steRuntimeFromFunnels(state.funnels, state.settings)
   const runtimeKey = publishedFunnel(state.funnels)?.production?.publishedAt ?? ""
   const [filter, setFilter] = useState<FilterId>("waiting")
@@ -280,7 +281,7 @@ export function ConversationsPage() {
                           <span>
                             {steStepLabel(item)} · {ORIGIN_LABEL[item.origin]}
                           </span>
-                          <GeoBadge facts={factsWithTrack(item, summary.geos)} />
+                          <GeoBadge facts={factsWithTrack(item, summary.geos)} empty={geoEmpty} />
                         </p>
                       </button>
                     </li>
@@ -316,7 +317,7 @@ export function ConversationsPage() {
                       <span>
                         Sté · {steStepLabel(lead)} · {displayContact(lead.contact)} · {ORIGIN_LABEL[lead.origin]}
                       </span>
-                      <GeoBadge facts={factsWithTrack(lead, summary.geos)} />
+                      <GeoBadge facts={factsWithTrack(lead, summary.geos)} empty={geoEmpty} />
                     </p>
                     {steHeardChips(lead.facts).length > 0 && (
                       <p className="mt-1.5 flex flex-wrap gap-1">

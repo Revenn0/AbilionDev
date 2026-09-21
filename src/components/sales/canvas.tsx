@@ -23,6 +23,7 @@ import { RenameFunnelDialog } from "./rename-dialog"
 import { autoLayout, positionFromPointer } from "@/components/canvas/layout"
 import { cn } from "@/lib/utils"
 import type { SalesFunnel, SalesKind, SalesSnapshot } from "@/lib/types"
+import { funnelsWriteBlocked } from "@/lib/ops"
 import { validatePublish } from "@/lib/validate"
 import { defaultSalesData, type SalesCatalogItem } from "./catalog"
 import { SalesInspector } from "./inspector"
@@ -72,10 +73,12 @@ export function SalesCanvas({
   funnel,
   onSave,
   onFlush,
+  crmSync = "ok",
 }: {
   funnel: SalesFunnel
   onSave: (next: SalesFunnel) => void
   onFlush?: () => Promise<{ ok: boolean; error?: string; queued?: boolean }>
+  crmSync?: "idle" | "ok" | "error"
 }) {
   const initial = useMemo(() => toRf(funnel), [funnel])
   const [nodes, setNodes, onNodesChange] = useNodesState<SalesCanvasNode>(initial.nodes)
@@ -98,6 +101,7 @@ export function SalesCanvas({
   const dirty = useRef(false)
   const persistRef = useRef<() => void>(() => undefined)
   const readOnlyRef = useRef(false)
+  const boardsBlocked = funnelsWriteBlocked(crmSync)
   const draftRef = useRef({ nodes, edges, name, production, funnel })
   const appliedAt = useRef(funnel.updatedAt)
 
@@ -348,9 +352,11 @@ export function SalesCanvas({
           <Button
             size="sm"
             className="h-8 rounded-full bg-[#2f6bff] text-[12px] text-white hover:bg-[#2458d6]"
-            disabled={readOnly || saving}
+            data-funnel-publish={boardsBlocked ? (crmSync === "idle" ? "loading" : "error") : "ok"}
+            disabled={readOnly || saving || boardsBlocked}
+            title={boardsBlocked ? "Não confirmei os funis no Worker." : undefined}
             onClick={() => {
-              if (persistLock.current) return
+              if (persistLock.current || boardsBlocked) return
               const draftNodes = nodes.map((n) => ({
                 id: n.id,
                 type: (n.type as SalesKind) || "message",

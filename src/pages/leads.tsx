@@ -21,6 +21,7 @@ import { addLeadCategory, leadCategoriesListBlocked, leadFromImport, leadImportG
 import { captureAgainstFunnels } from "@/lib/templates"
 import { ORIGIN_LABEL, STAGE_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { funnelsWriteBlocked, isImportedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadWritesBlocked, leadsHydrating } from "@/lib/ops"
+import { pixelGeoEmpty } from "@/lib/analytics-view"
 import { applyEvent, nodeTitle, publishedSnapshot, type RuntimeEvent } from "@/lib/runtime"
 import { canTickSteLocally } from "@/lib/ste"
 import { timeAgo } from "@/lib/format"
@@ -47,7 +48,8 @@ const FILTERS = [
 
 export function LeadsPage() {
   const { state, createLead, createLeads, saveLead, saveSettings, flushLeadNow, deleteLead, crmSync, inboxSync, persistSync, settingsSync } = useStore()
-  const { summary } = useTrackSummary(8000)
+  const { summary, status: trackStatus, hasData: trackHasData } = useTrackSummary(8000)
+  const geoEmpty = pixelGeoEmpty(trackStatus, trackHasData)
   const [filter, setFilter] = useState<string>("all")
   const [query, setQuery] = useState("")
   const searchStatus = useRemoteLeadSearch(query)
@@ -249,7 +251,7 @@ export function LeadsPage() {
                         {item.category ? ` · ${item.category}` : ""}
                       </p>
                     </div>
-                    <GeoBadge facts={factsWithTrack(item, summary.geos)} className="text-[12.5px]" />
+                    <GeoBadge facts={factsWithTrack(item, summary.geos)} empty={geoEmpty} className="text-[12.5px]" />
                     <p className="text-[12.5px] text-muted-foreground">{item.channel === "whatsapp" ? "WhatsApp" : "Telegram"}</p>
                     <StatusPill tone={item.temperature === "quente" ? "danger" : item.temperature === "morno" ? "warn" : "muted"}>
                       {TEMP_LABEL[item.temperature]}
@@ -299,6 +301,7 @@ export function LeadsPage() {
         categoriesUnread={categoriesUnread}
         onCategory={createCategory}
         geos={summary.geos}
+        geoEmpty={pixelGeoEmpty(trackStatus, trackHasData, "Estado ainda sem rastreio")}
         onClose={() => setSelected(null)}
         onSave={saveLead}
         onFlush={flushLeadNow}
@@ -721,6 +724,7 @@ function LeadDrawer({
   categoriesUnread,
   onCategory,
   geos,
+  geoEmpty = "Estado ainda sem rastreio",
   onClose,
   onSave,
   onFlush,
@@ -732,6 +736,7 @@ function LeadDrawer({
   categoriesUnread?: boolean
   onCategory: (name: string) => { ok: true; category: string } | { ok: false; error: string }
   geos?: Record<string, { country?: string; countryCode?: string; city?: string; region?: string; regionCode?: string }>
+  geoEmpty?: string
   onClose: () => void
   onSave: (lead: Lead) => void
   onFlush?: () => Promise<boolean>
@@ -957,7 +962,7 @@ function LeadDrawer({
           />
         </div>
         <p className="mt-2 text-[13.5px] font-medium">
-          <GeoBadge facts={factsWithTrack(lead, geos)} empty="Estado ainda sem rastreio" />
+          <GeoBadge facts={factsWithTrack(lead, geos)} empty={geoEmpty} />
         </p>
         <p className="mt-2 text-[12.5px] text-muted-foreground">
           Passo · {nodeTitle(snapshot, lead.nodeId) ?? STAGE_LABEL[lead.stage]}

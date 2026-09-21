@@ -434,8 +434,12 @@ try {
   await open(page, "/fluxo")
   await createAuditFunnel(page)
   await page.waitForFunction(
-    () => [...document.querySelectorAll("button")].some((el) => (el.textContent || "").includes("Publicar")),
+    () => document.querySelector("[data-funnel-publish]")?.getAttribute("data-funnel-publish") === "ok",
     { timeout: 8_000 }
+  )
+  assert(
+    (await page.$eval("[data-funnel-publish]", (el) => (el as HTMLButtonElement).disabled)) === false,
+    "editor com CRM confirmado deixa publicar"
   )
   const landingBlock = await page.evaluateHandle(() =>
     [...document.querySelectorAll("[role='button']")].find((el) => (el.textContent || "").includes("Landing"))

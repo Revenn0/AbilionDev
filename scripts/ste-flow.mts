@@ -1,4 +1,4 @@
-import { chatStarted, funnelFrom, markersFromGeos, mergeGlobeGeos, periodDelta, pixelDropFigure, pixelFigure, pixelMapEmpty, pixelMapHint, stepDrop } from "../src/lib/analytics-view.ts"
+import { chatStarted, funnelFrom, markersFromGeos, mergeGlobeGeos, periodDelta, pixelDropFigure, pixelFigure, pixelGeoEmpty, pixelMapEmpty, pixelMapHint, stepDrop } from "../src/lib/analytics-view.ts"
 import { coordsFromGeo } from "../src/lib/geo-coords.ts"
 import { flagEmoji, formatGeo, mergeGeo, normalizeRegionCode, stateLabel } from "../src/lib/geo.ts"
 import { emptySummary, isFacebookTraffic, summarizeTrack, type TrackEvent } from "../src/lib/track.ts"
@@ -5933,6 +5933,11 @@ assert(pixelMapHint("error", false, false) === "Sem leitura do pixel.", "globo f
 assert(pixelMapHint("ok", true, false) === "Sem geo ainda. Arrasta para girar.", "globo vazio de verdade continua sem geo")
 assert(pixelMapEmpty("error", false).includes("não é um mapa vazio"), "globo falhou explica que não é vazio")
 assert(pixelMapEmpty("loading", false).includes("A carregar"), "globo a carregar pede espera")
+assert(pixelGeoEmpty("loading", false) === "…", "UF a carregar nao finge sem estado")
+assert(pixelGeoEmpty("error", false) === "—", "UF falhou nao finge sem estado")
+assert(pixelGeoEmpty("ok", true) === "Sem estado", "UF vazia de verdade continua sem estado")
+assert(pixelGeoEmpty("error", false, "Estado ainda sem rastreio") === "—", "ficha unread nao diz sem rastreio")
+assert(funnelsWriteBlocked("error"), "publicar com CRM unread usa o mesmo bloqueio da captura")
 assert(pixelDropFigure("loading", false, 0.4) === "…", "seta do funil a carregar nao finge conversao")
 assert(pixelDropFigure("error", false, 0.4) === "—", "seta do funil sem leitura nao finge conversao")
 assert(pixelDropFigure("ok", true, null) === "—", "seta sem taxa fica em dash")

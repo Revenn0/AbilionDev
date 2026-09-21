@@ -48,9 +48,16 @@ export function FunnelEditorPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <SyncBanner items={[{ ok: crmSync !== "error", message: "Não gravei o funil no Worker." }]} />
+      <SyncBanner
+        items={[
+          {
+            ok: crmSync !== "error",
+            message: "Não confirmei os funis no Worker. Publicar fica bloqueado — um quadro leftover no cache não conta.",
+          },
+        ]}
+      />
       <div className="min-h-0 flex-1">
-        <SalesCanvas key={funnel.id} funnel={funnel} onSave={saveFunnel} onFlush={flushCrmNow} />
+        <SalesCanvas key={funnel.id} funnel={funnel} onSave={saveFunnel} onFlush={flushCrmNow} crmSync={crmSync} />
       </div>
     </div>
   )
