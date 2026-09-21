@@ -14,8 +14,8 @@ import {
   type PublicUser,
 } from "./auth.ts"
 import { handleTokens, handleUsers } from "./users.ts"
-import { filterLiveLeads, importOrAdoptLead, listLeadPage, lookupLeadsByQuery } from "./crm-store.ts"
-import { loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings } from "./workspace-settings.ts"
+import { filterLiveLeads, importOrAdoptLead, leadPageFromRemote, listLeadPage, lookupLeadsByQuery } from "./crm-store.ts"
+import { fetchRemoteLeadPage, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings } from "./workspace-settings.ts"
 import { readJsonStrict } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -396,12 +396,24 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
       return { ok: true, leads: (await filterLiveLeads(env.AUTH, found)).slice(0, 50).map(compactLead) }
     }
     const limit = Math.min(50, Math.max(1, Number(args.limit) || 20))
-    const page = await listLeadPage(env.AUTH, limit, "all", str(args.cursor).trim())
+    const cursor = str(args.cursor).trim()
+    const page = await listLeadPage(env.AUTH, limit, "all", cursor)
+    if (page.empty) {
+      const remote = await fetchRemoteLeadPage(env, limit, "all", cursor)
+      const folded = leadPageFromRemote(remote, limit, Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE))
+      return {
+        ok: true,
+        leads: (await filterLiveLeads(env.AUTH, folded.leads)).map(compactLead),
+        nextCursor: folded.nextCursor,
+        clipped: folded.clipped || undefined,
+      }
+    }
     return {
       ok: true,
       leads: (await filterLiveLeads(env.AUTH, page.leads)).map(compactLead),
       nextCursor: page.stale ? undefined : page.nextCursor,
       stale: page.stale || undefined,
+      clipped: page.clipped || undefined,
     }
   }
   if (name === "abilion_get_settings") {

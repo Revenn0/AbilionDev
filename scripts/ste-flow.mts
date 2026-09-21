@@ -82,10 +82,10 @@ import { applyEvent, canAdvanceRemoteWait, eventFromOrigin, pickLiveDueLead, pub
 import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
-import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, leadPageCursor, leadPageFromRemote, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
-import { loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings } from "../worker/workspace-settings.ts"
+import { leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, remoteLeadListPath, rowToLead } from "../worker/workspace-settings.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
@@ -977,6 +977,38 @@ assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }, { leads: [pageB] 
 assert(collectLeadPages([{ leads: [pageA], clipped: true }]).ok, "índice no teto ainda entrega a página")
 assert(collectLeadPages([{ leads: [pageA], clipped: true }]).complete === false, "índice no teto não é lista completa")
 assert(collectLeadPages([{ leads: [], clipped: true }]).complete === false, "página vazia no teto não é lista completa")
+assert(leadPageFromRemote(null, 400, true).clipped, "Postgres em baixo marca clipped")
+assert(!leadPageFromRemote(null, 400, false).clipped, "sem credenciais não finge falha do Postgres")
+assert(!leadPageFromRemote([], 400, true).clipped, "Postgres vazio é lista completa")
+const remoteFull = Array.from({ length: 400 }, (_, index) => ({
+  ...lead(`pg-${index}`),
+  updatedAt: `2026-01-01T00:00:${String(index % 60).padStart(2, "0")}.000Z`,
+}))
+const remoteFullPage = leadPageFromRemote(remoteFull, 400, true)
+assert(remoteFullPage.clipped === true, "página cheia do backup não é universo")
+assert(remoteFullPage.nextCursor === leadPageCursor(remoteFull[399]), "página cheia do backup leva cursor")
+assert(!leadPageFromRemote(remoteFull.slice(0, 3), 400, true).clipped, "página curta do backup é completa")
+assert(remoteLeadListPath("all", 400).includes("order=updated_at.desc,id.desc"), "backup ordena por updated_at")
+assert(
+  remoteLeadListPath("telegram", 400, "2026-01-01T00:00:00.000Z|abc").includes("updated_at.lt.2026-01-01T00:00:00.000Z"),
+  "cursor do backup vira keyset no Postgres"
+)
+assert(leadFactsForRemote({ ...lead("cat-1"), category: "Grupo" }).category === "Grupo", "facts do backup levam a categoria")
+const fromFacts = rowToLead({
+  id: "cat-1",
+  name: "Ana",
+  contact: "@ana",
+  channel: "telegram",
+  campaign: "",
+  origin: "import",
+  temperature: "novo",
+  stage: "capture",
+  facts: { category: "Grupo", email: "ana@abilion.com" },
+  updated_at: "2026-01-01T00:00:00.000Z",
+  created_at: "2026-01-01T00:00:00.000Z",
+})
+assert(fromFacts.category === "Grupo", "rowToLead recupera a categoria do jsonb")
+assert(fromFacts.facts.email === "ana@abilion.com" && !("category" in fromFacts.facts), "categoria não fica à mistura nos facts do painel")
 assert(LEAD_LIST_PAGES === 40, "hydrate lê até 40 páginas")
 assert(LEAD_LIST_CAP === 16_000, "lista hidratada cabe o índice (8000 chats + 4000 resto + esperas)")
 assert(LEAD_CACHE_CAP === 2000, "localStorage só guarda os 2000 mais novos")
@@ -1138,7 +1170,16 @@ assert(remotePosts.some((item) => item.includes("@ste_bot")), "persistRemoteSett
 const remoteLead = leadFromImport({ name: "Rita", contact: "@rita" })
 await persistRemoteLead(remoteEnv, remoteLead)
 assert(remotePosts.some((item) => item.includes(remoteLead.id) && item.includes("@rita")), "persistRemoteLead grava o lead no Postgres")
-assert(!remotePosts.some((item) => item.includes("\"category\"")), "persistRemoteLead não manda category ao Postgres")
+const ritaPost = JSON.parse(remotePosts.find((item) => item.includes(remoteLead.id) && item.includes("@rita")) || "{}") as { category?: string; facts?: { category?: string } }
+assert(!("category" in ritaPost), "persistRemoteLead não manda coluna category")
+const groupedRemote = leadFromImport({ name: "Grupo", contact: "@grp" }, { toGroup: true })
+await persistRemoteLead(remoteEnv, groupedRemote)
+const groupedPost = JSON.parse(remotePosts.filter((item) => item.includes(groupedRemote.id)).at(-1) || "{}") as {
+  category?: string
+  facts?: { category?: string }
+}
+assert(!("category" in groupedPost), "lead do grupo também não manda coluna category")
+assert(groupedPost.facts?.category === "Grupo", "categoria do grupo vai no jsonb facts")
 const wsPersistKv = memoryKv()
 const wsBoard = emptySalesFunnel("Quadro workspace")
 await persistWorkspaceFunnels({ AUTH: wsPersistKv, ...remoteEnv }, [wsBoard])
@@ -2860,6 +2901,76 @@ assert(pgFailCrm.status === 503, "GET CRM não finge funis vazios quando o Postg
 const pgFailHealth = await handleRequest(new Request("http://local.test/api/health"), pgFailEnv, backgroundCtx())
 assert(pgFailHealth.status === 200, "health público continua de pé se o Postgres falhar")
 globalThis.fetch = pgFailPrev
+const pgFullRows = Array.from({ length: 400 }, (_, index) => ({
+  id: `pg-${String(index).padStart(3, "0")}`,
+  name: `Lead ${index}`,
+  contact: `@pg${index}`,
+  channel: "telegram" as const,
+  campaign: "Facebook · ads",
+  origin: "facebook" as const,
+  temperature: "novo" as const,
+  stage: "capture" as const,
+  memory: "",
+  facts: index === 399 ? { category: "Grupo" } : {},
+  messages: [],
+  updated_at: `2026-06-01T00:${String(Math.floor(index / 60)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}.000Z`,
+  created_at: "2026-06-01T00:00:00.000Z",
+}))
+const pgFullEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: memoryKv(),
+  ABILION_ENV: "development",
+} as Env
+const pgFullLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  pgFullEnv,
+  backgroundCtx()
+)
+assert(pgFullLogin.status === 200, "login no KV oco para o backup de leads")
+const pgFullCookie = pgFullLogin.headers.get("set-cookie") || ""
+const pgFullPrev = globalThis.fetch
+let pgFullCursorSeen = false
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  const method = (init?.method || "GET").toUpperCase()
+  if (url.includes("/rest/v1/leads") && method === "GET") {
+    if (url.includes("updated_at.lt.")) pgFullCursorSeen = true
+    const rows = url.includes("updated_at.lt.") ? [] : [...pgFullRows].reverse()
+    return new Response(JSON.stringify(rows), { status: 200 })
+  }
+  return pgFullPrev(input, init)
+}) as typeof fetch
+const pgFullList = await handleRequest(
+  new Request("http://local.test/api/leads", { headers: { cookie: pgFullCookie } }),
+  pgFullEnv,
+  backgroundCtx()
+)
+const pgFullBody = (await pgFullList.json()) as {
+  ok?: boolean
+  leads?: Array<{ id?: string; category?: string }>
+  nextCursor?: string
+  clipped?: boolean
+}
+assert(pgFullList.status === 200 && pgFullBody.ok && pgFullBody.leads?.length === 400, "KV oco lê a página do Postgres")
+assert(pgFullBody.clipped === true && Boolean(pgFullBody.nextCursor), "página cheia do backup não finge lista completa")
+assert(pgFullBody.leads?.[0]?.category === "Grupo", "GET leads recupera a categoria do jsonb")
+const pgFullNext = await handleRequest(
+  new Request(`http://local.test/api/leads?cursor=${encodeURIComponent(pgFullBody.nextCursor || "")}`, {
+    headers: { cookie: pgFullCookie },
+  }),
+  pgFullEnv,
+  backgroundCtx()
+)
+const pgFullNextBody = (await pgFullNext.json()) as { leads?: unknown[]; nextCursor?: string; clipped?: boolean }
+assert(pgFullNext.status === 200 && pgFullCursorSeen, "segunda página do backup usa o keyset")
+assert((pgFullNextBody.leads?.length ?? 1) === 0 && !pgFullNextBody.nextCursor && !pgFullNextBody.clipped, "última página curta do backup fecha a lista")
+globalThis.fetch = pgFullPrev
 const inbox = (await (
   await handleRequest(new Request("http://local.test/api/inbox", { headers: { cookie: startCookie } }), startEnv, backgroundCtx())
 ).json()) as { leads?: Array<{ contact?: string }> }

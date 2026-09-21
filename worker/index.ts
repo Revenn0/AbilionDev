@@ -37,6 +37,7 @@ import {
   findLeadInKv,
   lookupLeadsByQuery,
   isLeadPageCursor,
+  leadPageFromRemote,
   listLeadPage,
   loadLead,
   claimCronLock,
@@ -63,7 +64,7 @@ import {
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
 import { readJsonObject, readJsonStrict, type JsonFail } from "./json-body.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall } from "./telegram.ts"
-import { loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings } from "./workspace-settings.ts"
+import { fetchRemoteLeadPage, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, rowToLead, type LeadRow } from "./workspace-settings.ts"
 import type { KvLike } from "./kv.ts"
 
 type Fetcher = { fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> }
@@ -883,43 +884,23 @@ async function attachLeadEvents(env: Env, leads: Lead[]): Promise<Lead[]> {
   })
 }
 
-function rowToLead(row: LeadRow): Lead {
-  return {
-    id: row.id,
-    name: row.name,
-    contact: row.contact,
-    channel: row.channel,
-    campaign: row.campaign,
-    origin: row.origin,
-    startPayload: row.start_payload ?? undefined,
-    visitorId: row.visitor_id ?? undefined,
-    temperature: row.temperature,
-    stage: row.stage,
-    printAt: row.print_at ?? undefined,
-    bancaAt: row.banca_at ?? undefined,
-    memory: row.memory ?? "",
-    facts: row.facts ?? {},
-    lastMessage: row.last_message ?? undefined,
-    funnelId: row.funnel_id ?? undefined,
-    nodeId: row.node_id ?? undefined,
-    waitUntil: row.wait_until ?? undefined,
-    paused: row.paused ?? false,
-    events: [],
-    messages: row.messages ?? [],
-    stePhase: row.ste_phase ?? undefined,
-    steBlocked: row.ste_blocked ?? false,
-    steQuiet: row.ste_quiet ?? false,
-    telegramChatId: row.telegram_chat_id ?? undefined,
-    updatedAt: row.updated_at,
-    createdAt: row.created_at,
-  }
-}
-
 async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "all", cursor = "") {
-  const page = env.AUTH ? await listLeadPage(env.AUTH, limit, channel, cursor) : { leads: [] as Lead[], clipped: false }
+  const page = env.AUTH
+    ? await listLeadPage(env.AUTH, limit, channel, cursor)
+    : { leads: [] as Lead[], clipped: false, empty: true }
+  const canReachRemote = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE)
+  if (page.empty) {
+    const remote = await fetchRemoteLeadPage(env, limit, channel, cursor)
+    const folded = leadPageFromRemote(remote, limit, canReachRemote)
+    const live = env.AUTH ? await filterLiveLeads(env.AUTH, folded.leads) : folded.leads
+    return {
+      leads: await attachLeadEvents(env, live),
+      nextCursor: folded.nextCursor,
+      clipped: folded.clipped,
+    }
+  }
   const kv = page.leads
   const filter = channel === "telegram" ? "&channel=eq.telegram" : ""
-  const canReachRemote = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE)
   const rows = await rest<LeadRow[]>(
     env,
     `leads?workspace_id=eq.${WORKSPACE}${filter}&select=*&order=updated_at.desc&limit=${limit}`
@@ -1130,31 +1111,3 @@ type LeadEventRow = {
   effect?: string | null
 }
 
-type LeadRow = {
-  id: string
-  name: string
-  contact: string
-  channel: Lead["channel"]
-  campaign: string
-  origin: Lead["origin"]
-  start_payload?: string | null
-  visitor_id?: string | null
-  temperature: Lead["temperature"]
-  stage: Lead["stage"]
-  print_at?: string | null
-  banca_at?: string | null
-  memory?: string
-  facts?: Lead["facts"]
-  last_message?: string | null
-  funnel_id?: string | null
-  node_id?: string | null
-  wait_until?: string | null
-  paused?: boolean
-  messages?: Lead["messages"]
-  ste_phase?: Lead["stePhase"] | null
-  ste_blocked?: boolean
-  ste_quiet?: boolean
-  telegram_chat_id?: string | null
-  updated_at: string
-  created_at: string
-}

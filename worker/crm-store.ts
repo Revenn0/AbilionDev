@@ -161,15 +161,16 @@ export async function listLeadPage(
   limit = 80,
   channel: Lead["channel"] | "all" = "telegram",
   cursor = ""
-): Promise<{ leads: Lead[]; nextCursor?: string; stale?: boolean; clipped?: boolean }> {
+): Promise<{ leads: Lead[]; nextCursor?: string; stale?: boolean; clipped?: boolean; empty: boolean }> {
   const index = await loadIndex(kv)
+  const empty = index.entries.length === 0
   const clipped = crmIndexClipped(index.entries)
   const rows = channel === "all" ? index.entries : index.entries.filter((item) => item.channel === channel)
   let start = 0
   const mark = cursor.trim()
   if (mark) {
     const at = rows.findIndex((item) => leadPageCursor(item) === mark)
-    if (at < 0) return { leads: [], stale: true, clipped }
+    if (at < 0) return { leads: [], stale: true, clipped, empty }
     start = at + 1
   }
   const slice = rows.slice(start, start + Math.max(1, limit))
@@ -181,6 +182,25 @@ export async function listLeadPage(
     leads,
     nextCursor: slice.length === limit && last ? leadPageCursor(last) : undefined,
     clipped,
+    empty,
+  }
+}
+
+/** Backup do Postgres: página cheia ou fetch falho não é universo completo. */
+export function leadPageFromRemote(
+  rows: Lead[] | null,
+  limit: number,
+  canReachRemote: boolean
+): { leads: Lead[]; nextCursor?: string; clipped: boolean } {
+  if (canReachRemote && rows === null) return { leads: [], clipped: true }
+  const size = Math.max(1, limit)
+  const leads = (rows ?? []).slice(0, size)
+  const last = leads.at(-1)
+  const more = (rows?.length ?? 0) >= size
+  return {
+    leads,
+    nextCursor: more && last ? leadPageCursor(last) : undefined,
+    clipped: more,
   }
 }
 
