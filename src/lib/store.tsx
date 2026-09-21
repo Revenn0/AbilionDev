@@ -145,6 +145,7 @@ type Store = {
   inboxSync: SyncState
   persistSync: SyncState
   sessionSync: SyncState
+  settingsSync: SyncState
   state: AppState
   login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
@@ -171,6 +172,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [inboxSync, setInboxSync] = useState<SyncState>("idle")
   const [persistSync, setPersistSync] = useState<SyncState>("idle")
   const [sessionSync, setSessionSync] = useState<SyncState>("idle")
+  const [settingsSync, setSettingsSync] = useState<SyncState>("idle")
   const session = useState(bootSession)[0]
   const [state, setState] = useState(session.state)
   const persistTimer = useRef(0)
@@ -370,6 +372,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const pending = Promise.all([fetchCrm(), fetchRuntime(), fetchLeads(), fetchInbox(INBOX_LIST_PAGES)]).then(
       ([crm, runtime, remoteLeads, inbox]) => {
       setCrmSync(crm.ok ? "ok" : "error")
+      setSettingsSync(crm.ok ? (crm.settingsUnread ? "error" : "ok") : "error")
       markLeadRead(remoteLeads.ok)
       if (remoteLeads.ok) ingestRemoteRemoved(remoteLeads.removed)
       if (inbox.ok) ingestRemoteRemoved(inbox.removed)
@@ -454,6 +457,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setCrmSync("idle")
       setInboxSync("idle")
       setSessionSync("idle")
+      setSettingsSync("idle")
       resetLeadPersist()
       setState((prev) => {
         if (!prev.user) return prev
@@ -642,6 +646,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       inboxSync,
       persistSync,
       sessionSync,
+      settingsSync,
       state,
       login: async (email, password) => {
         const data = await loginRequest(email, password)
@@ -658,6 +663,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setCrmSync("idle")
         setInboxSync("idle")
         setSessionSync("idle")
+        setSettingsSync("idle")
         resetLeadPersist()
         commitState({ ...stateRef.current, user: null })
       },
@@ -812,7 +818,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         pushWorker()
       },
     }),
-    [ready, remote, crmSync, inboxSync, persistSync, sessionSync, state]
+    [ready, remote, crmSync, inboxSync, persistSync, sessionSync, settingsSync, state]
   )
 
   return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>

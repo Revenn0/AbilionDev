@@ -87,7 +87,7 @@ import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.t
 import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_INDEX, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, leadPageCursor, leadPageFromRemote, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
-import { fetchRemoteLeadsByIds, leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, remoteLeadListPath, remoteLeadSearchPath, rowToLead, sanitizeRemoteSearchNeedle, searchWorkspaceLeads } from "../worker/workspace-settings.ts"
+import { fetchRemoteLeadsByIds, leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceSettings, remoteLeadListPath, remoteLeadSearchPath, rowToLead, sanitizeRemoteSearchNeedle, searchWorkspaceLeads } from "../worker/workspace-settings.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
@@ -1185,6 +1185,9 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     remotePosts.push(`DELETE ${url}`)
     return new Response("", { status: 204 })
   }
+  if (url.includes("/rest/v1/settings") && method === "GET") {
+    return new Response(JSON.stringify([]), { status: 200 })
+  }
   if (url.includes("/rest/v1/settings") && method === "POST") {
     remotePosts.push(String(init?.body || ""))
     return new Response("", { status: 201 })
@@ -1202,6 +1205,67 @@ assert(remotePosts.some((item) => item.includes(remoteBoard.id) && item.includes
 assert(remotePosts.some((item) => item.includes("DELETE") && item.includes("gone-remote")), "persistRemoteFunnels apaga funil que já não está no KV")
 await persistRemoteSettings(remoteEnv, migrateSettings({ telegramBotUsername: "@ste_bot" }))
 assert(remotePosts.some((item) => item.includes("@ste_bot")), "persistRemoteSettings grava settings no Postgres")
+const mergePosts: string[] = []
+const mergePrev = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  const method = (init?.method || "GET").toUpperCase()
+  if (url.includes("/rest/v1/settings") && method === "GET") {
+    return new Response(
+      JSON.stringify([{ data: { telegramBotUsername: "@keep_bot", pageScripts: scriptKept.scripts, leadCategories: ["VIP"] } }]),
+      { status: 200 }
+    )
+  }
+  if (url.includes("/rest/v1/settings") && method === "POST") {
+    mergePosts.push(String(init?.body || ""))
+    return new Response("", { status: 201 })
+  }
+  return mergePrev(input, init)
+}) as typeof fetch
+await persistRemoteSettings(remoteEnv, migrateSettings({ notifyNewLead: false }))
+const mergedRemote = JSON.parse(mergePosts.at(-1) || "{}") as {
+  data?: { telegramBotUsername?: string; pageScripts?: Array<{ id?: string }>; leadCategories?: string[] }
+}
+assert(mergedRemote.data?.telegramBotUsername === "@keep_bot", "POST oco não apaga o username do Postgres")
+assert(
+  mergedRemote.data?.pageScripts?.some((item) => item.id === scriptKept.script.id),
+  "POST oco não apaga os scripts do Postgres"
+)
+assert(mergedRemote.data?.leadCategories?.includes("VIP"), "POST oco não apaga as categorias do Postgres")
+const skipPosts: string[] = []
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  const method = (init?.method || "GET").toUpperCase()
+  if (url.includes("/rest/v1/settings") && method === "GET") return new Response("nope", { status: 500 })
+  if (url.includes("/rest/v1/settings") && method === "POST") {
+    skipPosts.push(String(init?.body || ""))
+    return new Response("", { status: 201 })
+  }
+  return mergePrev(input, init)
+}) as typeof fetch
+await persistRemoteSettings(remoteEnv, migrateSettings({ telegramBotUsername: "" }))
+assert(skipPosts.length === 0, "GET falho das definições não grava settings ocas no Postgres")
+const unreadEnv = { SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" }
+const unread = await readWorkspaceSettings(unreadEnv)
+assert(unread.unread && unread.settings.telegramBotUsername === "", "settings sem confirmação do Postgres ficam unread")
+globalThis.fetch = mergePrev
+let leadTries = 0
+const retryPrev = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  const method = (init?.method || "GET").toUpperCase()
+  if (url.includes("/rest/v1/leads") && method === "POST") {
+    leadTries += 1
+    if (leadTries < 3) return new Response("nope", { status: 500 })
+    remotePosts.push(String(init?.body || ""))
+    return new Response("", { status: 201 })
+  }
+  return retryPrev(input, init)
+}) as typeof fetch
+const retryLead = leadFromImport({ name: "Retry", contact: "@retry" })
+await persistRemoteLead(remoteEnv, retryLead)
+assert(leadTries === 3 && remotePosts.some((item) => item.includes(retryLead.id)), "persistRemoteLead insiste no Postgres")
+globalThis.fetch = retryPrev
 const remoteLead = leadFromImport({ name: "Rita", contact: "@rita" })
 await persistRemoteLead(remoteEnv, remoteLead)
 assert(remotePosts.some((item) => item.includes(remoteLead.id) && item.includes("@rita")), "persistRemoteLead grava o lead no Postgres")
@@ -4872,6 +4936,9 @@ const downEnv = {
 } as Env
 const downCrm = await handleRequest(new Request("http://local.test/api/crm", { headers: { cookie: liveCookie } }), downEnv, backgroundCtx())
 assert(downCrm.status === 200, "CRM lê o KV se o Supabase cair")
+const downCrmBody = (await downCrm.json()) as { settingsUnread?: boolean; funnels?: unknown[] }
+assert(Array.isArray(downCrmBody.funnels), "CRM com Postgres em baixo ainda manda os funis do KV")
+assert(downCrmBody.settingsUnread === true, "CRM marca definições por confirmar se o Postgres cair")
 const cronEnv = { ...liveEnv, CRON_SECRET: "cron" } as Env
 await upsertLeadKv(cronEnv.AUTH, {
   ...lead("due-cron"),

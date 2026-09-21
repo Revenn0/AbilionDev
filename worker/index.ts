@@ -66,7 +66,7 @@ import {
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
 import { readJsonObject, readJsonStrict, type JsonFail } from "./json-body.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall } from "./telegram.ts"
-import { fetchRemoteLeadPage, fillLeadHoles, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, rowToLead, searchWorkspaceLeads, type LeadRow } from "./workspace-settings.ts"
+import { fetchRemoteLeadPage, fillLeadHoles, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, readWorkspaceSettings, rowToLead, searchWorkspaceLeads, type LeadRow } from "./workspace-settings.ts"
 import type { KvLike } from "./kv.ts"
 
 type Fetcher = { fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> }
@@ -471,10 +471,13 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
     try {
+      const funnels = await loadFunnels(env)
+      const loaded = await readWorkspaceSettings(env)
       return json({
         ok: true,
-        funnels: await loadFunnels(env),
-        settings: publicSettings(await loadSettings(env)),
+        funnels,
+        settings: publicSettings(loaded.settings),
+        settingsUnread: loaded.unread || undefined,
       })
     } catch {
       return json({ error: "Não li o CRM do Worker." }, 503)

@@ -1,4 +1,4 @@
-import { adoptFunnelStores, emptySettings, publicSettings } from "../src/lib/crm.ts"
+import { adoptFunnelStores, commitStoredSettings, emptySettings, publicSettings } from "../src/lib/crm.ts"
 import { sanitizeLeadCategory } from "../src/lib/lead-category.ts"
 import { leadMatchesQuery } from "../src/lib/lead-name.ts"
 import { migrateSettings, sanitizeIncomingFunnel } from "../src/lib/migrate.ts"
@@ -224,32 +224,45 @@ export type SettingsEnv = {
   SUPABASE_SERVICE_ROLE?: string
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 async function fetchRemoteSettings(env: SettingsEnv): Promise<Settings | undefined | null> {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return undefined
-  try {
-    const res = await fetch(`${env.SUPABASE_URL}/rest/v1/settings?workspace_id=eq.${WORKSPACE}&select=data`, {
-      headers: {
-        apikey: env.SUPABASE_SERVICE_ROLE,
-        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE}`,
-      },
-    })
-    if (!res.ok) return null
-    const rows = (await res.json()) as { data?: Settings }[]
-    return rows[0]?.data ? migrateSettings(rows[0].data) : undefined
-  } catch {
-    return null
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const res = await fetch(`${env.SUPABASE_URL}/rest/v1/settings?workspace_id=eq.${WORKSPACE}&select=data`, {
+        headers: {
+          apikey: env.SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE}`,
+        },
+      })
+      if (res.ok) {
+        const rows = (await res.json()) as { data?: Settings }[]
+        return rows[0]?.data ? migrateSettings(rows[0].data) : undefined
+      }
+    } catch {
+      return null
+    }
+    if (attempt < 3) await sleep(40 * (attempt + 1))
   }
+  return null
 }
 
 /** Painel e MCP: KV oco não esconde username, scripts e categorias do Postgres. */
-export async function loadWorkspaceSettings(env: SettingsEnv): Promise<Settings> {
+export async function readWorkspaceSettings(env: SettingsEnv): Promise<{ settings: Settings; unread: boolean }> {
   const remote = await fetchRemoteSettings(env)
   if (remote === null) {
-    if (env.AUTH) return loadAdoptedSettings(env.AUTH)
-    return emptySettings()
+    const settings = env.AUTH ? await loadAdoptedSettings(env.AUTH) : emptySettings()
+    return { settings, unread: true }
   }
-  if (env.AUTH) return loadAdoptedSettings(env.AUTH, remote)
-  return remote ?? emptySettings()
+  if (env.AUTH) return { settings: await loadAdoptedSettings(env.AUTH, remote), unread: false }
+  return { settings: remote ?? emptySettings(), unread: false }
+}
+
+export async function loadWorkspaceSettings(env: SettingsEnv): Promise<Settings> {
+  return (await readWorkspaceSettings(env)).settings
 }
 
 type FunnelRow = {
@@ -304,27 +317,31 @@ export async function loadWorkspaceFunnels(env: SettingsEnv): Promise<SalesFunne
 
 async function restWorkspace<T>(env: SettingsEnv, path: string, init?: RequestInit): Promise<T | null> {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return null
-  try {
-    const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, {
-      ...init,
-      headers: {
-        apikey: env.SUPABASE_SERVICE_ROLE,
-        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE}`,
-        "Content-Type": "application/json",
-        ...(init?.headers ?? {}),
-      },
-    })
-    if (!res.ok) {
+  const method = (init?.method || "GET").toUpperCase()
+  const tries = method === "GET" || method === "HEAD" ? 1 : 4
+  for (let attempt = 0; attempt < tries; attempt++) {
+    try {
+      const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, {
+        ...init,
+        headers: {
+          apikey: env.SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE}`,
+          "Content-Type": "application/json",
+          ...(init?.headers ?? {}),
+        },
+      })
+      if (res.ok) {
+        const text = await res.text()
+        if (!text) return true as T
+        return JSON.parse(text) as T
+      }
       console.error("supabase falhou", path.split("?")[0], res.status)
-      return null
+    } catch {
+      console.error("supabase sem rede", path.split("?")[0])
     }
-    const text = await res.text()
-    if (!text) return true as T
-    return JSON.parse(text) as T
-  } catch {
-    console.error("supabase sem rede", path.split("?")[0])
-    return null
+    if (attempt < tries - 1) await sleep(40 * (attempt + 1))
   }
+  return null
 }
 
 /** Painel e MCP: o KV continua a ser a fonte; o Postgres fica com a mesma cópia. */
@@ -359,10 +376,13 @@ export async function persistRemoteFunnels(env: SettingsEnv, funnels: SalesFunne
 
 export async function persistRemoteSettings(env: SettingsEnv, settings: Settings) {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return
+  const remote = await fetchRemoteSettings(env)
+  if (remote === null) return
+  const merged = remote ? commitStoredSettings(remote, settings, remote) : migrateSettings(settings)
   await restWorkspace(env, "settings", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates" },
-    body: JSON.stringify({ workspace_id: WORKSPACE, data: publicSettings(settings) }),
+    body: JSON.stringify({ workspace_id: WORKSPACE, data: publicSettings(merged) }),
   })
 }
 

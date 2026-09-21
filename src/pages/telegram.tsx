@@ -16,7 +16,7 @@ import { leadsHydrating, leadsLoadFailed } from "@/lib/ops"
 import { toast } from "sonner"
 
 export function TelegramPage() {
-  const { state, createLeads, persistSync } = useStore()
+  const { state, createLeads, persistSync, settingsSync } = useStore()
   const { settings, leads } = state
   const hydrating = leadsHydrating(persistSync, leads.length)
   const failed = leadsLoadFailed(persistSync, leads.length)
@@ -69,6 +69,10 @@ export function TelegramPage() {
             {
               ok: persistSync !== "error",
               message: "Não consegui ler os leads do Worker. Os números de joins e Facebook hoje podem estar vazios.",
+            },
+            {
+              ok: settingsSync !== "error",
+              message: "Não confirmei as definições no Postgres. O username do bot e o pixel podem estar desactualizados.",
             },
             {
               ok: !health?.unreachable,
