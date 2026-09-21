@@ -24,6 +24,7 @@ export function FluxoPage() {
   const [importing, setImporting] = useState(false)
   const creating = useRef(false)
   const funnelsUnread = funnelsListBlocked(crmSync !== "ok", funnels)
+  const importBlocked = crmSync !== "ok"
   const scriptsUnread = pageScriptsListBlocked(settingsSync !== "ok", state.settings.pageScripts)
 
   const createGate = funnelsUnread
@@ -65,9 +66,13 @@ export function FluxoPage() {
             type="button"
             variant="outline"
             className="h-8 rounded-full px-3.5"
-            disabled={funnelsUnread}
-            title={funnelsUnread ? "Não confirmei os funis no Worker." : undefined}
-            onClick={() => setImporting(true)}
+            data-funnel-import={importBlocked ? (crmSync === "idle" ? "loading" : "error") : "ok"}
+            disabled={importBlocked}
+            title={importBlocked ? "Não confirmei os funis no Worker." : undefined}
+            onClick={() => {
+              if (importBlocked) return
+              setImporting(true)
+            }}
           >
             <Upload /> Importar
           </Button>
@@ -104,9 +109,13 @@ export function FluxoPage() {
                   type="button"
                   variant="outline"
                   className="rounded-full"
-                  disabled={funnelsUnread}
-                  title={funnelsUnread ? "Não confirmei os funis no Worker." : undefined}
-                  onClick={() => setImporting(true)}
+                  data-funnel-import={importBlocked ? (crmSync === "idle" ? "loading" : "error") : "ok"}
+                  disabled={importBlocked}
+                  title={importBlocked ? "Não confirmei os funis no Worker." : undefined}
+                  onClick={() => {
+                    if (importBlocked) return
+                    setImporting(true)
+                  }}
                 >
                   <Upload /> Importar
                 </Button>
@@ -214,7 +223,7 @@ export function FluxoPage() {
         open={importing}
         onOpenChange={setImporting}
         onImported={(funnel) => {
-          if (funnelsUnread) {
+          if (importBlocked) {
             toast.error("Não confirmei os funis no Worker.")
             return
           }

@@ -472,6 +472,11 @@ try {
     !newFunnelGate.disabled || newFunnelGate.title.includes("máximo"),
     "fluxo com CRM confirmado não bloqueia criar por lista oca"
   )
+  const importGate = await page.$eval("[data-funnel-import]", (el) => ({
+    disabled: (el as HTMLButtonElement).disabled,
+    state: el.getAttribute("data-funnel-import") || "",
+  }))
+  assert(importGate.state === "ok" && !importGate.disabled, "fluxo com CRM confirmado deixa importar funil")
   const funnelScript = await page.$("[data-funnel-script]")
   if (funnelScript) {
     assert(

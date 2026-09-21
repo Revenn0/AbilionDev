@@ -6766,6 +6766,26 @@ const mcpPublishFunnelsUnreadBody = (await mcpPublishFunnelsUnread.json()) as {
 const mcpPublishFunnelsUnreadData = JSON.parse(mcpPublishFunnelsUnreadBody.result?.content?.[0]?.text || "{}") as { error?: string }
 assert(mcpPublishFunnelsUnread.status === 200 && mcpPublishFunnelsUnreadBody.result?.isError, "MCP não publica funil com a lista unread")
 assert(mcpPublishFunnelsUnreadData.error === "Não confirmei os funis.", "MCP publish unread pede confirmação")
+const mcpScriptFunnelsUnread = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 101,
+      method: "tools/call",
+      params: { name: "abilion_create_page_script", arguments: { funnelId: "missing-funnel", name: "Landing" } },
+    }),
+  }),
+  mcpInstallDownEnv,
+  backgroundCtx()
+)
+const mcpScriptFunnelsUnreadBody = (await mcpScriptFunnelsUnread.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const mcpScriptFunnelsUnreadData = JSON.parse(mcpScriptFunnelsUnreadBody.result?.content?.[0]?.text || "{}") as { error?: string }
+assert(mcpScriptFunnelsUnread.status === 200 && mcpScriptFunnelsUnreadBody.result?.isError, "MCP não cria script com funil unread em falta")
+assert(mcpScriptFunnelsUnreadData.error === "Não confirmei os funis.", "MCP script unread não finge funil por publicar")
 const mcpDeleteUnread = await handleRequest(
   new Request("http://local.test/mcp", {
     method: "POST",
@@ -7322,6 +7342,48 @@ const importedHttp = await handleRequest(
 const importedHttpBody = (await importedHttp.json()) as { source?: string; funnel?: { name?: string } }
 assert(importedHttp.status === 201 && importedHttpBody.source === "generic", "POST import cria rascunho")
 assert(importedHttpBody.funnel?.name === "Import HTTP", "import HTTP conserva o nome")
+const importedHttpUnread = await handleRequest(
+  new Request("http://local.test/api/funnels/import", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: teamCookie, "x-forwarded-for": "203.0.113.201" },
+    body: JSON.stringify({ name: "Import unread", payload: { messages: ["Passo A", "Passo B"] } }),
+  }),
+  mcpInstallDownEnv,
+  backgroundCtx()
+)
+const importedHttpUnreadBody = (await importedHttpUnread.json()) as { error?: string }
+assert(importedHttpUnread.status === 503, "POST import unread é 503")
+assert(importedHttpUnreadBody.error === "Não confirmei os funis.", "POST import unread pede confirmação")
+const hollowImportEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://invalid.invalid",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: memoryKv(),
+  ABILION_ENV: "development",
+} as Env
+const hollowImportLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.241" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  hollowImportEnv,
+  backgroundCtx()
+)
+assert(hollowImportLogin.status === 200, "login oco para o import unread")
+const hollowImportCookie = hollowImportLogin.headers.get("set-cookie") || ""
+const importedHttpHollow = await handleRequest(
+  new Request("http://local.test/api/funnels/import", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: hollowImportCookie, "x-forwarded-for": "203.0.113.241" },
+    body: JSON.stringify({ name: "Import oco", payload: { messages: ["Passo A", "Passo B"] } }),
+  }),
+  hollowImportEnv,
+  backgroundCtx()
+)
+const importedHttpHollowBody = (await importedHttpHollow.json()) as { error?: string }
+assert(importedHttpHollow.status === 503, "POST import com KV oco e Postgres em baixo é 503")
+assert(importedHttpHollowBody.error === "Não confirmei os funis.", "POST import oco não rebenta em 500")
 
 const listed = await handleRequest(new Request("http://local.test/api/users", { headers: { cookie: teamCookie } }), teamEnv, backgroundCtx())
 const listedBody = (await listed.json()) as { users?: Array<{ id?: string; email?: string; disabled?: boolean }> }
