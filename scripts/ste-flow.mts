@@ -24,6 +24,7 @@ import {
   STE_REMARKETING_BLOCK,
   STE_CLOSE,
   steRuntimeFromSnapshot,
+  steRuntimeFromFunnels,
   steWaitDelayMs,
   safeHttpUrl,
   splitSteMarkup,
@@ -6446,6 +6447,29 @@ assert(campaignFor("whatsapp", "import") === "Importado", "campanha da lista ant
 assert(!canSimulateSte({ ...inboxLead, telegramChatId: "9001" }), "lead real do Telegram não simula no painel")
 assert(!canSimulateSte({ ...inboxLead, steBlocked: true }), "lead encerrado não simula")
 assert(!canSimulateSte({ ...inboxLead, steQuiet: true }), "lead quieto não simula")
+function publishedBoard(id: string, name: string, publishedAt: string, welcome: string) {
+  const base = { ...emptySalesFunnel(name), id, status: "active" as const }
+  const nodes = base.nodes.map((node) =>
+    node.data.steLine === "welcome" && node.data.body === STE_WELCOME[0]
+      ? { ...node, data: { ...node.data, body: welcome } }
+      : node
+  )
+  return { ...base, nodes, production: { name, publishedAt, nodes, edges: base.edges } }
+}
+const leftoverBoard = publishedBoard("fun-new", "Novo", "2026-09-20T12:00:00.000Z", "publicado leftover")
+const adsBoard = publishedBoard("fun-ads", "Ads", "2026-01-01T00:00:00.000Z", "landing do anúncio")
+assert(steRuntimeFromFunnels([leftoverBoard, adsBoard], null).welcome?.[0] === "publicado leftover", "sem funnelId o painel usaria o publicado leftover")
+assert(steRuntimeFromFunnels([leftoverBoard, adsBoard], null, "fun-ads").welcome?.[0] === "landing do anúncio", "painel com funnelId fala a landing, não o leftover")
+assert(snapshotForLead([leftoverBoard, adsBoard], { funnelId: "fun-ads" })?.name === "Ads", "ficha do CRM lê o quadro da landing")
+assert(publishedSnapshot([leftoverBoard, adsBoard])?.name === "Novo", "publicado leftover é o mais recente")
+const adsSim = { ...inboxLead, funnelId: "fun-ads" }
+assert(!canTickSteLocally(adsSim, { funnelsUnread: true, funnels: [] }), "painel unread + funil miss não avança leftover")
+assert(!canSimulateSte(adsSim, { funnelsUnread: true, funnels: [] }), "simular lead unread + funil miss bloqueia")
+assert(canTickSteLocally(adsSim, { funnelsUnread: true, funnels: [{ id: "fun-ads" }] }), "funil leftover no cache segue no painel")
+assert(canSimulateSte(adsSim, { funnelsUnread: true, funnels: [adsBoard] }), "simular segue se o funil leftover está no cache")
+assert(canTickSteLocally({ ...inboxLead, funnelId: undefined }, { funnelsUnread: true, funnels: [] }), "sem funnelId o publicado leftover segue")
+assert(!canTickSteLocally({ ...adsSim, telegramChatId: "9001" }, { funnelsUnread: false, funnels: [adsBoard] }), "Telegram real continua trancado mesmo com funil confirmado")
+assert(!canSimulateSte({ ...adsSim, telegramChatId: "9001" }, { funnelsUnread: true, funnels: [] }), "Telegram real não desbloqueia por unread")
 const burstOne = burstFacebookLeads([emptySalesFunnel("lote-um")], 1)[0]
 assert(burstOne?.steBlocked, "o primeiro do lote de 100 ainda testa ofensa")
 assert(!burstOne?.telegramChatId, "lote não inventa chat id")

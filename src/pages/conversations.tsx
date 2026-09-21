@@ -13,7 +13,7 @@ import { funnelsWriteBlocked, hasConversation, leadCatalogClipped, leadsHydratin
 import { ORIGIN_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { GeoBadge } from "@/components/crm/geo-badge"
 import { factsWithTrack } from "@/lib/geo"
-import { publishedFunnel } from "@/lib/runtime"
+import { leadFunnelUnread, publishedFunnel } from "@/lib/runtime"
 import { advanceSteIfDue, canSimulateSte, canTickSteLocally, replySteLived, splitSteMarkup, steHeardChips, steRuntimeFromFunnels, steStepLabel, steWaitDelayMs } from "@/lib/ste"
 import { useTrackSummary } from "@/lib/use-track-summary"
 import { remoteSearchBlank, useRemoteLeadSearch } from "@/lib/use-lead-query"
@@ -57,8 +57,6 @@ export function ConversationsPage() {
   const { state, saveLead, createLead, flushLeadNow, crmSync, inboxSync, persistSync, catalogComplete } = useStore()
   const { summary, status, hasData } = useTrackSummary(4000)
   const geoEmpty = pixelGeoEmpty(status, hasData)
-  const runtime = steRuntimeFromFunnels(state.funnels, state.settings)
-  const runtimeKey = publishedFunnel(state.funnels)?.production?.publishedAt ?? ""
   const [filter, setFilter] = useState<FilterId>("waiting")
   const [query, setQuery] = useState("")
   const searchStatus = useRemoteLeadSearch(query)
@@ -69,7 +67,8 @@ export function ConversationsPage() {
   const sending = useRef(false)
   const simulating = useRef(false)
   const leadRef = useRef<Lead | null>(null)
-  const runtimeRef = useRef(runtime)
+  const runtimeRef = useRef(steRuntimeFromFunnels())
+  const funnelGateRef = useRef({ funnelsUnread: true, funnels: [] as typeof state.funnels })
   const saveLeadRef = useRef(saveLead)
   const flushLeadNowRef = useRef(flushLeadNow)
 
@@ -115,6 +114,17 @@ export function ConversationsPage() {
   const selected = id ? all.find((item) => item.id === id) ?? null : null
   const listed = Boolean(selected && rows.some((row) => row.id === selected.id))
   const lead = listed ? selected : id && selected ? null : rows[0] ?? null
+  const funnelGate = useMemo(() => ({ funnelsUnread, funnels: state.funnels }), [funnelsUnread, state.funnels])
+  const runtime = steRuntimeFromFunnels(state.funnels, state.settings, lead?.funnelId)
+  const runtimeKey = [
+    lead?.funnelId ?? "",
+    lead?.funnelId
+      ? state.funnels.find((item) => item.id === lead.funnelId)?.production?.publishedAt ?? ""
+      : publishedFunnel(state.funnels)?.production?.publishedAt ?? "",
+    String(funnelsUnread),
+  ].join(":")
+  const simulateOk = lead ? canSimulateSte(lead, funnelGate) : false
+  const funnelUnread = Boolean(lead && leadFunnelUnread(funnelsUnread, lead.funnelId, state.funnels))
 
   useEffect(() => {
     setShown(INBOX_CAP)
@@ -123,15 +133,16 @@ export function ConversationsPage() {
   useEffect(() => {
     leadRef.current = lead
     runtimeRef.current = runtime
+    funnelGateRef.current = funnelGate
     saveLeadRef.current = saveLead
     flushLeadNowRef.current = flushLeadNow
-  }, [lead, runtime, saveLead, flushLeadNow])
+  }, [lead, runtime, funnelGate, saveLead, flushLeadNow])
 
   useEffect(() => {
-    if (!lead || !canTickSteLocally(lead)) return
+    if (!lead || !canTickSteLocally(lead, funnelGateRef.current)) return
     const tick = () => {
       const current = leadRef.current
-      if (!current || !canTickSteLocally(current)) return
+      if (!current || !canTickSteLocally(current, funnelGateRef.current)) return
       const result = advanceSteIfDue(current, Date.now(), runtimeRef.current)
       if (result.replies.length) {
         saveLeadRef.current(result.lead)
@@ -152,7 +163,7 @@ export function ConversationsPage() {
   const send = (event: React.FormEvent) => {
     event.preventDefault()
     if (sending.current) return
-    if (!lead || !canSimulateSte(lead)) return
+    if (!lead || !canSimulateSte(lead, funnelGate)) return
     const text = draft.trim()
     if (!text) return
     sending.current = true
@@ -176,7 +187,7 @@ export function ConversationsPage() {
             { ok: inboxSync !== "error", message: "A inbox do Telegram não sincronizou. Conversas novas podem faltar." },
             { ok: persistSync !== "error", message: "Não consegui ler ou gravar conversas no Worker." },
             { ok: !clipped, message: "A lista do Worker veio recortada. Os totais desta inbox não são o catálogo inteiro." },
-            { ok: crmSync !== "error", message: "Não consegui ler os funis do Worker. Simular conversa fica bloqueado até confirmar os funis." },
+            { ok: crmSync !== "error", message: "Não consegui ler os funis do Worker. Simular e avançar conversas com funil unread fica bloqueado — o painel não fala o publicado leftover." },
           ]}
         />
         <PageChrome icon={MessagesSquare} title="Conversas">
@@ -381,13 +392,16 @@ export function ConversationsPage() {
                     placeholder={
                       lead.telegramChatId
                         ? "Esta conversa corre no Telegram. Simular aqui dessincroniza o CRM."
-                        : lead.steQuiet || lead.steBlocked
-                          ? "Esta instância já silenciou."
-                          : "Escreve como o lead. Isto não manda Telegram — só simula a Sté."
+                        : funnelUnread
+                          ? "Não confirmei o funil desta landing. O painel não fala o publicado leftover."
+                          : lead.steQuiet || lead.steBlocked
+                            ? "Esta instância já silenciou."
+                            : "Escreve como o lead. Isto não manda Telegram — só simula a Sté."
                     }
-                    disabled={!canSimulateSte(lead)}
+                    disabled={!simulateOk}
+                    data-simulate-lead={funnelUnread ? (crmSync === "idle" ? "loading" : "error") : simulateOk ? "ok" : "locked"}
                   />
-                  <Button type="submit" className="rounded-full" disabled={!canSimulateSte(lead) || !draft.trim()}>
+                  <Button type="submit" className="rounded-full" disabled={!simulateOk || !draft.trim()}>
                     Simular lead
                   </Button>
                 </form>

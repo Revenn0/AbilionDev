@@ -1,7 +1,7 @@
 import { uid } from "./format.ts"
 import { llmHeaders, steLlmAttempts, type SteLlmProvider, STE_LLM_BASE_URL, STE_LLM_FALLBACK, STE_LLM_MODEL } from "./llm.ts"
 import { isOperatorLockedLead } from "./ops.ts"
-import { publishedFunnel } from "./runtime.ts"
+import { leadFunnelUnread, publishedFunnel } from "./runtime.ts"
 import type { ChatMessage, FlowNode, Lead, LeadFacts, SalesFunnel, SalesSnapshot, Settings, SteLine, StePhase } from "./types.ts"
 
 export { STE_LLM_BASE_URL, STE_LLM_FALLBACK, STE_LLM_MODEL }
@@ -806,13 +806,21 @@ function splitBlocks(raw: string, max = 4) {
     .slice(0, max)
 }
 
-export function canTickSteLocally(lead: Lead) {
-  return !isOperatorLockedLead(lead)
+/** GET unread + funil do lead em falta: o painel não fala o publicado leftover. Telegram real continua trancado. */
+export function canTickSteLocally(
+  lead: Lead,
+  gate?: { funnelsUnread?: boolean; funnels?: Array<{ id: string }> }
+) {
+  if (isOperatorLockedLead(lead)) return false
+  return !leadFunnelUnread(gate?.funnelsUnread === true, lead.funnelId, gate?.funnels ?? [])
 }
 
 /** Simular no painel só para leads sem chat real — senão o CRM e o Telegram dessincronizam. */
-export function canSimulateSte(lead: Lead) {
-  return canTickSteLocally(lead) && !lead.steBlocked && !lead.steQuiet
+export function canSimulateSte(
+  lead: Lead,
+  gate?: { funnelsUnread?: boolean; funnels?: Array<{ id: string }> }
+) {
+  return canTickSteLocally(lead, gate) && !lead.steBlocked && !lead.steQuiet
 }
 
 export function steWaitDelayMs(waitUntil: string | undefined, now = Date.now()) {

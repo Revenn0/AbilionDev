@@ -22,7 +22,7 @@ import { captureAgainstFunnels } from "@/lib/templates"
 import { ORIGIN_LABEL, STAGE_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { funnelsWriteBlocked, isImportedLead, leadCatalogClipped, leadFilterCount, leadFilterPending, leadMatchesFilter, leadTimelinePending, leadWritesBlocked, leadsHydrating } from "@/lib/ops"
 import { pixelGeoEmpty } from "@/lib/analytics-view"
-import { applyEvent, nodeTitle, publishedSnapshot, type RuntimeEvent } from "@/lib/runtime"
+import { applyEvent, leadFunnelUnread, nodeTitle, snapshotForLead, type RuntimeEvent } from "@/lib/runtime"
 import { canTickSteLocally } from "@/lib/ste"
 import { timeAgo } from "@/lib/format"
 import { displayContact, draftLeadField, isPhoneLikeName, leadMatchesQuery, resolvePersonName } from "@/lib/lead-name"
@@ -61,7 +61,6 @@ export function LeadsPage() {
   const [importing, setImporting] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
   const lead = state.leads.find((item) => item.id === selected) ?? null
-  const snapshot = publishedSnapshot(state.funnels)
   const categories = useMemo(
     () => mergeLeadCategories(state.settings.leadCategories, state.leads.map((item) => item.category).filter(Boolean) as string[]),
     [state.leads, state.settings.leadCategories]
@@ -97,7 +96,7 @@ export function LeadsPage() {
       <div className="page-shell">
         <SyncBanner
           items={[
-            { ok: crmSync !== "error", message: "Não consegui ler o CRM do Worker." },
+            { ok: crmSync !== "error", message: "Não consegui ler o CRM do Worker. A ficha não avança o quadro leftover se o funil do lead ainda não confirmou." },
             { ok: inboxSync !== "error", message: "A inbox do Telegram não sincronizou." },
             { ok: persistSync !== "error", message: "Não consegui ler ou gravar leads no Worker." },
             { ok: !clipped, message: "A lista do Worker veio recortada. Isto não é o catálogo inteiro — o CSV e os totais esperam." },
@@ -266,7 +265,7 @@ export function LeadsPage() {
                     <StatusPill tone={item.temperature === "quente" ? "danger" : item.temperature === "morno" ? "warn" : "muted"}>
                       {TEMP_LABEL[item.temperature]}
                     </StatusPill>
-                    <p className="truncate text-[12.5px]">{nodeTitle(snapshot, item.nodeId) ?? STAGE_LABEL[item.stage]}</p>
+                    <p className="truncate text-[12.5px]">{nodeTitle(snapshotForLead(state.funnels, item), item.nodeId) ?? STAGE_LABEL[item.stage]}</p>
                     <p className="text-[12px] text-muted-foreground">{timeAgo(item.updatedAt)}</p>
                   </button>
                 </li>
@@ -307,6 +306,7 @@ export function LeadsPage() {
       <LeadDrawer
         lead={lead}
         funnels={state.funnels}
+        funnelsUnread={funnelsUnread}
         categories={categories}
         categoriesUnread={categoriesUnread}
         onCategory={createCategory}
@@ -731,6 +731,7 @@ function Field({
 function LeadDrawer({
   lead,
   funnels,
+  funnelsUnread = false,
   categories,
   categoriesUnread,
   onCategory,
@@ -744,6 +745,7 @@ function LeadDrawer({
 }: {
   lead: Lead | null
   funnels: SalesFunnel[]
+  funnelsUnread?: boolean
   categories: string[]
   categoriesUnread?: boolean
   onCategory: (name: string) => { ok: true; category: string } | { ok: false; error: string }
@@ -756,7 +758,9 @@ function LeadDrawer({
   onDelete: (id: string) => void | Promise<boolean>
 }) {
   const panel = useRef<HTMLElement>(null)
-  const snapshot = publishedSnapshot(funnels)
+  const snapshot = snapshotForLead(funnels, lead)
+  const funnelGate = { funnelsUnread, funnels }
+  const funnelUnread = Boolean(lead && leadFunnelUnread(funnelsUnread, lead.funnelId, funnels))
   const [memory, setMemory] = useState(lead?.memory ?? "")
   const [name, setName] = useState(lead?.name ?? "")
   const memoryRef = useRef(memory)
@@ -886,7 +890,7 @@ function LeadDrawer({
 
   if (!lead) return null
 
-  const localFlow = canTickSteLocally(lead)
+  const localFlow = canTickSteLocally(lead, funnelGate)
   const run = (
     event: RuntimeEvent,
     ok: string | ((effects: ReturnType<typeof applyEvent>["effects"]) => string),
@@ -894,11 +898,13 @@ function LeadDrawer({
     when?: number
   ) => {
     const current = leadRef.current ?? lead
-    if (!canTickSteLocally(current)) {
+    if (!canTickSteLocally(current, funnelGate)) {
       toast.error(
         isImportedLead(current)
           ? "Lista importada. A Sté não fala aqui — só nota e temperatura."
-          : "Este chat corre no Telegram. A ficha não avança o quadro."
+          : current.telegramChatId
+            ? "Este chat corre no Telegram. A ficha não avança o quadro."
+            : "Não confirmei o funil desta landing. A ficha não avança o quadro leftover."
       )
       return
     }
@@ -1050,10 +1056,12 @@ function LeadDrawer({
           </Button>
         </div>
         {!localFlow ? (
-          <p className="mt-3 text-[12.5px] text-muted-foreground">
+          <p className="mt-3 text-[12.5px] text-muted-foreground" data-lead-flow={funnelUnread ? "unread" : "locked"}>
             {isImportedLead(lead)
               ? "Lista importada. A Sté não fala aqui — só nota e temperatura."
-              : "Este chat corre no Telegram. Print, espera e oferta ficam no bot — a ficha só guarda nota e temperatura."}
+              : funnelUnread
+                ? "Não confirmei o funil desta landing. A ficha não avança o quadro leftover."
+                : "Este chat corre no Telegram. Print, espera e oferta ficam no bot — a ficha só guarda nota e temperatura."}
           </p>
         ) : null}
 
