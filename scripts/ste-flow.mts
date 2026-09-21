@@ -104,7 +104,7 @@ import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.t
 import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_INDEX, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, leadPageCursor, leadPageFromRemote, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
-import { fetchRemoteDueLeads, fetchRemoteLeadByIdentity, fetchRemoteLeadsByIds, fetchRemotePageEvents, findWorkspaceLead, hydrateWorkspaceLead, leadCatalogUnread, leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceFunnels, readWorkspaceSettings, remoteLeadDuePath, remoteLeadIdentityPath, remoteLeadListPath, remoteLeadSearchPath, resolveWorkspaceLeadWrite, rowToLead, rowToTrackEvent, sanitizeRemoteSearchNeedle, searchWorkspaceLeads, summarizeWorkspaceTrack, telegramIdFromLead } from "../worker/workspace-settings.ts"
+import { fetchRemoteDueLeads, fetchRemoteLeadByIdentity, fetchRemoteLeadsByIds, fetchRemotePageEvents, findWorkspaceLead, findWorkspaceLeadById, hydrateWorkspaceLead, leadCatalogUnread, leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceFunnels, readWorkspaceSettings, remoteLeadDuePath, remoteLeadIdentityPath, remoteLeadListPath, remoteLeadSearchPath, resolveWorkspaceLeadWrite, rowToLead, rowToTrackEvent, sanitizeRemoteSearchNeedle, searchWorkspaceLeads, summarizeWorkspaceTrack, telegramIdFromLead } from "../worker/workspace-settings.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
@@ -4725,6 +4725,151 @@ assert(
   mcpHydrateFailText.leads?.some((item) => item.id === "mcp-stale" && item.name === "Rita Backup"),
   "MCP lista conserva o leftover se o backup cair"
 )
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  if (url.includes("/rest/v1/leads") && url.includes("id=in.") && (init?.method || "GET").toUpperCase() === "GET") {
+    return new Response(
+      JSON.stringify([
+        {
+          id: "mcp-stale",
+          name: "Ana Souza",
+          contact: "@mcpstale",
+          channel: "telegram",
+          campaign: "facebook",
+          origin: "facebook",
+          temperature: "quente",
+          stage: "welcome",
+          memory: "ste:welcome",
+          last_message: "já falámos",
+          facts: {
+            timeline: [{ id: "ev-get", at: "2026-07-01T00:00:00.000Z", kind: "offer", title: "App" }],
+          },
+          messages: [{ id: "m-pg", at: "2026-07-01T00:00:00.000Z", role: "ste", text: "já falámos" }],
+          updated_at: "2026-08-01T00:00:00.000Z",
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+      ]),
+      { status: 200 }
+    )
+  }
+  if (url.includes("/rest/v1/")) return new Response("[]", { status: 200 })
+  return mcpHydratePrev(input, init)
+}) as typeof fetch
+const mcpGetLead = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mcpHydrateMinted.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 87,
+      method: "tools/call",
+      params: { name: "abilion_get_lead", arguments: { id: "mcp-stale" } },
+    }),
+  }),
+  mcpHydrateEnv,
+  backgroundCtx()
+)
+const mcpGetLeadBody = (await mcpGetLead.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
+const mcpGetLeadText = JSON.parse(mcpGetLeadBody.result?.content?.[0]?.text || "{}") as {
+  ok?: boolean
+  lead?: { id?: string; name?: string; stage?: string; messages?: Array<{ id?: string }>; events?: Array<{ id?: string }> }
+}
+assert(mcpGetLead.status === 200 && !mcpGetLeadBody.result?.isError && mcpGetLeadText.ok, "MCP get_lead hidrata a ficha")
+assert(mcpGetLeadText.lead?.name === "Ana Souza" && mcpGetLeadText.lead.stage === "welcome", "MCP get_lead lê nome e passo do Postgres")
+assert(mcpGetLeadText.lead?.messages?.some((item) => item.id === "m-pg"), "MCP get_lead devolve as falas que a lista compacta esconde")
+assert(mcpGetLeadText.lead?.events?.some((item) => item.id === "ev-get"), "MCP get_lead lê a timeline no jsonb")
+globalThis.fetch = (async (input: RequestInfo | URL) => {
+  if (String(input).includes("/rest/v1/")) throw new Error("postgres down")
+  return mcpHydratePrev(input)
+}) as typeof fetch
+const mcpGetLeadKv = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mcpHydrateMinted.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 88,
+      method: "tools/call",
+      params: { name: "abilion_get_lead", arguments: { id: "mcp-stale" } },
+    }),
+  }),
+  mcpHydrateEnv,
+  backgroundCtx()
+)
+const mcpGetLeadKvBody = (await mcpGetLeadKv.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
+const mcpGetLeadKvText = JSON.parse(mcpGetLeadKvBody.result?.content?.[0]?.text || "{}") as {
+  ok?: boolean
+  lead?: { id?: string; name?: string }
+}
+assert(mcpGetLeadKv.status === 200 && !mcpGetLeadKvBody.result?.isError && mcpGetLeadKvText.ok, "MCP get_lead com KV não falha se o Postgres cair")
+assert(mcpGetLeadKvText.lead?.name === "Rita Backup", "MCP get_lead conserva o leftover se o backup cair")
+const mcpGetMiss = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mcpHydrateMinted.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 89,
+      method: "tools/call",
+      params: { name: "abilion_get_lead", arguments: { id: "ghost-mcp" } },
+    }),
+  }),
+  mcpHydrateEnv,
+  backgroundCtx()
+)
+const mcpGetMissBody = (await mcpGetMiss.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
+const mcpGetMissText = JSON.parse(mcpGetMissBody.result?.content?.[0]?.text || "{}") as { error?: string }
+assert(mcpGetMissBody.result?.isError && mcpGetMissText.error?.includes("Postgres"), "MCP get_lead miss + backup em baixo não finge que a ficha não existe")
+const mcpGetEmpty = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mcpHydrateMinted.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 90,
+      method: "tools/call",
+      params: { name: "abilion_get_lead", arguments: {} },
+    }),
+  }),
+  mcpHydrateEnv,
+  backgroundCtx()
+)
+const mcpGetEmptyBody = (await mcpGetEmpty.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
+const mcpGetEmptyText = JSON.parse(mcpGetEmptyBody.result?.content?.[0]?.text || "{}") as { error?: string }
+assert(mcpGetEmptyBody.result?.isError && mcpGetEmptyText.error?.includes("id"), "MCP get_lead sem id é erro")
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  if (url.includes("/rest/v1/leads") && url.includes("id=in.") && (init?.method || "GET").toUpperCase() === "GET") {
+    return new Response("[]", { status: 200 })
+  }
+  if (url.includes("/rest/v1/")) return new Response("[]", { status: 200 })
+  return mcpHydratePrev(input, init)
+}) as typeof fetch
+const mcpGetGone = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mcpHydrateMinted.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 91,
+      method: "tools/call",
+      params: { name: "abilion_get_lead", arguments: { id: "ghost-mcp" } },
+    }),
+  }),
+  mcpHydrateEnv,
+  backgroundCtx()
+)
+const mcpGetGoneBody = (await mcpGetGone.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
+const mcpGetGoneText = JSON.parse(mcpGetGoneBody.result?.content?.[0]?.text || "{}") as { error?: string }
+assert(mcpGetGoneBody.result?.isError && mcpGetGoneText.error?.includes("já não está"), "MCP get_lead miss confirmado não inventa ficha")
+globalThis.fetch = (async () => new Response("nope", { status: 500 })) as typeof fetch
+let byIdUnreadError = ""
+try {
+  await findWorkspaceLeadById({ AUTH: memoryKv(), SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" }, "only-pg")
+} catch (error) {
+  byIdUnreadError = error instanceof Error ? error.message : ""
+}
+assert(byIdUnreadError.includes("Postgres"), "findWorkspaceLeadById miss + GET falho lança unread")
 globalThis.fetch = mcpHydratePrev
 const pagedOrphanKv = memoryKv()
 await upsertLeadKv(pagedOrphanKv, lead("page-live", "@pagelive"))
@@ -7894,6 +8039,7 @@ assert(mcpToolNames.includes("abilion_patch_user"), "MCP lista patch_user")
 assert(mcpToolNames.includes("abilion_revoke_token"), "MCP lista revoke_token")
 assert(mcpToolNames.includes("abilion_page_install_manual"), "MCP lista o manual de instalação")
 assert(mcpToolNames.includes("abilion_create_page_script"), "MCP lista criar script de página")
+assert(mcpToolNames.includes("abilion_get_lead"), "MCP lista get_lead")
 
 const mcpCreate = await handleRequest(
   new Request("http://local.test/mcp", {

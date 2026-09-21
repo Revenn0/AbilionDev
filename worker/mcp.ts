@@ -16,7 +16,7 @@ import {
 import { handleTokens, handleUsers } from "./users.ts"
 import { filterLiveLeads, importOrAdoptLead, leadPageFromRemote, listLeadPage } from "./crm-store.ts"
 import { emptySecrets, loadSecrets, resolveRuntime } from "./runtime-secrets.ts"
-import { fetchRemoteLeadPage, fetchRemoteLeadsByIds, fillLeadHoles, leadCatalogUnread, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceFunnels, readWorkspaceSettings, resolveWorkspaceLeadWrite, searchWorkspaceLeads } from "./workspace-settings.ts"
+import { fetchRemoteLeadPage, fetchRemoteLeadsByIds, fillLeadHoles, findWorkspaceLeadById, leadCatalogUnread, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceFunnels, readWorkspaceSettings, resolveWorkspaceLeadWrite, searchWorkspaceLeads } from "./workspace-settings.ts"
 import { readJsonStrict } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -68,6 +68,24 @@ function compactLead(lead: Lead) {
     stage: lead.stage,
     temperature: lead.temperature,
     updatedAt: lead.updatedAt,
+  }
+}
+
+function detailLead(lead: Lead) {
+  return {
+    ...compactLead(lead),
+    lastMessage: lead.lastMessage,
+    waitUntil: lead.waitUntil,
+    funnelId: lead.funnelId,
+    nodeId: lead.nodeId,
+    memory: lead.memory,
+    telegramChatId: lead.telegramChatId,
+    visitorId: lead.visitorId,
+    paused: lead.paused,
+    printAt: lead.printAt,
+    bancaAt: lead.bancaAt,
+    messages: lead.messages ?? [],
+    events: lead.events ?? [],
   }
 }
 
@@ -181,6 +199,17 @@ const TOOLS = [
         cursor: { type: "string" },
         limit: { type: "number" },
       },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "abilion_get_lead",
+    description:
+      "Devolve uma ficha pelo id (falas e timeline). KV e Postgres juntam-se. Miss no KV + backup em baixo é erro, não «já não está». A lista compacta não substitui isto.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
       additionalProperties: false,
     },
   },
@@ -431,6 +460,19 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
       stale: page.stale || undefined,
       clipped: page.clipped === true || filled.holesOpen || undefined,
     }
+  }
+  if (name === "abilion_get_lead") {
+    if (!env.AUTH) throw new Error("Auth ainda sem KV.")
+    const id = str(args.id).trim()
+    if (!id) throw new Error("Falta o id do lead.")
+    let lead: Lead | null
+    try {
+      lead = await findWorkspaceLeadById(env, id)
+    } catch {
+      throw new Error("Não li o lead do Postgres.")
+    }
+    if (!lead) throw new Error("Este lead já não está no CRM.")
+    return { ok: true, lead: detailLead(lead) }
   }
   if (name === "abilion_get_settings") {
     if (!env.AUTH) throw new Error("Auth ainda sem KV.")

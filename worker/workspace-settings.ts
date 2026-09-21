@@ -254,6 +254,29 @@ export async function findWorkspaceLead(
   return resolveLeadLookup(null, hydrated, removed)
 }
 
+/**
+ * MCP get_lead: KV primeiro. Miss cai no Postgres pelo id.
+ * Falha do backup (credenciais + `null`) lança — não finge que a ficha não existe.
+ * Hit no KV + backup em baixo devolve o KV.
+ */
+export async function findWorkspaceLeadById(env: SettingsEnv, id: string): Promise<Lead | null> {
+  const needle = id.trim()
+  if (!needle || needle.length > 80) return null
+  if (env.AUTH && (await isLeadRemoved(env.AUTH, needle))) return null
+  const kvLead = env.AUTH ? await loadLead(env.AUTH, needle) : null
+  if (kvLead) {
+    const extras = await fetchRemoteLeadsByIds(env, [kvLead.id])
+    if (extras === null) return kvLead
+    return hydrateWorkspaceLead(kvLead, extras[0])
+  }
+  const extras = await fetchRemoteLeadsByIds(env, [needle])
+  if (extras === null) throw new Error("Não li o lead do Postgres.")
+  const remote = extras[0]
+  if (!remote) return null
+  if (env.AUTH && (await isLeadRemoved(env.AUTH, remote.id))) return null
+  return remote
+}
+
 export function telegramIdFromLead(lead: Pick<Lead, "contact">) {
   const match = /^tg:(\d+)$/.exec((lead.contact || "").trim())
   return match ? Number(match[1]) : 0
