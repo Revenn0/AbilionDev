@@ -5,7 +5,7 @@ import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig, loadEnv, type ViteDevServer } from "vite"
 import { fileKv } from "./worker/file-kv.ts"
-import { foldStudioPath } from "./src/lib/safe-path.ts"
+import { foldStudioPath, isWorkerPublicPath } from "./src/lib/safe-path.ts"
 import { backgroundCtx, handleRequest, type Env } from "./worker/index.ts"
 
 function readBody(req: IncomingMessage) {
@@ -71,7 +71,7 @@ async function toRequest(req: IncomingMessage) {
 function localApi(env: Env) {
   return async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     const url = (req.url || "/").split("?")[0] || "/"
-    if (url !== "/t.js" && url !== "/mcp" && !url.startsWith("/api/") && !foldStudioPath(url)) {
+    if (!isWorkerPublicPath(url) && !foldStudioPath(url)) {
       next()
       return
     }

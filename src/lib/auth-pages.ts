@@ -33,9 +33,12 @@ function authShell(title: string, body: string) {
   nav{margin-top:16px;font-size:13px}
   nav a{color:#7dd3fc}
   .hint{margin:8px 0 0;font-size:13px;color:#a1a1aa;line-height:1.5}
+  .skip-link{position:absolute;left:.75rem;top:-3.5rem;z-index:100;border-radius:999px;background:#f4f4f5;color:#0b0d12;padding:.45rem .9rem;font-size:13px;font-weight:500}
+  .skip-link:focus{top:.75rem;outline:2px solid #38bdf8;outline-offset:2px}
 </style>
 </head>
 <body>
+<a href="#conteudo" class="skip-link">Ir para o conteúdo</a>
 <main id="conteudo" tabindex="-1">
 <div class="card">${body}</div>
 </main>

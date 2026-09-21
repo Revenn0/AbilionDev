@@ -177,9 +177,12 @@ export function adsLandingDocument(input: { botUsername?: string; scriptId?: str
   .hint{margin:16px 0 0;font-size:12px;color:#a1a1aa}
   footer{margin-top:auto;padding-top:64px;font-size:11px;color:#a1a1aa}
   footer a{color:inherit}
+  .skip-link{position:absolute;left:.75rem;top:-3.5rem;z-index:100;border-radius:999px;background:#f4f4f5;color:#0b0d12;padding:.45rem .9rem;font-size:13px;font-weight:500}
+  .skip-link:focus{top:.75rem;outline:2px solid #38bdf8;outline-offset:2px}
 </style>
 </head>
 <body>
+<a href="#conteudo" class="skip-link">Ir para o conteúdo</a>
 <main id="conteudo" tabindex="-1">
 <p class="kicker">Minicurso gratuito</p>
 <h1>${escapeHtml(title)}</h1>

@@ -134,6 +134,11 @@ try {
     if (msg.type() === "error") errors.push(msg.text())
   })
 
+  await open(page, "/Login")
+  await waitAuthPage(page)
+  assert(page.url().toLowerCase().includes("/login"), "/Login é o HTML público")
+  assert(await page.$('form[action="/api/auth/login"]'), "/Login é o formulário do Worker")
+
   await open(page, "/login")
   await waitAuthPage(page)
   assert(page.url().includes("/login"), "login público sem sessão")
@@ -167,7 +172,12 @@ try {
     "forgot explica que produção não envia e-mail"
   )
   await page.click("button[type=submit]")
-  await page.waitForSelector("#forgot-error", { timeout: 3_000 })
+  const forgotBlocked = await page.$eval("#email", (el) => {
+    const input = el as HTMLInputElement
+    return !input.validity.valid
+  })
+  if (!forgotBlocked) await page.waitForSelector("#forgot-error", { timeout: 3_000 })
+  assert(forgotBlocked || (await page.$("#forgot-error")), "forgot vazio mostra erro")
 
   await open(page, "/reset")
   await waitAuthPage(page)
@@ -177,6 +187,10 @@ try {
 
   await open(page, "/privacidade")
   assert((await page.evaluate(() => document.body.innerText)).includes("privacidade"), "página de privacidade")
+
+  await open(page, "/L")
+  assert((await page.content()).includes("/t.js"), "/L traz o pixel no primeiro HTML")
+  assert(await page.$(".skip-link"), "landing tem skip-link")
 
   await open(page, "/l")
   assert(await page.$("main#conteudo"), "landing tem o alvo do skip-link")

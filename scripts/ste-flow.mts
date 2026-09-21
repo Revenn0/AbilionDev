@@ -93,7 +93,7 @@ import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS
 import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
 import { LEAD_WRITE_BATCH, leadWriteAdopted, leadWriteChunks, leadWriteIds } from "../src/lib/runtime-api.ts"
 import { remoteSearchBlank } from "../src/lib/lead-search.ts"
-import { foldPublicPath, foldStudioPath, safeAppPath, withSafeNext } from "../src/lib/safe-path.ts"
+import { foldPublicPath, foldStudioPath, isWorkerPublicPath, safeAppPath, withSafeNext } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { contactLookups, normalizeTelegramContact, sameLeadContact, validateCapture } from "../src/lib/capture.ts"
 import { displayContact, draftLeadField, formatPhoneContact, isPhoneLikeName, isResolvedPersonName, leadMatchesQuery, nameFromMessages, preferLeadName, resolveLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
@@ -1963,6 +1963,13 @@ assert(foldPublicPath("/Login") === "/login", "Login maiúsculo é a rota públi
 assert(foldPublicPath("/L/") === "/l", "L/ é a landing")
 assert(foldPublicPath("/RESET") === "/reset", "RESET é o HTML do reset")
 assert(foldPublicPath("/T.js") === "/t.js", "T.js é o pixel")
+assert(isWorkerPublicPath("/Login"), "Vite manda /Login ao Worker")
+assert(isWorkerPublicPath("/L/"), "Vite manda /L/ à landing")
+assert(isWorkerPublicPath("/T.js"), "Vite manda /T.js ao pixel")
+assert(isWorkerPublicPath("/Api/health"), "Vite manda /Api ao Worker")
+assert(isWorkerPublicPath("/Forgot"), "Vite manda /Forgot ao Worker")
+assert(!isWorkerPublicPath("/leads"), "painel canónico não é HTML público")
+assert(!isWorkerPublicPath("/"), "home não é HTML público")
 assert(foldPublicPath("/leads") === "/leads", "painel não muda de path")
 assert(foldStudioPath("/Leads") === "/leads", "Leads maiúsculo vai ao painel")
 assert(foldStudioPath("/leads") === null, "leads canónico não redirecciona")
@@ -5092,7 +5099,9 @@ const loginCase = await handleRequest(
   } as Env,
   backgroundCtx()
 )
-assert(loginCase.status === 200 && (await loginCase.text()).includes('action="/api/auth/login"'), "GET /Login é o HTML do Worker")
+const loginCaseHtml = await loginCase.text()
+assert(loginCase.status === 200 && loginCaseHtml.includes('action="/api/auth/login"'), "GET /Login é o HTML do Worker")
+assert(loginCaseHtml.includes('class="skip-link"'), "login do Worker tem skip-link")
 const landingCase = await handleRequest(
   new Request("http://local.test/L/"),
   {
@@ -5105,7 +5114,22 @@ const landingCase = await handleRequest(
   } as Env,
   backgroundCtx()
 )
-assert(landingCase.status === 200 && (await landingCase.text()).includes("/t.js"), "GET /L/ é a landing do Worker")
+const landingCaseHtml = await landingCase.text()
+assert(landingCase.status === 200 && landingCaseHtml.includes("/t.js"), "GET /L/ é a landing do Worker")
+assert(landingCaseHtml.includes('class="skip-link"'), "landing do Worker tem skip-link")
+const pixelCase = await handleRequest(
+  new Request("http://local.test/T.js"),
+  {
+    ...liveEnv,
+    ASSETS: {
+      fetch: async () => {
+        throw new Error("assets down")
+      },
+    },
+  } as Env,
+  backgroundCtx()
+)
+assert(pixelCase.status === 200 && (await pixelCase.text()).includes("abilion_vid"), "GET /T.js é o pixel do Worker")
 const mcpCase = await handleRequest(
   new Request("http://local.test/Mcp"),
   {

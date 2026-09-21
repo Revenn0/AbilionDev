@@ -10,6 +10,8 @@ const ALLOWED = new Set([
   "/privacidade",
 ])
 
+const WORKER_PUBLIC = new Set(["/t.js", "/l", "/login", "/forgot", "/reset", "/privacidade", "/mcp", "/api/mcp"])
+
 /** Landing, login, reset e t.js: /Login e /L/ não caem no SPA. */
 export function foldPublicPath(pathname: string) {
   const raw = pathname.trim()
@@ -17,6 +19,13 @@ export function foldPublicPath(pathname: string) {
   let next = raw.toLowerCase()
   if (next.length > 1 && next.endsWith("/")) next = next.replace(/\/+$/, "")
   return next || "/"
+}
+
+/** Vite local: as mesmas rotas públicas do Worker, inclusive /Login e /T.js. */
+export function isWorkerPublicPath(pathname: string) {
+  const path = foldPublicPath(pathname)
+  if (!path) return false
+  return WORKER_PUBLIC.has(path) || path.startsWith("/api/")
 }
 
 const STUDIO = new Set(["/analytics", "/fluxo", "/leads", "/conversas", "/telegram", "/utilizadores", "/configuracoes"])
