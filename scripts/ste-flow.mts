@@ -8669,6 +8669,55 @@ await upsertLeadKv(goneNamesKv, lead("names-gone", "@namesgone"))
 await deleteLeadKv(kvThrowsOn(goneNamesKv, CRM_NAMES), "names-gone")
 assert(await isLeadRemoved(goneNamesKv, "names-gone"), "DELETE names unread ainda tombstoneia")
 assert((await loadLead(goneNamesKv, "names-gone")) === null, "DELETE names unread ainda apaga a ficha")
+const settingsHookKv = kvThrowsOn(runtimeHoleKv, CRM_SETTINGS)
+const settingsHookEnv = { ...runtimeHoleBase, AUTH: settingsHookKv } as Env
+assert((await findLeadInKv(settingsHookKv, "@holelead", 0, ""))?.id === "hole-lead", "settings unread ainda lê o leftover")
+assert((await loadFunnelsKv(runtimeHoleKv)).some((item) => item.id === "funil-throw"), "settings unread não pisa o funil leftover")
+const holeLeadIdsBeforeSettings = (await listLeads(runtimeHoleKv, 40, "all")).filter((item) => item.contact === "@holelead").map((item) => item.id)
+const hookSettingsCtx = backgroundCtx()
+const hookSettingsPrevFetch = globalThis.fetch
+try {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("api.telegram.org")) {
+      return new Response(JSON.stringify({ ok: true }), { status: 200 })
+    }
+    return hookSettingsPrevFetch(input, init)
+  }) as typeof fetch
+  const hookSettings = await handleRequest(
+    new Request("http://local.test/api/telegram", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-kv" },
+      body: JSON.stringify({
+        update_id: 88008,
+        message: {
+          chat: { id: 88008 },
+          text: "oi settings unread",
+          from: { id: 88008, username: "holelead", first_name: "Hole" },
+        },
+      }),
+    }),
+    settingsHookEnv,
+    hookSettingsCtx
+  )
+  const hookSettingsBody = (await hookSettings.json()) as { ok?: boolean }
+  assert(hookSettings.status === 200, "webhook settings unread ainda acks o Telegram")
+  assert(hookSettings.status !== 500, "webhook settings unread não é Falha interna")
+  assert(hookSettingsBody.ok === true, "webhook settings unread não mente falha no ack")
+  await hookSettingsCtx.flush()
+} finally {
+  globalThis.fetch = hookSettingsPrevFetch
+}
+const holeLeadIdsAfterSettings = (await listLeads(runtimeHoleKv, 40, "all")).filter((item) => item.contact === "@holelead").map((item) => item.id)
+assert(holeLeadIdsAfterSettings.join() === holeLeadIdsBeforeSettings.join(), "webhook settings unread não mint o segundo UUID")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.id === "hole-lead", "webhook settings unread não apaga o leftover")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.contact === "@holelead", "webhook settings unread não troca o contacto leftover")
+assert((await loadFunnelsKv(runtimeHoleKv)).some((item) => item.id === "funil-throw"), "webhook settings unread não pisa o funil leftover")
+const holeAfterSettings = await loadLead(runtimeHoleKv, "hole-lead")
+assert(
+  (holeAfterSettings?.messages ?? []).some((item) => item.role === "lead" && item.text === "oi settings unread") ||
+    (holeAfterSettings?.messages ?? []).some((item) => item.role === "ste"),
+  "webhook settings unread grava a fala no leftover"
+)
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()

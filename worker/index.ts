@@ -1018,7 +1018,12 @@ async function deliverTelegram(
   const incoming = joinUser || start.isStart ? null : (message?.text ?? null)
   const boards = await readWorkspaceFunnels(env)
   const funnels = boards.funnels
-  const loaded = await readWorkspaceSettings(env)
+  let loaded: { settings: Settings; unread: boolean }
+  try {
+    loaded = await readWorkspaceSettings(env)
+  } catch {
+    loaded = { settings: emptySettings(), unread: true }
+  }
   const settings = loaded.settings
   const startPayload = start.isStart && start.payload ? start.payload : lead.startPayload
   const scriptId = scriptIdFromStart(startPayload || "")
