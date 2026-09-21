@@ -30,12 +30,19 @@ export function isWorkerPublicPath(pathname: string) {
 
 const STUDIO = new Set(["/analytics", "/fluxo", "/leads", "/conversas", "/telegram", "/utilizadores", "/configuracoes"])
 
-/** /Leads e /FLUXO/funil/AbC: o React é case-sensitive; o id do funil mantém-se. */
+const STUDIO_ALIASES: Record<string, string> = {
+  "/settings": "/configuracoes",
+  "/users": "/utilizadores",
+}
+
+/** /Leads, /settings e /FLUXO/funil/AbC: o React é case-sensitive; o id do funil mantém-se. */
 export function foldStudioPath(pathname: string): string | null {
   const raw = pathname.trim()
   if (!raw.startsWith("/")) return null
   const trimmed = raw.length > 1 && raw.endsWith("/") ? raw.replace(/\/+$/, "") || "/" : raw
   const lower = trimmed.toLowerCase()
+  const alias = STUDIO_ALIASES[lower]
+  if (alias) return alias === trimmed ? null : alias
   if (STUDIO.has(lower)) return trimmed === lower ? null : lower
   if (lower.startsWith("/fluxo/funil/")) {
     const marker = "/funil/"

@@ -2056,6 +2056,14 @@ assert(foldStudioPath("/leads") === null, "leads canónico não redirecciona")
 assert(foldStudioPath("/FLUXO/funil/AbC") === "/fluxo/funil/AbC", "editor maiúsculo conserva o id")
 assert(foldStudioPath("/fluxo/funil/AbC") === null, "editor canónico não redirecciona")
 assert(foldStudioPath("/Configuracoes/") === "/configuracoes", "barra extra no studio dobra")
+assert(foldStudioPath("/settings") === "/configuracoes", "settings inglês vai às definições")
+assert(foldStudioPath("/Settings") === "/configuracoes", "Settings maiúsculo vai às definições")
+assert(foldStudioPath("/users") === "/utilizadores", "users inglês vai às contas")
+assert(foldStudioPath("/Users/") === "/utilizadores", "Users com barra vai às contas")
+assert(foldStudioPath("/configuracoes") === null, "configurações canónico não redirecciona")
+assert(foldStudioPath("/utilizadores") === null, "utilizadores canónico não redirecciona")
+assert(safeAppPath("/settings") === "/configuracoes", "next=/settings não despeja na home")
+assert(safeAppPath("/users") === "/utilizadores", "next=/users não despeja na home")
 assert(safeAppPath("/utilizadores") === "/utilizadores", "gestor de contas passa no next")
 assert(withSafeNext("/forgot", "/leads") === "/forgot?next=%2Fleads", "forgot conserva o next")
 assert(withSafeNext("/login", "//evil.com") === "/login", "next perigoso não entra no forgot")
@@ -5380,6 +5388,32 @@ const leadsCase = await handleRequest(
   backgroundCtx()
 )
 assert(leadsCase.status === 303 && leadsCase.headers.get("location") === "/leads?q=ana", "GET /Leads não cai no 404 do SPA")
+const settingsCase = await handleRequest(
+  new Request("http://local.test/settings?tab=bot"),
+  {
+    ...liveEnv,
+    ASSETS: {
+      fetch: async () => {
+        throw new Error("assets down")
+      },
+    },
+  } as Env,
+  backgroundCtx()
+)
+assert(settingsCase.status === 303 && settingsCase.headers.get("location") === "/configuracoes?tab=bot", "GET /settings não cai no 404 do SPA")
+const usersCase = await handleRequest(
+  new Request("http://local.test/Users"),
+  {
+    ...liveEnv,
+    ASSETS: {
+      fetch: async () => {
+        throw new Error("assets down")
+      },
+    },
+  } as Env,
+  backgroundCtx()
+)
+assert(usersCase.status === 303 && usersCase.headers.get("location") === "/utilizadores", "GET /Users não cai no 404 do SPA")
 const forgotHtml = await handleRequest(new Request("http://local.test/forgot"), liveEnv, backgroundCtx())
 assert(forgotHtml.status === 200 && (await forgotHtml.text()).includes('action="/api/auth/forgot"'), "GET /forgot é HTML do Worker")
 const resetEmptyHtml = await handleRequest(

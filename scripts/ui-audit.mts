@@ -251,6 +251,18 @@ try {
   await page.waitForSelector("h1", { timeout: 10_000 })
   assert(!(await page.$eval("h1", (el) => (el.textContent || "").includes("não encontrada"))), "/Leads não cai no 404")
 
+  await open(page, "/settings")
+  await page.waitForFunction(() => location.pathname === "/configuracoes", { timeout: 10_000 })
+  assert(page.url().includes("/configuracoes"), "/settings redirecciona para Configurações")
+  await page.waitForSelector("h1", { timeout: 10_000 })
+  assert(!(await page.$eval("h1", (el) => (el.textContent || "").includes("não encontrada"))), "/settings não cai no 404")
+
+  await open(page, "/users")
+  await page.waitForFunction(() => location.pathname === "/utilizadores", { timeout: 10_000 })
+  assert(page.url().includes("/utilizadores"), "/users redirecciona para Utilizadores")
+  await page.waitForSelector("h1", { timeout: 10_000 })
+  assert(!(await page.$eval("h1", (el) => (el.textContent || "").includes("não encontrada"))), "/users não cai no 404")
+
   await open(page, "/")
   assert(
     Boolean(await page.$('a[href="/telegram#pixel"]')),
