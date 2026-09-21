@@ -585,11 +585,16 @@ async function fetchRemoteSettings(env: SettingsEnv): Promise<Settings | undefin
 /** Painel e MCP: KV oco não esconde username, scripts e categorias do Postgres. */
 export async function readWorkspaceSettings(env: SettingsEnv): Promise<{ settings: Settings; unread: boolean }> {
   const remote = await fetchRemoteSettings(env)
-  if (remote === null) {
-    const settings = env.AUTH ? await loadAdoptedSettings(env.AUTH) : emptySettings()
-    return { settings, unread: true }
+  if (env.AUTH) {
+    try {
+      const settings = await loadAdoptedSettings(env.AUTH, remote === null ? undefined : remote)
+      return { settings, unread: remote === null }
+    } catch {
+      if (remote) return { settings: migrateSettings(remote), unread: true }
+      throw new Error("Não confirmei as definições no Postgres.")
+    }
   }
-  if (env.AUTH) return { settings: await loadAdoptedSettings(env.AUTH, remote), unread: false }
+  if (remote === null) return { settings: emptySettings(), unread: true }
   return { settings: remote ?? emptySettings(), unread: false }
 }
 

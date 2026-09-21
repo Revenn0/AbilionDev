@@ -1233,9 +1233,10 @@ try {
   assert(error instanceof Error && error.message.includes("20"), "saveFunnelsKv recusa o 21.º")
 }
 assert(steWaitDelayMs(undefined) === null, "sem espera não agenda tick")
-assert(steWaitDelayMs(new Date(Date.now() + 1000).toISOString(), Date.now()) === 1050, "espera futura agenda com folga")
-assert(steWaitDelayMs(new Date(Date.now() - 1000).toISOString(), Date.now()) === 50, "espera atrasada dispara já")
-assert(steWaitDelayMs(new Date(Date.now() + 2 * 86_400_000).toISOString(), Date.now()) === null, "espera de dias não fica no browser")
+const waitNow = Date.now()
+assert(steWaitDelayMs(new Date(waitNow + 1000).toISOString(), waitNow) === 1050, "espera futura agenda com folga")
+assert(steWaitDelayMs(new Date(waitNow - 1000).toISOString(), waitNow) === 50, "espera atrasada dispara já")
+assert(steWaitDelayMs(new Date(waitNow + 2 * 86_400_000).toISOString(), waitNow) === null, "espera de dias não fica no browser")
 assert(
   settingsWriteFingerprint({ ...defaultSettings, telegramBotToken: "secret" }) ===
     settingsWriteFingerprint({ ...defaultSettings, telegramBotToken: "" }),
@@ -8774,6 +8775,89 @@ assert(
   !(holeAfterFunnels?.messages ?? []).slice(funnelInboundAt + 1).some((item) => item.role === "ste"),
   "webhook funnels unread não fala com o publicado oco"
 )
+const settingsPgPrev = globalThis.fetch
+const settingsBeforePg = await loadSettingsKv(runtimeHoleKv)
+const settingsPgEnv = {
+  ...runtimeHoleBase,
+  AUTH: kvThrowsOn(runtimeHoleKv, CRM_SETTINGS),
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+} as Env
+try {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url.includes("/rest/v1/settings")) {
+      return new Response(
+        JSON.stringify([
+          {
+            data: {
+              telegramBotUsername: "@ste_pg",
+              pageScripts: [
+                {
+                  id: "aabbccdd",
+                  name: "Landing pg",
+                  funnelId: "funil-throw",
+                  createdAt: "2026-01-01T00:00:00.000Z",
+                  updatedAt: "2026-01-01T00:00:00.000Z",
+                },
+              ],
+            },
+          },
+        ]),
+        { status: 200 }
+      )
+    }
+    if (url.includes("/rest/v1/funnels")) return new Response("[]", { status: 200 })
+    return settingsPgPrev(input, init)
+  }) as typeof fetch
+  const settingsPgRead = await readWorkspaceSettings(settingsPgEnv)
+  assert(settingsPgRead.unread, "settings KV throw + backup unread")
+  assert(settingsPgRead.settings.telegramBotUsername === "@ste_pg", "settings KV throw ainda lê o username leftover do Postgres")
+  assert(
+    settingsPgRead.settings.pageScripts?.some((item) => item.id === "aabbccdd"),
+    "settings KV throw ainda lê o script leftover do Postgres"
+  )
+  const settingsPgGet = await handleRequest(
+    new Request("http://local.test/api/crm", { headers: { cookie: runtimeHoleCookie } }),
+    settingsPgEnv,
+    backgroundCtx()
+  )
+  const settingsPgGetBody = (await settingsPgGet.json()) as {
+    ok?: boolean
+    settingsUnread?: boolean
+    settings?: { telegramBotUsername?: string; pageScripts?: Array<{ id?: string }> }
+    funnels?: Array<{ id?: string }>
+  }
+  assert(settingsPgGet.status === 200 && settingsPgGetBody.ok, "GET CRM settings KV throw ainda manda o leftover do backup")
+  assert(settingsPgGetBody.settingsUnread === true, "GET CRM settings KV throw + backup marca definições unread")
+  assert(settingsPgGetBody.settings?.telegramBotUsername === "@ste_pg", "GET CRM settings KV throw não esconde o username leftover do Postgres")
+  assert(settingsPgGetBody.settings?.pageScripts?.some((item) => item.id === "aabbccdd"), "GET CRM settings KV throw não esconde o script leftover do Postgres")
+  assert(settingsPgGetBody.funnels?.some((item) => item.id === "funil-throw"), "GET CRM settings KV throw + backup não esconde o funil leftover")
+  const settingsPgMcp = await handleRequest(
+    new Request("http://local.test/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.246" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 268,
+        method: "tools/call",
+        params: { name: "abilion_get_settings", arguments: {} },
+      }),
+    }),
+    settingsPgEnv,
+    backgroundCtx()
+  )
+  const settingsPgMcpData = JSON.parse(
+    ((await settingsPgMcp.json()) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+  ) as { error?: string; settings?: { telegramBotUsername?: string }; ok?: boolean }
+  assert(settingsPgMcp.status === 200, "MCP get_settings KV throw + backup não cai em 500")
+  assert(!settingsPgMcpData.error, "MCP get_settings KV throw + backup não pede 503")
+  assert(settingsPgMcpData.settings?.telegramBotUsername === "@ste_pg", "MCP get_settings KV throw ainda manda o leftover do Postgres")
+} finally {
+  globalThis.fetch = settingsPgPrev
+}
+assert((await loadSettingsKv(runtimeHoleKv)).telegramBotUsername === settingsBeforePg.telegramBotUsername, "settings KV throw + backup não pisa o username leftover")
+assert((await loadSettingsKv(runtimeHoleKv)).telegramBotUsername !== "@ste_pg", "settings KV throw + backup não grava o username do Postgres em cima do KV unread")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()
