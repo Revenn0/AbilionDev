@@ -93,7 +93,7 @@ import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS
 import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
 import { LEAD_WRITE_BATCH, leadWriteAdopted, leadWriteChunks, leadWriteIds } from "../src/lib/runtime-api.ts"
 import { remoteSearchBlank } from "../src/lib/lead-search.ts"
-import { safeAppPath, withSafeNext } from "../src/lib/safe-path.ts"
+import { foldPublicPath, safeAppPath, withSafeNext } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { contactLookups, normalizeTelegramContact, sameLeadContact, validateCapture } from "../src/lib/capture.ts"
 import { displayContact, draftLeadField, formatPhoneContact, isPhoneLikeName, isResolvedPersonName, leadMatchesQuery, nameFromMessages, preferLeadName, resolveLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
@@ -1740,6 +1740,11 @@ assert(safeAppPath("/fluxo/funil/../x") === "/", "path traversal cai no inicio")
 assert(safeAppPath("/configuracoesfoo") === "/", "prefixo de configuracoes nao passa")
 assert(safeAppPath("/configuracoes/") === "/", "barra extra em configuracoes nao passa")
 assert(safeAppPath("/privacidade") === "/privacidade", "politica no next do login passa")
+assert(foldPublicPath("/Login") === "/login", "Login maiúsculo é a rota pública")
+assert(foldPublicPath("/L/") === "/l", "L/ é a landing")
+assert(foldPublicPath("/RESET") === "/reset", "RESET é o HTML do reset")
+assert(foldPublicPath("/T.js") === "/t.js", "T.js é o pixel")
+assert(foldPublicPath("/leads") === "/leads", "painel não muda de path")
 assert(safeAppPath("/utilizadores") === "/utilizadores", "gestor de contas passa no next")
 assert(withSafeNext("/forgot", "/leads") === "/forgot?next=%2Fleads", "forgot conserva o next")
 assert(withSafeNext("/login", "//evil.com") === "/login", "next perigoso não entra no forgot")
@@ -3722,6 +3727,23 @@ const pgSearchKvMiss = await searchWorkspaceLeads(pgFullEnv, "zzzmissing")
 assert(pgSearchKvMiss.ok && pgSearchKvMiss.leads.length === 0, "índice com entradas e zero hits não é 503")
 const pgSearchKvHit = await searchWorkspaceLeads(pgFullEnv, "@kvlive")
 assert(pgSearchKvHit.ok && pgSearchKvHit.leads[0]?.id === "kv-live", "GET ?q= ainda lê o KV quando ele tem o lead")
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  if (url.includes("/rest/v1/leads") && (init?.method || "GET").toUpperCase() === "GET" && url.includes("ilike")) {
+    return new Response(JSON.stringify([pgSearchRow]), { status: 200 })
+  }
+  if (url.includes("/rest/v1/")) return new Response("[]", { status: 200 })
+  return pgFullPrev(input, init)
+}) as typeof fetch
+const pgSearchKvHole = await searchWorkspaceLeads(pgFullEnv, "Ana Souza")
+assert(pgSearchKvHole.ok && pgSearchKvHole.leads.some((item) => item.id === "pg-ana"), "índice com entradas ainda lê o Postgres se o KV não tem o nome")
+const pgSearchKvHoleHttp = await handleRequest(
+  new Request("http://local.test/api/leads?q=Ana%20Souza", { headers: { cookie: pgFullCookie } }),
+  pgFullEnv,
+  backgroundCtx()
+)
+const pgSearchKvHoleBody = (await pgSearchKvHoleHttp.json()) as { ok?: boolean; leads?: Array<{ id?: string }> }
+assert(pgSearchKvHoleHttp.status === 200 && pgSearchKvHoleBody.leads?.some((item) => item.id === "pg-ana"), "GET ?q= com índice preenchido lê o órfão no Postgres")
 globalThis.fetch = pgFullPrev
 const inbox = (await (
   await handleRequest(new Request("http://local.test/api/inbox", { headers: { cookie: startCookie } }), startEnv, backgroundCtx())
@@ -4694,6 +4716,32 @@ assert(formOk.status === 303 && formOk.headers.get("location") === "/leads", "lo
 assert((formOk.headers.get("set-cookie") || "").includes("abilion_session="), "login form grava o cookie")
 const privacyHtml = await handleRequest(new Request("http://local.test/privacidade"), liveEnv, backgroundCtx())
 assert(privacyHtml.status === 200 && (await privacyHtml.text()).includes("Privacidade"), "GET /privacidade é HTML do Worker")
+const loginCase = await handleRequest(
+  new Request("http://local.test/Login"),
+  {
+    ...liveEnv,
+    ASSETS: {
+      fetch: async () => {
+        throw new Error("assets down")
+      },
+    },
+  } as Env,
+  backgroundCtx()
+)
+assert(loginCase.status === 200 && (await loginCase.text()).includes('action="/api/auth/login"'), "GET /Login é o HTML do Worker")
+const landingCase = await handleRequest(
+  new Request("http://local.test/L/"),
+  {
+    ...liveEnv,
+    ASSETS: {
+      fetch: async () => {
+        throw new Error("assets down")
+      },
+    },
+  } as Env,
+  backgroundCtx()
+)
+assert(landingCase.status === 200 && (await landingCase.text()).includes("/t.js"), "GET /L/ é a landing do Worker")
 const forgotHtml = await handleRequest(new Request("http://local.test/forgot"), liveEnv, backgroundCtx())
 assert(forgotHtml.status === 200 && (await forgotHtml.text()).includes('action="/api/auth/forgot"'), "GET /forgot é HTML do Worker")
 const resetEmptyHtml = await handleRequest(

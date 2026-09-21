@@ -149,8 +149,9 @@ export async function fetchRemoteLeadSearch(env: SettingsEnv, query: string): Pr
 }
 
 /**
- * Painel e MCP: o KV ganha. Índice oco cai no Postgres.
+ * Painel e MCP: o KV ganha. Miss no KV cai no Postgres (órfão / fora do índice).
  * `ok: false` só quando o índice está vazio, há credenciais e o backup falha.
+ * Índice preenchido + backup em baixo é busca vazia, não 503.
  */
 export async function searchWorkspaceLeads(
   env: SettingsEnv,
@@ -160,9 +161,8 @@ export async function searchWorkspaceLeads(
   const found = await lookupLeadsByQuery(env.AUTH, query)
   if (found.length) return { ok: true, leads: found }
   const page = await listLeadPage(env.AUTH, 1, "all")
-  if (!page.empty) return { ok: true, leads: [] }
   const remote = await fetchRemoteLeadSearch(env, query)
-  if (remote === null) return { ok: false }
+  if (remote === null) return page.empty ? { ok: false } : { ok: true, leads: [] }
   return { ok: true, leads: remote }
 }
 

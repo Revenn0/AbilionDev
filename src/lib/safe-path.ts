@@ -10,6 +10,15 @@ const ALLOWED = new Set([
   "/privacidade",
 ])
 
+/** Landing, login, reset e t.js: /Login e /L/ não caem no SPA. */
+export function foldPublicPath(pathname: string) {
+  const raw = pathname.trim()
+  if (!raw.startsWith("/")) return ""
+  let next = raw.toLowerCase()
+  if (next.length > 1 && next.endsWith("/")) next = next.replace(/\/+$/, "")
+  return next || "/"
+}
+
 export function safeAppPath(raw: string | null | undefined) {
   if (!raw) return "/"
   const value = raw.trim()

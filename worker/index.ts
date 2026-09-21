@@ -9,7 +9,7 @@ import { campaignFromStart, originFromStart, parseTelegramStart, scriptIdFromSta
 import { applyEvent, canAdvanceRemoteWait, dueWaits, pickLiveDueLead, snapshotForLead } from "../src/lib/runtime.ts"
 import { adsLandingDocument, pageInstallManual, pageScriptById } from "../src/lib/page-script.ts"
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument } from "../src/lib/auth-pages.ts"
-import { safeAppPath } from "../src/lib/safe-path.ts"
+import { foldPublicPath, safeAppPath } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { BANCA_FIXED, type Lead, type LeadEvent, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types.ts"
 import { compactGeo, factsFromGeo } from "../src/lib/geo.ts"
@@ -164,7 +164,8 @@ export async function handleRequest(request: Request, env: Env, ctx: ExecutionCo
 
 async function routeRequest(request: Request, env: Env, ctx: ExecutionContext) {
   const url = new URL(request.url)
-  if (url.pathname === "/t.js") {
+  const path = foldPublicPath(url.pathname)
+  if (path === "/t.js") {
     return withSecurityHeaders(
       new Response(TRACKER_JS, {
         headers: {
@@ -176,7 +177,7 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext) {
       })
     )
   }
-  if ((url.pathname === "/l" || url.pathname === "/l/") && (request.method === "GET" || request.method === "HEAD")) {
+  if (path === "/l" && (request.method === "GET" || request.method === "HEAD")) {
     const scriptId = url.searchParams.get("s") || ""
     let html = adsLandingDocument({ scriptId })
     try {
@@ -198,7 +199,7 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext) {
       })
     )
   }
-  if ((url.pathname === "/login" || url.pathname === "/login/") && (request.method === "GET" || request.method === "HEAD")) {
+  if (path === "/login" && (request.method === "GET" || request.method === "HEAD")) {
     const next = url.searchParams.get("next")
     if (env.AUTH) {
       const user = await sessionUser(request, kvAuthStore(env.AUTH))
@@ -212,14 +213,14 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext) {
       })
     )
   }
-  if ((url.pathname === "/forgot" || url.pathname === "/forgot/") && (request.method === "GET" || request.method === "HEAD")) {
+  if (path === "/forgot" && (request.method === "GET" || request.method === "HEAD")) {
     return withSecurityHeaders(
       new Response(request.method === "HEAD" ? null : authForgotDocument({ next: url.searchParams.get("next") }), {
         headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
       })
     )
   }
-  if ((url.pathname === "/reset" || url.pathname === "/reset/") && (request.method === "GET" || request.method === "HEAD")) {
+  if (path === "/reset" && (request.method === "GET" || request.method === "HEAD")) {
     return withSecurityHeaders(
       new Response(
         request.method === "HEAD"
@@ -231,7 +232,7 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext) {
       )
     )
   }
-  if ((url.pathname === "/privacidade" || url.pathname === "/privacidade/") && (request.method === "GET" || request.method === "HEAD")) {
+  if (path === "/privacidade" && (request.method === "GET" || request.method === "HEAD")) {
     return withSecurityHeaders(
       new Response(request.method === "HEAD" ? null : authPrivacyDocument(), {
         headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=300" },

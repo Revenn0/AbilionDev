@@ -179,7 +179,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `POST /api/auth/reset` | token de reset |
 | `POST /api/auth/password` | sessão |
 | `GET/POST /api/crm` | sessão — funis e settings (sem token). POST aceita `removedFunnelIds`; o KV ganha se já houver quadro. GET une KV com o Postgres: um objecto vazio no KV não esconde username, scripts, categorias nem funis que ainda estão no backup. Se o KV está oco e o Postgres falha, GET é 503 — o painel não semeia por cima. A cópia Postgres dos funis não apaga ids se o upsert falhar |
-| `GET/POST/DELETE /api/leads` | sessão — GET pagina 400 (`nextCursor`, `stale` se o cursor sumiu) ou `?q=@user` no alias, no nome, no telefone e na categoria. A primeira página manda `removed` (tombstones) e `clipped` se o índice está no teto (8000 chats / 4000 sem chat) ou se o backup do Postgres devolveu uma página cheia. Com o KV oco o GET pagina o Postgres (keyset) em vez de fingir que 400 é o universo. Índice oco + Postgres em baixo é 503 (lista e `?q=`) — o painel mostra “Não li os leads”, não uma base vazia. Índice com entradas órfãs (sem `crm:lead`) também: 503 se o backup cair, `clipped` se vier vazio, ou as fichas do Postgres se existirem — nunca um `ok+[]` completo que apague o local. Página mista (fichas vivas + ids órfãos) preenche os buracos no Postgres e marca `clipped` se algum id ficar por resolver; Postgres em baixo nesta página é 200+clipped, não 503. Tombstone no índice não é buraco. Primeira página só com órfãos e mais páginas no índice mantém o cursor do KV — não troca o universo pelo top-N do Postgres. `clipped` em qualquer página impede o hydrate de fechar a lista. A busca `?q=` com índice preenchido e zero hits continua lista vazia, mesmo se o Postgres cair. O hydrate pede até 40 páginas (16000). Página a meio vazia/stale **não** conta como lista; `clipped` ou teto de páginas é janela incompleta e **não** apaga leads locais |
+| `GET/POST/DELETE /api/leads` | sessão — GET pagina 400 (`nextCursor`, `stale` se o cursor sumiu) ou `?q=@user` no alias, no nome, no telefone e na categoria. A primeira página manda `removed` (tombstones) e `clipped` se o índice está no teto (8000 chats / 4000 sem chat) ou se o backup do Postgres devolveu uma página cheia. Com o KV oco o GET pagina o Postgres (keyset) em vez de fingir que 400 é o universo. Índice oco + Postgres em baixo é 503 (lista e `?q=`) — o painel mostra “Não li os leads”, não uma base vazia. Índice com entradas órfãs (sem `crm:lead`) também: 503 se o backup cair, `clipped` se vier vazio, ou as fichas do Postgres se existirem — nunca um `ok+[]` completo que apague o local. Página mista (fichas vivas + ids órfãos) preenche os buracos no Postgres e marca `clipped` se algum id ficar por resolver; Postgres em baixo nesta página é 200+clipped, não 503. Tombstone no índice não é buraco. Primeira página só com órfãos e mais páginas no índice mantém o cursor do KV — não troca o universo pelo top-N do Postgres. `clipped` em qualquer página impede o hydrate de fechar a lista. A busca `?q=` com miss no KV lê o Postgres (órfão / fora do índice); índice preenchido + backup em baixo é lista vazia, não 503. O hydrate pede até 40 páginas (16000). Página a meio vazia/stale **não** conta como lista; `clipped` ou teto de páginas é janela incompleta e **não** apaga leads locais |
 | `GET /api/inbox` | sessão — página 400 do Telegram (`nextCursor`, `stale` se o cursor sumiu). A primeira página manda `removed` (tombstones), como o GET de leads. KV oco pagina o Postgres e marca `clipped` se a página estiver cheia; índice oco + Postgres em baixo é 503. O poll de 5 s aplica os tombstones e não reabre lead apagado noutro dispositivo |
 | `GET/POST /api/runtime` | sessão — GET qualquer conta; POST só dono (token, IA, voz) |
 | `POST /api/runtime/voice` | sessão, só dono — gera clips ElevenLabs |
@@ -193,12 +193,12 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `GET /api/install` | público: manual do pixel + snippet (`?s=` para um script) |
 | `POST /api/telegram` | Telegram; `secret_token` do webhook |
 | `GET /api/cron` | `CRON_SECRET` obrigatório; cada espera corre isolada |
-| `GET /t.js` | pixel |
-| `GET /l` | público: HTML da landing do anúncio (`t.js` + CTA). `?s=` escolhe o script |
-| `GET /login` | público: HTML do formulário. Com sessão, 303 para o `next` seguro |
-| `GET /forgot` | público: HTML do pedido de reset |
-| `GET /reset` | público: HTML da nova senha (`?token=`). Sem token mostra o empty state |
-| `GET /privacidade` | público: HTML da política |
+| `GET /t.js` | pixel. `/T.js` também |
+| `GET /l` | público: HTML da landing do anúncio (`t.js` + CTA). `?s=` escolhe o script. `/L` e `/L/` também |
+| `GET /login` | público: HTML do formulário. Com sessão, 303 para o `next` seguro. `/Login` também |
+| `GET /forgot` | público: HTML do pedido de reset. `/Forgot` também |
+| `GET /reset` | público: HTML da nova senha (`?token=`). Sem token mostra o empty state. `/Reset` também |
+| `GET /privacidade` | público: HTML da política. `/Privacidade` também |
 
 ## MCP (Claude Code e outros agentes)
 
