@@ -89,7 +89,7 @@ import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.t
 import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_INDEX, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, leadPageCursor, leadPageFromRemote, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
-import { fetchRemoteDueLeads, fetchRemoteLeadByIdentity, fetchRemoteLeadsByIds, findWorkspaceLead, leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceSettings, remoteLeadIdentityPath, remoteLeadListPath, remoteLeadSearchPath, rowToLead, sanitizeRemoteSearchNeedle, searchWorkspaceLeads } from "../worker/workspace-settings.ts"
+import { fetchRemoteDueLeads, fetchRemoteLeadByIdentity, fetchRemoteLeadsByIds, findWorkspaceLead, leadCatalogUnread, leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceSettings, remoteLeadIdentityPath, remoteLeadListPath, remoteLeadSearchPath, rowToLead, sanitizeRemoteSearchNeedle, searchWorkspaceLeads } from "../worker/workspace-settings.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
@@ -3376,6 +3376,18 @@ const pgFailList = await handleRequest(
 )
 const pgFailBody = (await pgFailList.json()) as { error?: string; ok?: boolean }
 assert(pgFailList.status === 503 && pgFailBody.error?.includes("Postgres"), "KV vazio + Postgres em baixo é 503 na lista")
+const pgFailWrite = await handleRequest(
+  new Request("http://local.test/api/leads", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: pgFailCookie },
+    body: JSON.stringify({ lead: lead("pg-fail-write", "@pgfailwrite") }),
+  }),
+  pgFailEnv,
+  backgroundCtx()
+)
+const pgFailWriteBody = (await pgFailWrite.json()) as { error?: string }
+assert(pgFailWrite.status === 503 && pgFailWriteBody.error?.includes("Postgres"), "KV vazio + Postgres em baixo não aceita POST de lead")
+assert((await listLeads(pgFailEnv.AUTH, 20, "all")).length === 0, "POST recusado não mint lead no KV oco")
 assert(collectLeadPages([{ leads: [], clipped: true }]).complete === false, "clipped vazio não é lista completa")
 const pgFailInbox = await handleRequest(
   new Request("http://local.test/api/inbox", { headers: { cookie: pgFailCookie } }),
@@ -3549,6 +3561,11 @@ globalThis.fetch = (async () => {
 assert((await fetchRemoteLeadsByIds({ SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env, ["ghost"])) === null, "fill com Postgres em baixo é null")
 assert((await fetchRemoteLeadByIdentity({ SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env, "@ghost", 9, "9")) === null, "identidade com Postgres em baixo é null")
 assert((await fetchRemoteDueLeads({ SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env, "2026-06-02T00:00:00.000Z")) === null, "due remoto com Postgres em baixo é null")
+assert(
+  await leadCatalogUnread({ AUTH: memoryKv(), SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env),
+  "índice oco + Postgres em baixo é catálogo unread"
+)
+assert(!(await leadCatalogUnread({ AUTH: memoryKv() } as Env)), "sem credenciais o catálogo oco não é unread")
 let identityThrew = false
 try {
   await findWorkspaceLead({ SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env, "@ghost", 9, "9")
@@ -6614,6 +6631,28 @@ const mcpImportCategoryUnreadData = JSON.parse(mcpImportCategoryUnreadBody.resul
 }
 assert(mcpImportCategoryUnread.status === 200 && mcpImportCategoryUnreadBody.result?.isError, "MCP não cria categoria se a lista unread está oca")
 assert(mcpImportCategoryUnreadData.error === "Não confirmei as categorias.", "MCP import unread pede confirmação das categorias")
+const mcpImportCatalogUnread = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 199,
+      method: "tools/call",
+      params: { name: "abilion_import_leads", arguments: { text: "Rita, 11911112222" } },
+    }),
+  }),
+  mcpInstallDownEnv,
+  backgroundCtx()
+)
+const mcpImportCatalogUnreadBody = (await mcpImportCatalogUnread.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const mcpImportCatalogUnreadData = JSON.parse(mcpImportCatalogUnreadBody.result?.content?.[0]?.text || "{}") as {
+  error?: string
+}
+assert(mcpImportCatalogUnread.status === 200 && mcpImportCatalogUnreadBody.result?.isError, "MCP não importa se o catálogo unread está oco")
+assert(mcpImportCatalogUnreadData.error === "Não li os leads do Postgres.", "MCP import unread pede confirmação dos leads")
 
 const mcpImport = await handleRequest(
   new Request("http://local.test/mcp", {

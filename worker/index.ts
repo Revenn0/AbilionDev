@@ -64,7 +64,7 @@ import {
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
 import { readJsonObject, readJsonStrict, type JsonFail } from "./json-body.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall, telegramJoinActor, telegramUpdateActor } from "./telegram.ts"
-import { fetchRemoteDueLeads, fetchRemoteLeadPage, fillLeadHoles, findWorkspaceLead, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, readWorkspaceSettings, rowToLead, searchWorkspaceLeads, type LeadRow } from "./workspace-settings.ts"
+import { fetchRemoteDueLeads, fetchRemoteLeadPage, fillLeadHoles, findWorkspaceLead, leadCatalogUnread, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, readWorkspaceSettings, rowToLead, searchWorkspaceLeads, type LeadRow } from "./workspace-settings.ts"
 import type { KvLike } from "./kv.ts"
 
 type Fetcher = { fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> }
@@ -585,6 +585,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     }
     const parsed = await readJsonObject<{ lead?: Lead; leads?: Lead[] }>(request, 256_000)
     if (!parsed.ok) return jsonReadError(parsed)
+    if (await leadCatalogUnread(env)) return json({ error: "Não li os leads do Postgres." }, 503)
     const body = parsed.value
     const rows = (body.leads?.length ? body.leads : body.lead ? [body.lead] : []).slice(0, 120)
     const ids: string[] = []

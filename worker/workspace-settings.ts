@@ -279,6 +279,16 @@ export async function fetchRemoteLeadPage(
   return rows.map(rowToLead)
 }
 
+/** Índice oco + Postgres com credenciais e fetch `null`: não é catálogo vazio. */
+export async function leadCatalogUnread(env: SettingsEnv): Promise<boolean> {
+  if (!env.AUTH) return false
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return false
+  const page = await listLeadPage(env.AUTH, 1, "all")
+  if (!page.empty) return false
+  const remote = await fetchRemoteLeadPage(env, 1, "all")
+  return remote === null
+}
+
 export type SettingsEnv = {
   AUTH?: KvLike
   SUPABASE_URL?: string
