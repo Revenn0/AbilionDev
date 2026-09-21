@@ -1,4 +1,4 @@
-import { adoptFunnelStores, applyRemovedFunnels, commitStoredLead, commitStoredSettings, emptySettings, publicSettings, resolveLeadLookup } from "../src/lib/crm.ts"
+import { adoptFunnelStores, adoptSearchLeads, applyRemovedFunnels, commitStoredLead, commitStoredSettings, emptySettings, publicSettings, resolveLeadLookup } from "../src/lib/crm.ts"
 import { sanitizeLeadCategory } from "../src/lib/lead-category.ts"
 import { leadMatchesQuery } from "../src/lib/lead-name.ts"
 import { countryName, normalizeCountryCode, normalizeRegionCode } from "../src/lib/geo.ts"
@@ -152,9 +152,10 @@ export async function fetchRemoteLeadSearch(env: SettingsEnv, query: string): Pr
 }
 
 /**
- * Painel e MCP: o KV ganha. Miss no KV cai no Postgres (órfão / fora do índice).
- * `ok: false` só quando o índice está vazio, há credenciais e o backup falha.
+ * Painel e MCP: KV e backup juntam-se.
+ * `ok: false` só quando o índice está vazio, o KV não achou ninguém, há credenciais e o backup falha.
  * Índice preenchido + backup em baixo é busca vazia, não 503.
+ * Hit no KV + backup em baixo devolve o KV — não esconde o leftover.
  */
 export async function searchWorkspaceLeads(
   env: SettingsEnv,
@@ -162,11 +163,13 @@ export async function searchWorkspaceLeads(
 ): Promise<{ ok: true; leads: Lead[] } | { ok: false }> {
   if (!env.AUTH) return { ok: true, leads: [] }
   const found = await lookupLeadsByQuery(env.AUTH, query)
-  if (found.length) return { ok: true, leads: found }
-  const page = await listLeadPage(env.AUTH, 1, "all")
   const remote = await fetchRemoteLeadSearch(env, query)
-  if (remote === null) return page.empty ? { ok: false } : { ok: true, leads: [] }
-  return { ok: true, leads: remote }
+  if (remote === null) {
+    if (found.length) return { ok: true, leads: found }
+    const page = await listLeadPage(env.AUTH, 1, "all")
+    return page.empty ? { ok: false } : { ok: true, leads: [] }
+  }
+  return { ok: true, leads: adoptSearchLeads(found, remote) }
 }
 
 function quoteRemoteId(value: string) {

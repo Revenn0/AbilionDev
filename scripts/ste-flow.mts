@@ -87,6 +87,7 @@ import {
   mergeLeadEvents,
   mergeLeads,
   overlayPendingLeads,
+  adoptSearchLeads,
   remapAdoptedLeads,
   publicSettings,
   reconcileFunnels,
@@ -4785,6 +4786,11 @@ const pgSearchKvMiss = await searchWorkspaceLeads(pgFullEnv, "zzzmissing")
 assert(pgSearchKvMiss.ok && pgSearchKvMiss.leads.length === 0, "índice com entradas e zero hits não é 503")
 const pgSearchKvHit = await searchWorkspaceLeads(pgFullEnv, "@kvlive")
 assert(pgSearchKvHit.ok && pgSearchKvHit.leads[0]?.id === "kv-live", "GET ?q= ainda lê o KV quando ele tem o lead")
+const kvAna = { ...lead("kv-ana", "@anakv"), name: "Ana KV" }
+assert(adoptSearchLeads([kvAna], [rowToLead(pgSearchRow)]).some((item) => item.id === "kv-ana"), "busca une o hit do KV")
+assert(adoptSearchLeads([kvAna], [rowToLead(pgSearchRow)]).some((item) => item.id === "pg-ana"), "busca une o órfão do backup")
+assert(adoptSearchLeads([kvAna], []).every((item) => item.id === "kv-ana"), "busca sem remoto fica o KV")
+await upsertLeadKv(pgFullEnv.AUTH, kvAna)
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = String(input)
   if (url.includes("/rest/v1/leads") && (init?.method || "GET").toUpperCase() === "GET" && url.includes("ilike")) {
@@ -4795,6 +4801,24 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 }) as typeof fetch
 const pgSearchKvHole = await searchWorkspaceLeads(pgFullEnv, "Ana Souza")
 assert(pgSearchKvHole.ok && pgSearchKvHole.leads.some((item) => item.id === "pg-ana"), "índice com entradas ainda lê o Postgres se o KV não tem o nome")
+const pgSearchUnion = await searchWorkspaceLeads(pgFullEnv, "Ana")
+assert(pgSearchUnion.ok && pgSearchUnion.leads.some((item) => item.id === "kv-ana"), "hit no KV não fecha a busca")
+assert(pgSearchUnion.ok && pgSearchUnion.leads.some((item) => item.id === "pg-ana"), "hit no KV ainda lê o órfão no Postgres")
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("/rest/v1/")) throw new Error("postgres down")
+  return pgFullPrev(input, init)
+}) as typeof fetch
+const pgSearchUnionDown = await searchWorkspaceLeads(pgFullEnv, "Ana")
+assert(pgSearchUnionDown.ok && pgSearchUnionDown.leads.some((item) => item.id === "kv-ana"), "hit no KV + backup unread devolve o KV")
+assert(!pgSearchUnionDown.ok || !pgSearchUnionDown.leads.some((item) => item.id === "pg-ana"), "unread não inventa o órfão")
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  if (url.includes("/rest/v1/leads") && (init?.method || "GET").toUpperCase() === "GET" && url.includes("ilike")) {
+    return new Response(JSON.stringify([pgSearchRow]), { status: 200 })
+  }
+  if (url.includes("/rest/v1/")) return new Response("[]", { status: 200 })
+  return pgFullPrev(input, init)
+}) as typeof fetch
 const pgSearchKvHoleHttp = await handleRequest(
   new Request("http://local.test/api/leads?q=Ana%20Souza", { headers: { cookie: pgFullCookie } }),
   pgFullEnv,

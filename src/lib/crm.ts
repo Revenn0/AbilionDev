@@ -508,6 +508,13 @@ export function adoptLeadStores(kv: Lead[], remote: Lead[]): Lead[] {
   return mergeLeads(kv, remote.filter((lead) => keep.has(lead.id)))
 }
 
+/** Busca: KV e backup juntam-se. Hit no KV já não esconde o órfão no Postgres. */
+export function adoptSearchLeads(kv: Lead[], remote: Lead[]): Lead[] {
+  if (!remote.length) return kv
+  if (!kv.length) return remote
+  return mergeLeads(remote, kv, kv.map((lead) => lead.id))
+}
+
 export function resolveLeadLookup(
   kvLead: Lead | null | undefined,
   remoteLead: Lead | null | undefined,
