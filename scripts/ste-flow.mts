@@ -7192,6 +7192,48 @@ assert(funnelsDownCrmGetBody.error === "Não li o CRM do Worker.", "GET CRM funn
 assert(!Array.isArray(funnelsDownCrmGetBody.funnels), "GET CRM funnels KV throw não manda lista vazia de funis")
 assert(funnelsDownCrmGetBody.ok !== true, "GET CRM funnels KV throw não mente ok")
 assert((await loadFunnelsKv(runtimeHoleKv)).some((item) => item.id === "funil-throw"), "GET CRM funnels KV throw não pisa o funil leftover")
+const removedFunnelsThrowEnv = { ...runtimeHoleBase, AUTH: kvThrowsOn(runtimeHoleKv, CRM_REMOVED_FUNNELS) } as Env
+const goneBoard = {
+  ...emptySalesFunnel("Gone"),
+  id: "funil-gone",
+  production: { name: "Gone", publishedAt: "2026-01-01T00:00:00.000Z", nodes: [], edges: [] },
+}
+await saveFunnelsKv(runtimeHoleKv, [throwBoard, goneBoard])
+await rememberRemovedFunnels(runtimeHoleKv, ["funil-gone"])
+const removedFunnelsDownCrmGet = await handleRequest(
+  new Request("http://local.test/api/crm", { headers: { cookie: runtimeHoleCookie } }),
+  removedFunnelsThrowEnv,
+  backgroundCtx()
+)
+const removedFunnelsDownCrmGetBody = (await removedFunnelsDownCrmGet.json()) as {
+  ok?: boolean
+  error?: string
+  funnels?: Array<{ id?: string }>
+  funnelsUnread?: boolean
+}
+assert(removedFunnelsDownCrmGet.status === 200 && removedFunnelsDownCrmGetBody.ok, "GET CRM tombstone de funil unread ainda manda o leftover")
+assert(removedFunnelsDownCrmGet.status !== 503, "GET CRM tombstone de funil unread não esconde o quadro leftover")
+assert(removedFunnelsDownCrmGet.status !== 500, "GET CRM tombstone de funil unread não é Falha interna")
+assert(removedFunnelsDownCrmGetBody.funnels?.some((item) => item.id === "funil-throw"), "GET CRM tombstone de funil unread não esconde o funil leftover")
+assert(!removedFunnelsDownCrmGetBody.funnels?.some((item) => item.id === "funil-gone"), "GET CRM tombstone de funil unread não ressuscita o gone")
+assert(removedFunnelsDownCrmGetBody.funnelsUnread === true, "GET CRM tombstone de funil unread marca funnelsUnread")
+const removedFunnelsDownMcp = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.189" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 235, method: "tools/call", params: { name: "abilion_list_funnels", arguments: {} } }),
+  }),
+  removedFunnelsThrowEnv,
+  backgroundCtx()
+)
+const removedFunnelsDownMcpData = JSON.parse(
+  ((await removedFunnelsDownMcp.json()) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string; funnels?: Array<{ id?: string }>; unread?: boolean }
+assert(removedFunnelsDownMcp.status === 200, "MCP list_funnels tombstone unread não cai em 500")
+assert(!removedFunnelsDownMcpData.error, "MCP list_funnels tombstone unread não pede 503")
+assert(removedFunnelsDownMcpData.funnels?.some((item) => item.id === "funil-throw"), "MCP list_funnels tombstone unread ainda manda o leftover")
+assert(!removedFunnelsDownMcpData.funnels?.some((item) => item.id === "funil-gone"), "MCP list_funnels tombstone unread não ressuscita o gone")
+await saveFunnelsKv(runtimeHoleKv, [throwBoard])
 const kvDownMcpFunnels = await funnelsThrowMcp(230, "abilion_list_funnels")
 const kvDownMcpFunnelsBody = (await kvDownMcpFunnels.json()) as {
   result?: { isError?: boolean; content?: Array<{ text?: string }> }

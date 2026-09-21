@@ -6,7 +6,7 @@ import { migrateSettings, sanitizeIncomingFunnel } from "../src/lib/migrate.ts"
 import { sanitizeVisitorId, summarizeTrack, type TrackEvent, type TrackKind, type TrackSummary } from "../src/lib/track.ts"
 import type { Lead, LeadEvent, SalesFunnel, Settings } from "../src/lib/types.ts"
 import { mergeTrackEvents } from "./track-store.ts"
-import { filterLiveLeads, findLeadInKv, isLeadPageCursor, leadRemovedForRead, listLeadPage, loadAdoptedSettings, loadFunnelsKv, loadLead, loadRemovedFunnelIds, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge, removedIdsForRead, resolveLeadWrite } from "./crm-store.ts"
+import { filterLiveLeads, findLeadInKv, funnelRemovedForRead, isLeadPageCursor, leadRemovedForRead, listLeadPage, loadAdoptedSettings, loadFunnelsKv, loadLead, loadRemovedFunnelIds, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge, removedIdsForRead, resolveLeadWrite } from "./crm-store.ts"
 import type { KvLike } from "./kv.ts"
 
 const WORKSPACE = "local"
@@ -642,12 +642,31 @@ async function fetchRemoteFunnels(env: SettingsEnv): Promise<SalesFunnel[] | nul
 export async function readWorkspaceFunnels(env: SettingsEnv): Promise<{ funnels: SalesFunnel[]; unread: boolean }> {
   const kv = env.AUTH ? await loadFunnelsKv(env.AUTH) : []
   const remote = await fetchRemoteFunnels(env)
-  const removed = env.AUTH ? await loadRemovedFunnelIds(env.AUTH) : []
-  if (remote === null) {
-    if (!kv.length) throw new Error("Não li os funis do Postgres.")
-    return { funnels: applyRemovedFunnels(kv, removed), unread: true }
+  let removed: string[] = []
+  let listUnread = false
+  if (env.AUTH) {
+    try {
+      removed = await loadRemovedFunnelIds(env.AUTH)
+    } catch {
+      listUnread = true
+    }
   }
-  return { funnels: adoptFunnelStores(kv, remote, removed), unread: false }
+  let funnels =
+    remote === null
+      ? !kv.length
+        ? null
+        : applyRemovedFunnels(kv, removed)
+      : adoptFunnelStores(kv, remote, removed)
+  if (funnels === null) throw new Error("Não li os funis do Postgres.")
+  if (env.AUTH) {
+    const live: SalesFunnel[] = []
+    for (const funnel of funnels) {
+      if (await funnelRemovedForRead(env.AUTH, funnel.id)) continue
+      live.push(funnel)
+    }
+    funnels = live
+  }
+  return { funnels, unread: remote === null || listUnread }
 }
 
 export async function loadWorkspaceFunnels(env: SettingsEnv): Promise<SalesFunnel[]> {

@@ -630,6 +630,24 @@ export async function isFunnelRemoved(kv: KvLike, id: string): Promise<boolean> 
   return Boolean(next) && (await loadRemovedFunnelIds(kv)).includes(next)
 }
 
+export async function removedFunnelIdsForRead(kv: KvLike): Promise<string[]> {
+  try {
+    return await loadRemovedFunnelIds(kv)
+  } catch {
+    return []
+  }
+}
+
+/** Leitura: lista unread não é tombstone. A chave gone continua a valer. */
+export async function funnelRemovedForRead(kv: KvLike, id: string): Promise<boolean> {
+  const next = id.trim()
+  if (!next) return false
+  const removed = await removedFunnelIdsForRead(kv)
+  if (removed.includes(next)) return true
+  const key = goneFunnelKey(next)
+  return Boolean(key && (await kv.get(key, "json")))
+}
+
 async function collectGoneFunnelIds(kv: KvLike, ids: string[]) {
   const gone: string[] = []
   const seen = new Set<string>()
