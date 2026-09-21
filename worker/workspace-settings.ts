@@ -645,7 +645,15 @@ async function fetchRemoteFunnels(env: SettingsEnv): Promise<SalesFunnel[] | nul
 
 /** Painel e MCP: KV e Postgres juntam-se. KV oco + backup em baixo é erro; KV com quadro sobrevive unread. */
 export async function readWorkspaceFunnels(env: SettingsEnv): Promise<{ funnels: SalesFunnel[]; unread: boolean }> {
-  const kv = env.AUTH ? await loadFunnelsKv(env.AUTH) : []
+  let kv: SalesFunnel[] = []
+  let kvUnread = false
+  if (env.AUTH) {
+    try {
+      kv = await loadFunnelsKv(env.AUTH)
+    } catch {
+      kvUnread = true
+    }
+  }
   const remote = await fetchRemoteFunnels(env)
   let removed: string[] = []
   let listUnread = false
@@ -656,12 +664,13 @@ export async function readWorkspaceFunnels(env: SettingsEnv): Promise<{ funnels:
       listUnread = true
     }
   }
+  const remoteUnread = remote === null || (kvUnread && !kv.length && !remote.length)
   let funnels =
-    remote === null
+    remoteUnread
       ? !kv.length
         ? null
         : applyRemovedFunnels(kv, removed)
-      : adoptFunnelStores(kv, remote, removed)
+      : adoptFunnelStores(kv, remote ?? [], removed)
   if (funnels === null) throw new Error("Não li os funis do Postgres.")
   if (env.AUTH) {
     const live: SalesFunnel[] = []
@@ -671,7 +680,7 @@ export async function readWorkspaceFunnels(env: SettingsEnv): Promise<{ funnels:
     }
     funnels = live
   }
-  return { funnels, unread: remote === null || listUnread }
+  return { funnels, unread: remote === null || listUnread || kvUnread }
 }
 
 export async function loadWorkspaceFunnels(env: SettingsEnv): Promise<SalesFunnel[]> {

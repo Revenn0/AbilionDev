@@ -8858,6 +8858,105 @@ try {
 }
 assert((await loadSettingsKv(runtimeHoleKv)).telegramBotUsername === settingsBeforePg.telegramBotUsername, "settings KV throw + backup não pisa o username leftover")
 assert((await loadSettingsKv(runtimeHoleKv)).telegramBotUsername !== "@ste_pg", "settings KV throw + backup não grava o username do Postgres em cima do KV unread")
+const funnelsPgPrev = globalThis.fetch
+const funnelsBeforePg = await loadFunnelsKv(runtimeHoleKv)
+const funnelsPgEnv = {
+  ...runtimeHoleBase,
+  AUTH: kvThrowsOn(runtimeHoleKv, CRM_FUNNELS),
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+} as Env
+try {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url.includes("/rest/v1/settings")) return new Response("[]", { status: 200 })
+    if (url.includes("/rest/v1/funnels")) {
+      return new Response(
+        JSON.stringify([
+          {
+            id: "funil-pg",
+            name: "Postgres leftover",
+            mode: "sales",
+            status: "draft",
+            updated_at: "2026-01-01T00:00:00.000Z",
+            nodes: [],
+            edges: [],
+            production: { name: "Postgres leftover", publishedAt: "2026-01-01T00:00:00.000Z", nodes: [], edges: [] },
+          },
+        ]),
+        { status: 200 }
+      )
+    }
+    return funnelsPgPrev(input, init)
+  }) as typeof fetch
+  const funnelsPgRead = await readWorkspaceFunnels(funnelsPgEnv)
+  assert(funnelsPgRead.unread, "funnels KV throw + backup unread")
+  assert(
+    funnelsPgRead.funnels.some((item) => item.id === "funil-pg"),
+    "funnels KV throw ainda lê o funil leftover do Postgres"
+  )
+  const funnelsPgGet = await handleRequest(
+    new Request("http://local.test/api/crm", { headers: { cookie: runtimeHoleCookie } }),
+    funnelsPgEnv,
+    backgroundCtx()
+  )
+  const funnelsPgGetBody = (await funnelsPgGet.json()) as {
+    ok?: boolean
+    error?: string
+    funnelsUnread?: boolean
+    funnels?: Array<{ id?: string }>
+  }
+  assert(funnelsPgGet.status === 200 && funnelsPgGetBody.ok, "GET CRM funnels KV throw ainda manda o leftover do backup")
+  assert(funnelsPgGet.status !== 503, "GET CRM funnels KV throw + backup não esconde o quadro leftover")
+  assert(funnelsPgGet.status !== 500, "GET CRM funnels KV throw + backup não é Falha interna")
+  assert(funnelsPgGetBody.funnelsUnread === true, "GET CRM funnels KV throw + backup marca funnelsUnread")
+  assert(funnelsPgGetBody.funnels?.some((item) => item.id === "funil-pg"), "GET CRM funnels KV throw não esconde o funil leftover do Postgres")
+  assert(Array.isArray(funnelsPgGetBody.funnels), "GET CRM funnels KV throw + backup manda a lista leftover")
+  const funnelsPgMcp = await handleRequest(
+    new Request("http://local.test/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.247" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 269,
+        method: "tools/call",
+        params: { name: "abilion_list_funnels", arguments: {} },
+      }),
+    }),
+    funnelsPgEnv,
+    backgroundCtx()
+  )
+  const funnelsPgMcpData = JSON.parse(
+    ((await funnelsPgMcp.json()) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+  ) as { error?: string; funnels?: Array<{ id?: string }>; unread?: boolean }
+  assert(funnelsPgMcp.status === 200, "MCP list_funnels KV throw + backup não cai em 500")
+  assert(!funnelsPgMcpData.error, "MCP list_funnels KV throw + backup não pede 503")
+  assert(funnelsPgMcpData.funnels?.some((item) => item.id === "funil-pg"), "MCP list_funnels KV throw ainda manda o leftover do Postgres")
+  const funnelsPgCreate = await handleRequest(
+    new Request("http://local.test/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.248" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 270,
+        method: "tools/call",
+        params: { name: "abilion_create_funnel", arguments: { name: "Novo unread pg" } },
+      }),
+    }),
+    funnelsPgEnv,
+    backgroundCtx()
+  )
+  const funnelsPgCreateData = JSON.parse(
+    ((await funnelsPgCreate.json()) as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+  ) as { error?: string; funnel?: { id?: string } }
+  assert(funnelsPgCreateData.error === "Não confirmei os funis.", "MCP create_funnel unread + leftover do backup ainda recusa criar")
+  assert(!funnelsPgCreateData.funnel, "MCP create_funnel unread + leftover do backup não inventa funil")
+} finally {
+  globalThis.fetch = funnelsPgPrev
+}
+assert(funnelsBeforePg.some((item) => item.id === "funil-throw"), "funnels KV throw + backup parte do leftover no KV")
+assert((await loadFunnelsKv(runtimeHoleKv)).some((item) => item.id === "funil-throw"), "funnels KV throw + backup não pisa o funil leftover")
+assert(!(await loadFunnelsKv(runtimeHoleKv)).some((item) => item.id === "funil-pg"), "funnels KV throw + backup não grava o funil do Postgres em cima do KV unread")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()
