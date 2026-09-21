@@ -1,3 +1,5 @@
+import { authForgotDocument, authLoginDocument, wantsAuthHtml } from "../src/lib/auth-pages.ts"
+import { safeAppPath } from "../src/lib/safe-path.ts"
 import { readJsonObject } from "./json-body.ts"
 
 export const OPERATORS = [
@@ -587,9 +589,37 @@ type AuthBody = {
   password?: string
   currentPassword?: string
   token?: string
+  next?: string
+}
+
+function authHtml(page: string, status = 200, headers?: Record<string, string>) {
+  return new Response(page, {
+    status,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      ...headers,
+    },
+  })
 }
 
 async function readBody(request: Request): Promise<{ ok: true; body: AuthBody } | { ok: false; response: Response }> {
+  const type = request.headers.get("content-type") || ""
+  if (type.includes("application/x-www-form-urlencoded")) {
+    const text = await request.text()
+    if (text.length > 8_192) return { ok: false, response: json({ error: "Pedido demasiado grande." }, 413) }
+    const params = new URLSearchParams(text)
+    return {
+      ok: true,
+      body: {
+        email: params.get("email") || "",
+        password: params.get("password") || "",
+        currentPassword: params.get("currentPassword") || "",
+        token: params.get("token") || "",
+        next: params.get("next") || "",
+      },
+    }
+  }
   const parsed = await readJsonObject<AuthBody>(request, 8_192)
   if (!parsed.ok) {
     return {
@@ -598,6 +628,11 @@ async function readBody(request: Request): Promise<{ ok: true; body: AuthBody } 
     }
   }
   return { ok: true, body: parsed.value }
+}
+
+function loginFail(request: Request, error: string, status: number, body?: AuthBody) {
+  if (wantsAuthHtml(request)) return authHtml(authLoginDocument({ next: body?.next, error }), status)
+  return json({ error }, status)
 }
 
 export function retainUserSessions(sessions: Session[], userId: string, next: Session, cap = SESSION_CAP) {
@@ -700,20 +735,20 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     const email = (body.email || "").trim().toLowerCase()
     const password = body.password || ""
     if (!email || password.length < 6) {
-      return json({ error: "Informe um e-mail e uma senha com 6+ caracteres." }, 400)
+      return loginFail(request, "Informe um e-mail e uma senha com 6+ caracteres.", 400, body)
     }
     let snapshot = prune(await store.load())
     const guard = consumeThrottle(snapshot, `login:${clientIp(request)}:${email}`, 8, 15 * 60 * 1000)
     snapshot = guard.snapshot
     if (!guard.ok) {
       await store.save(snapshot)
-      return json({ error: "Muitas tentativas. Espera uns minutos e tenta de novo." }, 429)
+      return loginFail(request, "Muitas tentativas. Espera uns minutos e tenta de novo.", 429, body)
     }
     let user = snapshot.users.find((item) => item.email === email)
     if (!user) {
       if (!isOperatorEmail(email)) {
         await store.save(snapshot)
-        return json({ error: "E-mail ou senha inválidos." }, 401)
+        return loginFail(request, "E-mail ou senha inválidos.", 401, body)
       }
       user = {
         id: randomToken(8),
@@ -728,10 +763,10 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
       snapshot.users.push(user)
     } else if (user.disabled) {
       await store.save(snapshot)
-      return json({ error: "E-mail ou senha inválidos." }, 401)
+      return loginFail(request, "E-mail ou senha inválidos.", 401, body)
     } else if (!(await verifyPassword(password, user.passwordHash))) {
       await store.save(snapshot)
-      return json({ error: "E-mail ou senha inválidos." }, 401)
+      return loginFail(request, "E-mail ou senha inválidos.", 401, body)
     }
     const now = Date.now()
     const token = randomToken()
@@ -743,6 +778,16 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
       issuedAt: now,
     })
     await store.save(snapshot)
+    if (wantsAuthHtml(request)) {
+      return new Response(null, {
+        status: 303,
+        headers: {
+          location: safeAppPath(body.next),
+          "set-cookie": cookieHeader(token, secure),
+          "cache-control": "no-store",
+        },
+      })
+    }
     return json({ user: publicUser(user) }, 200, { "set-cookie": cookieHeader(token, secure) })
   }
 
@@ -763,13 +808,20 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     const parsed = await readBody(request)
     if (!parsed.ok) return parsed.response
     const email = (parsed.body.email || "").trim().toLowerCase()
-    if (!email) return json({ error: "Informe o e-mail." }, 400)
+    const html = wantsAuthHtml(request)
+    if (!email) {
+      return html
+        ? authHtml(authForgotDocument({ next: parsed.body.next, error: "Informe o e-mail." }), 400)
+        : json({ error: "Informe o e-mail." }, 400)
+    }
     let snapshot = prune(await store.load())
     const guard = consumeThrottle(snapshot, `forgot:${clientIp(request)}`, 5, 15 * 60 * 1000)
     snapshot = guard.snapshot
     if (!guard.ok) {
       await store.save(snapshot)
-      return json({ error: "Muitas tentativas. Espera uns minutos e tenta de novo." }, 429)
+      return html
+        ? authHtml(authForgotDocument({ next: parsed.body.next, error: "Muitas tentativas. Espera uns minutos e tenta de novo." }), 429)
+        : json({ error: "Muitas tentativas. Espera uns minutos e tenta de novo." }, 429)
     }
     const user = snapshot.users.find((item) => item.email === email)
     let resetToken = ""
@@ -782,9 +834,19 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     }
     await store.save(snapshot)
     if (user && resetToken && env?.ABILION_ENV !== "production") {
-      return json({ ok: true, resetPath: `/reset?token=${resetToken}` })
+      const resetPath = `/reset?token=${resetToken}`
+      return html
+        ? authHtml(authForgotDocument({ next: parsed.body.next, done: `Link gerado. Abre ${resetPath}` }))
+        : json({ ok: true, resetPath })
     }
-    return json({ ok: true })
+    return html
+      ? authHtml(
+          authForgotDocument({
+            next: parsed.body.next,
+            done: "Em produção não enviamos e-mail. Entra e troca a senha em Configurações → Conta.",
+          })
+        )
+      : json({ ok: true })
   }
 
   if (path === "/api/auth/password" && request.method === "POST") {

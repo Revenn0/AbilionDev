@@ -145,7 +145,7 @@ Simulador de 100 leads Facebook roda UFs reais para o CRM não ficar “Sem esta
 
 Públicas:
 
-- `/login` — entrada. Victor e Gabriel no primeiro acesso; as outras contas vêm de Utilizadores.
+- `/login` — entrada. Em produção o Worker manda o formulário no primeiro HTML (sem esperar o SPA). Victor e Gabriel no primeiro acesso; as outras contas vêm de Utilizadores. O POST `application/x-www-form-urlencoded` redirecciona; o JSON do painel continua igual.
 - `/forgot` — localmente gera link de reset. Em produção não envia e-mail. O `next=` do login segue para forgot/reset e volta.
 - `/reset?token=` — nova senha a partir do link local.
 - `/privacidade` — política do CRM interno.
@@ -195,6 +195,9 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `GET /api/cron` | `CRON_SECRET` obrigatório; cada espera corre isolada |
 | `GET /t.js` | pixel |
 | `GET /l` | público: HTML da landing do anúncio (`t.js` + CTA). `?s=` escolhe o script |
+| `GET /login` | público: HTML do formulário. Com sessão, 303 para o `next` seguro |
+| `GET /forgot` | público: HTML do pedido de reset |
+| `GET /privacidade` | público: HTML da política |
 
 ## MCP (Claude Code e outros agentes)
 

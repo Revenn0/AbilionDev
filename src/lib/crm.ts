@@ -390,23 +390,32 @@ export function commitStoredSettings(stored: Settings, incoming: Settings, lates
   })
 }
 
-/** GET do CRM não pisa username/grupo/plugins ainda por gravar nesta sessão. */
+/** GET do CRM não pisa username/grupo/scripts ainda por gravar, nem um GET vazio apaga o local. */
 export function adoptHydrateSettings(
   local: Settings,
   remote: Partial<Settings> | undefined,
   dirty: boolean,
   runtime: { telegramBotUsername?: string; telegramGroupUrl?: string; telegram?: boolean; ok?: boolean }
 ): Settings {
+  if (dirty) {
+    return {
+      ...local,
+      telegramBotToken: "",
+      telegramBotUsername: local.telegramBotUsername,
+      telegramGroupUrl: local.telegramGroupUrl,
+      plugins: { ...local.plugins },
+    }
+  }
+  const prev = migrateSettings(local)
+  const base = remote ? commitStoredSettings(prev, migrateSettings({ ...prev, ...remote }), prev) : prev
   return {
-    ...local,
-    ...(remote && !dirty ? remote : {}),
+    ...base,
     telegramBotToken: "",
-    telegramBotUsername: dirty ? local.telegramBotUsername : runtime.telegramBotUsername || local.telegramBotUsername,
-    telegramGroupUrl: dirty ? local.telegramGroupUrl : runtime.telegramGroupUrl || local.telegramGroupUrl,
+    telegramBotUsername: runtime.telegramBotUsername || base.telegramBotUsername,
+    telegramGroupUrl: runtime.telegramGroupUrl || base.telegramGroupUrl,
     plugins: {
-      ...local.plugins,
-      ...(remote?.plugins && !dirty ? remote.plugins : {}),
-      telegram: dirty ? local.plugins.telegram : runtime.ok ? Boolean(runtime.telegram) : local.plugins.telegram,
+      ...base.plugins,
+      telegram: runtime.ok ? Boolean(runtime.telegram) : base.plugins.telegram,
     },
   }
 }

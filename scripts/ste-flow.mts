@@ -60,6 +60,7 @@ import {
   commitCrmFunnels,
   FUNNEL_CAP,
   commitStoredSettings,
+  emptySettings,
   hydrateFunnels,
   hydrateLeads,
   leftoverPendingFunnelIds,
@@ -97,6 +98,7 @@ import { contactLookups, normalizeTelegramContact, sameLeadContact, validateCapt
 import { displayContact, draftLeadField, formatPhoneContact, isPhoneLikeName, isResolvedPersonName, leadMatchesQuery, nameFromMessages, preferLeadName, resolveLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, migrateLeadOrigin, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink, campaignFromStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
+import { authForgotDocument, authLoginDocument, authPrivacyDocument, wantsAuthHtml } from "../src/lib/auth-pages.ts"
 import { addPageScript, adsLandingDocument, adsLandingUrl, adsStartToken, pageInstallManual, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
 import { leadFromImport, parseLeadImportLine, parseLeadImportText } from "../src/lib/lead-category.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
@@ -668,6 +670,19 @@ assert(
 )
 assert(!adsLandingDocument({ scriptId: '"><script>alert(1)</script>' }).includes("<script>alert"), "id inválido não entra no HTML")
 assert(!adsLandingDocument({ botUsername: '"><img src=x>' }).includes("<img"), "username sujo não entra no HTML")
+assert(authLoginDocument().includes('id="email"') && authLoginDocument().includes('action="/api/auth/login"'), "HTML do login tem o formulário")
+assert(authLoginDocument({ next: "//evil.com" }).includes('name="next" value="/"'), "next perigoso no login vira /")
+assert(!authLoginDocument({ error: "<script>alert(1)</script>" }).includes("<script>alert"), "erro do login é escapado")
+assert(authForgotDocument().includes('action="/api/auth/forgot"'), "HTML do forgot tem o formulário")
+assert(authPrivacyDocument().includes("Privacidade") && authPrivacyDocument().includes("/login"), "HTML da privacidade liga o login")
+assert(
+  wantsAuthHtml(new Request("http://local.test/api/auth/login", { headers: { "content-type": "application/x-www-form-urlencoded" } })),
+  "POST form pede HTML"
+)
+assert(
+  !wantsAuthHtml(new Request("http://local.test/api/auth/login", { headers: { "content-type": "application/json" } })),
+  "POST JSON do painel continua JSON"
+)
 assert(pageInstallManual({}).landing === adsLandingUrl(), "manual geral aponta o ads para /l")
 assert(
   pageInstallManual({
@@ -1347,6 +1362,21 @@ const adoptedClean = adoptHydrateSettings(dirtyLocal, staleRemote, false, {
 assert(adoptedClean.telegramBotUsername === "@runtime", "runtime ganha username quando o CRM já gravou")
 assert(adoptedClean.plugins.reports, "settings limpo adopta plugin remoto")
 assert(adoptedClean.plugins.telegram === true, "runtime ganha o plugin telegram quando o CRM já gravou")
+const scriptKeptLocal = addPageScript([], { name: "Landing FB", funnelId: "funil-a" })
+assert(scriptKeptLocal.ok, "script local de teste")
+const localWithScripts = {
+  ...defaultSettings,
+  pageScripts: scriptKeptLocal.ok ? scriptKeptLocal.scripts : [],
+  leadCategories: ["VIP"],
+  telegramBotUsername: "@ste_bot",
+}
+const hollowRemote = adoptHydrateSettings(localWithScripts, emptySettings(), false, {})
+assert(
+  hollowRemote.pageScripts.some((item) => item.id === (scriptKeptLocal.ok ? scriptKeptLocal.script.id : "")),
+  "GET vazio não apaga scripts locais"
+)
+assert(hollowRemote.leadCategories.includes("VIP"), "GET vazio não apaga categorias locais")
+assert(hollowRemote.telegramBotUsername === "@ste_bot", "GET vazio não apaga o username local")
 const olderLead = lead("merge-1")
 olderLead.updatedAt = "2020-01-01T00:00:00.000Z"
 olderLead.events = [{ id: "ev-1", at: olderLead.updatedAt, kind: "entered", title: "entrou" }]
@@ -3890,6 +3920,60 @@ const landingSlash = await handleRequest(new Request("http://local.test/l/"), li
 assert((await landingSlash.text()).includes("/t.js?v=2"), "GET /l/ também é a landing do Worker")
 const landingHead = await handleRequest(new Request("http://local.test/l", { method: "HEAD" }), liveEnv, backgroundCtx())
 assert(landingHead.status === 200 && (await landingHead.text()) === "", "HEAD /l não manda o HTML")
+const loginHtml = await handleRequest(
+  new Request("http://local.test/login"),
+  {
+    ...liveEnv,
+    ASSETS: {
+      fetch: async () => {
+        throw new Error("assets down")
+      },
+    },
+  } as Env,
+  backgroundCtx()
+)
+assert(loginHtml.status === 200, "GET /login não depende dos assets")
+const loginHtmlBody = await loginHtml.text()
+assert(loginHtmlBody.includes('id="email"') && loginHtmlBody.includes('action="/api/auth/login"'), "GET /login traz o formulário no primeiro HTML")
+assert((loginHtml.headers.get("content-security-policy") || "").includes("script-src 'self'"), "GET /login leva CSP")
+const loginAuthed = await handleRequest(
+  new Request("http://local.test/login?next=/leads", { headers: { cookie: liveCookie } }),
+  liveEnv,
+  backgroundCtx()
+)
+assert(loginAuthed.status === 303 && loginAuthed.headers.get("location") === "/leads", "GET /login com sessão vai para o next")
+const loginEvilNext = await handleRequest(
+  new Request("http://local.test/login?next=//evil.com", { headers: { cookie: liveCookie } }),
+  liveEnv,
+  backgroundCtx()
+)
+assert(loginEvilNext.headers.get("location") === "/", "GET /login recusa next perigoso")
+const formBad = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: "email=nobody%40abilion.com&password=senhaok",
+  }),
+  liveEnv,
+  backgroundCtx()
+)
+assert(formBad.status === 401, "login form inválido é 401")
+assert((await formBad.text()).includes("E-mail ou senha inválidos."), "login form inválido mostra o erro no HTML")
+const formOk = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: "email=victor%40abilion.com&password=senhaok&next=%2Fleads",
+  }),
+  liveEnv,
+  backgroundCtx()
+)
+assert(formOk.status === 303 && formOk.headers.get("location") === "/leads", "login form válido redirecciona")
+assert((formOk.headers.get("set-cookie") || "").includes("abilion_session="), "login form grava o cookie")
+const privacyHtml = await handleRequest(new Request("http://local.test/privacidade"), liveEnv, backgroundCtx())
+assert(privacyHtml.status === 200 && (await privacyHtml.text()).includes("Privacidade"), "GET /privacidade é HTML do Worker")
+const forgotHtml = await handleRequest(new Request("http://local.test/forgot"), liveEnv, backgroundCtx())
+assert(forgotHtml.status === 200 && (await forgotHtml.text()).includes('action="/api/auth/forgot"'), "GET /forgot é HTML do Worker")
 const pixelPlain = await handleRequest(
   new Request("http://local.test/api/track", {
     method: "POST",

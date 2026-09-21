@@ -8,6 +8,8 @@ import { TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { campaignFromStart, originFromStart, parseTelegramStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { applyEvent, canAdvanceRemoteWait, dueWaits, pickLiveDueLead, snapshotForLead } from "../src/lib/runtime.ts"
 import { adsLandingDocument, pageInstallManual, pageScriptById } from "../src/lib/page-script.ts"
+import { authForgotDocument, authLoginDocument, authPrivacyDocument } from "../src/lib/auth-pages.ts"
+import { safeAppPath } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { BANCA_FIXED, type Lead, type LeadEvent, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types.ts"
 import { compactGeo, factsFromGeo } from "../src/lib/geo.ts"
@@ -193,6 +195,34 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext) {
           "content-type": "text/html; charset=utf-8",
           "cache-control": "public, max-age=30",
         },
+      })
+    )
+  }
+  if ((url.pathname === "/login" || url.pathname === "/login/") && (request.method === "GET" || request.method === "HEAD")) {
+    const next = url.searchParams.get("next")
+    if (env.AUTH) {
+      const user = await sessionUser(request, kvAuthStore(env.AUTH))
+      if (user) {
+        return withSecurityHeaders(new Response(null, { status: 303, headers: { location: safeAppPath(next), "cache-control": "no-store" } }))
+      }
+    }
+    return withSecurityHeaders(
+      new Response(request.method === "HEAD" ? null : authLoginDocument({ next }), {
+        headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+      })
+    )
+  }
+  if ((url.pathname === "/forgot" || url.pathname === "/forgot/") && (request.method === "GET" || request.method === "HEAD")) {
+    return withSecurityHeaders(
+      new Response(request.method === "HEAD" ? null : authForgotDocument({ next: url.searchParams.get("next") }), {
+        headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+      })
+    )
+  }
+  if ((url.pathname === "/privacidade" || url.pathname === "/privacidade/") && (request.method === "GET" || request.method === "HEAD")) {
+    return withSecurityHeaders(
+      new Response(request.method === "HEAD" ? null : authPrivacyDocument(), {
+        headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=300" },
       })
     )
   }
