@@ -4607,6 +4607,125 @@ try {
 } finally {
   globalThis.fetch = pageTalkPrev
 }
+const mcpHydrateKv = memoryKv()
+const mcpStaleLead = {
+  ...lead("mcp-stale", "@mcpstale"),
+  name: "Nome velho do KV",
+  stage: "capture" as const,
+  updatedAt: "2026-01-01T00:00:00.000Z",
+}
+await upsertLeadKv(mcpHydrateKv, mcpStaleLead)
+const mcpHydrateEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: mcpHydrateKv,
+  ABILION_ENV: "development",
+} as Env
+const mcpHydrateLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  mcpHydrateEnv,
+  backgroundCtx()
+)
+assert(mcpHydrateLogin.status === 200, "login na lista MCP hidratada")
+const mcpHydrateCookie = mcpHydrateLogin.headers.get("set-cookie") || ""
+const mcpHydrateMint = await handleRequest(
+  new Request("http://local.test/api/tokens", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: mcpHydrateCookie, "x-forwarded-for": "198.51.100.92" },
+    body: JSON.stringify({ name: "MCP hidrata" }),
+  }),
+  mcpHydrateEnv,
+  backgroundCtx()
+)
+const mcpHydrateMinted = (await mcpHydrateMint.json()) as { token?: string }
+assert(mcpHydrateMint.status === 201 && mcpHydrateMinted.token?.startsWith("abn_"), "token para a lista MCP hidratada")
+const mcpHydratePrev = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  if (url.includes("/rest/v1/leads") && url.includes("id=in.") && (init?.method || "GET").toUpperCase() === "GET") {
+    return new Response(
+      JSON.stringify([
+        {
+          id: "mcp-stale",
+          name: "Nome vivo do Postgres",
+          contact: "@mcpstale",
+          channel: "telegram",
+          campaign: "facebook",
+          origin: "facebook",
+          temperature: "quente",
+          stage: "welcome",
+          memory: "",
+          facts: {},
+          messages: [],
+          updated_at: "2026-08-01T00:00:00.000Z",
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+      ]),
+      { status: 200 }
+    )
+  }
+  if (url.includes("/rest/v1/")) return new Response("[]", { status: 200 })
+  return mcpHydratePrev(input, init)
+}) as typeof fetch
+const mcpHydrateList = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mcpHydrateMinted.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 85,
+      method: "tools/call",
+      params: { name: "abilion_list_leads", arguments: { limit: 5 } },
+    }),
+  }),
+  mcpHydrateEnv,
+  backgroundCtx()
+)
+const mcpHydrateBody = (await mcpHydrateList.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
+const mcpHydrateText = JSON.parse(mcpHydrateBody.result?.content?.[0]?.text || "{}") as {
+  ok?: boolean
+  leads?: Array<{ id?: string; name?: string; stage?: string }>
+}
+assert(mcpHydrateList.status === 200 && !mcpHydrateBody.result?.isError && mcpHydrateText.ok, "MCP lista hidrata a página do KV")
+assert(
+  mcpHydrateText.leads?.some((item) => item.id === "mcp-stale" && item.name === "Nome vivo do Postgres" && item.stage === "welcome"),
+  "MCP lista lê o nome e o passo pelo id, não o leftover do KV"
+)
+globalThis.fetch = (async (input: RequestInfo | URL) => {
+  if (String(input).includes("/rest/v1/")) throw new Error("postgres down")
+  return mcpHydratePrev(input)
+}) as typeof fetch
+const mcpHydrateFail = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mcpHydrateMinted.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 86,
+      method: "tools/call",
+      params: { name: "abilion_list_leads", arguments: { limit: 5 } },
+    }),
+  }),
+  mcpHydrateEnv,
+  backgroundCtx()
+)
+const mcpHydrateFailBody = (await mcpHydrateFail.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
+const mcpHydrateFailText = JSON.parse(mcpHydrateFailBody.result?.content?.[0]?.text || "{}") as {
+  ok?: boolean
+  leads?: Array<{ id?: string; name?: string }>
+  error?: string
+}
+assert(mcpHydrateFail.status === 200 && !mcpHydrateFailBody.result?.isError && mcpHydrateFailText.ok, "MCP hidrata leftover se o Postgres cair")
+assert(
+  mcpHydrateFailText.leads?.some((item) => item.id === "mcp-stale" && item.name === "Nome velho do KV"),
+  "MCP lista conserva o leftover se o backup cair"
+)
+globalThis.fetch = mcpHydratePrev
 const pagedOrphanKv = memoryKv()
 await upsertLeadKv(pagedOrphanKv, lead("page-live", "@pagelive"))
 await pagedOrphanKv.put(

@@ -1,4 +1,4 @@
-import { clipNewestIds, FUNNEL_CAP, publicSettings } from "../src/lib/crm.ts"
+import { adoptLeadStores, clipNewestIds, FUNNEL_CAP, publicSettings } from "../src/lib/crm.ts"
 import { addLeadCategory, leadCategoriesWriteBlocked, leadFromImport, migrateLeadCategories, parseLeadImportText } from "../src/lib/lead-category.ts"
 import { addPageScript, installSettingsBlocked, pageInstallManual, pageScriptById, pageScriptsFunnelUnread, pageScriptsListBlocked, pageScriptsWriteBlocked, PAGE_SCRIPT_REMOVED_CAP, removePageScript } from "../src/lib/page-script.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
@@ -16,7 +16,7 @@ import {
 import { handleTokens, handleUsers } from "./users.ts"
 import { filterLiveLeads, importOrAdoptLead, leadPageFromRemote, listLeadPage } from "./crm-store.ts"
 import { emptySecrets, loadSecrets, resolveRuntime } from "./runtime-secrets.ts"
-import { fetchRemoteLeadPage, fillLeadHoles, leadCatalogUnread, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceFunnels, readWorkspaceSettings, resolveWorkspaceLeadWrite, searchWorkspaceLeads } from "./workspace-settings.ts"
+import { fetchRemoteLeadPage, fetchRemoteLeadsByIds, fillLeadHoles, leadCatalogUnread, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceFunnels, readWorkspaceSettings, resolveWorkspaceLeadWrite, searchWorkspaceLeads } from "./workspace-settings.ts"
 import { readJsonStrict } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -173,7 +173,7 @@ const TOOLS = [
   },
   {
     name: "abilion_list_leads",
-    description: "Lista leads (recorte). q= busca no KV e, se o índice estiver oco, no Postgres. Não devolve o histórico completo da conversa.",
+    description: "Lista leads (recorte). q= busca no KV e no Postgres. Página do KV junta o backup pelo id — leftover não tapa a ficha viva. Não devolve o histórico completo da conversa.",
     inputSchema: {
       type: "object",
       properties: {
@@ -421,9 +421,12 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
       }
     }
     const filled = await fillLeadHoles(env, page.leads, page.missingIds ?? [])
+    const extras = await fetchRemoteLeadsByIds(env, filled.leads.map((item) => item.id))
+    const live = extras ? await filterLiveLeads(env.AUTH, extras) : []
+    const merged = adoptLeadStores(filled.leads, live)
     return {
       ok: true,
-      leads: (await filterLiveLeads(env.AUTH, filled.leads)).map(compactLead),
+      leads: (await filterLiveLeads(env.AUTH, merged)).map(compactLead),
       nextCursor: page.stale ? undefined : page.nextCursor,
       stale: page.stale || undefined,
       clipped: page.clipped === true || filled.holesOpen || undefined,
