@@ -23,6 +23,8 @@ import {
   type UserRole,
 } from "./auth.ts"
 
+const ACCOUNTS_UNREAD = "Não confirmei as contas."
+
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -34,9 +36,27 @@ function ownerCount(users: StoredUser[]) {
   return users.filter((user) => !user.disabled && (user.role === "owner" || isOperatorEmail(user.email))).length
 }
 
+async function loadAccounts(store: AuthStore) {
+  try {
+    return { snapshot: await store.load(), unread: false as const }
+  } catch {
+    return { snapshot: null, unread: true as const }
+  }
+}
+
+async function saveAccounts(store: AuthStore, snapshot: Awaited<ReturnType<AuthStore["load"]>>) {
+  try {
+    await store.save(snapshot)
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function storedOf(store: AuthStore, actor: PublicUser) {
-  const snapshot = await store.load()
-  return snapshot.users.find((item) => item.id === actor.id) ?? null
+  const loaded = await loadAccounts(store)
+  if (loaded.unread || !loaded.snapshot) return { unread: true as const, user: null }
+  return { unread: false as const, user: loaded.snapshot.users.find((item) => item.id === actor.id) ?? null }
 }
 
 export async function handleUsers(request: Request, store: AuthStore, actor: PublicUser) {
@@ -44,10 +64,11 @@ export async function handleUsers(request: Request, store: AuthStore, actor: Pub
   if (url.pathname !== "/api/users") return json({ error: "not_found" }, 404)
 
   if (request.method === "GET") {
-    const snapshot = await store.load()
+    const loaded = await loadAccounts(store)
+    if (loaded.unread || !loaded.snapshot) return json({ error: ACCOUNTS_UNREAD }, 503)
     return json({
       ok: true,
-      users: snapshot.users.map(publicManagedUser),
+      users: loaded.snapshot.users.map(publicManagedUser),
       cap: USER_CAP,
       me: actor,
     })
@@ -63,7 +84,9 @@ export async function handleUsers(request: Request, store: AuthStore, actor: Pub
     const role: UserRole = parsed.value.role === "owner" || isOperatorEmail(email) ? "owner" : "operator"
     if (!isValidEmail(email)) return json({ error: "Informa um e-mail válido." }, 400)
     if (password.length < 6) return json({ error: "A senha precisa de 6+ caracteres." }, 400)
-    const snapshot = await store.load()
+    const loaded = await loadAccounts(store)
+    if (loaded.unread || !loaded.snapshot) return json({ error: ACCOUNTS_UNREAD }, 503)
+    const snapshot = loaded.snapshot
     if (snapshot.users.some((item) => item.email === email)) return json({ error: "Já existe uma conta com este e-mail." }, 409)
     if (snapshot.users.length >= USER_CAP) return json({ error: `O estúdio aceita no máximo ${USER_CAP} contas.` }, 400)
     const user: StoredUser = {
@@ -79,7 +102,7 @@ export async function handleUsers(request: Request, store: AuthStore, actor: Pub
       tokens: [],
     }
     snapshot.users.push(user)
-    await store.save(snapshot)
+    if (!(await saveAccounts(store, snapshot))) return json({ error: ACCOUNTS_UNREAD }, 503)
     return json({ ok: true, user: publicManagedUser(user) }, 201)
   }
 
@@ -94,7 +117,9 @@ export async function handleUsers(request: Request, store: AuthStore, actor: Pub
     if (!parsed.ok) return json({ error: parsed.status === 413 ? "Pedido demasiado grande." : "JSON inválido." }, parsed.status)
     const id = (parsed.value.id || "").trim()
     if (!id) return json({ error: "Falta o id da conta." }, 400)
-    const snapshot = await store.load()
+    const loaded = await loadAccounts(store)
+    if (loaded.unread || !loaded.snapshot) return json({ error: ACCOUNTS_UNREAD }, 503)
+    const snapshot = loaded.snapshot
     const user = snapshot.users.find((item) => item.id === id)
     if (!user) return json({ error: "Esta conta já não existe." }, 404)
     if (typeof parsed.value.name === "string") {
@@ -126,7 +151,7 @@ export async function handleUsers(request: Request, store: AuthStore, actor: Pub
       }
     }
     user.accountUpdatedAt = Date.now()
-    await store.save(snapshot)
+    if (!(await saveAccounts(store, snapshot))) return json({ error: ACCOUNTS_UNREAD }, 503)
     return json({ ok: true, user: publicManagedUser(user) })
   }
 
@@ -138,11 +163,12 @@ export async function handleTokens(request: Request, store: AuthStore, actor: Pu
   if (url.pathname !== "/api/tokens") return json({ error: "not_found" }, 404)
 
   if (request.method === "GET") {
-    const user = await storedOf(store, actor)
-    if (!user) return json({ error: "Sessão expirada." }, 401)
+    const found = await storedOf(store, actor)
+    if (found.unread) return json({ error: ACCOUNTS_UNREAD }, 503)
+    if (!found.user) return json({ error: "Sessão expirada." }, 401)
     return json({
       ok: true,
-      tokens: (user.tokens ?? []).map(publicApiToken),
+      tokens: (found.user.tokens ?? []).map(publicApiToken),
       cap: TOKEN_CAP,
     })
   }
@@ -150,7 +176,9 @@ export async function handleTokens(request: Request, store: AuthStore, actor: Pu
   if (request.method === "POST") {
     const parsed = await readJsonObject<{ name?: string }>(request, 4_096)
     if (!parsed.ok) return json({ error: parsed.status === 413 ? "Pedido demasiado grande." : "JSON inválido." }, parsed.status)
-    const snapshot = await store.load()
+    const loaded = await loadAccounts(store)
+    if (loaded.unread || !loaded.snapshot) return json({ error: ACCOUNTS_UNREAD }, 503)
+    const snapshot = loaded.snapshot
     const user = snapshot.users.find((item) => item.id === actor.id)
     if (!user) return json({ error: "Sessão expirada." }, 401)
     if ((user.tokens ?? []).length >= TOKEN_CAP) {
@@ -170,20 +198,22 @@ export async function handleTokens(request: Request, store: AuthStore, actor: Pu
       createdAt: new Date().toISOString(),
     }
     user.tokens = [...(user.tokens ?? []), rec]
-    await store.save(snapshot)
+    if (!(await saveAccounts(store, snapshot))) return json({ error: ACCOUNTS_UNREAD }, 503)
     return json({ ok: true, token: minted.token, item: publicApiToken(rec) }, 201)
   }
 
   if (request.method === "DELETE") {
     const id = url.searchParams.get("id")?.trim() || ""
     if (!id) return json({ error: "Falta o id do token." }, 400)
-    const snapshot = await store.load()
+    const loaded = await loadAccounts(store)
+    if (loaded.unread || !loaded.snapshot) return json({ error: ACCOUNTS_UNREAD }, 503)
+    const snapshot = loaded.snapshot
     const user = snapshot.users.find((item) => item.id === actor.id)
     if (!user) return json({ error: "Sessão expirada." }, 401)
     user.tokens = (user.tokens ?? []).filter((item) => item.id !== id)
     const next = rememberRevokedApi(snapshot, [id])
     snapshot.revokedApi = next.revokedApi
-    await store.save(snapshot)
+    if (!(await saveAccounts(store, snapshot))) return json({ error: ACCOUNTS_UNREAD }, 503)
     return json({ ok: true })
   }
 

@@ -169,6 +169,22 @@ function kvThrowsOn(base: ReturnType<typeof memoryKv>, ...blocked: string[]) {
   }
 }
 
+function kvThrowsAfter(base: ReturnType<typeof memoryKv>, key: string, allow: number) {
+  let hits = 0
+  return {
+    async get(name: string, type: "json") {
+      if (name === key) {
+        hits += 1
+        if (hits > allow) throw new Error("kv down")
+      }
+      return base.get(name, type)
+    },
+    async put(name: string, value: string) {
+      return base.put(name, value)
+    },
+  }
+}
+
 function kvThrowsOnPut(base: ReturnType<typeof memoryKv>, ...blocked: string[]) {
   return {
     async get(key: string, type: "json") {
@@ -7212,6 +7228,119 @@ assert(kvDownCrmFunnels.status === 503, "POST CRM funnels KV throw não cai em 5
 assert(kvDownCrmFunnelsBody.error === "Não confirmei os funis.", "POST CRM funnels KV throw pede confirmação")
 assert(kvDownCrmFunnelsBody.error !== "Falha interna.", "POST CRM funnels KV throw não vira Falha interna")
 assert(!(await loadFunnelsKv(runtimeHoleKv)).some((item) => item.id === "funil-crm-throw"), "POST CRM funnels KV throw não grava")
+const accountsSecondDownEnv = { ...runtimeHoleBase, AUTH: kvThrowsAfter(runtimeHoleKv, "snapshot", 1) } as Env
+const usersBeforeSecond = (await (
+  await handleRequest(new Request("http://local.test/api/users", { headers: { cookie: runtimeHoleCookie } }), runtimeHoleBase, backgroundCtx())
+).json()) as { users?: Array<{ email?: string }> }
+const kvDownUsersGet = await handleRequest(
+  new Request("http://local.test/api/users", { headers: { cookie: runtimeHoleCookie } }),
+  accountsSecondDownEnv,
+  backgroundCtx()
+)
+const kvDownUsersGetBody = (await kvDownUsersGet.json()) as { error?: string; ok?: boolean; users?: unknown[] }
+assert(kvDownUsersGet.status === 503, "GET users 2ª leitura KV throw não cai em 500")
+assert(kvDownUsersGetBody.error === "Não confirmei as contas.", "GET users 2ª leitura pede confirmação")
+assert(kvDownUsersGetBody.error !== "Falha interna.", "GET users 2ª leitura não vira Falha interna")
+assert(kvDownUsersGetBody.error !== "Sessão expirada.", "GET users 2ª leitura não finge logout")
+assert(kvDownUsersGetBody.ok !== true && !kvDownUsersGetBody.users, "GET users 2ª leitura não lista vazio")
+const kvDownUsersPost = await handleRequest(
+  new Request("http://local.test/api/users", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: runtimeHoleCookie,
+      "x-forwarded-for": "203.0.113.130",
+    },
+    body: JSON.stringify({ email: "segunda@abilion.com", name: "Segunda", password: "senhaok" }),
+  }),
+  { ...runtimeHoleBase, AUTH: kvThrowsAfter(runtimeHoleKv, "snapshot", 1) } as Env,
+  backgroundCtx()
+)
+const kvDownUsersPostBody = (await kvDownUsersPost.json()) as { error?: string }
+assert(kvDownUsersPost.status === 503, "POST users 2ª leitura KV throw não cai em 500")
+assert(kvDownUsersPostBody.error === "Não confirmei as contas.", "POST users 2ª leitura pede confirmação")
+const usersAfterSecond = (await (
+  await handleRequest(new Request("http://local.test/api/users", { headers: { cookie: runtimeHoleCookie } }), runtimeHoleBase, backgroundCtx())
+).json()) as { users?: Array<{ email?: string }> }
+assert(
+  (usersAfterSecond.users?.length ?? 0) === (usersBeforeSecond.users?.length ?? 0),
+  "POST users 2ª leitura não cria conta"
+)
+assert(!usersAfterSecond.users?.some((item) => item.email === "segunda@abilion.com"), "POST users 2ª leitura não grava e-mail novo")
+const kvDownTokensGet = await handleRequest(
+  new Request("http://local.test/api/tokens", { headers: { cookie: runtimeHoleCookie } }),
+  { ...runtimeHoleBase, AUTH: kvThrowsAfter(runtimeHoleKv, "snapshot", 1) } as Env,
+  backgroundCtx()
+)
+const kvDownTokensGetBody = (await kvDownTokensGet.json()) as { error?: string; ok?: boolean }
+assert(kvDownTokensGet.status === 503, "GET tokens 2ª leitura KV throw não cai em 500")
+assert(kvDownTokensGetBody.error === "Não confirmei as contas.", "GET tokens 2ª leitura pede confirmação")
+assert(kvDownTokensGetBody.error !== "Sessão expirada.", "GET tokens 2ª leitura não finge logout")
+const kvDownTokensPost = await handleRequest(
+  new Request("http://local.test/api/tokens", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: runtimeHoleCookie,
+      "x-forwarded-for": "203.0.113.131",
+    },
+    body: JSON.stringify({ name: "Token throw" }),
+  }),
+  { ...runtimeHoleBase, AUTH: kvThrowsAfter(runtimeHoleKv, "snapshot", 1) } as Env,
+  backgroundCtx()
+)
+const kvDownTokensPostBody = (await kvDownTokensPost.json()) as { error?: string; token?: string }
+assert(kvDownTokensPost.status === 503, "POST tokens 2ª leitura KV throw não cai em 500")
+assert(kvDownTokensPostBody.error === "Não confirmei as contas.", "POST tokens 2ª leitura pede confirmação")
+assert(!kvDownTokensPostBody.token, "POST tokens 2ª leitura não emite token")
+const kvDownMcpUsers = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.132" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 240,
+      method: "tools/call",
+      params: { name: "abilion_list_users", arguments: {} },
+    }),
+  }),
+  { ...runtimeHoleBase, AUTH: kvThrowsAfter(runtimeHoleKv, "snapshot", 1) } as Env,
+  backgroundCtx()
+)
+const kvDownMcpUsersBody = (await kvDownMcpUsers.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const kvDownMcpUsersData = JSON.parse(kvDownMcpUsersBody.result?.content?.[0]?.text || "{}") as {
+  error?: string
+  ok?: boolean
+  users?: unknown[]
+}
+assert(kvDownMcpUsers.status === 200 && kvDownMcpUsersBody.result?.isError, "MCP list_users 2ª leitura não finge lista")
+assert(kvDownMcpUsersData.error === "Não confirmei as contas.", "MCP list_users 2ª leitura pede confirmação")
+assert(kvDownMcpUsersData.ok !== true && !kvDownMcpUsersData.users, "MCP list_users 2ª leitura não lista vazio")
+const kvDownUsersPut = await handleRequest(
+  new Request("http://local.test/api/users", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: runtimeHoleCookie,
+      "x-forwarded-for": "203.0.113.133",
+    },
+    body: JSON.stringify({ email: "putdown@abilion.com", name: "Put", password: "senhaok" }),
+  }),
+  { ...runtimeHoleBase, AUTH: kvThrowsOnPut(runtimeHoleKv, "snapshot") } as Env,
+  backgroundCtx()
+)
+assert(kvDownUsersPut.status === 503, "POST users put throw não cai em 500")
+assert(((await kvDownUsersPut.json()) as { error?: string }).error === "Não confirmei as contas.", "POST users put throw pede confirmação")
+assert(
+  !(
+    await (
+      await handleRequest(new Request("http://local.test/api/users", { headers: { cookie: runtimeHoleCookie } }), runtimeHoleBase, backgroundCtx())
+    ).json() as { users?: Array<{ email?: string }> }
+  ).users?.some((item) => item.email === "putdown@abilion.com"),
+  "POST users put throw não cria conta"
+)
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()

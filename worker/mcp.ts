@@ -385,7 +385,9 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
   }
   if (name === "abilion_list_users") {
     const res = await callHttp(request, env, actor, "/api/users", "GET")
-    return await res.json()
+    const data = await res.json()
+    if (!res.ok) throw new Error(typeof data === "object" && data && "error" in data ? String((data as { error: string }).error) : "Não confirmei as contas.")
+    return data
   }
   if (name === "abilion_create_user") {
     if (!isOwner(actor)) throw new Error("Só o dono cria contas.")
