@@ -359,6 +359,31 @@ export function leadsStillOnRemote(removedIds: Iterable<string>, remote: Array<{
   return remote.filter((item) => drop.has(item.id)).map((item) => item.id)
 }
 
+/** DELETE 200/204: Worker apagou. 503: KV já tem tombstone. 401/rede: o Worker não gravou — não persistir o hide. */
+export function leadDeleteAck(status: number | null | undefined): { keepTombstone: boolean; ok: boolean } {
+  if (status === 200 || status === 204) return { keepTombstone: true, ok: true }
+  if (status === 503) return { keepTombstone: true, ok: false }
+  return { keepTombstone: false, ok: false }
+}
+
+/** POST do CRM só tombstoneia o funil se o Worker aceitou. 503/401/rede deixam o quadro no servidor. */
+export function crmDeleteAck(ok: boolean): { keepTombstone: boolean; ok: boolean } {
+  return ok ? { keepTombstone: true, ok: true } : { keepTombstone: false, ok: false }
+}
+
+export function rememberLocalTombstone(removed: Iterable<string>, id: string, keep: boolean): string[] {
+  const next = new Set([...removed].filter(Boolean))
+  if (keep) next.add(id)
+  else next.delete(id)
+  return [...next]
+}
+
+export function restoreAfterFailedDelete<T extends { id: string }>(current: T[], doomed: T | undefined): T[] {
+  if (!doomed?.id) return current
+  if (current.some((item) => item.id === doomed.id)) return current
+  return [doomed, ...current]
+}
+
 /** GET completo vazio limpa o local; GET incompleto ou inbox vazia conservam. */
 export function hydrateLeads(
   local: Lead[],

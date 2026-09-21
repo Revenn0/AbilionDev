@@ -8,6 +8,10 @@ import {
   adoptOperatorLead,
   applyRemovedFunnels,
   applyRemovedLeads,
+  crmDeleteAck,
+  leadDeleteAck,
+  rememberLocalTombstone,
+  restoreAfterFailedDelete,
   leadsStillOnRemote,
   canCreateFunnel,
   canDeleteFunnel,
@@ -293,7 +297,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const batch = ids.filter((id) => id && removedLeadIds.current.has(id)).slice(0, 40)
     if (!batch.length) return Promise.resolve(true)
     return Promise.all(batch.map((id) => removeRemoteLead(id))).then((results) => {
-      const ok = results.every(Boolean)
+      const ok = results.every((result) => leadDeleteAck(result.status).ok)
       lastLeadWriteOk.current = ok
       settleLeadPersist()
       return ok
@@ -770,11 +774,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
         pendingFunnelIds.current.delete(id)
         persistIdSet(PENDING_FUNNELS, pendingFunnelIds.current)
-        removedFunnelIds.current.add(id)
-        persistIdSet(REMOVED_FUNNELS, removedFunnelIds.current)
         const prev = stateRef.current
+        const doomed = prev.funnels.find((item) => item.id === id)
+        removedFunnelIds.current.add(id)
         commitState({ ...prev, funnels: prev.funnels.filter((item) => item.id !== id) })
-        return flushCrm({ silent: true }).then((result) => result.ok)
+        return flushCrm({ silent: true }).then((result) => {
+          const ack = crmDeleteAck(result.ok)
+          if (!ack.keepTombstone) {
+            const nextRemoved = rememberLocalTombstone(removedFunnelIds.current, id, false)
+            removedFunnelIds.current = new Set(nextRemoved)
+            persistIdSet(REMOVED_FUNNELS, removedFunnelIds.current)
+            const funnels = restoreAfterFailedDelete(stateRef.current.funnels, doomed)
+            if (funnels !== stateRef.current.funnels) commitState({ ...stateRef.current, funnels })
+          }
+          return ack.ok
+        })
       },
       createLead: (lead) => {
         const prev = stateRef.current
@@ -841,14 +855,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       deleteLead: (id) => {
         pendingLeadWrites.current.delete(id)
         persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
-        removedLeadIds.current.add(id)
-        persistIdSet(REMOVED_LEADS, removedLeadIds.current, LEAD_REMOVED_CAP)
         const prev = stateRef.current
+        const doomed = prev.leads.find((item) => item.id === id)
         commitState({ ...prev, leads: prev.leads.filter((item) => item.id !== id) })
-        return leadFlushRef.current.then(() => removeRemoteLead(id)).then((ok) => {
-          lastLeadWriteOk.current = ok
+        return leadFlushRef.current.then(() => removeRemoteLead(id)).then((result) => {
+          const ack = leadDeleteAck(result.status)
+          const nextRemoved = rememberLocalTombstone(removedLeadIds.current, id, ack.keepTombstone)
+          removedLeadIds.current = new Set(nextRemoved)
+          persistIdSet(REMOVED_LEADS, removedLeadIds.current, LEAD_REMOVED_CAP)
+          if (ack.keepTombstone) {
+            const leads = applyRemovedLeads(stateRef.current.leads, removedLeadIds.current)
+            if (leads !== stateRef.current.leads) commitState({ ...stateRef.current, leads })
+          } else {
+            const leads = restoreAfterFailedDelete(stateRef.current.leads, doomed)
+            if (leads !== stateRef.current.leads) commitState({ ...stateRef.current, leads })
+          }
+          lastLeadWriteOk.current = ack.ok
           settleLeadPersist()
-          return ok
+          return ack.ok
         })
       },
       saveSettings: (patch) => {

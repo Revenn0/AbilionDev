@@ -254,22 +254,21 @@ export async function fetchCrm() {
   }
 }
 
-export type WriteResult = { ok: boolean; error?: string }
-
-async function writeOk(run: () => Promise<Response>) {
-  const result = await writeResult(run)
-  return result.ok
-}
+export type WriteResult = { ok: boolean; error?: string; status: number | null }
 
 async function writeResult(run: () => Promise<Response>): Promise<WriteResult> {
   try {
     const res = await run()
     noteUnauthorized(res)
-    if (res.ok) return { ok: true }
+    if (res.ok) return { ok: true, status: res.status }
     const data = (await res.json().catch(() => ({}))) as { error?: string }
-    return { ok: false, error: typeof data.error === "string" && data.error ? data.error : "Não foi possível gravar." }
+    return {
+      ok: false,
+      error: typeof data.error === "string" && data.error ? data.error : "Não foi possível gravar.",
+      status: res.status,
+    }
   } catch {
-    return { ok: false, error: "Sem rede. Tenta outra vez." }
+    return { ok: false, error: "Sem rede. Tenta outra vez.", status: null }
   }
 }
 
@@ -352,7 +351,7 @@ export async function persistLeads(leads: Lead[], opts?: { keepalive?: boolean }
 }
 
 export async function removeRemoteLead(id: string, opts?: { keepalive?: boolean }) {
-  return writeOk(() =>
+  return writeResult(() =>
     fetchWrite(
       `/api/leads?id=${encodeURIComponent(id)}`,
       {

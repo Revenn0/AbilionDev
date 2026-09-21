@@ -45,6 +45,10 @@ import {
   mergeLeadMessages,
   applyRemovedFunnels,
   applyRemovedLeads,
+  crmDeleteAck,
+  leadDeleteAck,
+  rememberLocalTombstone,
+  restoreAfterFailedDelete,
   leadsStillOnRemote,
   adoptHydrateSettings,
   adoptFunnelStores,
@@ -2028,6 +2032,70 @@ oldPin.updatedAt = "2020-01-01T00:00:00.000Z"
 assert(!mergeLeads(crowd, [oldPin]).some((item) => item.id === "old-pin"), "sem pin o antigo cai do teto")
 assert(mergeLeads(crowd, [oldPin], ["old-pin"]).some((item) => item.id === "old-pin"), "pin da busca fura o teto")
 assert(!applyRemovedLeads([freshLead, liveLead], ["fresh"]).some((item) => item.id === "fresh"), "tombstone tira o lead da lista")
+assert(leadDeleteAck(200).keepTombstone && leadDeleteAck(200).ok, "DELETE 200 persiste o hide")
+assert(leadDeleteAck(204).keepTombstone && leadDeleteAck(204).ok, "DELETE 204 persiste o hide")
+assert(leadDeleteAck(503).keepTombstone && !leadDeleteAck(503).ok, "DELETE 503 persiste o hide — KV já tombstoneou")
+assert(!leadDeleteAck(401).keepTombstone && !leadDeleteAck(401).ok, "DELETE 401 não esconde o lead para sempre")
+assert(!leadDeleteAck(429).keepTombstone, "DELETE 429 não tombstoneia o local")
+assert(!leadDeleteAck(400).keepTombstone, "DELETE 400 não tombstoneia o local")
+assert(!leadDeleteAck(null).keepTombstone, "sem rede não tombstoneia o local")
+assert(!leadDeleteAck(undefined).keepTombstone, "status oco não tombstoneia")
+assert(crmDeleteAck(true).keepTombstone && crmDeleteAck(true).ok, "CRM 200 persiste o hide do funil")
+assert(!crmDeleteAck(false).keepTombstone && !crmDeleteAck(false).ok, "CRM falho não esconde o funil para sempre")
+assert(rememberLocalTombstone(["gone"], "fresh", true).includes("fresh"), "ack 200/503 acrescenta o tombstone local")
+assert(!rememberLocalTombstone(["fresh", "gone"], "fresh", false).includes("fresh"), "401/rede tira o tombstone local")
+assert(
+  restoreAfterFailedDelete([liveLead], freshLead).some((item) => item.id === "fresh"),
+  "401/rede devolve o lead à lista"
+)
+assert(
+  restoreAfterFailedDelete([freshLead, liveLead], freshLead).every((item, i, all) => all.findIndex((row) => row.id === item.id) === i),
+  "restore não duplica o lead que o hydrate já trouxe"
+)
+assert(
+  restoreAfterFailedDelete([liveLead], undefined).every((item) => item.id === "live"),
+  "sem snapshot o restore não inventa lead"
+)
+assert(
+  hydrateLeads(
+    [liveLead],
+    { ok: true, leads: [freshLead, liveLead], complete: false },
+    { ok: false, leads: [] },
+    new Map(),
+    []
+  ).some((item) => item.id === "fresh"),
+  "sem tombstone local o GET clipped devolve o lead que o DELETE 401 não apagou"
+)
+assert(
+  hydrateLeads(
+    [liveLead],
+    { ok: true, leads: [freshLead, liveLead], complete: false },
+    { ok: false, leads: [] },
+    new Map(),
+    rememberLocalTombstone([], "fresh", leadDeleteAck(401).keepTombstone)
+  ).some((item) => item.id === "fresh"),
+  "401 não deixa tombstone para o hydrate esconder"
+)
+assert(
+  !hydrateLeads(
+    [liveLead],
+    { ok: true, leads: [freshLead, liveLead], complete: false },
+    { ok: false, leads: [] },
+    new Map(),
+    rememberLocalTombstone([], "fresh", leadDeleteAck(503).keepTombstone)
+  ).some((item) => item.id === "fresh"),
+  "503 deixa tombstone — GET clipped não ressuscita"
+)
+assert(
+  !hydrateLeads(
+    [liveLead],
+    { ok: true, leads: [freshLead, liveLead], complete: false },
+    { ok: false, leads: [] },
+    new Map(),
+    rememberLocalTombstone([], "fresh", leadDeleteAck(200).keepTombstone)
+  ).some((item) => item.id === "fresh"),
+  "200 deixa tombstone — GET clipped não ressuscita"
+)
 assert(
   leadsStillOnRemote(["fresh", "gone"], [freshLead, liveLead]).join(",") === "fresh",
   "tombstone ainda no Worker volta a tentar o DELETE"
