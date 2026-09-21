@@ -166,6 +166,23 @@ export async function searchWorkspaceLeads(
   return { ok: true, leads: remote }
 }
 
+function quoteRemoteId(value: string) {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
+}
+
+/** Página mista: lê no backup os ids do índice que o KV não carregou. `null` é falha. */
+export async function fetchRemoteLeadsByIds(env: SettingsEnv, ids: string[]): Promise<Lead[] | null> {
+  const clean = [...new Set(ids.map((id) => id.trim()).filter((id) => id && id.length <= 80))].slice(0, 400)
+  if (!clean.length) return []
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return []
+  const rows = await restWorkspace<LeadRow[]>(
+    env,
+    `leads?workspace_id=eq.${WORKSPACE}&id=in.(${clean.map(quoteRemoteId).join(",")})&select=*`
+  )
+  if (rows === null || !Array.isArray(rows)) return null
+  return rows.map(rowToLead)
+}
+
 /** KV oco: lê o backup. `null` é falha; `[]` é vazio ou sem credenciais. */
 export async function fetchRemoteLeadPage(
   env: SettingsEnv,

@@ -161,7 +161,7 @@ export async function listLeadPage(
   limit = 80,
   channel: Lead["channel"] | "all" = "telegram",
   cursor = ""
-): Promise<{ leads: Lead[]; nextCursor?: string; stale?: boolean; clipped?: boolean; empty: boolean }> {
+): Promise<{ leads: Lead[]; nextCursor?: string; stale?: boolean; clipped?: boolean; empty: boolean; missingIds: string[] }> {
   const index = await loadIndex(kv)
   const empty = index.entries.length === 0
   const clipped = crmIndexClipped(index.entries)
@@ -170,19 +170,27 @@ export async function listLeadPage(
   const mark = cursor.trim()
   if (mark) {
     const at = rows.findIndex((item) => leadPageCursor(item) === mark)
-    if (at < 0) return { leads: [], stale: true, clipped, empty }
+    if (at < 0) return { leads: [], stale: true, clipped, empty, missingIds: [] }
     start = at + 1
   }
   const slice = rows.slice(start, start + Math.max(1, limit))
   const removed = new Set(await loadRemovedLeadIds(kv))
-  const leads = (await Promise.all(slice.map((item) => loadLead(kv, item.id, removed)))).filter((lead): lead is Lead => Boolean(lead))
+  const loaded = await Promise.all(slice.map(async (item) => ({ id: item.id, lead: await loadLead(kv, item.id, removed) })))
+  const leads = loaded.map((row) => row.lead).filter((lead): lead is Lead => Boolean(lead))
   await rememberLeadNames(kv, leads)
+  const missingIds: string[] = []
+  for (const row of loaded) {
+    if (row.lead) continue
+    if (await leadIsGone(kv, row.id, removed)) continue
+    missingIds.push(row.id)
+  }
   const last = slice.at(-1)
   return {
     leads,
     nextCursor: slice.length === limit && last ? leadPageCursor(last) : undefined,
     clipped,
     empty,
+    missingIds,
   }
 }
 

@@ -15,7 +15,7 @@ import {
 } from "./auth.ts"
 import { handleTokens, handleUsers } from "./users.ts"
 import { filterLiveLeads, importOrAdoptLead, leadPageFromRemote, listLeadPage } from "./crm-store.ts"
-import { fetchRemoteLeadPage, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings, searchWorkspaceLeads } from "./workspace-settings.ts"
+import { fetchRemoteLeadPage, fetchRemoteLeadsByIds, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings, searchWorkspaceLeads } from "./workspace-settings.ts"
 import { readJsonStrict } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -412,12 +412,29 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
         clipped: folded.clipped || (!page.empty && !folded.leads.length) || undefined,
       }
     }
+    let leads = page.leads
+    let clipped = page.clipped === true
+    if (page.missingIds?.length) {
+      const extras = await fetchRemoteLeadsByIds(env, page.missingIds)
+      if (extras === null) clipped = true
+      else {
+        const liveExtras = await filterLiveLeads(env.AUTH, extras)
+        const have = new Set(leads.map((item) => item.id))
+        for (const lead of liveExtras) {
+          if (!have.has(lead.id)) {
+            leads = [...leads, lead]
+            have.add(lead.id)
+          }
+        }
+        if (page.missingIds.some((id) => !have.has(id))) clipped = true
+      }
+    }
     return {
       ok: true,
-      leads: (await filterLiveLeads(env.AUTH, page.leads)).map(compactLead),
+      leads: (await filterLiveLeads(env.AUTH, leads)).map(compactLead),
       nextCursor: page.stale ? undefined : page.nextCursor,
       stale: page.stale || undefined,
-      clipped: page.clipped || undefined,
+      clipped: clipped || undefined,
     }
   }
   if (name === "abilion_get_settings") {

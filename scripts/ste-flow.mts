@@ -87,7 +87,7 @@ import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.t
 import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_INDEX, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, leadPageCursor, leadPageFromRemote, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
-import { leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, remoteLeadListPath, remoteLeadSearchPath, rowToLead, sanitizeRemoteSearchNeedle, searchWorkspaceLeads } from "../worker/workspace-settings.ts"
+import { fetchRemoteLeadsByIds, leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, remoteLeadListPath, remoteLeadSearchPath, rowToLead, sanitizeRemoteSearchNeedle, searchWorkspaceLeads } from "../worker/workspace-settings.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
@@ -3117,6 +3117,225 @@ const orphanHit = await handleRequest(
 const orphanHitBody = (await orphanHit.json()) as { leads?: Array<{ id?: string }> }
 assert(orphanHit.status === 200 && orphanHitBody.leads?.some((item) => item.id === "pg-orphan"), "índice órfão lê o lead do Postgres")
 globalThis.fetch = orphanPrev
+const mixedIndexKv = memoryKv()
+await upsertLeadKv(mixedIndexKv, lead("mixed-live", "@mixedlive"))
+await mixedIndexKv.put(
+  CRM_INDEX,
+  JSON.stringify({
+    entries: [
+      { id: "mixed-live", contact: "@mixedlive", updatedAt: "2026-06-02T00:00:00.000Z", channel: "telegram" },
+      { id: "mixed-ghost", contact: "@mixedghost", updatedAt: "2026-06-01T00:00:00.000Z", channel: "telegram" },
+      { id: "mixed-gone", contact: "@mixedgone", updatedAt: "2026-05-01T00:00:00.000Z", channel: "telegram" },
+    ],
+  })
+)
+await rememberRemovedLead(mixedIndexKv, "mixed-gone")
+const mixedListed = await listLeadPage(mixedIndexKv, 10, "all")
+assert(mixedListed.leads.some((item) => item.id === "mixed-live"), "página mista traz o vivo do KV")
+assert(mixedListed.missingIds.includes("mixed-ghost"), "página mista aponta o id órfão")
+assert(!mixedListed.missingIds.includes("mixed-gone"), "tombstone no índice não é buraco")
+assert(!mixedListed.missingIds.includes("mixed-live"), "vivo não entra nos buracos")
+assert((await listLeadPage(mixedIndexKv, 10, "all", "1999-01-01T00:00:00.000Z|missing")).missingIds.length === 0, "cursor velho não inventa buracos")
+assert((await fetchRemoteLeadsByIds({} as Env, ["ghost"])).length === 0, "sem credenciais o fill não finge falha")
+assert((await fetchRemoteLeadsByIds({ SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env, [])).length === 0, "sem ids o fill é vazio")
+const byIdPrev = globalThis.fetch
+globalThis.fetch = (async () => {
+  throw new Error("postgres down")
+}) as typeof fetch
+assert((await fetchRemoteLeadsByIds({ SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env, ["ghost"])) === null, "fill com Postgres em baixo é null")
+const mixedGhostRow = {
+  id: "mixed-ghost",
+  name: "Ghost Vivo",
+  contact: "@mixedghost",
+  channel: "telegram" as const,
+  campaign: "Facebook · ads",
+  origin: "facebook" as const,
+  temperature: "novo" as const,
+  stage: "capture" as const,
+  memory: "",
+  facts: {},
+  messages: [],
+  updated_at: "2026-06-01T00:00:00.000Z",
+  created_at: "2026-06-01T00:00:00.000Z",
+}
+globalThis.fetch = (async (input: RequestInfo | URL) => {
+  const url = String(input)
+  if (url.includes("id=in.") && url.includes("mixed-ghost")) {
+    return new Response(JSON.stringify([mixedGhostRow]), { status: 200 })
+  }
+  return new Response("[]", { status: 200 })
+}) as typeof fetch
+const byIdHit = await fetchRemoteLeadsByIds(
+  { SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env,
+  ["mixed-ghost"]
+)
+assert(byIdHit?.some((item) => item.id === "mixed-ghost"), "fill lê o id no Postgres")
+globalThis.fetch = byIdPrev
+const mixedEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: memoryKv(),
+  ABILION_ENV: "development",
+} as Env
+await upsertLeadKv(mixedEnv.AUTH, lead("mix-live", "@mixlive"))
+await mixedEnv.AUTH.put(
+  CRM_INDEX,
+  JSON.stringify({
+    entries: [
+      { id: "mix-live", contact: "@mixlive", updatedAt: "2026-06-02T00:00:00.000Z", channel: "telegram" },
+      { id: "mix-ghost", contact: "@mixghost", updatedAt: "2026-06-01T00:00:00.000Z", channel: "telegram" },
+    ],
+  })
+)
+const mixedLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  mixedEnv,
+  backgroundCtx()
+)
+assert(mixedLogin.status === 200, "login na página mista")
+const mixedCookie = mixedLogin.headers.get("set-cookie") || ""
+const mixedPrev = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("/rest/v1/")) throw new Error("postgres down")
+  return mixedPrev(input, init)
+}) as typeof fetch
+const mixedFail = await handleRequest(
+  new Request("http://local.test/api/leads", { headers: { cookie: mixedCookie } }),
+  mixedEnv,
+  backgroundCtx()
+)
+const mixedFailBody = (await mixedFail.json()) as { ok?: boolean; leads?: Array<{ id?: string }>; clipped?: boolean; error?: string }
+assert(mixedFail.status === 200 && mixedFailBody.ok && mixedFailBody.clipped === true, "página mista + Postgres em baixo é 200 clipped")
+assert(mixedFailBody.leads?.some((item) => item.id === "mix-live"), "página mista conserva o vivo se o backup cair")
+assert(!mixedFailBody.leads?.some((item) => item.id === "mix-ghost"), "órfão sem backup não inventa ficha")
+assert(
+  collectLeadPages([{ leads: (mixedFailBody.leads ?? []) as Lead[], clipped: true }]).complete === false,
+  "página mista clipped não reconcilia como universo"
+)
+const mixedInboxFail = await handleRequest(
+  new Request("http://local.test/api/inbox", { headers: { cookie: mixedCookie } }),
+  mixedEnv,
+  backgroundCtx()
+)
+const mixedInboxFailBody = (await mixedInboxFail.json()) as { ok?: boolean; clipped?: boolean }
+assert(mixedInboxFail.status === 200 && mixedInboxFailBody.ok && mixedInboxFailBody.clipped === true, "inbox mista + Postgres em baixo é 200 clipped")
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  if (url.includes("/rest/v1/leads") && (init?.method || "GET").toUpperCase() === "GET") {
+    return new Response("[]", { status: 200 })
+  }
+  if (url.includes("/rest/v1/")) return new Response("[]", { status: 200 })
+  return mixedPrev(input, init)
+}) as typeof fetch
+const mixedEmpty = await handleRequest(
+  new Request("http://local.test/api/leads", { headers: { cookie: mixedCookie } }),
+  mixedEnv,
+  backgroundCtx()
+)
+const mixedEmptyBody = (await mixedEmpty.json()) as { ok?: boolean; leads?: Array<{ id?: string }>; clipped?: boolean }
+assert(mixedEmpty.status === 200 && mixedEmptyBody.ok && mixedEmptyBody.clipped === true, "página mista + backup vazio não finge universo")
+assert(mixedEmptyBody.leads?.some((item) => item.id === "mix-live"), "página mista + backup vazio conserva o vivo")
+const mixGhostRow = {
+  id: "mix-ghost",
+  name: "Ghost Misto",
+  contact: "@mixghost",
+  channel: "telegram" as const,
+  campaign: "Facebook · ads",
+  origin: "facebook" as const,
+  temperature: "novo" as const,
+  stage: "capture" as const,
+  memory: "",
+  facts: {},
+  messages: [],
+  updated_at: "2026-06-01T00:00:00.000Z",
+  created_at: "2026-06-01T00:00:00.000Z",
+}
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  if (url.includes("/rest/v1/leads") && url.includes("id=in.") && (init?.method || "GET").toUpperCase() === "GET") {
+    return new Response(JSON.stringify([mixGhostRow]), { status: 200 })
+  }
+  if (url.includes("/rest/v1/")) return new Response("[]", { status: 200 })
+  return mixedPrev(input, init)
+}) as typeof fetch
+const mixedHit = await handleRequest(
+  new Request("http://local.test/api/leads", { headers: { cookie: mixedCookie } }),
+  mixedEnv,
+  backgroundCtx()
+)
+const mixedHitBody = (await mixedHit.json()) as { ok?: boolean; leads?: Array<{ id?: string }>; clipped?: boolean }
+assert(mixedHit.status === 200 && mixedHitBody.ok, "página mista com backup de pé é 200")
+assert(mixedHitBody.leads?.some((item) => item.id === "mix-live"), "página mista mantém o vivo do KV")
+assert(mixedHitBody.leads?.some((item) => item.id === "mix-ghost"), "página mista preenche o órfão no Postgres")
+assert(mixedHitBody.clipped !== true, "página mista preenchida não marca clipped")
+const mixedMint = await handleRequest(
+  new Request("http://local.test/api/tokens", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: mixedCookie, "x-forwarded-for": "198.51.100.91" },
+    body: JSON.stringify({ name: "Mista" }),
+  }),
+  mixedEnv,
+  backgroundCtx()
+)
+const mixedMinted = (await mixedMint.json()) as { token?: string }
+assert(mixedMint.status === 201 && mixedMinted.token?.startsWith("abn_"), "token para a lista MCP mista")
+const mixedMcpHit = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mixedMinted.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 83,
+      method: "tools/call",
+      params: { name: "abilion_list_leads", arguments: { limit: 5 } },
+    }),
+  }),
+  mixedEnv,
+  backgroundCtx()
+)
+const mixedMcpHitBody = (await mixedMcpHit.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
+const mixedMcpHitText = JSON.parse(mixedMcpHitBody.result?.content?.[0]?.text || "{}") as {
+  ok?: boolean
+  leads?: Array<{ id?: string }>
+  clipped?: boolean
+}
+assert(mixedMcpHit.status === 200 && !mixedMcpHitBody.result?.isError && mixedMcpHitText.ok, "MCP lista a página mista")
+assert(mixedMcpHitText.leads?.some((item) => item.id === "mix-live"), "MCP mista traz o vivo")
+assert(mixedMcpHitText.leads?.some((item) => item.id === "mix-ghost"), "MCP mista preenche o órfão")
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("/rest/v1/")) throw new Error("postgres down")
+  return mixedPrev(input, init)
+}) as typeof fetch
+const mixedMcpFail = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mixedMinted.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 84,
+      method: "tools/call",
+      params: { name: "abilion_list_leads", arguments: { limit: 5 } },
+    }),
+  }),
+  mixedEnv,
+  backgroundCtx()
+)
+const mixedMcpFailBody = (await mixedMcpFail.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
+const mixedMcpFailText = JSON.parse(mixedMcpFailBody.result?.content?.[0]?.text || "{}") as {
+  ok?: boolean
+  leads?: Array<{ id?: string }>
+  clipped?: boolean
+  error?: string
+}
+assert(mixedMcpFail.status === 200 && !mixedMcpFailBody.result?.isError && mixedMcpFailText.ok, "MCP mista + Postgres em baixo não é erro")
+assert(mixedMcpFailText.clipped === true, "MCP mista + Postgres em baixo marca clipped")
+assert(mixedMcpFailText.leads?.some((item) => item.id === "mix-live"), "MCP mista conserva o vivo se o backup cair")
+globalThis.fetch = mixedPrev
 const pgFullRows = Array.from({ length: 400 }, (_, index) => ({
   id: `pg-${String(index).padStart(3, "0")}`,
   name: `Lead ${index}`,
