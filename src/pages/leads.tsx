@@ -20,7 +20,7 @@ import { useStore } from "@/lib/store"
 import { addLeadCategory, leadFromImport, mergeLeadCategories, parseLeadImportText } from "@/lib/lead-category"
 import { captureAgainstFunnels } from "@/lib/templates"
 import { ORIGIN_LABEL, STAGE_LABEL, TEMP_LABEL } from "@/lib/labels"
-import { isImportedLead, leadsHydrating, leadsLoadFailed, needsEster } from "@/lib/ops"
+import { isImportedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadsHydrating } from "@/lib/ops"
 import { applyEvent, nodeTitle, publishedSnapshot, type RuntimeEvent } from "@/lib/runtime"
 import { canTickSteLocally } from "@/lib/ste"
 import { timeAgo } from "@/lib/format"
@@ -51,8 +51,9 @@ export function LeadsPage() {
   const [filter, setFilter] = useState<string>("all")
   const [query, setQuery] = useState("")
   const searchStatus = useRemoteLeadSearch(query)
-  const hydrating = leadsHydrating(persistSync, state.leads.length)
-  const failed = leadsLoadFailed(persistSync, state.leads.length)
+  const scoped = useMemo(() => leadFilterCount(state.leads, filter), [filter, state.leads])
+  const hydrating = leadsHydrating(persistSync, scoped)
+  const failed = leadFilterPending(persistSync, scoped, filter, inboxSync === "error") && !hydrating
   const [open, setOpen] = useState(false)
   const [importing, setImporting] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
@@ -62,17 +63,17 @@ export function LeadsPage() {
     () => mergeLeadCategories(state.settings.leadCategories, state.leads.map((item) => item.category).filter(Boolean) as string[]),
     [state.leads, state.settings.leadCategories]
   )
+  const filterCounts = useMemo(() => {
+    const next: Record<string, number> = { all: state.leads.length }
+    for (const item of FILTERS) next[item.id] = leadFilterCount(state.leads, item.id)
+    for (const category of categories) next[`cat:${category}`] = leadFilterCount(state.leads, `cat:${category}`)
+    return next
+  }, [categories, state.leads])
 
   const rows = useMemo(() => {
     const needle = query.trim()
     return state.leads.filter((item) => {
-      if (filter === "telegram" && item.channel !== "telegram") return false
-      if (filter === "whatsapp" && item.channel !== "whatsapp") return false
-      if (filter === "import" && item.origin !== "import") return false
-      if ((filter === "novo" || filter === "morno" || filter === "quente") && item.temperature !== filter) return false
-      if (filter === "ester" && !needsEster(item)) return false
-      if (filter === "facebook" && item.origin !== "facebook") return false
-      if (filter.startsWith("cat:") && item.category !== filter.slice(4)) return false
+      if (!leadMatchesFilter(item, filter)) return false
       if (!needle) return true
       return leadMatchesQuery(item, needle, 1)
     })
@@ -123,21 +124,9 @@ export function LeadsPage() {
               >
                 {item.label}{" "}
                 <span className="text-muted-foreground">
-                  {hydrating || failed
+                  {leadFilterPending(persistSync, filterCounts[item.id] ?? 0, item.id, inboxSync === "error")
                     ? "…"
-                    : item.id === "all"
-                      ? state.leads.length
-                      : item.id === "ester"
-                        ? state.leads.filter(needsEster).length
-                        : item.id === "facebook"
-                          ? state.leads.filter((row) => row.origin === "facebook").length
-                          : item.id === "import"
-                            ? state.leads.filter((row) => row.origin === "import").length
-                            : item.id === "telegram"
-                              ? state.leads.filter((row) => row.channel === "telegram").length
-                              : item.id === "whatsapp"
-                                ? state.leads.filter((row) => row.channel === "whatsapp").length
-                                : state.leads.filter((row) => row.temperature === item.id).length}
+                    : filterCounts[item.id] ?? 0}
                 </span>
               </button>
             ))}
@@ -154,7 +143,14 @@ export function LeadsPage() {
               >
                 {category}{" "}
                 <span className="text-muted-foreground">
-                  {hydrating || failed ? "…" : state.leads.filter((row) => row.category === category).length}
+                  {leadFilterPending(
+                    persistSync,
+                    filterCounts[`cat:${category}`] ?? 0,
+                    `cat:${category}`,
+                    inboxSync === "error"
+                  )
+                    ? "…"
+                    : filterCounts[`cat:${category}`] ?? 0}
                 </span>
               </button>
             ))}

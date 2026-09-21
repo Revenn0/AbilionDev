@@ -106,7 +106,7 @@ import { leadFromImport, parseLeadImportLine, parseLeadImportText } from "../src
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
-import { barShare, hasConversation, isImportedLead, isOperatorLockedLead, leadsHydrating, leadsLoadFailed, metricPending } from "../src/lib/ops.ts"
+import { barShare, hasConversation, isImportedLead, isOperatorLockedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadsHydrating, leadsLoadFailed, metricPending } from "../src/lib/ops.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
 import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, handleAuth, hashApiToken, hashPassword, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
@@ -5526,6 +5526,13 @@ assert(!metricPending("idle", 4), "KPI de conversas com cache Telegram já conta
 assert(metricPending("ok", 0, true), "KPI de conversas com inbox falhada não finge zero")
 assert(!metricPending("ok", 0), "KPI de conversas vazio depois do GET é zero")
 assert(!metricPending("error", 3), "KPI de conversas com cache ainda mostra o número")
+assert(leadMatchesFilter(lead("wa-1"), "telegram"), "lead Telegram entra no filtro Telegram")
+assert(!leadMatchesFilter({ ...lead("wa-2"), channel: "whatsapp", origin: "import" }, "telegram"), "WhatsApp não entra no filtro Telegram")
+assert(leadFilterCount([{ ...lead("wa-3"), channel: "whatsapp", origin: "import" }], "telegram") === 0, "recorte Telegram vazio com WhatsApp")
+assert(leadFilterPending("idle", 0, "telegram"), "filtro Telegram hidrata sem cache daquele canal")
+assert(!leadFilterPending("idle", 8, "whatsapp"), "filtro WhatsApp com cache já conta")
+assert(leadFilterPending("ok", 0, "telegram", true), "filtro Telegram com inbox falhada não finge vazio")
+assert(!leadFilterPending("ok", 0, "whatsapp", true), "filtro WhatsApp vazio depois do GET é vazio")
 assert(linkRuntimeSettings(null, { telegramBotUsername: "ste" }) === null, "Vincular sem settings não inventa um objecto oco")
 assert(
   linkRuntimeSettings(emptySettings(), { telegramBotUsername: "ste_bot", telegramBotToken: "tok" })?.telegramBotUsername ===

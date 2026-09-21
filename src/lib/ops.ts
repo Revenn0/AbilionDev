@@ -69,6 +69,33 @@ export function metricPending(
   return leadsHydrating(persistSync, count) || leadsLoadFailed(persistSync, count, extraFailed)
 }
 
+/** Filtros de Leads: Telegram vazio com cache WhatsApp ainda não é recorte vazio. */
+export function leadMatchesFilter(lead: Lead, filter: string) {
+  if (!filter || filter === "all") return true
+  if (filter === "telegram") return lead.channel === "telegram"
+  if (filter === "whatsapp") return lead.channel === "whatsapp"
+  if (filter === "import") return lead.origin === "import"
+  if (filter === "novo" || filter === "morno" || filter === "quente") return lead.temperature === filter
+  if (filter === "ester") return needsEster(lead)
+  if (filter === "facebook") return lead.origin === "facebook"
+  if (filter.startsWith("cat:")) return lead.category === filter.slice(4)
+  return true
+}
+
+export function leadFilterCount(leads: Lead[], filter: string) {
+  return leads.filter((item) => leadMatchesFilter(item, filter)).length
+}
+
+export function leadFilterPending(
+  persistSync: "idle" | "ok" | "error",
+  count: number,
+  filter: string,
+  inboxFailed = false
+) {
+  const extra = inboxFailed && (filter === "all" || filter === "telegram" || filter === "facebook")
+  return metricPending(persistSync, count, extra)
+}
+
 export function barShare(value: number, total: number) {
   if (total <= 0) return 0
   return Math.round((value / total) * 100)
