@@ -436,6 +436,21 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     const limit = Math.min(50, Math.max(1, Number(args.limit) || 20))
     const cursor = str(args.cursor).trim()
     const page = await listLeadPage(env.AUTH, limit, "all", cursor)
+    const missing = page.missingIds ?? []
+    if (!page.empty && missing.length && !page.leads.length) {
+      const extras = await fetchRemoteLeadsByIds(env, missing)
+      if (extras === null && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE) {
+        throw new Error("Não li os leads do Postgres.")
+      }
+      const live = await filterLiveLeads(env.AUTH, extras ?? [])
+      return {
+        ok: true,
+        leads: live.map(compactLead),
+        nextCursor: page.stale ? undefined : page.nextCursor,
+        stale: page.stale || undefined,
+        clipped: page.clipped === true || missing.some((id) => !live.some((item) => item.id === id)) || undefined,
+      }
+    }
     if (page.empty || (!page.leads.length && !page.nextCursor)) {
       const remote = await fetchRemoteLeadPage(env, limit, "all", cursor)
       if (remote === null && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE) {
@@ -449,7 +464,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
         clipped: folded.clipped || (!page.empty && !folded.leads.length) || undefined,
       }
     }
-    const filled = await fillLeadHoles(env, page.leads, page.missingIds ?? [])
+    const filled = await fillLeadHoles(env, page.leads, missing)
     const extras = await fetchRemoteLeadsByIds(env, filled.leads.map((item) => item.id))
     const live = extras ? await filterLiveLeads(env.AUTH, extras) : []
     const merged = adoptLeadStores(filled.leads, live)

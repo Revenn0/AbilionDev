@@ -1054,6 +1054,19 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
   }
   const kv = page.leads
   const missing = page.missingIds ?? []
+  if (!kv.length && missing.length) {
+    const extras = await fetchRemoteLeadsByIds(env, missing)
+    if (extras === null) return { leads: [], clipped: true, failed: !cursor, stale: Boolean(cursor) }
+    const live = env.AUTH ? await filterLiveLeads(env.AUTH, extras) : extras
+    const attached = await attachLeadEvents(env, live)
+    return {
+      leads: attached.leads,
+      nextCursor: page.stale ? undefined : page.nextCursor,
+      stale: page.stale,
+      clipped: page.clipped === true || missing.some((id) => !live.some((item) => item.id === id)),
+      eventsUnread: attached.unread || undefined,
+    }
+  }
   if (!kv.length) {
     const filter = channel === "telegram" ? "&channel=eq.telegram" : ""
     const rows = await rest<LeadRow[]>(
@@ -1062,17 +1075,6 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
     )
     const remoteFailed = canReachRemote && rows === null
     const remote = applyRemovedLeads((rows ?? []).map(rowToLead), env.AUTH ? await loadRemovedLeadIds(env.AUTH) : [])
-    if (page.nextCursor) {
-      const filled = await fillLeadHoles(env, [], missing)
-      const attached = await attachLeadEvents(env, filled.leads)
-      return {
-        leads: attached.leads,
-        nextCursor: page.nextCursor,
-        stale: page.stale,
-        clipped: page.clipped === true || filled.holesOpen,
-        eventsUnread: attached.unread || undefined,
-      }
-    }
     if (remoteFailed) return { leads: [], clipped: true, failed: !cursor, stale: Boolean(cursor) }
     if (!cursor) {
       const folded = leadPageFromRemote(remote, limit, canReachRemote)

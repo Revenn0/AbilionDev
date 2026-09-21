@@ -4963,6 +4963,146 @@ assert(
   ]).complete === false,
   "órfãos na página 1 não fecham o universo"
 )
+const hollowIndexKv = memoryKv()
+await hollowIndexKv.put(
+  CRM_INDEX,
+  JSON.stringify({
+    entries: [{ id: "index-ana", contact: "@indexana", updatedAt: "2026-06-01T00:00:00.000Z", channel: "telegram" }],
+  })
+)
+const hollowIndexEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: hollowIndexKv,
+  ABILION_ENV: "development",
+} as Env
+const hollowLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  hollowIndexEnv,
+  backgroundCtx()
+)
+assert(hollowLogin.status === 200, "login no índice oco da única página")
+const hollowCookie = hollowLogin.headers.get("set-cookie") || ""
+const hollowAnaRow = {
+  id: "index-ana",
+  name: "Ana Souza",
+  contact: "@indexana",
+  channel: "telegram" as const,
+  campaign: "Facebook · ads",
+  origin: "facebook" as const,
+  temperature: "novo" as const,
+  stage: "capture" as const,
+  memory: "",
+  facts: {},
+  messages: [],
+  updated_at: "2026-06-01T00:00:00.000Z",
+  created_at: "2026-06-01T00:00:00.000Z",
+}
+const hollowRitaRow = {
+  ...hollowAnaRow,
+  id: "other-rita",
+  name: "Rita Backup",
+  contact: "@otherrita",
+  updated_at: "2026-08-01T00:00:00.000Z",
+  created_at: "2026-08-01T00:00:00.000Z",
+}
+const hollowPrev = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  if (url.includes("/rest/v1/leads") && url.includes("id=in.") && (init?.method || "GET").toUpperCase() === "GET") {
+    return new Response(JSON.stringify([hollowAnaRow]), { status: 200 })
+  }
+  if (url.includes("/rest/v1/leads") && (init?.method || "GET").toUpperCase() === "GET") {
+    return new Response(JSON.stringify([hollowRitaRow]), { status: 200 })
+  }
+  if (url.includes("/rest/v1/")) return new Response("[]", { status: 200 })
+  return hollowPrev(input, init)
+}) as typeof fetch
+const hollowHit = await handleRequest(
+  new Request("http://local.test/api/leads", { headers: { cookie: hollowCookie } }),
+  hollowIndexEnv,
+  backgroundCtx()
+)
+const hollowHitBody = (await hollowHit.json()) as { ok?: boolean; leads?: Array<{ id?: string; name?: string }>; clipped?: boolean }
+assert(hollowHit.status === 200 && hollowHitBody.ok, "única página órfã com backup de pé é 200")
+assert(hollowHitBody.leads?.some((item) => item.id === "index-ana"), "única página órfã hidrata o id do índice")
+assert(!hollowHitBody.leads?.some((item) => item.id === "other-rita"), "única página órfã não troca o índice pelo latest-N")
+assert(hollowHitBody.clipped !== true, "única página órfã preenchida não marca clipped")
+const hollowInbox = await handleRequest(
+  new Request("http://local.test/api/inbox", { headers: { cookie: hollowCookie } }),
+  hollowIndexEnv,
+  backgroundCtx()
+)
+const hollowInboxBody = (await hollowInbox.json()) as { leads?: Array<{ id?: string }> }
+assert(hollowInboxBody.leads?.some((item) => item.id === "index-ana"), "inbox da única página órfã hidrata o id do índice")
+assert(!hollowInboxBody.leads?.some((item) => item.id === "other-rita"), "inbox da única página órfã não cai no latest-N")
+const hollowMint = await handleRequest(
+  new Request("http://local.test/api/tokens", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: hollowCookie, "x-forwarded-for": "198.51.100.94" },
+    body: JSON.stringify({ name: "Oca" }),
+  }),
+  hollowIndexEnv,
+  backgroundCtx()
+)
+const hollowMinted = (await hollowMint.json()) as { token?: string }
+assert(hollowMint.status === 201 && hollowMinted.token?.startsWith("abn_"), "token para a lista MCP oca")
+const hollowMcp = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${hollowMinted.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 87,
+      method: "tools/call",
+      params: { name: "abilion_list_leads", arguments: { limit: 5 } },
+    }),
+  }),
+  hollowIndexEnv,
+  backgroundCtx()
+)
+const hollowMcpBody = (await hollowMcp.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
+const hollowMcpText = JSON.parse(hollowMcpBody.result?.content?.[0]?.text || "{}") as {
+  ok?: boolean
+  leads?: Array<{ id?: string }>
+  clipped?: boolean
+}
+assert(hollowMcp.status === 200 && !hollowMcpBody.result?.isError && hollowMcpText.ok, "MCP lista a única página órfã")
+assert(hollowMcpText.leads?.some((item) => item.id === "index-ana"), "MCP oca hidrata o id do índice")
+assert(!hollowMcpText.leads?.some((item) => item.id === "other-rita"), "MCP oca não troca o índice pelo latest-N")
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("/rest/v1/")) throw new Error("postgres down")
+  return hollowPrev(input, init)
+}) as typeof fetch
+const hollowDown = await handleRequest(
+  new Request("http://local.test/api/leads", { headers: { cookie: hollowCookie } }),
+  hollowIndexEnv,
+  backgroundCtx()
+)
+assert(hollowDown.status === 503, "única página órfã + Postgres em baixo é 503")
+const hollowMcpDown = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${hollowMinted.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 88,
+      method: "tools/call",
+      params: { name: "abilion_list_leads", arguments: { limit: 5 } },
+    }),
+  }),
+  hollowIndexEnv,
+  backgroundCtx()
+)
+const hollowMcpDownBody = (await hollowMcpDown.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
+const hollowMcpDownText = JSON.parse(hollowMcpDownBody.result?.content?.[0]?.text || "{}") as { error?: string }
+assert(hollowMcpDownBody.result?.isError && hollowMcpDownText.error?.includes("Postgres"), "MCP oca + Postgres em baixo é erro")
+globalThis.fetch = hollowPrev
 const mcpPageEnv = {
   ASSETS: { fetch: async () => new Response("ok") },
   SUPABASE_URL: "https://sb.test",
