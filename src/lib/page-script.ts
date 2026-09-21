@@ -131,6 +131,13 @@ function escapeHtml(value: string) {
     .replace(/'/g, "&#39;")
 }
 
+export const ADS_LANDING_UNREAD_STATUS =
+  "Não confirmei o Telegram desta campanha. O pixel já está a gravar a visita."
+export const ADS_LANDING_UNLINKED_STATUS =
+  "O Telegram desta campanha ainda não está ligado. Volta daqui a pouco."
+export const ADS_LANDING_UNREAD_HINT = "Sem cadastro nesta página. O clique abre quando as definições confirmarem."
+export const ADS_LANDING_UNLINKED_HINT = "Sem cadastro nesta página. O clique só abre quando o bot estiver ligado."
+
 /** HTML da /l no Worker: t.js + CTA no primeiro byte, sem esperar o SPA. */
 export function adsLandingDocument(input: { botUsername?: string; scriptId?: string; unread?: boolean } = {}) {
   const scriptId = PAGE_SCRIPT_ID.test((input.scriptId || "").trim().toLowerCase())
@@ -146,14 +153,12 @@ export function adsLandingDocument(input: { botUsername?: string; scriptId?: str
   const canonical = adsLandingUrl(scriptId)
   const cta = href
     ? `<a data-abilion-cta href="${escapeHtml(href)}" class="cta">Falar com a Sté no Telegram</a>`
-    : input.unread
-      ? `<p role="status" class="muted">Não confirmei o Telegram desta campanha. O pixel já está a gravar a visita.</p>`
-      : `<p role="status" class="muted">O Telegram desta campanha ainda não está ligado. Volta daqui a pouco.</p>`
+    : `<p role="status" class="muted">${input.unread ? ADS_LANDING_UNREAD_STATUS : ADS_LANDING_UNLINKED_STATUS}</p>`
   const hint = href
     ? `O botão vira <code>t.me/...?start=${startHint}</code>. Sem cadastro nesta página.`
     : input.unread
-      ? "Sem cadastro nesta página. O clique abre quando as definições confirmarem."
-      : "Sem cadastro nesta página. O clique só abre quando o bot estiver ligado."
+      ? ADS_LANDING_UNREAD_HINT
+      : ADS_LANDING_UNLINKED_HINT
   return `<!doctype html>
 <html lang="pt">
 <head>

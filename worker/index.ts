@@ -188,7 +188,7 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext) {
         unread: loaded.unread && !botUsername,
       })
     } catch {
-      html = adsLandingDocument({ scriptId })
+      html = adsLandingDocument({ scriptId, unread: true })
     }
     return withSecurityHeaders(
       new Response(request.method === "HEAD" ? null : html, {

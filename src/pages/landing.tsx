@@ -2,7 +2,14 @@ import { useEffect, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { adsDeepLink } from "@/lib/telegram-start"
 import { fetchHealth } from "@/lib/channel"
-import { adsStartToken, PAGE_SCRIPT_ID } from "@/lib/page-script"
+import {
+  ADS_LANDING_UNLINKED_HINT,
+  ADS_LANDING_UNLINKED_STATUS,
+  ADS_LANDING_UNREAD_HINT,
+  ADS_LANDING_UNREAD_STATUS,
+  adsStartToken,
+  PAGE_SCRIPT_ID,
+} from "@/lib/page-script"
 import { PIXEL_VERSION, readVisitorId } from "@/lib/tracker-script"
 
 export function LandingPage() {
@@ -12,7 +19,15 @@ export function LandingPage() {
   const [visitorId, setVisitorId] = useState(() => (typeof window === "undefined" ? "" : readVisitorId()))
   const [ready, setReady] = useState(false)
   const [unreachable, setUnreachable] = useState(false)
+  const [botUnread, setBotUnread] = useState(false)
   const href = adsDeepLink(username, adsStartToken(scriptId || undefined, visitorId || undefined))
+
+  const applyHealth = (health: Awaited<ReturnType<typeof fetchHealth>>) => {
+    setUnreachable(Boolean(health.unreachable))
+    setUsername(health.telegramBotUsername || "")
+    setBotUnread(health.telegramBotUnread === true && !health.telegramBotUsername)
+    setReady(true)
+  }
 
   useEffect(() => {
     setVisitorId(readVisitorId())
@@ -31,9 +46,7 @@ export function LandingPage() {
     const pull = () => {
       void fetchHealth().then((health) => {
         if (cancelled) return
-        setUnreachable(Boolean(health.unreachable))
-        setUsername(health.telegramBotUsername || "")
-        setReady(true)
+        applyHealth(health)
       })
     }
     pull()
@@ -72,11 +85,7 @@ export function LandingPage() {
               className="underline underline-offset-2 hover:text-zinc-200"
               onClick={() => {
                 setReady(false)
-                void fetchHealth().then((health) => {
-                  setUnreachable(Boolean(health.unreachable))
-                  setUsername(health.telegramBotUsername || "")
-                  setReady(true)
-                })
+                void fetchHealth().then(applyHealth)
               }}
             >
               Tentar outra vez
@@ -92,7 +101,7 @@ export function LandingPage() {
           </a>
         ) : (
           <p role="status" className="mt-8 text-[14px] text-zinc-400">
-            O Telegram desta campanha ainda não está ligado. Volta daqui a pouco.
+            {botUnread ? ADS_LANDING_UNREAD_STATUS : ADS_LANDING_UNLINKED_STATUS}
           </p>
         )}
         <p className="mt-4 text-[12px] text-zinc-400">
@@ -100,8 +109,10 @@ export function LandingPage() {
             <>
               O botão vira <code className="text-zinc-300">t.me/...?start={scriptId ? `fb_s${scriptId}_vid` : "fb_vid"}</code>. Sem cadastro nesta página.
             </>
+          ) : botUnread ? (
+            ADS_LANDING_UNREAD_HINT
           ) : (
-            <>Sem cadastro nesta página. O clique só abre quando o bot estiver ligado.</>
+            ADS_LANDING_UNLINKED_HINT
           )}
         </p>
         <p className="mt-auto pt-16 text-[11px] text-zinc-400">

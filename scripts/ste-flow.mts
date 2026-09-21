@@ -5963,6 +5963,24 @@ assert((landingBare.headers.get("content-security-policy") || "").includes("scri
 const landingBareHtml = await landingBare.text()
 assert(landingBareHtml.includes("/t.js?v=2") && landingBareHtml.includes("ainda não está ligado"), "GET /l sem bot ainda serve o pixel")
 assert(!landingBareHtml.includes("<a data-abilion-cta"), "GET /l sem username não inventa CTA")
+const kvDownLanding = await handleRequest(
+  new Request("http://local.test/l"),
+  {
+    ASSETS: { fetch: async () => new Response("ok") },
+    AUTH: {
+      async get() {
+        throw new Error("kv down")
+      },
+      async put() {},
+    },
+  } as Env,
+  backgroundCtx()
+)
+const kvDownHtml = await kvDownLanding.text()
+assert(kvDownLanding.status === 200 && kvDownHtml.includes("/t.js"), "GET /l com KV em baixo ainda serve o pixel")
+assert(kvDownHtml.includes("Não confirmei o Telegram"), "GET /l catch não diz que o bot não está ligado")
+assert(!kvDownHtml.includes("ainda não está ligado"), "GET /l catch não usa a cópia de bot desligado")
+assert(!kvDownHtml.includes("<a data-abilion-cta"), "GET /l catch sem username não inventa CTA")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()

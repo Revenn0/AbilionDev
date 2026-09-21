@@ -206,6 +206,7 @@ try {
   assert(
     Boolean(await page.$("[data-abilion-cta]")) ||
       landingCopy.includes("ainda não está ligado") ||
+      landingCopy.includes("Não confirmei o Telegram") ||
       landingCopy.includes("A carregar o botão") ||
       landingCopy.includes("Não consegui falar"),
     "landing tem CTA ou empty state"
