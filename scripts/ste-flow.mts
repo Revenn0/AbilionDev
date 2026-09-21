@@ -7425,6 +7425,50 @@ const persistMcpFunnelData = JSON.parse(
 assert(persistMcpFunnelData.error === "Não confirmei os funis.", "MCP persist funnels KV throw pede confirmação")
 assert(!persistMcpFunnelData.id, "MCP persist funnels não inventa id")
 assert(!(await loadFunnelsKv(runtimeHoleKv)).some((item) => item.name === "Persist funnel"), "MCP persist funnels não grava")
+await saveSecrets(runtimeHoleKv, { telegramWebhookSecret: "hook-kv" })
+const hookKvDownCtx = backgroundCtx()
+let hookKvTelegramCalls = 0
+const hookKvPrevFetch = globalThis.fetch
+try {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("api.telegram.org")) {
+      hookKvTelegramCalls += 1
+      return new Response(JSON.stringify({ ok: true }), { status: 200 })
+    }
+    return hookKvPrevFetch(input, init)
+  }) as typeof fetch
+  const hookKvDown = await handleRequest(
+    new Request("http://local.test/api/telegram", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-kv" },
+      body: JSON.stringify({
+        update_id: 88001,
+        message: {
+          chat: { id: 88001 },
+          text: "/start fb_hookkv",
+          from: { id: 88001, username: "hookkv", first_name: "Hook" },
+        },
+      }),
+    }),
+    { ...runtimeHoleBase, AUTH: kvThrowsOn(runtimeHoleKv, RUNTIME_KEY) } as Env,
+    hookKvDownCtx
+  )
+  const hookKvDownBody = (await hookKvDown.json()) as { ok?: boolean; error?: string }
+  assert(hookKvDown.status === 503, "webhook KV throw é 503")
+  assert(hookKvDown.status !== 401, "webhook KV throw não é 401 — o Telegram parava de tentar")
+  assert(hookKvDown.status !== 200, "webhook KV throw não é 200 — o update ficava acked sem processar")
+  assert(hookKvDown.status !== 500, "webhook KV throw não é Falha interna")
+  assert(hookKvDownBody.ok === false, "webhook KV throw não finge ok")
+  assert(hookKvDownBody.error === "Não confirmei as chaves do Worker.", "webhook KV throw pede confirmação das chaves")
+  assert(hookKvDownBody.error !== "Falha interna.", "webhook KV throw não cai no catch genérico")
+  await hookKvDownCtx.flush()
+  assert(hookKvTelegramCalls === 0, "webhook KV throw não entrega no waitUntil")
+} finally {
+  globalThis.fetch = hookKvPrevFetch
+}
+assert(!(await listLeads(runtimeHoleKv, 20, "all")).some((item) => item.contact === "@hookkv"), "webhook KV throw não cria lead")
+assert((await loadSecrets(runtimeHoleKv)).telegramWebhookSecret === "hook-kv", "webhook KV throw não apaga o secret leftover")
+assert((await loadSecrets(runtimeHoleKv)).telegramBotToken === "000:kv-token", "webhook KV throw não apaga o token leftover")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()

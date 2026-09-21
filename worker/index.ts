@@ -815,7 +815,12 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   }
 
   if (url.pathname === "/api/telegram" && request.method === "POST") {
-    const { secrets } = await runtimeOf(env)
+    let secrets
+    try {
+      secrets = (await runtimeOf(env)).secrets
+    } catch {
+      return json({ ok: false, error: "Não confirmei as chaves do Worker." }, 503)
+    }
     const expected = (env.TELEGRAM_WEBHOOK_SECRET || secrets.telegramWebhookSecret || "").trim()
     const header = request.headers.get("x-telegram-bot-api-secret-token") || ""
     if (!expected || header !== expected) return json({ ok: false }, 401)
