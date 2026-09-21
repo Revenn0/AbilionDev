@@ -178,7 +178,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `POST /api/auth/forgot` | público; em produção não devolve link |
 | `POST /api/auth/reset` | token de reset |
 | `POST /api/auth/password` | sessão |
-| `GET/POST /api/crm` | sessão — funis e settings (sem token). POST aceita `removedFunnelIds`; o KV ganha se já houver quadro. GET une KV com o Postgres: um objecto vazio no KV não esconde username, scripts, categorias nem funis que ainda estão no backup |
+| `GET/POST /api/crm` | sessão — funis e settings (sem token). POST aceita `removedFunnelIds`; o KV ganha se já houver quadro. GET une KV com o Postgres: um objecto vazio no KV não esconde username, scripts, categorias nem funis que ainda estão no backup. Se o KV está oco e o Postgres falha, GET é 503 — o painel não semeia por cima |
 | `GET/POST/DELETE /api/leads` | sessão — GET pagina 400 (`nextCursor`, `stale` se o cursor sumiu) ou `?q=@user` no alias. A primeira página manda `removed` (tombstones) e `clipped` se o índice está no teto (8000 chats / 4000 sem chat) ou se o KV está vazio e o Postgres falhou. O hydrate pede até 40 páginas (16000). Página a meio vazia/stale **não** conta como lista; `clipped` ou teto de páginas é janela incompleta e **não** apaga leads locais |
 | `GET /api/inbox` | sessão — página 400 do Telegram (`nextCursor`, `stale` se o cursor sumiu). O poll pede a primeira página e não reabre lead apagado nesta sessão |
 | `GET/POST /api/runtime` | sessão — GET qualquer conta; POST só dono (token, IA, voz) |

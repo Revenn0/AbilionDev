@@ -12,7 +12,11 @@ export type SettingsEnv = {
   SUPABASE_SERVICE_ROLE?: string
 }
 
-async function fetchRemoteSettings(env: SettingsEnv): Promise<Settings | undefined> {
+function settingsNeedRemote(settings: Settings) {
+  return !settings.telegramBotUsername && !(settings.pageScripts?.length) && !(settings.leadCategories?.length)
+}
+
+async function fetchRemoteSettings(env: SettingsEnv): Promise<Settings | undefined | null> {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return undefined
   try {
     const res = await fetch(`${env.SUPABASE_URL}/rest/v1/settings?workspace_id=eq.${WORKSPACE}&select=data`, {
@@ -21,17 +25,24 @@ async function fetchRemoteSettings(env: SettingsEnv): Promise<Settings | undefin
         Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE}`,
       },
     })
-    if (!res.ok) return undefined
+    if (!res.ok) return null
     const rows = (await res.json()) as { data?: Settings }[]
     return rows[0]?.data ? migrateSettings(rows[0].data) : undefined
   } catch {
-    return undefined
+    return null
   }
 }
 
 /** Painel e MCP: KV oco não esconde username, scripts e categorias do Postgres. */
 export async function loadWorkspaceSettings(env: SettingsEnv): Promise<Settings> {
   const remote = await fetchRemoteSettings(env)
+  if (remote === null) {
+    if (env.AUTH) {
+      const kv = await loadAdoptedSettings(env.AUTH)
+      if (!settingsNeedRemote(kv)) return kv
+    }
+    throw new Error("Não li as definições do Postgres.")
+  }
   if (env.AUTH) return loadAdoptedSettings(env.AUTH, remote)
   return remote ?? emptySettings()
 }
@@ -47,7 +58,7 @@ type FunnelRow = {
   production: SalesFunnel["production"]
 }
 
-async function fetchRemoteFunnels(env: SettingsEnv): Promise<SalesFunnel[]> {
+async function fetchRemoteFunnels(env: SettingsEnv): Promise<SalesFunnel[] | null> {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return []
   try {
     const res = await fetch(`${env.SUPABASE_URL}/rest/v1/funnels?workspace_id=eq.${WORKSPACE}`, {
@@ -56,7 +67,7 @@ async function fetchRemoteFunnels(env: SettingsEnv): Promise<SalesFunnel[]> {
         Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE}`,
       },
     })
-    if (!res.ok) return []
+    if (!res.ok) return null
     const rows = (await res.json()) as FunnelRow[]
     return rows
       .map((row) =>
@@ -73,7 +84,7 @@ async function fetchRemoteFunnels(env: SettingsEnv): Promise<SalesFunnel[]> {
       )
       .filter((item): item is SalesFunnel => Boolean(item))
   } catch {
-    return []
+    return null
   }
 }
 
@@ -81,6 +92,7 @@ async function fetchRemoteFunnels(env: SettingsEnv): Promise<SalesFunnel[]> {
 export async function loadWorkspaceFunnels(env: SettingsEnv): Promise<SalesFunnel[]> {
   const kv = env.AUTH ? await loadFunnelsKv(env.AUTH) : []
   const remote = kv.length ? [] : await fetchRemoteFunnels(env)
+  if (remote === null) throw new Error("Não li os funis do Postgres.")
   const removed = env.AUTH ? await loadRemovedFunnelIds(env.AUTH) : []
   return adoptFunnelStores(kv, remote, removed)
 }

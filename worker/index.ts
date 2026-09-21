@@ -21,6 +21,7 @@ import {
   clipRemovedIds,
   enforceSinglePublished,
   mergeLeadEvents,
+  emptySettings,
   publicSettings,
   FUNNEL_CAP,
   resolveLeadLookup,
@@ -208,7 +209,7 @@ async function handleMcpRoute(request: Request, env: Env) {
 async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionContext) {
   if (url.pathname === "/api/health") {
     const { resolved } = await runtimeOf(env, webhookUrl(request, env))
-    const settings = await loadSettings(env)
+    const settings = await loadSettings(env).catch(() => emptySettings())
     return json({
       ok: true,
       telegramBotUsername: cleanBotUsername(resolved.telegramBotUsername || settings.telegramBotUsername),
@@ -217,10 +218,12 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
 
   if (url.pathname === "/api/install" && request.method === "GET") {
     const { resolved } = await runtimeOf(env, webhookUrl(request, env))
-    const settings = await loadSettings(env)
+    const settings = await loadSettings(env).catch(() => emptySettings())
     const scriptId = (url.searchParams.get("s") || "").trim().toLowerCase()
     const script = pageScriptById(settings.pageScripts, scriptId)
-    const funnel = script ? (await loadFunnels(env)).find((item) => item.id === script.funnelId) : undefined
+    const funnel = script
+      ? (await loadFunnels(env).catch(() => [] as SalesFunnel[])).find((item) => item.id === script.funnelId)
+      : undefined
     return json(
       pageInstallManual({
         botUsername: cleanBotUsername(resolved.telegramBotUsername || settings.telegramBotUsername),
@@ -382,7 +385,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       if (!hooked.ok) warning = "O token ficou gravado. O webhook ainda não apontou — tenta Vincular outra vez."
     }
     await saveSecrets(env.AUTH, next)
-    const settings = await loadSettings(env)
+    const settings = await loadSettings(env).catch(() => emptySettings())
     await persistSettings(env, {
       ...settings,
       telegramBotUsername: next.telegramBotUsername || settings.telegramBotUsername,
@@ -399,11 +402,15 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
-    return json({
-      ok: true,
-      funnels: await loadFunnels(env),
-      settings: publicSettings(await loadSettings(env)),
-    })
+    try {
+      return json({
+        ok: true,
+        funnels: await loadFunnels(env),
+        settings: publicSettings(await loadSettings(env)),
+      })
+    } catch {
+      return json({ error: "Não li o CRM do Worker." }, 503)
+    }
   }
 
   if (url.pathname === "/api/crm" && request.method === "POST") {

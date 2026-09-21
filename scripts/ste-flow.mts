@@ -85,7 +85,7 @@ import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.t
 import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
-import { loadWorkspaceFunnels, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings } from "../worker/workspace-settings.ts"
+import { loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings } from "../worker/workspace-settings.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
@@ -1068,6 +1068,28 @@ const adoptFunnelKv = memoryKv()
 await saveFunnelsKv(adoptFunnelKv, [kvBoard])
 assert((await loadWorkspaceFunnels({ AUTH: adoptFunnelKv }))[0]?.name === "Quadro KV", "loadWorkspaceFunnels lê o KV")
 assert((await loadWorkspaceFunnels({ AUTH: memoryKv() })).length === 0, "loadWorkspaceFunnels sem KV nem Postgres fica vazio")
+const pgDownPrev = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("/rest/v1/")) throw new Error("postgres down")
+  return pgDownPrev(input, init)
+}) as typeof fetch
+const pgDownEnv = { AUTH: memoryKv(), SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" }
+try {
+  await loadWorkspaceFunnels(pgDownEnv)
+  assert(false, "loadWorkspaceFunnels sem KV e Postgres em baixo tem de falhar")
+} catch (error) {
+  assert(error instanceof Error && error.message.includes("Postgres"), "loadWorkspaceFunnels não finge funis vazios")
+}
+try {
+  await loadWorkspaceSettings(pgDownEnv)
+  assert(false, "loadWorkspaceSettings oco e Postgres em baixo tem de falhar")
+} catch (error) {
+  assert(error instanceof Error && error.message.includes("Postgres"), "loadWorkspaceSettings não finge settings vazias")
+}
+await saveSettingsKv(pgDownEnv.AUTH, migrateSettings({ telegramBotUsername: "@ste_bot" }))
+assert((await loadWorkspaceSettings(pgDownEnv)).telegramBotUsername === "@ste_bot", "settings no KV sobrevivem ao Postgres em baixo")
+assert((await loadWorkspaceFunnels({ AUTH: adoptFunnelKv, SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" }))[0]?.name === "Quadro KV", "KV com quadro não depende do Postgres")
+globalThis.fetch = pgDownPrev
 const adoptGoneKv = memoryKv()
 await rememberRemovedFunnels(adoptGoneKv, [kvBoard.id])
 await saveFunnelsKv(adoptGoneKv, [kvBoard])
@@ -2810,7 +2832,7 @@ assert(pgFailLogin.status === 200, "login no KV vazio para o GET de leads")
 const pgFailCookie = pgFailLogin.headers.get("set-cookie") || ""
 const pgFailPrev = globalThis.fetch
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-  if (String(input).includes("/rest/v1/leads")) throw new Error("postgres down")
+  if (String(input).includes("/rest/v1/")) throw new Error("postgres down")
   return pgFailPrev(input, init)
 }) as typeof fetch
 const pgFailList = await handleRequest(
@@ -2821,6 +2843,14 @@ const pgFailList = await handleRequest(
 const pgFailBody = (await pgFailList.json()) as { ok?: boolean; leads?: unknown[]; clipped?: boolean }
 assert(pgFailList.status === 200 && pgFailBody.ok && pgFailBody.clipped === true, "KV vazio + Postgres em baixo marca clipped")
 assert(collectLeadPages([{ leads: [], clipped: true }]).complete === false, "clipped vazio não é lista completa")
+const pgFailCrm = await handleRequest(
+  new Request("http://local.test/api/crm", { headers: { cookie: pgFailCookie } }),
+  pgFailEnv,
+  backgroundCtx()
+)
+assert(pgFailCrm.status === 503, "GET CRM não finge funis vazios quando o Postgres falha")
+const pgFailHealth = await handleRequest(new Request("http://local.test/api/health"), pgFailEnv, backgroundCtx())
+assert(pgFailHealth.status === 200, "health público continua de pé se o Postgres falhar")
 globalThis.fetch = pgFailPrev
 const inbox = (await (
   await handleRequest(new Request("http://local.test/api/inbox", { headers: { cookie: startCookie } }), startEnv, backgroundCtx())
