@@ -87,7 +87,7 @@ import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.t
 import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_INDEX, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, leadPageCursor, leadPageFromRemote, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
-import { fetchRemoteLeadsByIds, leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceSettings, remoteLeadListPath, remoteLeadSearchPath, rowToLead, sanitizeRemoteSearchNeedle, searchWorkspaceLeads } from "../worker/workspace-settings.ts"
+import { fetchRemoteDueLeads, fetchRemoteLeadByIdentity, fetchRemoteLeadsByIds, findWorkspaceLead, leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceSettings, remoteLeadIdentityPath, remoteLeadListPath, remoteLeadSearchPath, rowToLead, sanitizeRemoteSearchNeedle, searchWorkspaceLeads } from "../worker/workspace-settings.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
@@ -3404,11 +3404,34 @@ assert(!mixedListed.missingIds.includes("mixed-live"), "vivo não entra nos bura
 assert((await listLeadPage(mixedIndexKv, 10, "all", "1999-01-01T00:00:00.000Z|missing")).missingIds.length === 0, "cursor velho não inventa buracos")
 assert((await fetchRemoteLeadsByIds({} as Env, ["ghost"])).length === 0, "sem credenciais o fill não finge falha")
 assert((await fetchRemoteLeadsByIds({ SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env, [])).length === 0, "sem ids o fill é vazio")
+assert(remoteLeadIdentityPath("", 0, "") === "", "identidade vazia não pergunta ao Postgres")
+assert(remoteLeadIdentityPath("@ana", 41, "41").includes("telegram_chat_id.eq."), "identidade do webhook filtra o chat")
+assert((await fetchRemoteLeadByIdentity({} as Env, "@ana", 41, "41")).length === 0, "sem credenciais a identidade não finge falha")
+assert((await fetchRemoteDueLeads({} as Env, "2026-06-02T00:00:00.000Z")).length === 0, "sem credenciais o due remoto é vazio")
 const byIdPrev = globalThis.fetch
 globalThis.fetch = (async () => {
   throw new Error("postgres down")
 }) as typeof fetch
 assert((await fetchRemoteLeadsByIds({ SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env, ["ghost"])) === null, "fill com Postgres em baixo é null")
+assert((await fetchRemoteLeadByIdentity({ SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env, "@ghost", 9, "9")) === null, "identidade com Postgres em baixo é null")
+assert((await fetchRemoteDueLeads({ SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env, "2026-06-02T00:00:00.000Z")) === null, "due remoto com Postgres em baixo é null")
+let identityThrew = false
+try {
+  await findWorkspaceLead({ SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env, "@ghost", 9, "9")
+} catch (error) {
+  identityThrew = error instanceof Error && error.message.includes("Não li o lead do Postgres.")
+}
+assert(identityThrew, "lookup do webhook não trata falha do Postgres como miss")
+assert((await findWorkspaceLead({} as Env, "@ghost", 9, "9")) === null, "sem credenciais o lookup é miss")
+const liveLookup = lead("live-kv", "@livekv")
+liveLookup.telegramChatId = "55"
+const liveLookupKv = memoryKv()
+await upsertLeadKv(liveLookupKv, liveLookup)
+assert(
+  (await findWorkspaceLead({ AUTH: liveLookupKv, SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env, "@livekv", 55, "55"))?.id ===
+    "live-kv",
+  "KV vivo ganha mesmo com Postgres em baixo"
+)
 const mixedGhostRow = {
   id: "mixed-ghost",
   name: "Ghost Vivo",
@@ -3436,6 +3459,123 @@ const byIdHit = await fetchRemoteLeadsByIds(
   ["mixed-ghost"]
 )
 assert(byIdHit?.some((item) => item.id === "mixed-ghost"), "fill lê o id no Postgres")
+const identityRow = {
+  id: "pg-ana",
+  name: "Ana PG",
+  contact: "@pgana",
+  channel: "telegram" as const,
+  campaign: "Facebook · ads",
+  origin: "facebook" as const,
+  temperature: "novo" as const,
+  stage: "welcome" as const,
+  memory: "ficha no backup",
+  facts: {},
+  messages: [{ id: "old", at: "2026-06-01T00:00:00.000Z", role: "ste" as const, text: "já falámos" }],
+  telegram_chat_id: "8802",
+  updated_at: "2026-06-01T00:00:00.000Z",
+  created_at: "2026-06-01T00:00:00.000Z",
+}
+globalThis.fetch = (async (input: RequestInfo | URL) => {
+  const url = String(input)
+  if (url.includes("/rest/v1/leads") && url.includes("or=(")) {
+    return new Response(JSON.stringify([identityRow]), { status: 200 })
+  }
+  return new Response("[]", { status: 200 })
+}) as typeof fetch
+const identityHit = await fetchRemoteLeadByIdentity(
+  { SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env,
+  "@pgana",
+  8802,
+  "8802"
+)
+assert(identityHit?.some((item) => item.id === "pg-ana"), "identidade lê o chat no Postgres")
+assert(
+  (await findWorkspaceLead({ SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role", AUTH: memoryKv() } as Env, "@pgana", 8802, "8802"))?.id ===
+    "pg-ana",
+  "lookup reusa o id do backup"
+)
+assert((await fetchRemoteDueLeads({ SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env, "2026-06-02T00:00:00.000Z"))?.length === 0, "due remoto vazio é array, não null")
+const hookDownKv = memoryKv()
+const hookDownEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: hookDownKv,
+  TELEGRAM_WEBHOOK_SECRET: "hook-secret",
+  TELEGRAM_BOT_TOKEN: "000:test",
+  ABILION_ENV: "development",
+} as Env
+const hookPrev = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  if (url.includes("api.telegram.org")) return new Response(JSON.stringify({ ok: true }), { status: 200 })
+  if (url.includes("/rest/v1/leads")) throw new Error("postgres down")
+  if (url.includes("/rest/v1/")) return new Response("[]", { status: 200 })
+  return hookPrev(input, init)
+}) as typeof fetch
+const hookDownCtx = backgroundCtx()
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/telegram", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+        body: JSON.stringify({
+          update_id: 8801,
+          message: {
+            chat: { id: 8801 },
+            text: "/start fb_dupmiss",
+            from: { id: 8801, username: "dupmiss", first_name: "Dup" },
+          },
+        }),
+      }),
+      hookDownEnv,
+      hookDownCtx
+    )
+  ).status === 200,
+  "webhook com Postgres em baixo ainda é 200"
+)
+await hookDownCtx.flush()
+assert(!(await listLeads(hookDownKv, 20, "all")).some((item) => item.contact === "@dupmiss"), "webhook não mint com Postgres em baixo")
+assert((await findLeadInKv(hookDownKv, "@dupmiss", 8801, "8801")) === null, "falha do backup não grava alias de um lead novo")
+const hookReuseKv = memoryKv()
+const hookReuseEnv = { ...hookDownEnv, AUTH: hookReuseKv }
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  if (url.includes("api.telegram.org")) return new Response(JSON.stringify({ ok: true }), { status: 200 })
+  if (url.includes("/rest/v1/leads") && (init?.method || "GET").toUpperCase() === "GET" && url.includes("or=(")) {
+    return new Response(JSON.stringify([identityRow]), { status: 200 })
+  }
+  if (url.includes("/rest/v1/")) return new Response(JSON.stringify([]), { status: 200 })
+  return hookPrev(input, init)
+}) as typeof fetch
+const hookReuseCtx = backgroundCtx()
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/telegram", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+        body: JSON.stringify({
+          update_id: 8802,
+          message: {
+            chat: { id: 8802 },
+            text: "/start fb_pgreuse",
+            from: { id: 8802, username: "pgana", first_name: "Ana" },
+          },
+        }),
+      }),
+      hookReuseEnv,
+      hookReuseCtx
+    )
+  ).status === 200,
+  "webhook reusa o lead do Postgres"
+)
+await hookReuseCtx.flush()
+const reused = await listLeads(hookReuseKv, 20, "all")
+assert(reused.filter((item) => item.telegramChatId === "8802").length === 1, "um só lead para o chat do Postgres")
+assert(reused.some((item) => item.id === "pg-ana"), "webhook reusa o id do backup")
+assert(reused.some((item) => item.memory === "ficha no backup" || (item.messages ?? []).some((msg) => msg.text === "já falámos")), "webhook não apaga a ficha do backup")
 globalThis.fetch = byIdPrev
 const mixedEnv = {
   ASSETS: { fetch: async () => new Response("ok") },

@@ -27,7 +27,6 @@ import {
   emptySettings,
   publicSettings,
   FUNNEL_CAP,
-  resolveLeadLookup,
 } from "../src/lib/crm.ts"
 import { cleanBotUsername, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { isResolvedPersonName, preferLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
@@ -37,7 +36,6 @@ import {
   deleteLeadKv,
   dueLeadsKv,
   filterLiveLeads,
-  findLeadInKv,
   isLeadPageCursor,
   leadPageFromRemote,
   listLeadPage,
@@ -66,7 +64,7 @@ import {
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
 import { readJsonObject, readJsonStrict, type JsonFail } from "./json-body.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall } from "./telegram.ts"
-import { fetchRemoteLeadPage, fillLeadHoles, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, readWorkspaceSettings, rowToLead, searchWorkspaceLeads, type LeadRow } from "./workspace-settings.ts"
+import { fetchRemoteDueLeads, fetchRemoteLeadPage, fillLeadHoles, findWorkspaceLead, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, readWorkspaceSettings, rowToLead, searchWorkspaceLeads, type LeadRow } from "./workspace-settings.ts"
 import type { KvLike } from "./kv.ts"
 
 type Fetcher = { fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> }
@@ -685,12 +683,17 @@ async function deliverTelegram(env: Env, update: TelegramUpdate, token: string):
   const campaign = joinUser ? campaignFor("telegram") : start.isStart ? campaignFromStart(start.payload) : campaignFor("telegram", origin)
   const now = new Date().toISOString()
 
-  const reservedId = env.AUTH ? await reserveLeadIdentity(env.AUTH, contact, chatId, crypto.randomUUID()) : crypto.randomUUID()
-  const existing = (await findLead(env, contact, from.id, chatId)) ?? (env.AUTH ? await loadLead(env.AUTH, reservedId) : null)
+  const existing = await findLead(env, contact, from.id, chatId)
+  let reservedId = ""
+  if (!existing) {
+    reservedId = env.AUTH ? await reserveLeadIdentity(env.AUTH, contact, chatId, crypto.randomUUID()) : crypto.randomUUID()
+  }
+  const raced = !existing && env.AUTH && reservedId ? await loadLead(env.AUTH, reservedId) : null
+  const found = existing ?? raced
   const visitorId = start.isStart ? visitorIdFromStart(start.payload) : undefined
   let lead: Lead
-  if (existing) {
-    lead = existing
+  if (found) {
+    lead = found
     if (isResolvedPersonName(telegramName)) {
       lead.name = preferLeadName(lead.name, telegramName, contact, { email: lead.facts?.email, messages: lead.messages })
     }
@@ -702,7 +705,7 @@ async function deliverTelegram(env: Env, update: TelegramUpdate, token: string):
     }
   } else {
     lead = {
-      id: reservedId,
+      id: reservedId || crypto.randomUUID(),
       name,
       contact,
       channel: "telegram",
@@ -789,10 +792,10 @@ async function processWaits(env: Env) {
   if (env.AUTH && lockOwner !== "local" && !(await renewCronLock(env.AUTH, lockOwner))) return 0
   try {
     const now = new Date().toISOString()
-    const restRows = (await rest<LeadRow[]>(env, `leads?workspace_id=eq.${WORKSPACE}&wait_until=lte.${now}&select=*`)) ?? []
+    const remoteDue = await fetchRemoteDueLeads(env, now)
     const kvDue = env.AUTH ? await dueLeadsKv(env.AUTH, now) : []
     const removed = env.AUTH ? await loadRemovedLeadIds(env.AUTH) : []
-    const adopted = adoptDueLeads(kvDue, restRows.map(rowToLead), removed)
+    const adopted = adoptDueLeads(kvDue, remoteDue ?? [], removed)
     const liveDue = env.AUTH ? await filterLiveLeads(env.AUTH, adopted) : adopted
     const byId = new Map(liveDue.map((lead) => [lead.id, lead]))
     if (!byId.size) return 0
@@ -888,23 +891,10 @@ async function loadSettings(env: Env): Promise<Settings> {
 }
 
 async function findLead(env: Env, contact: string, telegramId: number, chatId: string): Promise<Lead | null> {
-  const kvLead = env.AUTH ? await findLeadInKv(env.AUTH, contact, telegramId, chatId) : null
-  if (kvLead) {
-    if (env.AUTH && (await isLeadRemoved(env.AUTH, kvLead.id))) return null
-    return kvLead
-  }
-  const filter = [
-    `contact.eq.${quote(contact)}`,
-    `contact.eq.${quote(`tg:${telegramId}`)}`,
-    `telegram_chat_id.eq.${quote(chatId)}`,
-  ].join(",")
-  const rows = (await rest<LeadRow[]>(env, `leads?workspace_id=eq.${WORKSPACE}&or=(${filter})&select=*&limit=1`)) ?? []
-  if (!rows[0]) return null
-  const hydratedId = rows[0].id
-  if (env.AUTH && hydratedId && (await isLeadRemoved(env.AUTH, hydratedId))) return null
-  const removed = env.AUTH ? await loadRemovedLeadIds(env.AUTH) : []
-  const [hydrated] = await attachLeadEvents(env, [rowToLead(rows[0])])
-  return resolveLeadLookup(null, hydrated, removed)
+  const found = await findWorkspaceLead(env, contact, telegramId, chatId)
+  if (!found) return null
+  const [hydrated] = await attachLeadEvents(env, [found])
+  return hydrated
 }
 
 function quote(value: string) {

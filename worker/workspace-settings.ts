@@ -1,9 +1,9 @@
-import { adoptFunnelStores, applyRemovedFunnels, commitStoredLead, commitStoredSettings, emptySettings, publicSettings } from "../src/lib/crm.ts"
+import { adoptFunnelStores, applyRemovedFunnels, commitStoredLead, commitStoredSettings, emptySettings, publicSettings, resolveLeadLookup } from "../src/lib/crm.ts"
 import { sanitizeLeadCategory } from "../src/lib/lead-category.ts"
 import { leadMatchesQuery } from "../src/lib/lead-name.ts"
 import { migrateSettings, sanitizeIncomingFunnel } from "../src/lib/migrate.ts"
 import type { Lead, LeadEvent, SalesFunnel, Settings } from "../src/lib/types.ts"
-import { filterLiveLeads, isLeadPageCursor, listLeadPage, loadAdoptedSettings, loadFunnelsKv, loadRemovedFunnelIds, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge } from "./crm-store.ts"
+import { filterLiveLeads, findLeadInKv, isLeadPageCursor, isLeadRemoved, listLeadPage, loadAdoptedSettings, loadFunnelsKv, loadRemovedFunnelIds, loadRemovedLeadIds, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge } from "./crm-store.ts"
 import type { KvLike } from "./kv.ts"
 
 const WORKSPACE = "local"
@@ -168,6 +168,67 @@ export async function searchWorkspaceLeads(
 
 function quoteRemoteId(value: string) {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
+}
+
+/** Identidade do webhook. Path vazio = nada para perguntar. */
+export function remoteLeadIdentityPath(contact: string, telegramId: number, chatId: string) {
+  const filters: string[] = []
+  const handle = contact.trim().slice(0, 80)
+  const chat = chatId.trim().slice(0, 80)
+  if (handle) filters.push(`contact.eq.${quoteRemoteId(handle)}`)
+  if (telegramId > 0) filters.push(`contact.eq.${quoteRemoteId(`tg:${telegramId}`)}`)
+  if (chat) filters.push(`telegram_chat_id.eq.${quoteRemoteId(chat)}`)
+  if (!filters.length) return ""
+  return `leads?workspace_id=eq.${WORKSPACE}&or=(${filters.join(",")})&select=*&limit=1`
+}
+
+/** Chat do Telegram no backup. `null` é falha; `[]` é miss, sem credenciais ou sem identidade. */
+export async function fetchRemoteLeadByIdentity(
+  env: SettingsEnv,
+  contact: string,
+  telegramId: number,
+  chatId: string
+): Promise<Lead[] | null> {
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return []
+  const path = remoteLeadIdentityPath(contact, telegramId, chatId)
+  if (!path) return []
+  const rows = await restWorkspace<LeadRow[]>(env, path)
+  if (rows === null || !Array.isArray(rows)) return null
+  return rows.map(rowToLead)
+}
+
+/** Esperas no backup. `null` é falha; `[]` é vazio ou sem credenciais. */
+export async function fetchRemoteDueLeads(env: SettingsEnv, nowIso: string): Promise<Lead[] | null> {
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return []
+  const stamp = nowIso.trim()
+  if (!stamp) return []
+  const rows = await restWorkspace<LeadRow[]>(env, `leads?workspace_id=eq.${WORKSPACE}&wait_until=lte.${stamp}&select=*`)
+  if (rows === null || !Array.isArray(rows)) return null
+  return rows.map(rowToLead)
+}
+
+/**
+ * KV primeiro. Miss cai no Postgres.
+ * Falha do backup (credenciais + `null`) lança — o webhook não mint um segundo UUID.
+ */
+export async function findWorkspaceLead(
+  env: SettingsEnv,
+  contact: string,
+  telegramId: number,
+  chatId: string
+): Promise<Lead | null> {
+  const kvLead = env.AUTH ? await findLeadInKv(env.AUTH, contact, telegramId, chatId) : null
+  if (kvLead) {
+    if (await isLeadRemoved(env.AUTH!, kvLead.id)) return null
+    return kvLead
+  }
+  const remote = await fetchRemoteLeadByIdentity(env, contact, telegramId, chatId)
+  if (remote === null) throw new Error("Não li o lead do Postgres.")
+  const hydrated = remote[0]
+  if (!hydrated) return null
+  if (env.AUTH && (await isLeadRemoved(env.AUTH, hydrated.id))) return null
+  const removed = env.AUTH ? await loadRemovedLeadIds(env.AUTH) : []
+  return resolveLeadLookup(null, hydrated, removed)
 }
 
 /** Página mista: lê no backup os ids do índice que o KV não carregou. `null` é falha. */
