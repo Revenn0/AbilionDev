@@ -16,7 +16,7 @@ import {
 import { handleTokens, handleUsers } from "./users.ts"
 import { filterLiveLeads, importOrAdoptLead, leadPageFromRemote, listLeadPage } from "./crm-store.ts"
 import { emptySecrets, loadSecrets, resolveRuntime } from "./runtime-secrets.ts"
-import { fetchRemoteLeadPage, fillLeadHoles, leadCatalogUnread, loadWorkspaceFunnels, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceSettings, searchWorkspaceLeads } from "./workspace-settings.ts"
+import { fetchRemoteLeadPage, fillLeadHoles, leadCatalogUnread, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceFunnels, readWorkspaceSettings, searchWorkspaceLeads } from "./workspace-settings.ts"
 import { readJsonStrict } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -264,7 +264,7 @@ const TOOLS = [
 ] as const
 
 async function funnelsOf(env: McpEnv): Promise<SalesFunnel[]> {
-  return loadWorkspaceFunnels(env)
+  return (await readWorkspaceFunnels(env)).funnels
 }
 
 async function saveFunnels(env: McpEnv, funnels: SalesFunnel[]) {
@@ -272,14 +272,15 @@ async function saveFunnels(env: McpEnv, funnels: SalesFunnel[]) {
 }
 
 async function publishFunnel(env: McpEnv, id: string) {
-  const funnels = await funnelsOf(env)
-  const current = funnels.find((item) => item.id === id)
+  const loaded = await readWorkspaceFunnels(env)
+  if (loaded.unread) throw new Error("Não confirmei os funis.")
+  const current = loaded.funnels.find((item) => item.id === id)
   if (!current) throw new Error("Este funil já não está no CRM.")
   const issue =
     firstInvalidPublishUrl(current.nodes) ?? validatePublish(current.nodes, current.edges)[0]
   if (issue) throw new Error(issue.message)
   const now = new Date().toISOString()
-  const next = funnels.map((item) =>
+  const next = loaded.funnels.map((item) =>
     item.id === id ? { ...item, status: "active" as const, production: publishSnapshot(item), updatedAt: now } : item
   )
   await saveFunnels(env, next)
@@ -359,16 +360,20 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     return data
   }
   if (name === "abilion_list_funnels") {
-    return { ok: true, funnels: (await funnelsOf(env)).map(compactFunnel) }
+    const loaded = await readWorkspaceFunnels(env)
+    return { ok: true, funnels: loaded.funnels.map(compactFunnel), unread: loaded.unread || undefined }
   }
   if (name === "abilion_get_funnel") {
     const id = str(args.id).trim()
-    const funnel = (await funnelsOf(env)).find((item) => item.id === id)
-    if (!funnel) throw new Error("Este funil já não está no CRM.")
-    return { ok: true, funnel }
+    const loaded = await readWorkspaceFunnels(env)
+    const funnel = loaded.funnels.find((item) => item.id === id)
+    if (!funnel) throw new Error(loaded.unread ? "Não confirmei os funis." : "Este funil já não está no CRM.")
+    return { ok: true, funnel, unread: loaded.unread || undefined }
   }
   if (name === "abilion_create_funnel") {
-    const funnels = await funnelsOf(env)
+    const loaded = await readWorkspaceFunnels(env)
+    if (loaded.unread) throw new Error("Não confirmei os funis.")
+    const funnels = loaded.funnels
     if (funnels.length >= FUNNEL_CAP) throw new Error(`O estúdio aceita no máximo ${FUNNEL_CAP} funis.`)
     const funnel = emptySalesFunnel(clipName(str(args.name), "Novo funil"))
     await saveFunnels(env, [...funnels, funnel])
@@ -377,7 +382,9 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
   if (name === "abilion_import_funnel") {
     const imported = importFunnel(args.payload, clipName(str(args.name), "Funil importado"))
     if (!imported.ok) throw new Error(imported.error)
-    const funnels = await funnelsOf(env)
+    const loaded = await readWorkspaceFunnels(env)
+    if (loaded.unread) throw new Error("Não confirmei os funis.")
+    const funnels = loaded.funnels
     if (funnels.length >= FUNNEL_CAP) throw new Error(`O estúdio aceita no máximo ${FUNNEL_CAP} funis.`)
     let funnel = imported.funnel
     if (args.publish === true) {

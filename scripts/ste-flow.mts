@@ -89,7 +89,7 @@ import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.t
 import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_INDEX, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, leadPageCursor, leadPageFromRemote, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
-import { fetchRemoteDueLeads, fetchRemoteLeadByIdentity, fetchRemoteLeadsByIds, findWorkspaceLead, leadCatalogUnread, leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceSettings, remoteLeadDuePath, remoteLeadIdentityPath, remoteLeadListPath, remoteLeadSearchPath, rowToLead, sanitizeRemoteSearchNeedle, searchWorkspaceLeads } from "../worker/workspace-settings.ts"
+import { fetchRemoteDueLeads, fetchRemoteLeadByIdentity, fetchRemoteLeadsByIds, findWorkspaceLead, leadCatalogUnread, leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceFunnels, readWorkspaceSettings, remoteLeadDuePath, remoteLeadIdentityPath, remoteLeadListPath, remoteLeadSearchPath, rowToLead, sanitizeRemoteSearchNeedle, searchWorkspaceLeads } from "../worker/workspace-settings.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
@@ -1202,6 +1202,9 @@ assert((await loadWorkspaceSettings(pgDownEnv)).telegramBotUsername === "", "set
 await saveSettingsKv(pgDownEnv.AUTH, migrateSettings({ telegramBotUsername: "@ste_bot" }))
 assert((await loadWorkspaceSettings(pgDownEnv)).telegramBotUsername === "@ste_bot", "settings no KV sobrevivem ao Postgres em baixo")
 assert((await loadWorkspaceFunnels({ AUTH: adoptFunnelKv, SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" }))[0]?.name === "Quadro KV", "KV com quadro não depende do Postgres")
+const unreadBoards = await readWorkspaceFunnels({ AUTH: adoptFunnelKv, SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" })
+assert(unreadBoards.unread && unreadBoards.funnels[0]?.name === "Quadro KV", "KV com quadro e Postgres em baixo é funis unread")
+assert(!(await readWorkspaceFunnels({ AUTH: adoptFunnelKv })).unread, "sem credenciais o KV não é unread")
 globalThis.fetch = pgDownPrev
 const unionLoadPrev = globalThis.fetch
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -5444,9 +5447,10 @@ const downEnv = {
 } as Env
 const downCrm = await handleRequest(new Request("http://local.test/api/crm", { headers: { cookie: liveCookie } }), downEnv, backgroundCtx())
 assert(downCrm.status === 200, "CRM lê o KV se o Supabase cair")
-const downCrmBody = (await downCrm.json()) as { settingsUnread?: boolean; funnels?: unknown[] }
+const downCrmBody = (await downCrm.json()) as { settingsUnread?: boolean; funnelsUnread?: boolean; funnels?: unknown[] }
 assert(Array.isArray(downCrmBody.funnels), "CRM com Postgres em baixo ainda manda os funis do KV")
 assert(downCrmBody.settingsUnread === true, "CRM marca definições por confirmar se o Postgres cair")
+assert(downCrmBody.funnelsUnread === true, "CRM marca funis por confirmar se o Postgres cair")
 const downRuntime = await handleRequest(new Request("http://local.test/api/runtime", { headers: { cookie: liveCookie } }), downEnv, backgroundCtx())
 const downRuntimeBody = (await downRuntime.json()) as {
   ok?: boolean
@@ -6653,6 +6657,115 @@ const mcpSettingsUnreadBody = (await mcpSettingsUnread.json()) as {
 const mcpSettingsUnreadData = JSON.parse(mcpSettingsUnreadBody.result?.content?.[0]?.text || "{}") as { error?: string }
 assert(mcpSettingsUnread.status === 200 && mcpSettingsUnreadBody.result?.isError, "MCP não devolve settings ocas unread")
 assert(mcpSettingsUnreadData.error === "Não confirmei as definições no Postgres.", "MCP pede confirmação das settings unread")
+const mcpListFunnelsUnread = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 96,
+      method: "tools/call",
+      params: { name: "abilion_list_funnels", arguments: {} },
+    }),
+  }),
+  mcpInstallDownEnv,
+  backgroundCtx()
+)
+const mcpListFunnelsUnreadBody = (await mcpListFunnelsUnread.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const mcpListFunnelsUnreadData = JSON.parse(mcpListFunnelsUnreadBody.result?.content?.[0]?.text || "{}") as {
+  ok?: boolean
+  unread?: boolean
+  funnels?: Array<{ id?: string }>
+}
+assert(mcpListFunnelsUnread.status === 200 && !mcpListFunnelsUnreadBody.result?.isError, "MCP lista os funis do KV se o Postgres cair")
+assert(mcpListFunnelsUnreadData.unread === true, "MCP marca funis unread se o Postgres cair")
+assert(mcpListFunnelsUnreadData.funnels?.some((item) => item.id === mcpCreated.id), "MCP unread ainda mostra o funil do KV")
+const mcpCreateFunnelsUnread = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 97,
+      method: "tools/call",
+      params: { name: "abilion_create_funnel", arguments: { name: "Não agora" } },
+    }),
+  }),
+  mcpInstallDownEnv,
+  backgroundCtx()
+)
+const mcpCreateFunnelsUnreadBody = (await mcpCreateFunnelsUnread.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const mcpCreateFunnelsUnreadData = JSON.parse(mcpCreateFunnelsUnreadBody.result?.content?.[0]?.text || "{}") as { error?: string }
+assert(mcpCreateFunnelsUnread.status === 200 && mcpCreateFunnelsUnreadBody.result?.isError, "MCP não cria funil com a lista unread")
+assert(mcpCreateFunnelsUnreadData.error === "Não confirmei os funis.", "MCP pede confirmação dos funis unread")
+const mcpGetFunnelMissUnread = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 98,
+      method: "tools/call",
+      params: { name: "abilion_get_funnel", arguments: { id: "missing-funnel" } },
+    }),
+  }),
+  mcpInstallDownEnv,
+  backgroundCtx()
+)
+const mcpGetFunnelMissUnreadBody = (await mcpGetFunnelMissUnread.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const mcpGetFunnelMissUnreadData = JSON.parse(mcpGetFunnelMissUnreadBody.result?.content?.[0]?.text || "{}") as { error?: string }
+assert(mcpGetFunnelMissUnread.status === 200 && mcpGetFunnelMissUnreadBody.result?.isError, "MCP não finge funil em falta se unread")
+assert(mcpGetFunnelMissUnreadData.error === "Não confirmei os funis.", "MCP miss unread pede confirmação dos funis")
+const mcpGetFunnelHitUnread = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 99,
+      method: "tools/call",
+      params: { name: "abilion_get_funnel", arguments: { id: mcpCreated.id } },
+    }),
+  }),
+  mcpInstallDownEnv,
+  backgroundCtx()
+)
+const mcpGetFunnelHitUnreadBody = (await mcpGetFunnelHitUnread.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const mcpGetFunnelHitUnreadData = JSON.parse(mcpGetFunnelHitUnreadBody.result?.content?.[0]?.text || "{}") as {
+  ok?: boolean
+  unread?: boolean
+  funnel?: { id?: string }
+}
+assert(mcpGetFunnelHitUnread.status === 200 && !mcpGetFunnelHitUnreadBody.result?.isError, "MCP lê o funil do KV mesmo unread")
+assert(mcpGetFunnelHitUnreadData.funnel?.id === mcpCreated.id && mcpGetFunnelHitUnreadData.unread === true, "MCP get unread devolve o quadro do KV")
+const mcpPublishFunnelsUnread = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 100,
+      method: "tools/call",
+      params: { name: "abilion_publish_funnel", arguments: { id: mcpCreated.id } },
+    }),
+  }),
+  mcpInstallDownEnv,
+  backgroundCtx()
+)
+const mcpPublishFunnelsUnreadBody = (await mcpPublishFunnelsUnread.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const mcpPublishFunnelsUnreadData = JSON.parse(mcpPublishFunnelsUnreadBody.result?.content?.[0]?.text || "{}") as { error?: string }
+assert(mcpPublishFunnelsUnread.status === 200 && mcpPublishFunnelsUnreadBody.result?.isError, "MCP não publica funil com a lista unread")
+assert(mcpPublishFunnelsUnreadData.error === "Não confirmei os funis.", "MCP publish unread pede confirmação")
 const mcpDeleteUnread = await handleRequest(
   new Request("http://local.test/mcp", {
     method: "POST",

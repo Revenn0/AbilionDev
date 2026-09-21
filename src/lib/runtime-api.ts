@@ -202,20 +202,39 @@ export async function fetchCrm() {
     const res = await fetchWithTimeout("/api/crm", { credentials: "include", cache: "no-store" })
     noteUnauthorized(res)
     if (!res.ok) {
-      return { ok: false as const, funnels: [] as SalesFunnel[], settings: undefined as Settings | undefined, settingsUnread: false }
+      return {
+        ok: false as const,
+        funnels: [] as SalesFunnel[],
+        settings: undefined as Settings | undefined,
+        settingsUnread: false,
+        funnelsUnread: false,
+      }
     }
-    const data = (await res.json()) as { funnels?: SalesFunnel[]; settings?: Settings; settingsUnread?: boolean }
+    const data = (await res.json()) as { funnels?: SalesFunnel[]; settings?: Settings; settingsUnread?: boolean; funnelsUnread?: boolean }
     if (!Array.isArray(data.funnels)) {
-      return { ok: false as const, funnels: [] as SalesFunnel[], settings: undefined as Settings | undefined, settingsUnread: false }
+      return {
+        ok: false as const,
+        funnels: [] as SalesFunnel[],
+        settings: undefined as Settings | undefined,
+        settingsUnread: false,
+        funnelsUnread: false,
+      }
     }
     return {
       ok: true as const,
       funnels: data.funnels,
       settings: data.settings,
       settingsUnread: data.settingsUnread === true,
+      funnelsUnread: data.funnelsUnread === true,
     }
   } catch {
-    return { ok: false as const, funnels: [] as SalesFunnel[], settings: undefined as Settings | undefined, settingsUnread: false }
+    return {
+      ok: false as const,
+      funnels: [] as SalesFunnel[],
+      settings: undefined as Settings | undefined,
+      settingsUnread: false,
+      funnelsUnread: false,
+    }
   }
 }
 

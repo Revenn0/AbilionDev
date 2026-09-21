@@ -371,7 +371,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (hydrateLock.current) return hydrateLock.current
     const pending = Promise.all([fetchCrm(), fetchRuntime(), fetchLeads(), fetchInbox(INBOX_LIST_PAGES)]).then(
       ([crm, runtime, remoteLeads, inbox]) => {
-      setCrmSync(crm.ok ? "ok" : "error")
+      setCrmSync(crm.ok ? (crm.funnelsUnread ? "error" : "ok") : "error")
       setSettingsSync(crm.ok ? (crm.settingsUnread ? "error" : "ok") : "error")
       markLeadRead(remoteLeads.ok)
       if (remoteLeads.ok) ingestRemoteRemoved(remoteLeads.removed)
