@@ -649,8 +649,8 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   if (url.pathname === "/api/cron") {
     const secret = url.searchParams.get("secret") ?? request.headers.get("x-cron-secret")
     if (!env.CRON_SECRET || secret !== env.CRON_SECRET) return json({ ok: false }, 401)
-    const count = await processWaits(env)
-    return json({ ok: true, advanced: count })
+    const result = await processWaits(env)
+    return json({ ok: true, advanced: result.advanced, remoteUnread: result.remoteUnread })
   }
 
   return json({ ok: false, error: "not_found" }, 404)
@@ -809,19 +809,22 @@ async function deliverTelegram(env: Env, update: TelegramUpdate, token: string):
   return { sent: delivered }
 }
 
-async function processWaits(env: Env) {
+async function processWaits(env: Env): Promise<{ advanced: number; remoteUnread: boolean }> {
+  const empty = { advanced: 0, remoteUnread: false }
   const lockOwner = env.AUTH ? await claimCronLock(env.AUTH) : "local"
-  if (!lockOwner) return 0
-  if (env.AUTH && lockOwner !== "local" && !(await renewCronLock(env.AUTH, lockOwner))) return 0
+  if (!lockOwner) return empty
+  if (env.AUTH && lockOwner !== "local" && !(await renewCronLock(env.AUTH, lockOwner))) return empty
   try {
     const now = new Date().toISOString()
     const remoteDue = await fetchRemoteDueLeads(env, now)
-    const kvDue = env.AUTH ? await dueLeadsKv(env.AUTH, now) : []
+    const kvPage = env.AUTH ? await dueLeadsKv(env.AUTH, now) : { leads: [] as Lead[], missingIds: [] as string[] }
+    const filled = await fillLeadHoles(env, kvPage.leads, kvPage.missingIds)
     const removed = env.AUTH ? await loadRemovedLeadIds(env.AUTH) : []
-    const adopted = adoptDueLeads(kvDue, remoteDue ?? [], removed)
+    const adopted = adoptDueLeads(filled.leads, remoteDue ?? [], removed)
     const liveDue = env.AUTH ? await filterLiveLeads(env.AUTH, adopted) : adopted
+    const remoteUnread = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE && remoteDue === null)
     const byId = new Map(liveDue.map((lead) => [lead.id, lead]))
-    if (!byId.size) return 0
+    if (!byId.size) return { advanced: 0, remoteUnread }
     const funnels = await loadFunnels(env)
     const settings = await loadSettings(env)
     const { resolved } = await runtimeOf(env)
@@ -874,7 +877,7 @@ async function processWaits(env: Env) {
         continue
       }
     }
-    return advanced
+    return { advanced, remoteUnread }
   } finally {
     if (env.AUTH) await releaseCronLock(env.AUTH, lockOwner)
   }

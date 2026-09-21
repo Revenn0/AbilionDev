@@ -689,12 +689,20 @@ export async function releaseCronLock(kv: KvLike, owner?: string) {
   await kv.delete?.(CRM_CRON_LOCK)
 }
 
-export async function dueLeadsKv(kv: KvLike, nowIso: string): Promise<Lead[]> {
+/** Esperas do índice. `missingIds` são waits sem `crm:lead` e sem tombstone. */
+export async function dueLeadsKv(kv: KvLike, nowIso: string): Promise<{ leads: Lead[]; missingIds: string[] }> {
   const index = await loadIndex(kv)
   const ids = index.entries.filter((item) => item.waitUntil && item.waitUntil <= nowIso).map((item) => item.id)
   const removed = new Set(await loadRemovedLeadIds(kv))
-  const leads = await Promise.all(ids.map((id) => loadLead(kv, id, removed)))
-  return leads.filter((lead): lead is Lead => Boolean(lead))
+  const loaded = await Promise.all(ids.map(async (id) => ({ id, lead: await loadLead(kv, id, removed) })))
+  const leads = loaded.map((row) => row.lead).filter((lead): lead is Lead => Boolean(lead))
+  const missingIds: string[] = []
+  for (const row of loaded) {
+    if (row.lead) continue
+    if (await leadIsGone(kv, row.id, removed)) continue
+    missingIds.push(row.id)
+  }
+  return { leads, missingIds }
 }
 
 export async function loadFunnelsKv(kv: KvLike): Promise<SalesFunnel[]> {

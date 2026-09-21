@@ -89,7 +89,7 @@ import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.t
 import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_INDEX, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, leadPageCursor, leadPageFromRemote, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
-import { fetchRemoteDueLeads, fetchRemoteLeadByIdentity, fetchRemoteLeadsByIds, findWorkspaceLead, leadCatalogUnread, leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceSettings, remoteLeadIdentityPath, remoteLeadListPath, remoteLeadSearchPath, rowToLead, sanitizeRemoteSearchNeedle, searchWorkspaceLeads } from "../worker/workspace-settings.ts"
+import { fetchRemoteDueLeads, fetchRemoteLeadByIdentity, fetchRemoteLeadsByIds, findWorkspaceLead, leadCatalogUnread, leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceSettings, remoteLeadDuePath, remoteLeadIdentityPath, remoteLeadListPath, remoteLeadSearchPath, rowToLead, sanitizeRemoteSearchNeedle, searchWorkspaceLeads } from "../worker/workspace-settings.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
@@ -2499,7 +2499,7 @@ await rememberSentLead(sentOnly, sentNewer)
 assert((await loadLead(sentOnly, "sent-1"))?.messages?.some((item) => item.id === "m-ste"), "loadLead lê crm:sent sem crm:lead")
 assert((await listLeads(sentOnly, 20, "all")).some((item) => item.id === "sent-1"), "crm:sent entra no GET")
 assert(
-  (await dueLeadsKv(sentOnly, "2026-01-02T00:00:00.000Z")).some((item) => item.id === "sent-1"),
+  (await dueLeadsKv(sentOnly, "2026-01-02T00:00:00.000Z")).leads.some((item) => item.id === "sent-1"),
   "crm:sent com espera entra no cron"
 )
 await sentOnly.put(
@@ -2625,7 +2625,7 @@ await Promise.all(
   })
 )
 assert((await listLeads(indexRaceKv, 40, "all")).length === 30, "índice une upserts em paralelo")
-assert((await dueLeadsKv(indexRaceKv, new Date().toISOString())).length === 30, "cron vê esperas dos upserts em paralelo")
+assert((await dueLeadsKv(indexRaceKv, new Date().toISOString())).leads.length === 30, "cron vê esperas dos upserts em paralelo")
 const indexDeleteKv = memoryKv()
 await upsertLeadKv(indexDeleteKv, lead("keep-me", "@keep"))
 await upsertLeadKv(indexDeleteKv, lead("drop-me", "@drop"))
@@ -2676,7 +2676,7 @@ for (let i = 500; i < 920; i++) {
   await upsertLeadKv(capKv, row)
 }
 assert(
-  (await dueLeadsKv(capKv, new Date().toISOString())).some((item) => item.id === "wait-old"),
+  (await dueLeadsKv(capKv, new Date().toISOString())).leads.some((item) => item.id === "wait-old"),
   "espera antiga não cai do índice"
 )
 const lockKv = memoryKv()
@@ -3188,7 +3188,7 @@ assert((await listLeads(saveFailKv, 20, "all")).some((item) => item.contact === 
 const sentWait = sentLia?.waitUntil ?? ""
 assert(sentWait, "crm:sent guarda a espera")
 assert(
-  (await dueLeadsKv(saveFailKv, sentWait)).some((item) => item.id === sentLia?.id),
+  (await dueLeadsKv(saveFailKv, sentWait)).leads.some((item) => item.id === sentLia?.id),
   "índice do crm:sent entra no cron"
 )
 const welcomeSaved = (sentLia?.messages ?? []).filter((item) => item.role === "ste").length
@@ -3548,6 +3548,33 @@ assert(mixedListed.missingIds.includes("mixed-ghost"), "página mista aponta o i
 assert(!mixedListed.missingIds.includes("mixed-gone"), "tombstone no índice não é buraco")
 assert(!mixedListed.missingIds.includes("mixed-live"), "vivo não entra nos buracos")
 assert((await listLeadPage(mixedIndexKv, 10, "all", "1999-01-01T00:00:00.000Z|missing")).missingIds.length === 0, "cursor velho não inventa buracos")
+const dueHoleKv = memoryKv()
+const dueStamp = "2026-06-01T00:00:00.000Z"
+await dueHoleKv.put(
+  leadKey("due-live"),
+  JSON.stringify({ ...lead("due-live", "@duelive"), waitUntil: dueStamp, updatedAt: "2026-06-02T00:00:00.000Z" })
+)
+await dueHoleKv.put(
+  CRM_INDEX,
+  JSON.stringify({
+    entries: [
+      { id: "due-live", contact: "@duelive", waitUntil: dueStamp, updatedAt: "2026-06-02T00:00:00.000Z", channel: "telegram" },
+      { id: "due-ghost", contact: "@dueghost", waitUntil: dueStamp, updatedAt: "2026-06-01T00:00:00.000Z", channel: "telegram" },
+      { id: "due-gone", contact: "@duegone", waitUntil: dueStamp, updatedAt: "2026-05-01T00:00:00.000Z", channel: "telegram" },
+      { id: "due-later", contact: "@duelater", waitUntil: "2026-06-03T00:00:00.000Z", updatedAt: "2026-06-02T00:00:00.000Z", channel: "telegram" },
+    ],
+  })
+)
+await rememberRemovedLead(dueHoleKv, "due-gone")
+const dueHoles = await dueLeadsKv(dueHoleKv, "2026-06-02T00:00:00.000Z")
+assert(dueHoles.leads.some((item) => item.id === "due-live"), "cron lê a espera viva no KV")
+assert(dueHoles.missingIds.includes("due-ghost"), "cron aponta a espera oca do índice")
+assert(!dueHoles.missingIds.includes("due-gone"), "tombstone vencido não é buraco do cron")
+assert(!dueHoles.missingIds.includes("due-live"), "espera viva não entra nos buracos do cron")
+assert(!dueHoles.leads.some((item) => item.id === "due-later"), "espera futura não entra na fila")
+assert(!dueHoles.missingIds.includes("due-later"), "espera futura oca não é buraco ainda")
+assert(remoteLeadDuePath("2026-06-02T00:00:00.000Z").includes('wait_until=lte."2026-06-02T00:00:00.000Z"'), "due remoto cita o timestamp")
+assert(remoteLeadDuePath("  ") === "", "stamp vazio não pergunta ao Postgres")
 assert((await fetchRemoteLeadsByIds({} as Env, ["ghost"])).length === 0, "sem credenciais o fill não finge falha")
 assert((await fetchRemoteLeadsByIds({ SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env, [])).length === 0, "sem ids o fill é vazio")
 assert(remoteLeadIdentityPath("", 0, "") === "", "identidade vazia não pergunta ao Postgres")
@@ -6001,11 +6028,111 @@ globalThis.fetch = (async (input: RequestInfo | URL) => {
 }) as typeof fetch
 try {
   const ghostCron = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), ghostEnv, backgroundCtx())
-  const ghostBody = (await ghostCron.json()) as { ok?: boolean; advanced?: number }
+  const ghostBody = (await ghostCron.json()) as { ok?: boolean; advanced?: number; remoteUnread?: boolean }
   assert(ghostCron.status === 200 && ghostBody.ok && ghostBody.advanced === 0, "cron ignora espera tombstoned do Supabase")
+  assert(!ghostBody.remoteUnread, "due remoto que leu não é unread")
   assert((await loadLead(ghostEnv.AUTH, ghostDue.id)) === null, "cron nao ressuscita lead apagado")
 } finally {
   globalThis.fetch = ghostFetch
+}
+
+const holeWait = new Date(Date.now() - 2000).toISOString()
+const holeLead = {
+  ...lead("due-hole", "@duehole"),
+  waitUntil: holeWait,
+  memory: "ste:remarketing",
+  stePhase: "offer" as const,
+}
+const holeKv = memoryKv()
+await holeKv.put(
+  CRM_INDEX,
+  JSON.stringify({
+    entries: [
+      {
+        id: holeLead.id,
+        contact: holeLead.contact,
+        waitUntil: holeWait,
+        updatedAt: holeLead.updatedAt,
+        channel: "telegram",
+      },
+    ],
+  })
+)
+const holeEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: holeKv,
+  CRON_SECRET: "cron",
+  ABILION_ENV: "development",
+} as Env
+const holeRow = {
+  id: holeLead.id,
+  name: holeLead.name,
+  contact: holeLead.contact,
+  channel: holeLead.channel,
+  campaign: holeLead.campaign,
+  origin: holeLead.origin,
+  temperature: holeLead.temperature,
+  stage: holeLead.stage,
+  memory: holeLead.memory,
+  facts: {},
+  events: [],
+  messages: [],
+  ste_phase: holeLead.stePhase,
+  wait_until: holeWait,
+  updated_at: holeLead.updatedAt,
+  created_at: holeLead.createdAt,
+}
+const holeFetch = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL) => {
+  const url = String(input)
+  if (url.includes("/rest/v1/leads") && url.includes("id=in.") && url.includes("due-hole")) {
+    return new Response(JSON.stringify([holeRow]), { status: 200, headers: { "content-type": "application/json" } })
+  }
+  return new Response("[]", { status: 200, headers: { "content-type": "application/json" } })
+}) as typeof fetch
+try {
+  const holeCron = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), holeEnv, backgroundCtx())
+  const holeBody = (await holeCron.json()) as { ok?: boolean; advanced?: number; remoteUnread?: boolean }
+  assert(holeCron.status === 200 && holeBody.ok && holeBody.advanced === 1, "cron avança espera oca pelo id no Postgres")
+  assert(!holeBody.remoteUnread, "due remoto vazio confirmado não é unread")
+  assert((await loadLead(holeKv, "due-hole"))?.id === "due-hole", "cron gravou o avanço da espera oca")
+  assert((await loadLead(holeKv, "due-hole"))?.waitUntil !== holeWait, "cron comeu a espera oca")
+} finally {
+  globalThis.fetch = holeFetch
+}
+
+const unreadDueKv = memoryKv()
+const unreadWait = new Date(Date.now() - 2000).toISOString()
+await upsertLeadKv(unreadDueKv, {
+  ...lead("due-kv", "@duekv"),
+  waitUntil: unreadWait,
+  memory: "ste:remarketing",
+  stePhase: "offer",
+})
+const unreadDueEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: unreadDueKv,
+  CRON_SECRET: "cron",
+  ABILION_ENV: "development",
+} as Env
+const unreadDueFetch = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL) => {
+  const url = String(input)
+  if (url.includes("wait_until")) throw new Error("postgres down")
+  return new Response("[]", { status: 200, headers: { "content-type": "application/json" } })
+}) as typeof fetch
+try {
+  const unreadCron = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), unreadDueEnv, backgroundCtx())
+  const unreadBody = (await unreadCron.json()) as { ok?: boolean; advanced?: number; remoteUnread?: boolean }
+  assert(unreadCron.status === 200 && unreadBody.ok && unreadBody.advanced === 1, "cron avança a espera do KV com Postgres unread")
+  assert(unreadBody.remoteUnread, "Postgres em baixo marca remoteUnread no cron")
+  assert((await loadLead(unreadDueKv, "due-kv"))?.waitUntil !== unreadWait, "espera do KV avançou mesmo unread")
+} finally {
+  globalThis.fetch = unreadDueFetch
 }
 
 const goneRemote = lead("gone-remote", "@goneremote")

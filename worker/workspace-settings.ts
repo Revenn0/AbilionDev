@@ -197,12 +197,19 @@ export async function fetchRemoteLeadByIdentity(
   return rows.map(rowToLead)
 }
 
+/** Esperas vencidas no backup. Path vazio = stamp inválido. */
+export function remoteLeadDuePath(nowIso: string) {
+  const stamp = nowIso.trim()
+  if (!stamp || stamp.length > 40) return ""
+  return `leads?workspace_id=eq.${WORKSPACE}&wait_until=lte.${quoteRemoteId(stamp)}&select=*`
+}
+
 /** Esperas no backup. `null` é falha; `[]` é vazio ou sem credenciais. */
 export async function fetchRemoteDueLeads(env: SettingsEnv, nowIso: string): Promise<Lead[] | null> {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return []
-  const stamp = nowIso.trim()
-  if (!stamp) return []
-  const rows = await restWorkspace<LeadRow[]>(env, `leads?workspace_id=eq.${WORKSPACE}&wait_until=lte.${stamp}&select=*`)
+  const path = remoteLeadDuePath(nowIso)
+  if (!path) return []
+  const rows = await restWorkspace<LeadRow[]>(env, path)
   if (rows === null || !Array.isArray(rows)) return null
   return rows.map(rowToLead)
 }
