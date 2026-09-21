@@ -597,8 +597,8 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       if (query.length > 80) return json({ error: "Busca inválida." }, 400)
       const found = await searchWorkspaceLeads(env, query)
       if (!found.ok) return json({ error: "Não li os leads do Postgres." }, 503)
-      const leads = await attachLeadEvents(env, await filterLiveLeads(env.AUTH, found.leads))
-      return json({ ok: true, leads })
+      const attached = await attachLeadEvents(env, await filterLiveLeads(env.AUTH, found.leads))
+      return json({ ok: true, leads: attached.leads, eventsUnread: attached.unread || undefined })
     }
     const cursor = (url.searchParams.get("cursor") || "").trim()
     if (cursor && !isLeadPageCursor(cursor)) return json({ error: "Cursor inválido." }, 400)
@@ -610,6 +610,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       nextCursor: page.stale ? undefined : page.nextCursor,
       stale: page.stale || undefined,
       clipped: page.clipped || undefined,
+      eventsUnread: page.eventsUnread || undefined,
       removed: cursor ? undefined : await loadRemovedLeadIds(env.AUTH),
     })
   }
@@ -668,6 +669,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       nextCursor: page.stale ? undefined : page.nextCursor,
       stale: page.stale || undefined,
       clipped: page.clipped || undefined,
+      eventsUnread: page.eventsUnread || undefined,
       removed: cursor ? undefined : await loadRemovedLeadIds(env.AUTH),
     })
   }
@@ -957,28 +959,33 @@ async function loadSettings(env: Env): Promise<Settings> {
 async function findLead(env: Env, contact: string, telegramId: number, chatId: string): Promise<Lead | null> {
   const found = await findWorkspaceLead(env, contact, telegramId, chatId)
   if (!found) return null
-  const [hydrated] = await attachLeadEvents(env, [found])
-  return hydrated
+  const attached = await attachLeadEvents(env, [found])
+  return attached.leads[0] ?? found
 }
 
 function quote(value: string) {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
 }
 
-async function attachLeadEvents(env: Env, leads: Lead[]): Promise<Lead[]> {
-  if (!leads.length) return leads
+async function attachLeadEvents(env: Env, leads: Lead[]): Promise<{ leads: Lead[]; unread: boolean }> {
+  if (!leads.length) return { leads, unread: false }
+  const canReach = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE)
   const ids = [...new Set(leads.map((lead) => lead.id).filter(Boolean))]
   const rows: LeadEventRow[] = []
+  let unread = false
   for (let i = 0; i < ids.length; i += 50) {
     const slice = ids.slice(i, i + 50)
-    const batch =
-      (await rest<LeadEventRow[]>(
-        env,
-        `lead_events?lead_id=in.(${slice.map(quote).join(",")})&select=*&order=at.asc`
-      )) ?? []
+    const batch = await rest<LeadEventRow[]>(
+      env,
+      `lead_events?lead_id=in.(${slice.map(quote).join(",")})&select=*&order=at.asc`
+    )
+    if (batch === null) {
+      if (canReach) unread = true
+      continue
+    }
     rows.push(...batch)
   }
-  if (!rows.length) return leads
+  if (!rows.length) return { leads, unread }
   const byLead = new Map<string, LeadEvent[]>()
   for (const row of rows) {
     const list = byLead.get(row.lead_id) ?? []
@@ -993,11 +1000,14 @@ async function attachLeadEvents(env: Env, leads: Lead[]): Promise<Lead[]> {
     })
     byLead.set(row.lead_id, list)
   }
-  return leads.map((lead) => {
-    const events = byLead.get(lead.id)
-    if (!events?.length) return lead
-    return { ...lead, events: mergeLeadEvents(lead.events, events) }
-  })
+  return {
+    leads: leads.map((lead) => {
+      const events = byLead.get(lead.id)
+      if (!events?.length) return lead
+      return { ...lead, events: mergeLeadEvents(lead.events, events) }
+    }),
+    unread,
+  }
 }
 
 async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "all", cursor = "") {
@@ -1010,10 +1020,12 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
     if (canReachRemote && remote === null) return { leads: [], clipped: true, failed: true }
     const folded = leadPageFromRemote(remote, limit, canReachRemote)
     const live = env.AUTH ? await filterLiveLeads(env.AUTH, folded.leads) : folded.leads
+    const attached = await attachLeadEvents(env, live)
     return {
-      leads: await attachLeadEvents(env, live),
+      leads: attached.leads,
       nextCursor: folded.nextCursor,
       clipped: folded.clipped,
+      eventsUnread: attached.unread || undefined,
     }
   }
   const kv = page.leads
@@ -1028,21 +1040,25 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
   if (!kv.length) {
     if (page.nextCursor) {
       const filled = await fillLeadHoles(env, [], missing)
+      const attached = await attachLeadEvents(env, filled.leads)
       return {
-        leads: await attachLeadEvents(env, filled.leads),
+        leads: attached.leads,
         nextCursor: page.nextCursor,
         stale: page.stale,
         clipped: page.clipped === true || filled.holesOpen,
+        eventsUnread: attached.unread || undefined,
       }
     }
     if (remoteFailed) return { leads: [], clipped: true, failed: !cursor, stale: Boolean(cursor) }
     if (!cursor) {
       const folded = leadPageFromRemote(remote, limit, canReachRemote)
       const live = env.AUTH ? await filterLiveLeads(env.AUTH, folded.leads) : folded.leads
+      const attached = await attachLeadEvents(env, live)
       return {
-        leads: await attachLeadEvents(env, live),
+        leads: attached.leads,
         nextCursor: folded.nextCursor,
         clipped: folded.clipped || !live.length,
+        eventsUnread: attached.unread || undefined,
       }
     }
     return { leads: [], nextCursor: page.nextCursor, stale: page.stale, clipped: true }
@@ -1051,11 +1067,13 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
   const keep = new Set(filled.leads.map((lead) => lead.id))
   const scoped = remote.filter((lead) => keep.has(lead.id))
   const live = env.AUTH ? await filterLiveLeads(env.AUTH, scoped) : scoped
+  const attached = await attachLeadEvents(env, live)
   return {
-    leads: adoptLeadStores(filled.leads, await attachLeadEvents(env, live)).slice(0, Math.max(limit, filled.leads.length)),
+    leads: adoptLeadStores(filled.leads, attached.leads).slice(0, Math.max(limit, filled.leads.length)),
     nextCursor: page.stale ? undefined : page.nextCursor,
     stale: page.stale,
     clipped: page.clipped === true || filled.holesOpen,
+    eventsUnread: attached.unread || undefined,
   }
 }
 

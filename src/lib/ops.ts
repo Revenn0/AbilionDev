@@ -116,6 +116,14 @@ export function crmSyncAfterFlush(wrote: boolean, funnelsConfirmed: boolean): "o
   return funnelsConfirmed ? "ok" : "error"
 }
 
+/** Timeline do lead: Postgres em baixo não é “sem eventos”. KV com eventos continua a mostrar. */
+export function leadTimelinePending(
+  eventsSync: "idle" | "ok" | "error",
+  count: number
+) {
+  return count === 0 && eventsSync !== "ok"
+}
+
 /** Captura, import e lote: GET unread não é catálogo vazio. `funnelsUnread` bloqueia o que precisa do quadro. */
 export function leadWritesBlocked(
   persistSync: "idle" | "ok" | "error",

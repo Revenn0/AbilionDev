@@ -147,6 +147,7 @@ type Store = {
   persistSync: SyncState
   sessionSync: SyncState
   settingsSync: SyncState
+  eventsSync: SyncState
   state: AppState
   login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
@@ -174,6 +175,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [persistSync, setPersistSync] = useState<SyncState>("idle")
   const [sessionSync, setSessionSync] = useState<SyncState>("idle")
   const [settingsSync, setSettingsSync] = useState<SyncState>("idle")
+  const [eventsSync, setEventsSync] = useState<SyncState>("idle")
   const session = useState(bootSession)[0]
   const [state, setState] = useState(session.state)
   const persistTimer = useRef(0)
@@ -380,6 +382,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (remoteLeads.ok) ingestRemoteRemoved(remoteLeads.removed)
       if (inbox.ok) ingestRemoteRemoved(inbox.removed)
       setInboxSync(inbox.ok ? "ok" : "error")
+      setEventsSync(
+        remoteLeads.ok
+          ? remoteLeads.eventsUnread
+            ? "error"
+            : "ok"
+          : inbox.ok
+            ? inbox.eventsUnread
+              ? "error"
+              : "ok"
+            : "error"
+      )
       setRemote(runtime.persist === "supabase" ? "cloud" : runtime.ok ? "local" : "off")
       setState((prev) => {
         const remoteFunnels = crm.ok ? crm.funnels.map(migrateFunnel) : []
@@ -462,6 +475,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setInboxSync("idle")
       setSessionSync("idle")
       setSettingsSync("idle")
+      setEventsSync("idle")
       resetLeadPersist()
       setState((prev) => {
         if (!prev.user) return prev
@@ -512,7 +526,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const inbox = await fetchInbox()
       if (cancelled) return
       setInboxSync(inbox.ok ? "ok" : "error")
-      if (inbox.ok) ingestRemoteRemoved(inbox.removed)
+      if (inbox.ok) {
+        ingestRemoteRemoved(inbox.removed)
+        setEventsSync(inbox.eventsUnread ? "error" : "ok")
+      }
       const incoming = applyRemovedLeads(inbox.leads.map((lead) => migrateLead(lead)), removedLeadIds.current)
       setState((prev) => {
         const leads = overlayPendingLeads(
@@ -544,6 +561,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (remoteLeads.ok) ingestRemoteRemoved(remoteLeads.removed)
       if (inbox.ok) ingestRemoteRemoved(inbox.removed)
       setInboxSync(inbox.ok ? "ok" : "error")
+      setEventsSync(
+        remoteLeads.ok
+          ? remoteLeads.eventsUnread
+            ? "error"
+            : "ok"
+          : inbox.ok
+            ? inbox.eventsUnread
+              ? "error"
+              : "ok"
+            : "error"
+      )
       if (!remoteLeads.ok) {
         if (pendingLeadWrites.current.size) void flushLeadWrites()
         else settleLeadPersist()
@@ -651,6 +679,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       persistSync,
       sessionSync,
       settingsSync,
+      eventsSync,
       state,
       login: async (email, password) => {
         const data = await loginRequest(email, password)
@@ -669,6 +698,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setInboxSync("idle")
         setSessionSync("idle")
         setSettingsSync("idle")
+        setEventsSync("idle")
         resetLeadPersist()
         commitState({ ...stateRef.current, user: null })
       },
@@ -823,7 +853,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         pushWorker()
       },
     }),
-    [ready, remote, crmSync, inboxSync, persistSync, sessionSync, settingsSync, state]
+    [ready, remote, crmSync, inboxSync, persistSync, sessionSync, settingsSync, eventsSync, state]
   )
 
   return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>

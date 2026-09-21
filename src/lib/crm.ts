@@ -37,6 +37,7 @@ export type LeadListPage = {
   stale?: boolean
   clipped?: boolean
   removed?: string[]
+  eventsUnread?: boolean
 }
 
 export type LeadPageFold = "strict" | "window"
@@ -45,21 +46,23 @@ export type LeadPageFold = "strict" | "window"
 export function collectLeadPages(
   pages: LeadListPage[],
   fold: LeadPageFold = "strict"
-): { ok: boolean; leads: Lead[]; retry: boolean; complete: boolean } {
+): { ok: boolean; leads: Lead[]; retry: boolean; complete: boolean; eventsUnread: boolean } {
   const leads: Lead[] = []
   let clipped = false
+  let eventsUnread = false
   for (let index = 0; index < pages.length; index++) {
     const page = pages[index]
     if (page.stale || (index > 0 && page.leads.length === 0)) {
-      return { ok: false, leads: [], retry: true, complete: false }
+      return { ok: false, leads: [], retry: true, complete: false, eventsUnread }
     }
     leads.push(...page.leads)
     if (page.clipped) clipped = true
-    if (!page.nextCursor) return { ok: true, leads, retry: false, complete: clipped !== true }
+    if (page.eventsUnread) eventsUnread = true
+    if (!page.nextCursor) return { ok: true, leads, retry: false, complete: clipped !== true, eventsUnread }
   }
-  if (!pages.length) return { ok: true, leads: [], retry: false, complete: true }
-  if (fold === "window") return { ok: true, leads, retry: false, complete: false }
-  return { ok: false, leads: [], retry: true, complete: false }
+  if (!pages.length) return { ok: true, leads: [], retry: false, complete: true, eventsUnread: false }
+  if (fold === "window") return { ok: true, leads, retry: false, complete: false, eventsUnread }
+  return { ok: false, leads: [], retry: true, complete: false, eventsUnread }
 }
 
 export function publicSettings(settings: Settings): Settings {

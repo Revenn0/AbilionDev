@@ -20,7 +20,7 @@ import { useStore } from "@/lib/store"
 import { addLeadCategory, leadCategoriesWriteBlocked, leadFromImport, leadImportGroupBlocked, mergeLeadCategories, parseLeadImportText } from "@/lib/lead-category"
 import { captureAgainstFunnels } from "@/lib/templates"
 import { ORIGIN_LABEL, STAGE_LABEL, TEMP_LABEL } from "@/lib/labels"
-import { funnelsWriteBlocked, isImportedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadWritesBlocked, leadsHydrating } from "@/lib/ops"
+import { funnelsWriteBlocked, isImportedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadTimelinePending, leadWritesBlocked, leadsHydrating } from "@/lib/ops"
 import { pixelGeoEmpty } from "@/lib/analytics-view"
 import { applyEvent, nodeTitle, publishedSnapshot, type RuntimeEvent } from "@/lib/runtime"
 import { canTickSteLocally } from "@/lib/ste"
@@ -47,7 +47,7 @@ const FILTERS = [
 ] as const
 
 export function LeadsPage() {
-  const { state, createLead, createLeads, saveLead, saveSettings, flushLeadNow, deleteLead, crmSync, inboxSync, persistSync, settingsSync } = useStore()
+  const { state, createLead, createLeads, saveLead, saveSettings, flushLeadNow, deleteLead, crmSync, inboxSync, persistSync, settingsSync, eventsSync } = useStore()
   const { summary, status: trackStatus, hasData: trackHasData } = useTrackSummary(8000)
   const geoEmpty = pixelGeoEmpty(trackStatus, trackHasData)
   const [filter, setFilter] = useState<string>("all")
@@ -100,6 +100,7 @@ export function LeadsPage() {
             { ok: inboxSync !== "error", message: "A inbox do Telegram não sincronizou." },
             { ok: persistSync !== "error", message: "Não consegui ler ou gravar leads no Worker." },
             { ok: settingsSync !== "error", message: "Não confirmei as definições no Postgres. Importar para o grupo e as categorias podem estar desactualizados." },
+            { ok: eventsSync !== "error", message: "Não li a timeline dos leads no Postgres. A ficha pode esconder passos que já existiam." },
           ]}
         />
         <PageChrome icon={Users} title="Leads">
@@ -302,6 +303,7 @@ export function LeadsPage() {
         onCategory={createCategory}
         geos={summary.geos}
         geoEmpty={pixelGeoEmpty(trackStatus, trackHasData, "Estado ainda sem rastreio")}
+        eventsSync={eventsSync}
         onClose={() => setSelected(null)}
         onSave={saveLead}
         onFlush={flushLeadNow}
@@ -725,6 +727,7 @@ function LeadDrawer({
   onCategory,
   geos,
   geoEmpty = "Estado ainda sem rastreio",
+  eventsSync = "ok",
   onClose,
   onSave,
   onFlush,
@@ -737,6 +740,7 @@ function LeadDrawer({
   onCategory: (name: string) => { ok: true; category: string } | { ok: false; error: string }
   geos?: Record<string, { country?: string; countryCode?: string; city?: string; region?: string; regionCode?: string }>
   geoEmpty?: string
+  eventsSync?: "idle" | "ok" | "error"
   onClose: () => void
   onSave: (lead: Lead) => void
   onFlush?: () => Promise<boolean>
@@ -1060,7 +1064,7 @@ function LeadDrawer({
           placeholder="O que esta pessoa já disse. Não misturar com outro chat."
         />
 
-        {lead.events.length > 0 && (
+        {lead.events.length > 0 ? (
           <ul className="mt-5 space-y-2 text-[12.5px] text-muted-foreground">
             {lead.events.slice(-8).reverse().map((item) => (
               <li key={item.id}>
@@ -1069,7 +1073,11 @@ function LeadDrawer({
               </li>
             ))}
           </ul>
-        )}
+        ) : leadTimelinePending(eventsSync, lead.events.length) ? (
+          <p className="mt-5 text-[12.5px] text-muted-foreground" data-lead-events="unread" role="status">
+            {eventsSync === "idle" ? "A carregar a timeline…" : "Não li a timeline deste lead."}
+          </p>
+        ) : null}
 
         <div className="mt-auto flex flex-wrap gap-2 pt-6">
           <Button variant="ghost" className="rounded-full" data-lead-close onClick={close}>

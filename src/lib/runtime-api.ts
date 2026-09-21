@@ -84,6 +84,7 @@ async function readLeadPage(cursor: string): Promise<LeadListPage | { failed: tr
     nextCursor?: string
     stale?: boolean
     clipped?: boolean
+    eventsUnread?: boolean
     removed?: string[]
   }
   if (!Array.isArray(data.leads)) return { failed: true }
@@ -92,6 +93,7 @@ async function readLeadPage(cursor: string): Promise<LeadListPage | { failed: tr
     nextCursor: typeof data.nextCursor === "string" ? data.nextCursor.trim() : undefined,
     stale: data.stale === true,
     clipped: data.clipped === true,
+    eventsUnread: data.eventsUnread === true,
     removed: Array.isArray(data.removed)
       ? data.removed.filter((id): id is string => typeof id === "string" && Boolean(id.trim())).map((id) => id.trim())
       : undefined,
@@ -108,7 +110,7 @@ export async function fetchLeads() {
         const next = await readLeadPage(cursor)
         if ("failed" in next) {
           return page === 0
-            ? { ok: false as const, leads: [] as Lead[], retry: false, complete: false, removed: [] as string[] }
+            ? { ok: false as const, leads: [] as Lead[], retry: false, complete: false, eventsUnread: false, removed: [] as string[] }
             : { ...collectLeadPages([...pages, { leads: [], stale: true }]), removed }
         }
         if (next.removed?.length) removed = next.removed
@@ -120,12 +122,24 @@ export async function fetchLeads() {
     }
     const first = await pull()
     if (first.ok || !first.retry) {
-      return { ok: first.ok as boolean, leads: first.leads, complete: first.complete, removed: first.removed }
+      return {
+        ok: first.ok as boolean,
+        leads: first.leads,
+        complete: first.complete,
+        eventsUnread: first.eventsUnread === true,
+        removed: first.removed,
+      }
     }
     const second = await pull()
-    return { ok: second.ok, leads: second.leads, complete: second.complete, removed: second.removed }
+    return {
+      ok: second.ok,
+      leads: second.leads,
+      complete: second.complete,
+      eventsUnread: second.eventsUnread === true,
+      removed: second.removed,
+    }
   } catch {
-    return { ok: false as const, leads: [] as Lead[], complete: false, removed: [] as string[] }
+    return { ok: false as const, leads: [] as Lead[], complete: false, eventsUnread: false, removed: [] as string[] }
   }
 }
 
@@ -138,10 +152,10 @@ export async function fetchLeadQuery(query: string) {
       cache: "no-store",
     })
     noteUnauthorized(res)
-    if (!res.ok) return { ok: false as const, leads: [] as Lead[] }
-    const data = (await res.json()) as { leads?: Lead[] }
-    if (!Array.isArray(data.leads)) return { ok: false as const, leads: [] as Lead[] }
-    return { ok: true as const, leads: data.leads }
+    if (!res.ok) return { ok: false as const, leads: [] as Lead[], eventsUnread: false }
+    const data = (await res.json()) as { leads?: Lead[]; eventsUnread?: boolean }
+    if (!Array.isArray(data.leads)) return { ok: false as const, leads: [] as Lead[], eventsUnread: false }
+    return { ok: true as const, leads: data.leads, eventsUnread: data.eventsUnread === true }
   } catch {
     return { ok: false as const, leads: [] as Lead[] }
   }
@@ -159,6 +173,7 @@ async function readInboxPage(cursor: string): Promise<LeadListPage | { failed: t
     nextCursor?: string
     stale?: boolean
     clipped?: boolean
+    eventsUnread?: boolean
     removed?: string[]
   }
   if (!Array.isArray(data.leads)) return { failed: true }
@@ -167,6 +182,7 @@ async function readInboxPage(cursor: string): Promise<LeadListPage | { failed: t
     nextCursor: typeof data.nextCursor === "string" ? data.nextCursor.trim() : undefined,
     stale: data.stale === true,
     clipped: data.clipped === true,
+    eventsUnread: data.eventsUnread === true,
     removed: Array.isArray(data.removed)
       ? data.removed.filter((id): id is string => typeof id === "string" && Boolean(id.trim())).map((id) => id.trim())
       : undefined,
@@ -183,7 +199,7 @@ export async function fetchInbox(pages = 1) {
       const next = await readInboxPage(cursor)
       if ("failed" in next) {
         return page === 0
-          ? { ok: false as const, leads: [] as Lead[], complete: false, removed: [] as string[] }
+          ? { ok: false as const, leads: [] as Lead[], complete: false, eventsUnread: false, removed: [] as string[] }
           : { ...collectLeadPages([...pulled, { leads: [], stale: true }]), removed }
       }
       if (next.removed?.length) removed = next.removed
@@ -193,7 +209,7 @@ export async function fetchInbox(pages = 1) {
     }
     return { ...collectLeadPages(pulled, "window"), removed }
   } catch {
-    return { ok: false as const, leads: [] as Lead[], complete: false, removed: [] as string[] }
+    return { ok: false as const, leads: [] as Lead[], complete: false, eventsUnread: false, removed: [] as string[] }
   }
 }
 
