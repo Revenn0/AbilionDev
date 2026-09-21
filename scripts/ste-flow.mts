@@ -2203,10 +2203,10 @@ assert(
   "cron nao adopta lead tombstoned"
 )
 assert(adoptDueLeads([first], [staleGone], []).some((item) => item.id === "crm-1"), "cron prefere o KV")
-await upsertLeadKv(kv, gone)
-assert(!(await loadRemovedLeadIds(kv)).includes("gone"), "voltar a gravar limpa o tombstone")
-assert((await findLeadInKv(kv, "@gone", 9, "9"))?.id === "gone", "alias volta quando o lead volta")
-await deleteLeadKv(kv, "gone")
+assert(!(await upsertLeadKv(kv, gone)), "upsert não ressuscita tombstone")
+assert(await isLeadRemoved(kv, "gone"), "voltar a gravar não limpa o tombstone")
+assert((await loadLead(kv, "gone")) === null, "ficha apagada não volta pelo upsert")
+assert((await findLeadInKv(kv, "@gone", 9, "9")) === null, "alias de lead apagado continua morto")
 
 const sentOnly = memoryKv()
 const sentNewer = {
@@ -2712,6 +2712,42 @@ await talkFailCtx.flush()
 const blockedTalk = (await listLeads(failEnv.AUTH, 20, "all")).find((item) => item.contact === "@blockedtalk")
 assert((blockedTalk?.messages ?? []).some((item) => item.role === "lead" && item.text === "quero o app"), "Telegram recusado guarda a fala do lead")
 assert(!(blockedTalk?.messages ?? []).some((item) => item.role === "ste"), "Telegram recusado não grava a resposta da Sté")
+const talkPersistKv = memoryKv()
+const talkPersistPut = talkPersistKv.put.bind(talkPersistKv)
+talkPersistKv.put = async (key, value) => {
+  if (key === CRM_INDEX) return
+  return talkPersistPut(key, value)
+}
+const talkPersistEnv = {
+  ...failEnv,
+  AUTH: talkPersistKv,
+} as Env
+const talkPersistCtx = backgroundCtx()
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/telegram", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+        body: JSON.stringify({
+          update_id: 79,
+          message: {
+            chat: { id: 8003 },
+            text: "quero o app",
+            from: { id: 8003, username: "savetalk", first_name: "Bia" },
+          },
+        }),
+      }),
+      talkPersistEnv,
+      talkPersistCtx
+    )
+  ).status === 200,
+  "webhook recusado com índice falho ainda é 200"
+)
+await talkPersistCtx.flush()
+const savedTalk = await findLeadInKv(talkPersistKv, "@savetalk", 8003, "8003")
+assert((savedTalk?.messages ?? []).some((item) => item.role === "lead" && item.text === "quero o app"), "recusa + índice falho ainda guarda a fala no crm:sent")
+assert(!(savedTalk?.messages ?? []).some((item) => item.role === "ste"), "recusa + índice falho não grava a Sté")
 globalThis.fetch = denyFetch
 let partialCalls = 0
 const partialPrev = globalThis.fetch

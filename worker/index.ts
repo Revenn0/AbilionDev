@@ -759,7 +759,7 @@ async function deliverTelegram(env: Env, update: TelegramUpdate, token: string):
   if (delivered) {
     if (!(await persistLeadAfterSend(env, lead))) console.error("telegram lead após envio não gravou")
   } else {
-    await saveLead(env, lead)
+    if (!(await persistLeadAfterSend(env, lead))) console.error("telegram lead após recusa não gravou")
     const updateId = typeof update.update_id === "number" && update.update_id > 0 ? update.update_id : 0
     if (updateId && env.AUTH) await forgetTelegramUpdate(env.AUTH, updateId)
   }
@@ -1050,6 +1050,7 @@ async function saveLead(env: Env, lead: Lead) {
     const latest = await loadLead(env.AUTH, bounded.id)
     bounded = commitStoredLead(prev, bounded, latest)
     if (!(await upsertLeadKv(env.AUTH, bounded))) return false
+    if (await isLeadRemoved(env.AUTH, bounded.id)) return false
   }
   await persistRemoteLead(env, bounded)
   return true

@@ -318,7 +318,7 @@ export async function importOrAdoptLead(kv: KvLike, lead: Lead): Promise<Lead | 
   let bounded = commitStoredLead(prev, next)
   const latest = await loadLead(kv, bounded.id)
   bounded = commitStoredLead(prev, bounded, latest)
-  await upsertLeadKv(kv, bounded)
+  if (!(await upsertLeadKv(kv, bounded))) return null
   return bounded
 }
 
@@ -556,8 +556,13 @@ export async function forgetRemovedLead(kv: KvLike, id: string) {
 }
 
 export async function upsertLeadKv(kv: KvLike, lead: Lead) {
-  await forgetRemovedLead(kv, lead.id)
+  if (await isLeadRemoved(kv, lead.id)) return false
   await kv.put(leadKey(lead.id), JSON.stringify(lead))
+  if (await isLeadRemoved(kv, lead.id)) {
+    await kv.delete?.(leadKey(lead.id))
+    await forgetSentLead(kv, lead.id)
+    return false
+  }
   await writeAliases(kv, lead)
   await rememberLeadNames(kv, [lead])
   if (!(await commitIndex(kv, [indexEntryFromLead(lead)]))) return false
