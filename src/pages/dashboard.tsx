@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import { Link } from "react-router-dom"
 import { LayoutDashboard, Radio } from "lucide-react"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
@@ -30,7 +31,6 @@ export function DashboardPage() {
   const novoPending = metricPending(persistSync, ops.novo) || clippedZero(ops.novo)
   const mornoPending = metricPending(persistSync, ops.morno) || clippedZero(ops.morno)
   const quentePending = metricPending(persistSync, ops.quente) || clippedZero(ops.quente)
-  const facebookTotal = Math.max(facebook.adClicks, facebook.pageViews, facebook.buttonClicks)
   const line = seriesLast30(state.leads, () => true)
   const spark = line.slice(-12)
   const pixelBars = (key: "facebookAds" | "facebookViews" | "facebookClicks") =>
@@ -64,40 +64,57 @@ export function DashboardPage() {
           </Button>
         </PageChrome>
 
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          <Kpi href="/leads" label="Leads" value={pending || (clipped && ops.leads === 0) ? "…" : ops.leads} hint={hydrating ? "a carregar" : failed ? "sem leitura" : clipped ? "recorte" : empty ? "à espera de captura" : "na base"} bars={spark} />
-          <Kpi
-            href="/conversas"
-            label="Conversas"
-            value={chatsPending ? "…" : ops.conversations}
-            hint={
-              chatsPending
-                ? persistSync === "idle"
-                  ? "a carregar"
-                  : "sem leitura"
-                : ops.conversations === 0
-                  ? "nenhuma iniciada"
-                  : "eventos do fluxo"
+        <section aria-label="Operação">
+          <SectionHead kicker="Operação" title="Base e fila" />
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Kpi href="/leads" label="Leads" value={pending || (clipped && ops.leads === 0) ? "…" : ops.leads} hint={hydrating ? "a carregar" : failed ? "sem leitura" : clipped ? "recorte" : empty ? "à espera de captura" : "na base"} bars={spark} />
+            <Kpi
+              href="/conversas"
+              label="Conversas"
+              value={chatsPending ? "…" : ops.conversations}
+              hint={
+                chatsPending
+                  ? persistSync === "idle"
+                    ? "a carregar"
+                    : "sem leitura"
+                  : ops.conversations === 0
+                    ? "nenhuma iniciada"
+                    : "eventos do fluxo"
+              }
+              bars={spark}
+            />
+            <Kpi
+              href="/leads"
+              label="Aguardando"
+              value={waitPending ? "…" : ops.waiting}
+              hint={waitPending ? (persistSync === "idle" ? "a carregar" : "sem leitura") : "espera do fluxo"}
+              bars={waitSpark}
+            />
+            <Kpi
+              href="/leads"
+              label="Ofertas"
+              value={offerPending ? "…" : ops.offered}
+              hint={offerPending ? (persistSync === "idle" || eventsSync === "idle" ? "a carregar" : "sem leitura") : "disparadas pelo quadro"}
+              bars={offerSpark}
+            />
+          </div>
+        </section>
+
+        <section aria-label="Anúncio">
+          <SectionHead
+            kicker="Anúncio · 30 dias"
+            title="Facebook até ao botão"
+            action={
+              <Link to="/analytics" className="text-[12.5px] font-medium text-muted-foreground hover:text-foreground">
+                Abrir analytics
+              </Link>
             }
-            bars={spark}
           />
-          <Kpi href="/analytics" label="Anúncio" value={pixelFigure(status, hasData, facebook.adClicks)} hint="clique no ads" bars={pixelBars("facebookAds")} />
-          <Kpi href="/analytics" label="Page views" value={pixelFigure(status, hasData, facebook.pageViews)} hint="landing do Facebook" bars={pixelBars("facebookViews")} />
-          <Kpi href="/analytics" label="Botão TG" value={pixelFigure(status, hasData, facebook.buttonClicks)} hint="clique no Telegram" bars={pixelBars("facebookClicks")} />
-          <Kpi
-            href="/leads"
-            label="Aguardando"
-            value={waitPending ? "…" : ops.waiting}
-            hint={waitPending ? (persistSync === "idle" ? "a carregar" : "sem leitura") : "espera do fluxo"}
-            bars={waitSpark}
-          />
-          <Kpi
-            href="/leads"
-            label="Ofertas"
-            value={offerPending ? "…" : ops.offered}
-            hint={offerPending ? (persistSync === "idle" || eventsSync === "idle" ? "a carregar" : "sem leitura") : "disparadas pelo quadro"}
-            bars={offerSpark}
-          />
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Kpi href="/analytics" label="Anúncio" value={pixelFigure(status, hasData, facebook.adClicks)} hint="clique no ads" bars={pixelBars("facebookAds")} />
+            <Kpi href="/analytics" label="Page views" value={pixelFigure(status, hasData, facebook.pageViews)} hint="landing do Facebook" bars={pixelBars("facebookViews")} />
+            <Kpi href="/analytics" label="Botão TG" value={pixelFigure(status, hasData, facebook.buttonClicks)} hint="clique no Telegram" bars={pixelBars("facebookClicks")} />
+          </div>
         </section>
 
         <section className="surface p-6">
@@ -137,21 +154,20 @@ export function DashboardPage() {
         <section className="grid gap-3 lg:grid-cols-2">
           <div className="surface p-6">
             <p className="text-[12.5px] text-muted-foreground">Campanha · Telegram</p>
+            <p className="mt-1 text-[12px] text-muted-foreground">Cada barra é uma fatia da base. O anúncio fica na secção de cima.</p>
             <div className="mt-5 space-y-5">
               <ChannelRow label="Telegram · convite" value={telegramPending ? "…" : ops.telegram} total={ops.leads} />
               <ChannelRow label="Facebook → Telegram" value={facebookPending ? "…" : ops.facebook} total={ops.leads} />
               <ChannelRow label="WhatsApp · importado" value={importedPending ? "…" : ops.imported} total={ops.leads} />
-              <ChannelRow label="Clique no anúncio" value={pixelFigure(status, hasData, facebook.adClicks)} total={facebookTotal} />
-              <ChannelRow label="Page views Facebook" value={pixelFigure(status, hasData, facebook.pageViews)} total={facebookTotal} />
-              <ChannelRow label="Clique no botão" value={pixelFigure(status, hasData, facebook.buttonClicks)} total={facebookTotal} />
             </div>
           </div>
           <div className="surface p-6">
             <p className="text-[12.5px] text-muted-foreground">Temperatura</p>
-            <div className="mt-5 grid grid-cols-3 gap-3">
-              <Heat label="Novos" value={novoPending ? "…" : ops.novo} />
-              <Heat label="Mornos" value={mornoPending ? "…" : ops.morno} />
-              <Heat label="Quentes" value={quentePending ? "…" : ops.quente} />
+            <p className="mt-1 text-[12px] text-muted-foreground">Novos, mornos e quentes sobre a mesma base.</p>
+            <div className="mt-5 space-y-5">
+              <Heat label="Novos" value={novoPending ? "…" : ops.novo} total={ops.leads} />
+              <Heat label="Mornos" value={mornoPending ? "…" : ops.morno} total={ops.leads} />
+              <Heat label="Quentes" value={quentePending ? "…" : ops.quente} total={ops.leads} />
             </div>
             <Link to="/leads" className="mt-5 inline-flex text-[12.5px] text-muted-foreground hover:text-foreground">
               Abrir leads
@@ -208,11 +224,37 @@ function ChannelRow({ label, value, total }: { label: string; value: string | nu
   )
 }
 
-function Heat({ label, value }: { label: string; value: string | number }) {
+function Heat({ label, value, total }: { label: string; value: string | number; total: number }) {
+  const share = typeof value === "number" ? barShare(value, total) : 0
   return (
     <div>
-      <p className="text-[12.5px] text-muted-foreground">{label}</p>
-      <p className="mt-1 text-[22px] font-medium tracking-tight">{value}</p>
+      <div className="flex items-center justify-between text-[13px]">
+        <span>{label}</span>
+        <span className="tabular-nums text-muted-foreground">{value}</span>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-foreground/8">
+        <div className="h-full rounded-full bg-line" style={{ width: `${share}%` }} />
+      </div>
+    </div>
+  )
+}
+
+function SectionHead({
+  kicker,
+  title,
+  action,
+}: {
+  kicker: string
+  title: string
+  action?: ReactNode
+}) {
+  return (
+    <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+      <div>
+        <p className="text-[12px] text-muted-foreground">{kicker}</p>
+        <p className="mt-0.5 text-[15px] font-medium tracking-[-0.02em]">{title}</p>
+      </div>
+      {action}
     </div>
   )
 }

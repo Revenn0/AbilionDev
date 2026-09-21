@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom"
 import { ChartNoAxesCombined } from "lucide-react"
 import { AreaChart } from "@/components/analytics/area-chart"
 import { FacebookSplit } from "@/components/analytics/facebook-split"
@@ -6,6 +7,7 @@ import { KpiCard } from "@/components/analytics/kpi-card"
 import { RankList } from "@/components/analytics/rank-list"
 import { VisitorGlobe } from "@/components/analytics/visitor-globe"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
+import { Button } from "@/components/ui/button"
 import { SyncBanner } from "@/components/layout/sync-banner"
 import { StudioPanel } from "@/components/layout/studio"
 import { funnelFrom, periodDelta, pixelFigure, splitSeries } from "@/lib/analytics-view"
@@ -65,14 +67,15 @@ export function AnalyticsPage() {
           onRetry={retry}
         />
         <PageChrome icon={ChartNoAxesCombined} title="Analytics">
-          <span className="inline-flex h-8 items-center rounded-full border border-border bg-card px-3 text-[12px] font-medium shadow-sm">
-            Visual
-          </span>
+          <StatusPill>30 dias</StatusPill>
           <span data-track-sync={status}>
             <StatusPill tone={status === "ok" ? "success" : status === "error" ? "danger" : "muted"}>
-              {status === "ok" ? "Ao vivo · 30 dias" : status === "error" ? "Sem leitura" : "A carregar"}
+              {status === "ok" ? "Pixel ao vivo" : status === "error" ? "Sem leitura" : "A carregar"}
             </StatusPill>
           </span>
+          <Button asChild variant="outline" className="h-8 rounded-full px-3.5">
+            <Link to="/">Dashboard</Link>
+          </Button>
         </PageChrome>
 
         <FacebookSplit
@@ -88,9 +91,12 @@ export function AnalyticsPage() {
 
         <FunnelFlow steps={funnel} status={status} hasData={hasData} leadsReady={leadsReady} />
 
-        <VisitorGlobe geos={summary.geos} leads={state.leads} status={status} hasData={hasData} />
-
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <section aria-label="Página">
+          <div className="mb-3">
+            <p className="text-[12px] text-muted-foreground">Página · 30 dias</p>
+            <p className="mt-0.5 text-[15px] font-medium tracking-[-0.02em]">Quem ficou, quem saiu, quem abriu o Telegram</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <KpiCard label="Ao vivo" value={pixelFigure(status, hasData, summary.online)} hint="ativos nos últimos 2 min" live spark={viewSpark.slice(-12)} />
           <KpiCard
             label="Visitantes"
@@ -111,8 +117,8 @@ export function AnalyticsPage() {
             hint="tempo médio na página"
             spark={viewSpark}
           />
-        </section>
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <KpiCard
             label="/start"
             value={pixelFigure(status, hasData, facebook.starts || summary.telegrams)}
@@ -132,6 +138,7 @@ export function AnalyticsPage() {
             hint="todas as origens"
             spark={facebookClickSpark}
           />
+          </div>
         </section>
 
         <StudioPanel
@@ -159,15 +166,13 @@ export function AnalyticsPage() {
           )}
         </StudioPanel>
 
-        <section className="grid gap-3 lg:grid-cols-2">
+        <VisitorGlobe geos={summary.geos} leads={state.leads} status={status} hasData={hasData} />
+
+        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" aria-label="Recortes">
           <RankList title="Campanha / origem" rows={summary.referrers} empty={unread ? unreadEmpty : "Sem origem ainda."} />
           <RankList title="Estado" rows={summary.regions} empty={unread ? unreadEmpty : "Sem estado ainda. O pixel grava UF no Cloudflare ou via ipwho.is."} />
-        </section>
-        <section className="grid gap-3 lg:grid-cols-2">
           <RankList title="País" rows={summary.countries} empty={unread ? unreadEmpty : "Sem país ainda."} />
           <RankList title="Páginas" rows={summary.pages} empty={unread ? unreadEmpty : "Nenhuma página rastreada."} />
-        </section>
-        <section className="grid gap-3 lg:grid-cols-2">
           <RankList title="Browser / app" rows={summary.devices} empty={unread ? unreadEmpty : "Sem device ainda."} />
         </section>
       </div>
