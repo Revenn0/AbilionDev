@@ -6,6 +6,8 @@ import { preferLeadName } from "./lead-name.ts"
 import { applyRemovedPageScripts, mergePageScripts, PAGE_SCRIPT_REMOVED_CAP } from "./page-script.ts"
 import { defaultSettings, type AppState, type ChatMessage, type Lead, type LeadEvent, type LeadFacts, type SalesFunnel, type Settings, type User } from "./types.ts"
 
+export { factsWithoutRemoteKeys, sanitizeLeadEvents } from "./lead-events.ts"
+
 const CAP = 400
 export const LEAD_LIST_CAP = 16_000
 export const LEAD_LIST_PAGES = 40

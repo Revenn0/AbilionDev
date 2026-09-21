@@ -1,4 +1,4 @@
-import { adoptFunnelStores, adoptSearchLeads, applyRemovedFunnels, commitStoredLead, commitStoredSettings, emptySettings, publicSettings, resolveLeadLookup } from "../src/lib/crm.ts"
+import { adoptFunnelStores, adoptSearchLeads, applyRemovedFunnels, commitStoredLead, commitStoredSettings, emptySettings, factsWithoutRemoteKeys, publicSettings, resolveLeadLookup, sanitizeLeadEvents } from "../src/lib/crm.ts"
 import { sanitizeLeadCategory } from "../src/lib/lead-category.ts"
 import { leadMatchesQuery } from "../src/lib/lead-name.ts"
 import { countryName, normalizeCountryCode, normalizeRegionCode } from "../src/lib/geo.ts"
@@ -11,7 +11,7 @@ import type { KvLike } from "./kv.ts"
 
 const WORKSPACE = "local"
 
-type RemoteFacts = Lead["facts"] & { category?: string }
+type RemoteFacts = Lead["facts"] & { category?: string; timeline?: LeadEvent[] }
 
 export type LeadRow = {
   id: string
@@ -43,15 +43,16 @@ export type LeadRow = {
 }
 
 export function leadFactsForRemote(lead: Lead): RemoteFacts {
-  const facts: RemoteFacts = { ...(lead.facts ?? {}) }
+  const facts: RemoteFacts = { ...factsWithoutRemoteKeys(lead.facts) }
   if (lead.category) facts.category = lead.category
+  const timeline = sanitizeLeadEvents(lead.events)
+  if (timeline.length) facts.timeline = timeline
   return facts
 }
 
 export function rowToLead(row: LeadRow): Lead {
   const raw = row.facts ?? {}
   const category = typeof raw.category === "string" ? sanitizeLeadCategory(raw.category) || undefined : undefined
-  const { category: _ignored, ...facts } = raw
   return {
     id: row.id,
     name: row.name,
@@ -66,13 +67,13 @@ export function rowToLead(row: LeadRow): Lead {
     printAt: row.print_at ?? undefined,
     bancaAt: row.banca_at ?? undefined,
     memory: row.memory ?? "",
-    facts,
+    facts: factsWithoutRemoteKeys(raw),
     lastMessage: row.last_message ?? undefined,
     funnelId: row.funnel_id ?? undefined,
     nodeId: row.node_id ?? undefined,
     waitUntil: row.wait_until ?? undefined,
     paused: row.paused ?? false,
-    events: [],
+    events: sanitizeLeadEvents(raw.timeline),
     messages: row.messages ?? [],
     stePhase: row.ste_phase ?? undefined,
     steBlocked: row.ste_blocked ?? false,

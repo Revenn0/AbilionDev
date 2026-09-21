@@ -85,6 +85,7 @@ import {
   revertPublishedFunnels,
   mergeFunnels,
   mergeLeadEvents,
+  sanitizeLeadEvents,
   mergeLeads,
   overlayPendingLeads,
   adoptSearchLeads,
@@ -631,6 +632,14 @@ assert(preferLeadName("+55 11 98765-4321", "PAULO SERGIO", "5511987654321") === 
 assert(migrateLead({ id: "n1", name: "PAULO SERGIO DE SOUZA", contact: "5511987654321" }).name === "Paulo Sergio de Souza", "migrateLead resolve o nome")
 assert(migrateLead({ id: "n2", name: "5511987654321", contact: "5511987654321" }).name === "+55 11 98765-4321", "migrateLead formata nome-telefone")
 assert(migrateLead({ id: "n2", name: "5511987654321", contact: "5511987654321" }).contact === "5511987654321", "migrateLead não pisa o contacto")
+const migratedTimeline = migrateLead({
+  id: "n3",
+  name: "Ana",
+  contact: "@ana",
+  facts: { email: "ana@abilion.com", timeline: [{ id: "ev-kv", at: "2026-01-01T00:00:00.000Z", kind: "offer" }] } as Lead["facts"],
+})
+assert(migratedTimeline.events.some((item) => item.id === "ev-kv"), "migrateLead recupera a timeline do jsonb")
+assert(!("timeline" in migratedTimeline.facts), "migrateLead não deixa timeline nos facts do painel")
 assert(leadFromCapture({ name: "Ana", contact: "ana", channel: "telegram", origin: "popup" }).contact === "@ana", "lead capturado grava @user")
 
 assert(cleanBotUsername("@ste_bot") === "@ste_bot", "username válido fica")
@@ -1112,6 +1121,14 @@ assert(
   "cursor do backup vira keyset no Postgres"
 )
 assert(leadFactsForRemote({ ...lead("cat-1"), category: "Grupo" }).category === "Grupo", "facts do backup levam a categoria")
+assert(
+  leadFactsForRemote({
+    ...lead("cat-1"),
+    events: [{ id: "ev-offer", at: "2026-01-02T00:00:00.000Z", kind: "offer", title: "App" }],
+  }).timeline?.some((item) => item.id === "ev-offer"),
+  "facts do backup levam a timeline"
+)
+assert(!("timeline" in (leadFactsForRemote({ ...lead("cat-1"), events: [] }) as { timeline?: unknown })), "sem eventos o jsonb não inventa timeline")
 assert(sanitizeRemoteSearchNeedle("ana,(id.eq.x)") === "anaid.eq.x", "needle da busca corta vírgulas e parênteses")
 assert(remoteLeadSearchPath("ab") === "", "busca curta não monta filtro no Postgres")
 assert(remoteLeadSearchPath("!!!") === "", "needle só pontuação não monta filtro")
@@ -1134,6 +1151,26 @@ const fromFacts = rowToLead({
 })
 assert(fromFacts.category === "Grupo", "rowToLead recupera a categoria do jsonb")
 assert(fromFacts.facts.email === "ana@abilion.com" && !("category" in fromFacts.facts), "categoria não fica à mistura nos facts do painel")
+const fromTimeline = rowToLead({
+  id: "cat-1",
+  name: "Ana",
+  contact: "@ana",
+  channel: "telegram",
+  campaign: "",
+  origin: "import",
+  temperature: "novo",
+  stage: "offer",
+  facts: {
+    email: "ana@abilion.com",
+    timeline: [{ id: "ev-offer", at: "2026-01-02T00:00:00.000Z", kind: "offer", title: "App" }],
+  },
+  updated_at: "2026-01-01T00:00:00.000Z",
+  created_at: "2026-01-01T00:00:00.000Z",
+})
+assert(fromTimeline.events.some((item) => item.id === "ev-offer" && item.kind === "offer"), "rowToLead recupera a timeline do jsonb")
+assert(!("timeline" in fromTimeline.facts), "timeline não fica à mistura nos facts do painel")
+assert(sanitizeLeadEvents([{ id: "bad", at: "t", kind: "nope" }]).length === 0, "kind inventado não entra na timeline")
+assert(sanitizeLeadEvents([{ id: "ev-1", at: "2026-01-01T00:00:00.000Z", kind: "offer" }])[0]?.id === "ev-1", "evento válido passa")
 assert(LEAD_LIST_PAGES === 40, "hydrate lê até 40 páginas")
 assert(LEAD_LIST_CAP === 16_000, "lista hidratada cabe o índice (8000 chats + 4000 resto + esperas)")
 assert(LEAD_CACHE_CAP === 2000, "localStorage só guarda os 2000 mais novos")
@@ -1491,7 +1528,10 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
           temperature: "hot",
           stage: "chat",
           memory: "ste:welcome",
-          facts: { email: "rita@keep.test" },
+          facts: {
+            email: "rita@keep.test",
+            timeline: [{ id: "ev-keep", at: "2026-01-01T00:00:00.000Z", kind: "entered", title: "Entrou" }],
+          },
           last_message: "oi do backup",
           messages: [{ id: "m-keep", role: "lead", text: "oi do backup", at: "2026-01-01T00:00:00.000Z" }],
           updated_at: "2026-01-02T00:00:00.000Z",
@@ -1518,11 +1558,12 @@ await persistRemoteLead(remoteEnv, {
 const talkSaved = JSON.parse(talkPosts.at(-1) || "{}") as {
   messages?: Array<{ id?: string; text?: string }>
   memory?: string
-  facts?: { email?: string }
+  facts?: { email?: string; timeline?: Array<{ id?: string }> }
 }
 assert(talkSaved.messages?.some((item) => item.id === "m-keep"), "POST oco do lead não apaga as falas do Postgres")
 assert(talkSaved.memory === "ste:welcome", "POST oco do lead não apaga a memória do Postgres")
 assert(talkSaved.facts?.email === "rita@keep.test", "POST oco do lead não apaga o e-mail do Postgres")
+assert(talkSaved.facts?.timeline?.some((item) => item.id === "ev-keep"), "POST oco do lead não apaga a timeline do jsonb")
 const skipLeadPosts: string[] = []
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = String(input)
@@ -4488,7 +4529,9 @@ const pageTalkRow = {
   temperature: "novo" as const,
   stage: "welcome" as const,
   memory: "ficha no backup",
-  facts: {},
+  facts: {
+    timeline: [{ id: "ev-pg", at: "2025-12-01T00:00:00.000Z", kind: "offer" as const, title: "App" }],
+  },
   messages: [{ id: "m-pg", at: "2025-12-01T00:00:00.000Z", role: "ste" as const, text: "já falámos" }],
   updated_at: "2025-12-01T00:00:00.000Z",
   created_at: "2025-12-01T00:00:00.000Z",
@@ -4526,11 +4569,17 @@ try {
     pageTalkEnv,
     backgroundCtx()
   )
-  const pageTalkBody = (await pageTalkGet.json()) as { ok?: boolean; leads?: Array<{ id?: string; messages?: Array<{ id?: string }> }> }
+  const pageTalkBody = (await pageTalkGet.json()) as {
+    ok?: boolean
+    eventsUnread?: boolean
+    leads?: Array<{ id?: string; messages?: Array<{ id?: string }>; events?: Array<{ id?: string }> }>
+  }
   const pageTalkHit = pageTalkBody.leads?.find((item) => item.id === "page-talk")
   assert(pageTalkGet.status === 200 && pageTalkBody.ok, "GET leads hidrata a página do KV")
   assert(pageTalkHit?.messages?.some((item) => item.id === "m-pg"), "GET leads lê as falas pelo id, não pelas últimas N")
   assert(pageTalkHit?.messages?.some((item) => item.id === "m-kv"), "GET leads conserva as falas do KV")
+  assert(pageTalkHit?.events?.some((item) => item.id === "ev-pg"), "GET leads lê a timeline no jsonb, não só em lead_events")
+  assert(!pageTalkBody.eventsUnread, "timeline no jsonb não marca unread se lead_events veio vazio")
   assert(!pageTalkBody.leads?.some((item) => item.id === "page-new"), "GET leads não troca a página do KV pelas últimas N")
   const pageTalkInbox = await handleRequest(
     new Request("http://local.test/api/inbox", { headers: { cookie: pageTalkCookie } }),

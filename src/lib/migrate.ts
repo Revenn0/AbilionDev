@@ -1,4 +1,5 @@
 import { normalizeTelegramContact } from "./capture.ts"
+import { factsWithoutRemoteKeys, sanitizeLeadEvents } from "./lead-events.ts"
 import { isEmailName, resolveLeadName } from "./lead-name.ts"
 import { migrateLeadCategories, sanitizeLeadCategory } from "./lead-category.ts"
 import { migratePageScripts, migrateRemovedPageScripts } from "./page-script.ts"
@@ -66,8 +67,10 @@ export function migrateFunnel(raw: SalesFunnel): SalesFunnel {
 
 export function migrateLead(raw: Partial<Lead> & { id: string }): Lead {
   const now = new Date().toISOString()
-  const facts = raw.facts && typeof raw.facts === "object" ? raw.facts : {}
+  const rawFacts = raw.facts && typeof raw.facts === "object" && !Array.isArray(raw.facts) ? raw.facts : {}
+  const facts = factsWithoutRemoteKeys(rawFacts)
   const email = typeof facts.email === "string" && isEmailName(facts.email) ? facts.email.trim() : undefined
+  const events = Array.isArray(raw.events) && raw.events.length ? raw.events : sanitizeLeadEvents((rawFacts as { timeline?: unknown }).timeline)
   return {
     id: raw.id,
     name: resolveLeadName(raw.name, raw.contact, { email, messages: raw.messages }),
@@ -88,7 +91,7 @@ export function migrateLead(raw: Partial<Lead> & { id: string }): Lead {
     nodeId: raw.nodeId,
     waitUntil: raw.waitUntil,
     paused: raw.paused ?? false,
-    events: Array.isArray(raw.events) ? raw.events : [],
+    events,
     messages: Array.isArray(raw.messages) ? raw.messages : [],
     stePhase: raw.stePhase,
     steBlocked: raw.steBlocked ?? false,
