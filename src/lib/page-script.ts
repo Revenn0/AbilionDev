@@ -212,6 +212,11 @@ export function installSettingsBlocked(unread: boolean, scriptId: string | undef
   return unread && PAGE_SCRIPT_ID.test(needle) && !script
 }
 
+/** Lista unread e KV oco: não fingir que não há scripts. Se o KV já tem algum, a lista segue. */
+export function pageScriptsListBlocked(unread: boolean, scripts: PageScript[] | undefined) {
+  return unread && !(scripts ?? []).length
+}
+
 export function funnelHasInstallableBoard(funnel?: SalesFunnel | null) {
   return Boolean(funnel?.production)
 }

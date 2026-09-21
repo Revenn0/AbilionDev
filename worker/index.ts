@@ -750,13 +750,17 @@ async function deliverTelegram(env: Env, update: TelegramUpdate, token: string):
 
   const incoming = joinUser || start.isStart ? null : (message?.text ?? null)
   const funnels = await loadFunnels(env)
-  const settings = await loadSettings(env)
-  if (start.isStart && start.payload) {
-    const script = pageScriptById(settings.pageScripts, scriptIdFromStart(start.payload))
-    if (script) {
-      lead.funnelId = script.funnelId
-      lead.campaign = `Facebook · ${script.name}`.slice(0, 120)
-    }
+  const loaded = await readWorkspaceSettings(env)
+  const settings = loaded.settings
+  const startPayload = start.isStart && start.payload ? start.payload : lead.startPayload
+  const scriptId = scriptIdFromStart(startPayload || "")
+  const script = pageScriptById(settings.pageScripts, scriptId)
+  if (installSettingsBlocked(loaded.unread, scriptId, script)) {
+    throw new Error("Não confirmei o script desta página.")
+  }
+  if (start.isStart && start.payload && script) {
+    lead.funnelId = script.funnelId
+    lead.campaign = `Facebook · ${script.name}`.slice(0, 120)
   }
   const ste = steRuntimeFromFunnels(funnels, settings, lead.funnelId)
   const shouldTalk = ste.talking !== false && !joinUser

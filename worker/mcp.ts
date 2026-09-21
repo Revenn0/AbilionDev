@@ -1,6 +1,6 @@
 import { clipNewestIds, FUNNEL_CAP, publicSettings } from "../src/lib/crm.ts"
 import { addLeadCategory, leadFromImport, parseLeadImportText } from "../src/lib/lead-category.ts"
-import { addPageScript, installSettingsBlocked, pageInstallManual, pageScriptById, PAGE_SCRIPT_REMOVED_CAP, removePageScript } from "../src/lib/page-script.ts"
+import { addPageScript, installSettingsBlocked, pageInstallManual, pageScriptById, pageScriptsListBlocked, PAGE_SCRIPT_REMOVED_CAP, removePageScript } from "../src/lib/page-script.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
 import { emptySalesFunnel, publishSnapshot } from "../src/lib/templates.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
@@ -423,7 +423,11 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
   }
   if (name === "abilion_get_settings") {
     if (!env.AUTH) throw new Error("Auth ainda sem KV.")
-    return { ok: true, settings: publicSettings(await loadWorkspaceSettings(env)) }
+    const loaded = await readWorkspaceSettings(env)
+    if (pageScriptsListBlocked(loaded.unread, loaded.settings.pageScripts) && !loaded.settings.telegramBotUsername) {
+      throw new Error("Não confirmei as definições no Postgres.")
+    }
+    return { ok: true, settings: publicSettings(loaded.settings), unread: loaded.unread || undefined }
   }
   if (name === "abilion_create_token") {
     const res = await callHttp(request, env, actor, "/api/tokens", "POST", { name: str(args.name) || "MCP" })
@@ -444,15 +448,19 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
   }
   if (name === "abilion_list_page_scripts") {
     if (!env.AUTH) throw new Error("Auth ainda sem KV.")
-    const settings = await loadWorkspaceSettings(env)
+    const loaded = await readWorkspaceSettings(env)
+    if (pageScriptsListBlocked(loaded.unread, loaded.settings.pageScripts)) {
+      throw new Error("Não confirmei os scripts desta página.")
+    }
     const funnels = await funnelsOf(env)
     return {
       ok: true,
-      scripts: settings.pageScripts.map((script) => ({
+      scripts: loaded.settings.pageScripts.map((script) => ({
         ...script,
         funnelName: funnels.find((item) => item.id === script.funnelId)?.name,
-        ...installManualOfSync(settings.telegramBotUsername, script, funnels.find((item) => item.id === script.funnelId)?.name),
+        ...installManualOfSync(loaded.settings.telegramBotUsername, script, funnels.find((item) => item.id === script.funnelId)?.name),
       })),
+      unread: loaded.unread || undefined,
     }
   }
   if (name === "abilion_create_page_script") {
@@ -478,7 +486,12 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     if (!env.AUTH) throw new Error("Auth ainda sem KV.")
     const id = str(args.id).trim()
     if (!id) throw new Error("Falta o id do script.")
-    const settings = await loadWorkspaceSettings(env)
+    const loaded = await readWorkspaceSettings(env)
+    const settings = loaded.settings
+    const current = pageScriptById(settings.pageScripts, id)
+    if (installSettingsBlocked(loaded.unread, id, current)) {
+      throw new Error("Não confirmei o script desta página.")
+    }
     const next = removePageScript(settings.pageScripts, id)
     if (next.length === settings.pageScripts.length) throw new Error("Este script já não está no estúdio.")
     await persistWorkspaceSettings(env, {

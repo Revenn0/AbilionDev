@@ -101,7 +101,7 @@ import { displayContact, draftLeadField, formatPhoneContact, isPhoneLikeName, is
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, migrateLeadOrigin, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink, campaignFromStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument, wantsAuthHtml } from "../src/lib/auth-pages.ts"
-import { addPageScript, adsLandingDocument, adsLandingUrl, adsStartToken, installSettingsBlocked, pageInstallManual, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
+import { addPageScript, adsLandingDocument, adsLandingUrl, adsStartToken, installSettingsBlocked, pageInstallManual, pageScriptsListBlocked, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
 import { leadFromImport, parseLeadImportLine, parseLeadImportText } from "../src/lib/lead-category.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
@@ -719,6 +719,9 @@ assert(
   }),
   "unread com o script no KV não bloqueia"
 )
+assert(pageScriptsListBlocked(true, []), "lista unread e oca bloqueia")
+assert(!pageScriptsListBlocked(true, [{ id: "deadbeef", name: "Landing", funnelId: "f1", createdAt: "t", updatedAt: "t" }]), "lista unread com script no KV segue")
+assert(!pageScriptsListBlocked(false, []), "lista lida vazia não bloqueia")
 assert(FUNNEL_CAP === 20 && !canCreateFunnel(Array.from({ length: 20 }, () => emptySalesFunnel("x"))).ok, "criar o 21.º funil é recusado")
 const twentyOne = Array.from({ length: 21 }, (_, index) => ({ ...emptySalesFunnel(`n${index}`), id: `funil-${index}` }))
 assert(reconcileFunnels([], twentyOne).length === 21, "reconcile não corta o 21.º quadro à calada")
@@ -5340,6 +5343,121 @@ const downInstallFound = await handleRequest(new Request("http://local.test/api/
 const downInstallFoundBody = (await downInstallFound.json()) as { ok?: boolean; script?: { id?: string; funnelName?: string } }
 assert(downInstallFound.status === 200 && downInstallFoundBody.script?.id === "deadbeef", "script no KV sobrevive ao Postgres unread")
 assert(downInstallFoundBody.script?.funnelName === "Quadro do script", "funil no KV entra no manual mesmo unread")
+const scriptHookPrev = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  if (url.includes("api.telegram.org")) return new Response(JSON.stringify({ ok: true }), { status: 200 })
+  if (url.includes("/rest/v1/settings")) throw new Error("settings down")
+  if (url.includes("/rest/v1/leads")) return new Response(JSON.stringify([]), { status: 200 })
+  if (url.includes("/rest/v1/funnels")) throw new Error("funnels down")
+  return scriptHookPrev(input, init)
+}) as typeof fetch
+const scriptHookKv = memoryKv()
+await saveFunnelsKv(scriptHookKv, [{ ...emptySalesFunnel("Quadro ads"), id: "fun-ads" }])
+const scriptHookEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  AUTH: scriptHookKv,
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+  TELEGRAM_WEBHOOK_SECRET: "hook-secret",
+  TELEGRAM_BOT_TOKEN: "000:script",
+  ABILION_ENV: "development",
+} as Env
+const scriptMissCtx = backgroundCtx()
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/telegram", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+        body: JSON.stringify({
+          update_id: 8808,
+          message: {
+            chat: { id: 8808 },
+            text: "/start fb_sdeadbeef_aabbcc11",
+            from: { id: 8808, username: "scriptmiss", first_name: "Mia" },
+          },
+        }),
+      }),
+      scriptHookEnv,
+      scriptMissCtx
+    )
+  ).status === 200,
+  "webhook unread + script miss ainda é 200"
+)
+await scriptMissCtx.flush()
+assert(
+  !(await listLeads(scriptHookKv, 20, "all")).some((item) => item.contact === "@scriptmiss"),
+  "/start com script unread não mint lead no funil publicado"
+)
+const genericFbCtx = backgroundCtx()
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/telegram", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+        body: JSON.stringify({
+          update_id: 8809,
+          message: {
+            chat: { id: 8809 },
+            text: "/start fb_aabbcc11",
+            from: { id: 8809, username: "scriptgen", first_name: "Gil" },
+          },
+        }),
+      }),
+      scriptHookEnv,
+      genericFbCtx
+    )
+  ).status === 200,
+  "webhook unread sem s= de script continua"
+)
+await genericFbCtx.flush()
+assert(
+  (await listLeads(scriptHookKv, 20, "all")).some((item) => item.contact === "@scriptgen" && item.origin === "facebook"),
+  "/start fb_vid sem script id não depende das settings unread"
+)
+await saveSettingsKv(
+  scriptHookKv,
+  migrateSettings({
+    pageScripts: [
+      {
+        id: "deadbeef",
+        name: "Landing ads",
+        funnelId: "fun-ads",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+  })
+)
+const scriptHitCtx = backgroundCtx()
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/telegram", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+        body: JSON.stringify({
+          update_id: 8810,
+          message: {
+            chat: { id: 8810 },
+            text: "/start fb_sdeadbeef_aabbcc11",
+            from: { id: 8810, username: "scripthit", first_name: "Lia" },
+          },
+        }),
+      }),
+      scriptHookEnv,
+      scriptHitCtx
+    )
+  ).status === 200,
+  "webhook unread com script no KV é 200"
+)
+await scriptHitCtx.flush()
+const scriptHit = (await listLeads(scriptHookKv, 20, "all")).find((item) => item.contact === "@scripthit")
+assert(scriptHit?.funnelId === "fun-ads", "/start com script no KV liga o funil mesmo unread")
+assert(scriptHit?.campaign === "Facebook · Landing ads", "/start unread usa o nome do script do KV")
+globalThis.fetch = scriptHookPrev
 const cronEnv = { ...liveEnv, CRON_SECRET: "cron" } as Env
 await upsertLeadKv(cronEnv.AUTH, {
   ...lead("due-cron"),
@@ -6236,6 +6354,62 @@ assert(
     (mcpInstallGeneralUnreadData.steps?.length ?? 0) >= 5,
   "MCP manual geral continua unread"
 )
+const mcpListUnread = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 93,
+      method: "tools/call",
+      params: { name: "abilion_list_page_scripts", arguments: {} },
+    }),
+  }),
+  mcpInstallDownEnv,
+  backgroundCtx()
+)
+const mcpListUnreadBody = (await mcpListUnread.json()) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }
+const mcpListUnreadData = JSON.parse(mcpListUnreadBody.result?.content?.[0]?.text || "{}") as { error?: string }
+assert(mcpListUnread.status === 200 && mcpListUnreadBody.result?.isError, "MCP não lista scripts vazios se settings unread")
+assert(mcpListUnreadData.error === "Não confirmei os scripts desta página.", "MCP pede confirmação da lista unread")
+const mcpSettingsUnread = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 94,
+      method: "tools/call",
+      params: { name: "abilion_get_settings", arguments: {} },
+    }),
+  }),
+  mcpInstallDownEnv,
+  backgroundCtx()
+)
+const mcpSettingsUnreadBody = (await mcpSettingsUnread.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const mcpSettingsUnreadData = JSON.parse(mcpSettingsUnreadBody.result?.content?.[0]?.text || "{}") as { error?: string }
+assert(mcpSettingsUnread.status === 200 && mcpSettingsUnreadBody.result?.isError, "MCP não devolve settings ocas unread")
+assert(mcpSettingsUnreadData.error === "Não confirmei as definições no Postgres.", "MCP pede confirmação das settings unread")
+const mcpDeleteUnread = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 95,
+      method: "tools/call",
+      params: { name: "abilion_delete_page_script", arguments: { id: "deadbeef" } },
+    }),
+  }),
+  mcpInstallDownEnv,
+  backgroundCtx()
+)
+const mcpDeleteUnreadBody = (await mcpDeleteUnread.json()) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }
+const mcpDeleteUnreadData = JSON.parse(mcpDeleteUnreadBody.result?.content?.[0]?.text || "{}") as { error?: string }
+assert(mcpDeleteUnread.status === 200 && mcpDeleteUnreadBody.result?.isError, "MCP não apaga script unread em falta")
+assert(mcpDeleteUnreadData.error === "Não confirmei o script desta página.", "MCP delete unread pede confirmação")
 
 const mcpImport = await handleRequest(
   new Request("http://local.test/mcp", {
