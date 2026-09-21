@@ -330,7 +330,8 @@ export async function resolveWorkspaceLeadWrite(
 ): Promise<{ ok: true; incoming: Lead; prev: Lead | null } | { ok: false; unread: true }> {
   if (!env.AUTH) return { ok: false, unread: true }
   try {
-    const existing = lead.id ? await loadLead(env.AUTH, lead.id) : null
+    const removed = await removedIdsForRead(env.AUTH)
+    const existing = lead.id ? await loadLead(env.AUTH, lead.id, removed) : null
     if (existing) {
       const resolved = await resolveLeadWrite(env.AUTH, lead)
       return { ok: true, incoming: resolved.incoming, prev: resolved.prev }

@@ -49,6 +49,7 @@ import {
   persistSettingsMerge,
   isLeadRemoved,
   leadRemovedForRead,
+  removedIdsForRead,
   rememberSentLead,
   reserveLeadIdentity,
   upsertLeadKv,
@@ -930,7 +931,8 @@ async function deliverTelegram(env: Env, update: TelegramUpdate, token: string):
   if (!existing) {
     reservedId = env.AUTH ? await reserveLeadIdentity(env.AUTH, contact, chatId, crypto.randomUUID()) : crypto.randomUUID()
   }
-  const raced = !existing && env.AUTH && reservedId ? await loadLead(env.AUTH, reservedId) : null
+  const raced =
+    !existing && env.AUTH && reservedId ? await loadLead(env.AUTH, reservedId, await removedIdsForRead(env.AUTH)) : null
   const found = existing ?? raced
   const visitorId = start.isStart ? visitorIdFromStart(start.payload) : undefined
   let lead: Lead
@@ -1353,12 +1355,13 @@ async function persistLeadAfterSend(env: Env, lead: Lead) {
 async function restoreQueuedLead(env: Env, lead: Lead) {
   if (!env.AUTH) return false
   if (await leadRemovedForRead(env.AUTH, lead.id)) return false
+  const removed = await removedIdsForRead(env.AUTH)
   for (let attempt = 0; attempt < 4; attempt++) {
-    const live = await loadLead(env.AUTH, lead.id)
+    const live = await loadLead(env.AUTH, lead.id, removed)
     const restored = sanitizeIncomingLead(restoreLeadAfterFailedSend(lead, live))
     if (!restored) return false
     if (!(await upsertLeadKv(env.AUTH, restored))) return false
-    const latest = await loadLead(env.AUTH, lead.id)
+    const latest = await loadLead(env.AUTH, lead.id, removed)
     if (!latest) return false
     const extras = (latest.messages ?? []).filter(
       (item) => item.id && item.role !== "ste" && !(restored.messages ?? []).some((msg) => msg.id === item.id)
@@ -1377,9 +1380,10 @@ async function saveLead(env: Env, lead: Lead) {
   if (env.AUTH) {
     try {
       if (await leadRemovedForRead(env.AUTH, bounded.id)) return false
-      const prev = await loadLead(env.AUTH, bounded.id)
+      const removed = await removedIdsForRead(env.AUTH)
+      const prev = await loadLead(env.AUTH, bounded.id, removed)
       bounded = commitStoredLead(prev, bounded)
-      const latest = await loadLead(env.AUTH, bounded.id)
+      const latest = await loadLead(env.AUTH, bounded.id, removed)
       bounded = commitStoredLead(prev, bounded, latest)
       if (!(await upsertLeadKv(env.AUTH, bounded))) return false
       if (await leadRemovedForRead(env.AUTH, bounded.id)) return false

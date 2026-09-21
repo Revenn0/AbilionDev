@@ -7963,6 +7963,50 @@ const importedHole = await importOrAdoptLead(kvThrowsOn(runtimeHoleKv, CRM_REMOV
 assert(importedHole?.id === "hole-lead", "import tombstone unread ainda adota o leftover")
 assert((await loadLead(runtimeHoleKv, "hole-lead"))?.id === "hole-lead", "import tombstone unread não apaga o leftover")
 assert((await importOrAdoptLead(kvThrowsOn(durableGone, CRM_REMOVED), lead("old-id", "@oldgone"))) === null, "import tombstone unread não ressuscita id gone")
+const writeRemovedDown = await resolveWorkspaceLeadWrite(removedDownEnv, {
+  ...lead("hole-lead", "@holelead"),
+  memory: "write-unread",
+})
+assert(writeRemovedDown.ok && writeRemovedDown.incoming.id === "hole-lead", "POST/MCP write tombstone unread ainda adopta o leftover")
+assert(writeRemovedDown.ok && writeRemovedDown.prev?.id === "hole-lead", "POST/MCP write tombstone unread não esconde a ficha leftover")
+const hookNewRemovedCtx = backgroundCtx()
+const hookNewRemovedPrevFetch = globalThis.fetch
+try {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("api.telegram.org")) {
+      return new Response(JSON.stringify({ ok: true }), { status: 200 })
+    }
+    return hookNewRemovedPrevFetch(input, init)
+  }) as typeof fetch
+  const hookNewRemoved = await handleRequest(
+    new Request("http://local.test/api/telegram", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-kv" },
+      body: JSON.stringify({
+        update_id: 88003,
+        message: {
+          chat: { id: 88003 },
+          text: "oi nova",
+          from: { id: 88003, username: "newunread", first_name: "Nova" },
+        },
+      }),
+    }),
+    removedDownEnv,
+    hookNewRemovedCtx
+  )
+  const hookNewRemovedBody = (await hookNewRemoved.json()) as { ok?: boolean; error?: string }
+  assert(hookNewRemoved.status === 200, "webhook novo tombstone unread ainda acks o Telegram")
+  assert(hookNewRemoved.status !== 500, "webhook novo tombstone unread não é Falha interna")
+  assert(hookNewRemovedBody.ok === true, "webhook novo tombstone unread não mente falha no ack")
+  await hookNewRemovedCtx.flush()
+} finally {
+  globalThis.fetch = hookNewRemovedPrevFetch
+}
+assert(
+  (await findLeadInKv(runtimeHoleKv, "@newunread", 88003, "88003"))?.contact === "@newunread",
+  "webhook novo tombstone unread ainda cria o lead"
+)
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.contact === "@holelead", "webhook novo tombstone unread não pisa o leftover")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()
