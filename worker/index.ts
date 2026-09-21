@@ -302,31 +302,38 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   }
 
   if (url.pathname === "/api/install" && request.method === "GET") {
-    const { resolved } = await runtimeOf(env, webhookUrl(request, env))
-    const loaded = await readWorkspaceSettings(env)
     const scriptId = (url.searchParams.get("s") || "").trim().toLowerCase()
-    const script = pageScriptById(loaded.settings.pageScripts, scriptId)
-    if (installSettingsBlocked(loaded.unread, scriptId, script)) {
-      return json({ error: "Não confirmei o script desta página." }, 503)
-    }
-    let funnelName: string | undefined
-    if (script) {
-      try {
-        const boards = await readWorkspaceFunnels(env)
-        const named = boards.funnels.find((item) => item.id === script.funnelId)
-        if (!named && boards.unread) return json({ error: "Não confirmei o funil deste script." }, 503)
-        funnelName = named?.name
-      } catch {
-        return json({ error: "Não confirmei o funil deste script." }, 503)
+    try {
+      const { resolved } = await runtimeOf(env, webhookUrl(request, env))
+      const loaded = await readWorkspaceSettings(env)
+      const script = pageScriptById(loaded.settings.pageScripts, scriptId)
+      if (installSettingsBlocked(loaded.unread, scriptId, script)) {
+        return json({ error: "Não confirmei o script desta página." }, 503)
       }
+      let funnelName: string | undefined
+      if (script) {
+        try {
+          const boards = await readWorkspaceFunnels(env)
+          const named = boards.funnels.find((item) => item.id === script.funnelId)
+          if (!named && boards.unread) return json({ error: "Não confirmei o funil deste script." }, 503)
+          funnelName = named?.name
+        } catch {
+          return json({ error: "Não confirmei o funil deste script." }, 503)
+        }
+      }
+      return json(
+        pageInstallManual({
+          botUsername: cleanBotUsername(resolved.telegramBotUsername || loaded.settings.telegramBotUsername),
+          script,
+          funnelName,
+        })
+      )
+    } catch {
+      if (installSettingsBlocked(true, scriptId, undefined)) {
+        return json({ error: "Não confirmei o script desta página." }, 503)
+      }
+      return json(pageInstallManual({ botUsername: "" }))
     }
-    return json(
-      pageInstallManual({
-        botUsername: cleanBotUsername(resolved.telegramBotUsername || loaded.settings.telegramBotUsername),
-        script,
-        funnelName,
-      })
-    )
   }
 
   if (url.pathname.startsWith("/api/auth")) {

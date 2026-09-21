@@ -6474,6 +6474,55 @@ const kvDownHealthBody = (await kvDownHealth.json()) as {
 assert(kvDownHealth.status === 200 && kvDownHealthBody.ok, "GET /api/health com KV em baixo continua de pé")
 assert(kvDownHealthBody.telegramBotUnread === true && !kvDownHealthBody.telegramBotUsername, "health KV throw não finge bot desligado")
 assert(!("telegram" in kvDownHealthBody) && !("llm" in kvDownHealthBody), "health KV throw não expõe o runtime")
+const kvDownInstall = await handleRequest(
+  new Request("http://local.test/api/install"),
+  {
+    ASSETS: { fetch: async () => new Response("ok") },
+    AUTH: {
+      async get() {
+        throw new Error("kv down")
+      },
+      async put() {},
+    },
+  } as Env,
+  backgroundCtx()
+)
+const kvDownInstallBody = (await kvDownInstall.json()) as { ok?: boolean; steps?: unknown[]; script?: { id?: string } }
+assert(kvDownInstall.status === 200 && kvDownInstallBody.ok, "GET /api/install com KV em baixo continua o manual geral")
+assert((kvDownInstallBody.steps?.length ?? 0) >= 5, "manual geral KV throw ainda tem os passos")
+assert(!kvDownInstallBody.script, "install KV throw não inventa script")
+const kvDownInstallMiss = await handleRequest(
+  new Request("http://local.test/api/install?s=deadbeef"),
+  {
+    ASSETS: { fetch: async () => new Response("ok") },
+    AUTH: {
+      async get() {
+        throw new Error("kv down")
+      },
+      async put() {},
+    },
+  } as Env,
+  backgroundCtx()
+)
+assert(kvDownInstallMiss.status === 503, "GET /api/install?s= com KV em baixo não finge script em falta")
+assert(
+  ((await kvDownInstallMiss.json()) as { error?: string }).error === "Não confirmei o script desta página.",
+  "install KV throw + s= pede confirmação"
+)
+const kvDownInstallBad = await handleRequest(
+  new Request("http://local.test/api/install?s=nao-e-id"),
+  {
+    ASSETS: { fetch: async () => new Response("ok") },
+    AUTH: {
+      async get() {
+        throw new Error("kv down")
+      },
+      async put() {},
+    },
+  } as Env,
+  backgroundCtx()
+)
+assert(kvDownInstallBad.status === 200, "s= inválido com KV em baixo não é 503")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()
