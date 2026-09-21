@@ -12,6 +12,7 @@ import {
   listUsersRequest,
   patchUserRequest,
   revokeTokenRequest,
+  usersWriteBlocked,
   type ApiTokenItem,
   type ManagedUser,
 } from "@/lib/users-api"
@@ -66,8 +67,8 @@ export function UsersPage() {
     reload()
   }, [])
 
-  const usersUnread = users === null
-  const tokensUnread = tokens === null
+  const usersUnread = usersWriteBlocked(users, usersError)
+  const tokensUnread = usersWriteBlocked(tokens, tokensError)
 
   const create = (event: React.FormEvent) => {
     event.preventDefault()
@@ -153,8 +154,10 @@ export function UsersPage() {
                         variant="ghost"
                         size="sm"
                         className="rounded-full"
+                        disabled={usersUnread}
+                        title={usersUnread ? "Não confirmei as contas no Worker." : undefined}
                         onClick={() => {
-                          if (patchLock.current) return
+                          if (usersUnread || patchLock.current) return
                           const nextDisabled = !user.disabled
                           if (
                             !confirm(
@@ -186,8 +189,10 @@ export function UsersPage() {
                         variant="ghost"
                         size="sm"
                         className="rounded-full"
+                        disabled={usersUnread}
+                        title={usersUnread ? "Não confirmei as contas no Worker." : undefined}
                         onClick={() => {
-                          if (patchLock.current) return
+                          if (usersUnread || patchLock.current) return
                           const next = user.role === "owner" ? "operator" : "owner"
                           patchLock.current = true
                           void patchUserRequest({ id: user.id, role: next })
@@ -382,8 +387,10 @@ export function UsersPage() {
                     variant="ghost"
                     size="sm"
                     className="rounded-full"
+                    disabled={tokensUnread}
+                    title={tokensUnread ? "Não confirmei os tokens no Worker." : undefined}
                     onClick={() => {
-                      if (!confirm("Revogar este token? Os agentes que o usam deixam de entrar.")) return
+                      if (tokensUnread || !confirm("Revogar este token? Os agentes que o usam deixam de entrar.")) return
                       void revokeTokenRequest(token.id)
                         .then(() => {
                           setTokens((prev) => (prev ?? []).filter((item) => item.id !== token.id))

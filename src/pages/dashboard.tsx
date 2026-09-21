@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { SparkBars, TrendLine } from "@/components/ui/spark"
 import { useStore } from "@/lib/store"
 import { pixelFigure } from "@/lib/analytics-view"
-import { barShare, deriveOps, leadsHydrating, leadsLoadFailed, metricPending, seriesLast30 } from "@/lib/ops"
+import { barShare, catalogMetricPending, deriveOps, leadsHydrating, leadsLoadFailed, metricPending, seriesLast30 } from "@/lib/ops"
 import { facebookOf } from "@/lib/track"
 import { useTrackSummary } from "@/lib/use-track-summary"
 
@@ -20,7 +20,7 @@ export function DashboardPage() {
   const empty = !hydrating && !failed && ops.leads === 0
   const pending = hydrating || failed
   const chatsPending = metricPending(persistSync, ops.conversations, inboxSync === "error")
-  const telegramPending = metricPending(persistSync, ops.telegram, inboxSync === "error")
+  const telegramPending = catalogMetricPending(persistSync, ops.telegram, inboxSync === "error")
   const facebookPending = metricPending(persistSync, ops.facebook)
   const importedPending = metricPending(persistSync, ops.imported)
   const waitPending = metricPending(persistSync, ops.waiting)

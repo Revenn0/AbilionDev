@@ -108,6 +108,7 @@ import { burstFacebookLeads, burstStartsBlocked, burstStats, simulateOpenLead } 
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
 import { barShare, catalogMetricPending, crmSyncAfterFlush, funnelsWriteBlocked, hasConversation, isImportedLead, isOperatorLockedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadWritesBlocked, leadsHydrating, leadsLoadFailed, metricPending } from "../src/lib/ops.ts"
+import { usersWriteBlocked } from "../src/lib/users-api.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
 import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, handleAuth, hashApiToken, hashPassword, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
@@ -6087,6 +6088,11 @@ assert(!catalogMetricPending("ok", 0, true), "passo Chat / joins com GET ok e in
 assert(catalogMetricPending("idle", 0, true), "passo Chat / joins hidrata sem recorte")
 assert(catalogMetricPending("error", 0, true), "passo Chat / joins sem GET fica …")
 assert(!catalogMetricPending("ok", 3, true), "passo Chat / joins com cache mostra o número")
+assert(usersWriteBlocked(null, ""), "equipa a carregar bloqueia criar")
+assert(usersWriteBlocked(null, "Não li as contas."), "equipa sem leitura bloqueia criar")
+assert(usersWriteBlocked([{ id: "1" }], "Não li as contas."), "equipa leftover com GET falho bloqueia criar")
+assert(!usersWriteBlocked([], ""), "equipa vazia confirmada deixa criar")
+assert(!usersWriteBlocked([{ id: "1" }], ""), "equipa lida deixa criar")
 assert(linkRuntimeSettings(null, { telegramBotUsername: "ste" }) === null, "Vincular sem settings não inventa um objecto oco")
 assert(
   linkRuntimeSettings(emptySettings(), { telegramBotUsername: "ste_bot", telegramBotToken: "tok" })?.telegramBotUsername ===

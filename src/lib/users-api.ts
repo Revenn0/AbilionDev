@@ -17,6 +17,11 @@ export type ApiTokenItem = {
   createdAt: string
 }
 
+/** Criar, desligar ou gerar token: leftover depois de um GET falho não confirma a lista. */
+export function usersWriteBlocked(list: unknown[] | null, error?: string) {
+  return list === null || Boolean(error)
+}
+
 async function parse<T>(res: Promise<Response>): Promise<T> {
   const response = await res
   noteUnauthorized(response)
