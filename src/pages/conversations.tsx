@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { simulateOpenLead } from "@/lib/burst"
+import { funnelsListBlocked } from "@/lib/crm"
 import { useStore } from "@/lib/store"
 import { pixelFigure } from "@/lib/analytics-view"
 import { hasConversation, leadsHydrating, leadsLoadFailed } from "@/lib/ops"
@@ -54,7 +55,7 @@ function matchesFilter(lead: Lead, filter: FilterId) {
 }
 
 export function ConversationsPage() {
-  const { state, saveLead, createLead, flushLeadNow, inboxSync, persistSync } = useStore()
+  const { state, saveLead, createLead, flushLeadNow, crmSync, inboxSync, persistSync } = useStore()
   const { summary, status, hasData } = useTrackSummary(4000)
   const runtime = steRuntimeFromFunnels(state.funnels, state.settings)
   const runtimeKey = publishedFunnel(state.funnels)?.production?.publishedAt ?? ""
@@ -82,6 +83,7 @@ export function ConversationsPage() {
   const hydrating = leadsHydrating(persistSync, all.length)
   const failed = leadsLoadFailed(persistSync, all.length, inboxSync === "error")
   const pending = hydrating || failed
+  const funnelsUnread = funnelsListBlocked(crmSync !== "ok", state.funnels)
 
   const counts = useMemo(
     () => ({
@@ -172,6 +174,7 @@ export function ConversationsPage() {
           items={[
             { ok: inboxSync !== "error", message: "A inbox do Telegram não sincronizou. Conversas novas podem faltar." },
             { ok: persistSync !== "error", message: "Não consegui ler ou gravar conversas no Worker." },
+            { ok: crmSync !== "error", message: "Não consegui ler os funis do Worker. Simular conversa pode ficar sem quadro." },
           ]}
         />
         <PageChrome icon={MessagesSquare} title="Conversas">
@@ -212,8 +215,11 @@ export function ConversationsPage() {
             <Button
               type="button"
               className="mt-5 rounded-full"
+              data-simulate-chat={funnelsUnread ? (crmSync === "idle" ? "loading" : "error") : "ok"}
+              disabled={funnelsUnread}
+              title={funnelsUnread ? "Não confirmei os funis no Worker." : undefined}
               onClick={() => {
-                if (simulating.current) return
+                if (simulating.current || funnelsUnread) return
                 simulating.current = true
                 const lead = simulateOpenLead(state.funnels)
                 void createLead(lead)

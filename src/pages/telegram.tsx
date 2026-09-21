@@ -11,13 +11,16 @@ import { fetchHealth, workerUrl } from "@/lib/channel"
 import { fetchRuntime, type RuntimeStatus } from "@/lib/runtime-api"
 import { adsDeepLink } from "@/lib/telegram-start"
 import { adsLandingUrl } from "@/lib/page-script"
-import { burstFacebookLeads, burstStats } from "@/lib/burst"
+import { burstFacebookLeads, burstStartsBlocked, burstStats } from "@/lib/burst"
+import { funnelsListBlocked } from "@/lib/crm"
 import { metricPending } from "@/lib/ops"
 import { toast } from "sonner"
 
 export function TelegramPage() {
-  const { state, createLeads, persistSync, settingsSync, inboxSync } = useStore()
+  const { state, createLeads, crmSync, persistSync, settingsSync, inboxSync } = useStore()
   const { settings, leads } = state
+  const funnelsUnread = funnelsListBlocked(crmSync !== "ok", state.funnels)
+  const burstBlocked = burstStartsBlocked(persistSync, funnelsUnread)
   const inGroup = leads.filter((lead) => lead.channel === "telegram" && (lead.origin === "group_join" || lead.stage === "group")).length
   const facebookToday = leads.filter((lead) => {
     if (lead.origin !== "facebook") return false
@@ -71,6 +74,10 @@ export function TelegramPage() {
               message: "Não consegui ler os leads do Worker. Os números de joins e Facebook hoje podem estar vazios.",
             },
             {
+              ok: crmSync !== "error",
+              message: "Não consegui ler os funis do Worker. Simular 100 /start fica bloqueado se a lista estiver oca.",
+            },
+            {
               ok: settingsSync !== "error",
               message: "Não confirmei as definições no Postgres. O username do bot e o pixel podem estar desactualizados.",
             },
@@ -86,9 +93,17 @@ export function TelegramPage() {
             type="button"
             variant="outline"
             className="h-8 rounded-full px-3.5"
-            disabled={burstLock}
+            data-burst-starts={burstBlocked ? (persistSync === "idle" || crmSync === "idle" ? "loading" : "error") : "ok"}
+            disabled={burstLock || burstBlocked}
+            title={
+              burstBlocked
+                ? persistSync !== "ok"
+                  ? "Não confirmei os leads no Worker."
+                  : "Não confirmei os funis no Worker."
+                : undefined
+            }
             onClick={() => {
-              if (burstLock) return
+              if (burstLock || burstBlocked) return
               if (!confirm("Isto cria 100 leads Facebook no CRM. Continuar?")) return
               setBurstLock(true)
               const batch = burstFacebookLeads(state.funnels, 100)

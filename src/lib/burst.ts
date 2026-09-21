@@ -54,3 +54,11 @@ export function burstStats(leads: Lead[]) {
     talking: leads.filter((lead) => (lead.messages ?? []).some((item) => item.role === "lead") && !lead.steBlocked).length,
   }
 }
+
+/** Simular 100 /start: GET unread ou funis ocas unread não é catálogo vazio. */
+export function burstStartsBlocked(
+  persistSync: "idle" | "ok" | "error",
+  funnelsUnread: boolean
+) {
+  return persistSync !== "ok" || funnelsUnread
+}

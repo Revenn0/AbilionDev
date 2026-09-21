@@ -104,7 +104,7 @@ import { adsDeepLink, campaignFromStart, scriptIdFromStart, visitorIdFromStart }
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument, wantsAuthHtml } from "../src/lib/auth-pages.ts"
 import { addPageScript, adsLandingDocument, adsLandingUrl, adsStartToken, installSettingsBlocked, pageInstallManual, pageScriptsListBlocked, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
 import { leadCategoriesListBlocked, leadFromImport, leadImportGroupBlocked, parseLeadImportLine, parseLeadImportText } from "../src/lib/lead-category.ts"
-import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
+import { burstFacebookLeads, burstStartsBlocked, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
 import { barShare, hasConversation, isImportedLead, isOperatorLockedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadsHydrating, leadsLoadFailed, metricPending } from "../src/lib/ops.ts"
@@ -729,6 +729,10 @@ assert(FUNNEL_CAP === 20 && !canCreateFunnel(Array.from({ length: 20 }, () => em
 assert(funnelsListBlocked(true, []), "funis unread e ocas bloqueiam criar")
 assert(!funnelsListBlocked(true, [emptySalesFunnel("x")]), "funis unread com lista no KV seguem")
 assert(!funnelsListBlocked(false, []), "funis lidos vazios não bloqueiam criar")
+assert(burstStartsBlocked("idle", false), "hydrate ainda não solta o lote de 100")
+assert(burstStartsBlocked("error", false), "GET falhou não solta o lote de 100")
+assert(burstStartsBlocked("ok", true), "funis unread ocas bloqueiam o lote de 100")
+assert(!burstStartsBlocked("ok", false), "CRM confirmado deixa simular 100 /start")
 const twentyOne = Array.from({ length: 21 }, (_, index) => ({ ...emptySalesFunnel(`n${index}`), id: `funil-${index}` }))
 assert(reconcileFunnels([], twentyOne).length === 21, "reconcile não corta o 21.º quadro à calada")
 assert(commitCrmFunnels([], twentyOne, [], []).length === 21, "commit do CRM não corta o 21.º à calada")

@@ -279,6 +279,18 @@ try {
   const telegramCopy = await page.evaluate(() => document.body.innerText)
   assert(telegramCopy.includes("www.abilion.lol/l"), "telegram manda o anúncio para a landing")
   assert(!/Anúncio Facebook[:·\s]+https:\/\/t\.me/i.test(telegramCopy), "telegram não cola t.me como destino do ads")
+  await page.waitForFunction(
+    () => document.querySelector("[data-burst-starts]")?.getAttribute("data-burst-starts") === "ok",
+    { timeout: 10_000 }
+  )
+  assert(
+    (await page.$eval("[data-burst-starts]", (el) => el.getAttribute("data-burst-starts"))) === "ok",
+    "telegram com CRM confirmado deixa simular 100 /start"
+  )
+  assert(
+    (await page.$eval("[data-burst-starts]", (el) => (el as HTMLButtonElement).disabled)) === false,
+    "telegram com persistência ok não trava o lote"
+  )
   await open(page, "/configuracoes")
   await page.waitForSelector("#pixel", { timeout: 8_000 })
   assert(
