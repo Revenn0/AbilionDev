@@ -175,12 +175,7 @@ export async function listLeadPage(
     start = at + 1
   }
   const slice = rows.slice(start, start + Math.max(1, limit))
-  let removed = new Set<string>()
-  try {
-    removed = new Set(await loadRemovedLeadIds(kv))
-  } catch {
-    removed = new Set()
-  }
+  const removed = await removedIdsForRead(kv)
   const loaded = await Promise.all(slice.map(async (item) => ({ id: item.id, lead: await loadLead(kv, item.id, removed) })))
   const leads = loaded.map((row) => row.lead).filter((lead): lead is Lead => Boolean(lead))
   await rememberLeadNames(kv, leads)
@@ -428,9 +423,17 @@ export async function loadLead(kv: KvLike, id: string, removedIds?: ReadonlySet<
   return adoptLeadKvStores(stored, sent)
 }
 
+async function removedIdsForRead(kv: KvLike): Promise<Set<string>> {
+  try {
+    return new Set(await loadRemovedLeadIds(kv))
+  } catch {
+    return new Set()
+  }
+}
+
 export async function filterLiveLeads(kv: KvLike, leads: Lead[]): Promise<Lead[]> {
   if (!leads.length) return leads
-  const removed = new Set(await loadRemovedLeadIds(kv))
+  const removed = await removedIdsForRead(kv)
   const live = new Set<string>()
   await Promise.all(
     leads.map(async (lead) => {
@@ -445,17 +448,23 @@ export async function listLeads(kv: KvLike, limit = 80, channel: Lead["channel"]
   return (await listLeadPage(kv, limit, channel)).leads
 }
 
-export async function findLeadInKv(kv: KvLike, contact: string, telegramId: number, chatId: string): Promise<Lead | null> {
+export async function findLeadInKv(
+  kv: KvLike,
+  contact: string,
+  telegramId: number,
+  chatId: string,
+  removedIds?: ReadonlySet<string>
+): Promise<Lead | null> {
   const candidates = [...new Set([...contactLookups(contact), `tg:${telegramId}`, chatId].filter(Boolean))]
   for (const value of candidates) {
     const byContact = await loadAlias(kv, "contact", value)
     if (byContact) {
-      const lead = await loadLead(kv, byContact)
+      const lead = await loadLead(kv, byContact, removedIds)
       if (lead) return lead
     }
     const byChat = await loadAlias(kv, "chat", value)
     if (byChat) {
-      const lead = await loadLead(kv, byChat)
+      const lead = await loadLead(kv, byChat, removedIds)
       if (lead) return lead
     }
   }
@@ -464,7 +473,7 @@ export async function findLeadInKv(kv: KvLike, contact: string, telegramId: numb
   const hit = index.entries.find(
     (item) => aliases.has(item.contact) || (item.chatId && (item.chatId === chatId || aliases.has(item.chatId)))
   )
-  return hit ? loadLead(kv, hit.id) : null
+  return hit ? loadLead(kv, hit.id, removedIds) : null
 }
 
 function readNameMap(raw: unknown): Record<string, string> {
@@ -511,8 +520,9 @@ export async function lookupLeadsByQuery(kv: KvLike, query: string): Promise<Lea
     seen.add(lead.id)
     hits.push(lead)
   }
-  push(await loadLead(kv, needle))
-  push(await findLeadInKv(kv, needle, 0, needle))
+  const removed = await removedIdsForRead(kv)
+  push(await loadLead(kv, needle, removed))
+  push(await findLeadInKv(kv, needle, 0, needle, removed))
   const index = await loadIndex(kv)
   const names = await loadLeadNames(kv)
   const matchIds: string[] = []
@@ -530,7 +540,7 @@ export async function lookupLeadsByQuery(kv: KvLike, query: string): Promise<Lea
       if (matchIds.length >= 20) break
     }
   }
-  for (const id of matchIds) push(await loadLead(kv, id))
+  for (const id of matchIds) push(await loadLead(kv, id, removed))
   return hits
 }
 

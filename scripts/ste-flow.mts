@@ -7721,6 +7721,45 @@ assert(removedPutDownDelete.status !== 503, "DELETE tombstone put throw não é 
 assert(removedPutDownDeleteBody.error === "Não confirmei a exclusão do lead.", "DELETE tombstone put throw pede confirmação")
 assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === "leftover-ficha", "DELETE tombstone put throw não pisa a ficha leftover")
 assert(!(await isLeadRemoved(runtimeHoleKv, "hole-lead")), "DELETE tombstone put throw não tombstoneia")
+assert(
+  (await filterLiveLeads(kvThrowsOn(runtimeHoleKv, CRM_REMOVED), [writeHoleLead])).some((item) => item.id === "hole-lead"),
+  "filterLiveLeads com tombstone unread não esconde o leftover"
+)
+assert(
+  (await lookupLeadsByQuery(kvThrowsOn(runtimeHoleKv, CRM_REMOVED), "@holelead")).some((item) => item.id === "hole-lead"),
+  "busca KV com tombstone unread ainda acha o leftover"
+)
+const removedDownSearch = await handleRequest(
+  new Request("http://local.test/api/leads?q=@holelead", { headers: { cookie: runtimeHoleCookie } }),
+  removedDownEnv,
+  backgroundCtx()
+)
+const removedDownSearchBody = (await removedDownSearch.json()) as { ok?: boolean; leads?: Array<{ id?: string }>; error?: string }
+assert(removedDownSearch.status === 200 && removedDownSearchBody.ok, "GET ?q= tombstone KV throw ainda manda o leftover")
+assert(removedDownSearch.status !== 500, "GET ?q= tombstone KV throw não é Falha interna")
+assert(removedDownSearch.status !== 503, "GET ?q= tombstone KV throw com hit no KV não é 503")
+assert(removedDownSearchBody.leads?.some((item) => item.id === "hole-lead"), "GET ?q= tombstone KV throw não esconde a ficha leftover")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === "leftover-ficha", "GET ?q= tombstone KV throw não pisa a ficha leftover")
+const removedDownSearchMcp = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.183" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 261,
+      method: "tools/call",
+      params: { name: "abilion_list_leads", arguments: { q: "@holelead" } },
+    }),
+  }),
+  removedDownEnv,
+  backgroundCtx()
+)
+const removedDownSearchMcpData = JSON.parse(
+  ((await removedDownSearchMcp.json()) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string; leads?: Array<{ id?: string }> }
+assert(removedDownSearchMcp.status === 200, "MCP list busca KV throw não cai em 500")
+assert(!removedDownSearchMcpData.error, "MCP list busca tombstone unread não pede 503")
+assert(removedDownSearchMcpData.leads?.some((item) => item.id === "hole-lead"), "MCP list busca tombstone unread ainda manda o leftover")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()
