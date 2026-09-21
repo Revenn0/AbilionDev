@@ -10392,9 +10392,13 @@ const mcpPublishFunnelsUnread = await handleRequest(
 const mcpPublishFunnelsUnreadBody = (await mcpPublishFunnelsUnread.json()) as {
   result?: { isError?: boolean; content?: Array<{ text?: string }> }
 }
-const mcpPublishFunnelsUnreadData = JSON.parse(mcpPublishFunnelsUnreadBody.result?.content?.[0]?.text || "{}") as { error?: string }
-assert(mcpPublishFunnelsUnread.status === 200 && mcpPublishFunnelsUnreadBody.result?.isError, "MCP não publica funil com a lista unread")
-assert(mcpPublishFunnelsUnreadData.error === "Não confirmei os funis.", "MCP publish unread pede confirmação")
+const mcpPublishFunnelsUnreadData = JSON.parse(mcpPublishFunnelsUnreadBody.result?.content?.[0]?.text || "{}") as {
+  error?: string
+  funnel?: { id?: string; published?: boolean }
+}
+assert(mcpPublishFunnelsUnread.status === 200 && !mcpPublishFunnelsUnreadBody.result?.isError, "MCP publica o funil leftover com a lista unread")
+assert(!mcpPublishFunnelsUnreadData.error, "MCP publish unread do quadro leftover não pede 503")
+assert(mcpPublishFunnelsUnreadData.funnel?.id === mcpCreated.id && mcpPublishFunnelsUnreadData.funnel?.published === true, "MCP publish unread ainda publica o leftover")
 const mcpScriptFunnelsUnread = await handleRequest(
   new Request("http://local.test/mcp", {
     method: "POST",
