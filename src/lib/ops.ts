@@ -124,6 +124,16 @@ export function leadTimelinePending(
   return count === 0 && eventsSync !== "ok"
 }
 
+/** Dashboard: ofertas vêm da timeline. Unread com zero não é «0 disparos». Leftover com ofertas continua a contar. */
+export function offerMetricPending(
+  persistSync: "idle" | "ok" | "error",
+  eventsSync: "idle" | "ok" | "error",
+  count: number,
+  clipped = false
+) {
+  return metricPending(persistSync, count) || (clipped && count === 0) || leadTimelinePending(eventsSync, count)
+}
+
 /** Inbox 5s e busca `?q=`: unread marca erro. Recorte sem unread não confirma o universo da timeline. */
 export function eventsSyncAfterNarrowRead(current: "idle" | "ok" | "error", unread: boolean) {
   return unread ? "error" : current

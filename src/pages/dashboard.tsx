@@ -6,12 +6,12 @@ import { Button } from "@/components/ui/button"
 import { SparkBars, TrendLine } from "@/components/ui/spark"
 import { useStore } from "@/lib/store"
 import { pixelFigure } from "@/lib/analytics-view"
-import { barShare, catalogMetricPending, deriveOps, leadCatalogClipped, leadCatalogEmpty, leadsHydrating, leadsLoadFailed, metricPending, seriesLast30 } from "@/lib/ops"
+import { barShare, catalogMetricPending, deriveOps, leadCatalogClipped, leadCatalogEmpty, leadsHydrating, leadsLoadFailed, metricPending, offerMetricPending, seriesLast30 } from "@/lib/ops"
 import { facebookOf } from "@/lib/track"
 import { useTrackSummary } from "@/lib/use-track-summary"
 
 export function DashboardPage() {
-  const { state, crmSync, inboxSync, persistSync, catalogComplete } = useStore()
+  const { state, crmSync, inboxSync, persistSync, catalogComplete, eventsSync } = useStore()
   const { summary, status, hasData, retry } = useTrackSummary(8000)
   const facebook = facebookOf(summary)
   const ops = deriveOps(state.leads)
@@ -26,7 +26,7 @@ export function DashboardPage() {
   const facebookPending = metricPending(persistSync, ops.facebook) || clippedZero(ops.facebook)
   const importedPending = metricPending(persistSync, ops.imported) || clippedZero(ops.imported)
   const waitPending = metricPending(persistSync, ops.waiting) || clippedZero(ops.waiting)
-  const offerPending = metricPending(persistSync, ops.offered) || clippedZero(ops.offered)
+  const offerPending = offerMetricPending(persistSync, eventsSync, ops.offered, clipped)
   const novoPending = metricPending(persistSync, ops.novo) || clippedZero(ops.novo)
   const mornoPending = metricPending(persistSync, ops.morno) || clippedZero(ops.morno)
   const quentePending = metricPending(persistSync, ops.quente) || clippedZero(ops.quente)
@@ -46,6 +46,7 @@ export function DashboardPage() {
             { ok: crmSync !== "error", message: "Não consegui ler os funis do Worker. O quadro local pode estar desactualizado." },
             { ok: inboxSync !== "error", message: "A inbox do Telegram não sincronizou. Leads novos podem faltar." },
             { ok: persistSync !== "error", message: "Não consegui ler ou gravar leads no Worker. A lista local pode divergir." },
+            { ok: eventsSync !== "error", message: "Não li a timeline dos leads no Postgres. O KPI de ofertas pode esconder disparos que já existiam." },
             { ok: !clipped, message: "A lista do Worker veio recortada. Os totais abaixo não são o catálogo inteiro." },
             { ok: status !== "error", message: "Não confirmei o pixel no Postgres. Os números de tráfego abaixo podem estar desactualizados." },
           ]}

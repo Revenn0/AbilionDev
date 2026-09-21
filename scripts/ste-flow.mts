@@ -122,7 +122,7 @@ import { leadCategoriesListBlocked, leadCategoriesMutationBlocked, leadCategorie
 import { burstFacebookLeads, burstStartsBlocked, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
-import { barShare, catalogMetricPending, crmSyncAfterFlush, eventsSyncAfterNarrowRead, funnelsWriteBlocked, hasConversation, isImportedLead, isOperatorLockedLead, leadCatalogClipped, leadCatalogEmpty, leadFilterCount, leadFilterPending, leadMatchesFilter, leadTimelinePending, leadWritesBlocked, leadsExportBlocked, leadsHydrating, leadsLoadFailed, metricPending, trackSyncAfterRead } from "../src/lib/ops.ts"
+import { barShare, catalogMetricPending, crmSyncAfterFlush, eventsSyncAfterNarrowRead, funnelsWriteBlocked, hasConversation, isImportedLead, isOperatorLockedLead, leadCatalogClipped, leadCatalogEmpty, leadFilterCount, leadFilterPending, leadMatchesFilter, leadTimelinePending, leadWritesBlocked, leadsExportBlocked, leadsHydrating, leadsLoadFailed, metricPending, offerMetricPending, trackSyncAfterRead } from "../src/lib/ops.ts"
 import { usersWriteBlocked } from "../src/lib/users-api.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { kvTrackStore, memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
@@ -7259,6 +7259,11 @@ assert(leadTimelinePending("idle", 0), "timeline hidrata sem eventos")
 assert(leadTimelinePending("error", 0), "timeline unread sem eventos não finge vazia")
 assert(!leadTimelinePending("ok", 0), "timeline confirmada vazia esconde a lista")
 assert(!leadTimelinePending("error", 2), "timeline unread com eventos do KV ainda mostra")
+assert(offerMetricPending("ok", "error", 0), "KPI de ofertas unread sem eventos não finge zero")
+assert(!offerMetricPending("ok", "error", 3), "KPI de ofertas unread com leftover ainda conta")
+assert(!offerMetricPending("ok", "ok", 0), "KPI de ofertas confirmado vazio é zero")
+assert(offerMetricPending("ok", "ok", 0, true), "KPI de ofertas no recorte clipped não finge zero")
+assert(offerMetricPending("idle", "idle", 0), "KPI de ofertas hidrata sem catálogo")
 assert(eventsSyncAfterNarrowRead("ok", true) === "error", "inbox/busca unread marca a timeline")
 assert(eventsSyncAfterNarrowRead("error", false) === "error", "inbox/busca sem unread não confirma a timeline")
 assert(eventsSyncAfterNarrowRead("idle", false) === "idle", "inbox/busca cedo não confirma a timeline")
