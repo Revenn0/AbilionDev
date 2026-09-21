@@ -226,6 +226,27 @@ export function pageScriptsWriteBlocked(unread: boolean) {
   return unread
 }
 
+/** Script cujo funil não está no leftover: unread não é “já não está no CRM”. */
+export function pageScriptFunnelPending(funnelsUnread: boolean, funnel?: { id: string } | null) {
+  return funnelsUnread && !funnel
+}
+
+export function pageScriptFunnelLabel(funnelsUnread: boolean, funnel?: { name: string } | null) {
+  if (funnel?.name) return funnel.name
+  return funnelsUnread ? "Não confirmei o funil" : "já não está no CRM"
+}
+
+/** Lista MCP: um script com funil só no Postgres unread não omite o nome. */
+export function pageScriptsFunnelUnread(
+  funnelsUnread: boolean,
+  scripts: Array<{ funnelId: string }> | undefined,
+  funnels: Array<{ id: string }> | undefined
+) {
+  if (!funnelsUnread) return false
+  const known = new Set((funnels ?? []).map((item) => item.id))
+  return (scripts ?? []).some((script) => script.funnelId && !known.has(script.funnelId))
+}
+
 /** POST do CRM: username ainda grava; script novo ou tombstone novo espera o GET. */
 export function pageScriptsMutationBlocked(
   unread: boolean,

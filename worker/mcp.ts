@@ -1,6 +1,6 @@
 import { clipNewestIds, FUNNEL_CAP, publicSettings } from "../src/lib/crm.ts"
 import { addLeadCategory, leadCategoriesWriteBlocked, leadFromImport, migrateLeadCategories, parseLeadImportText } from "../src/lib/lead-category.ts"
-import { addPageScript, installSettingsBlocked, pageInstallManual, pageScriptById, pageScriptsListBlocked, pageScriptsWriteBlocked, PAGE_SCRIPT_REMOVED_CAP, removePageScript } from "../src/lib/page-script.ts"
+import { addPageScript, installSettingsBlocked, pageInstallManual, pageScriptById, pageScriptsFunnelUnread, pageScriptsListBlocked, pageScriptsWriteBlocked, PAGE_SCRIPT_REMOVED_CAP, removePageScript } from "../src/lib/page-script.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
 import { emptySalesFunnel, publishSnapshot } from "../src/lib/templates.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
@@ -263,10 +263,6 @@ const TOOLS = [
   },
 ] as const
 
-async function funnelsOf(env: McpEnv): Promise<SalesFunnel[]> {
-  return (await readWorkspaceFunnels(env)).funnels
-}
-
 async function saveFunnels(env: McpEnv, funnels: SalesFunnel[]) {
   await persistWorkspaceFunnels(env, funnels)
 }
@@ -464,13 +460,16 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     if (pageScriptsListBlocked(loaded.unread, loaded.settings.pageScripts)) {
       throw new Error("Não confirmei os scripts desta página.")
     }
-    const funnels = await funnelsOf(env)
+    const boards = await readWorkspaceFunnels(env)
+    if (pageScriptsFunnelUnread(boards.unread, loaded.settings.pageScripts, boards.funnels)) {
+      throw new Error("Não confirmei o funil deste script.")
+    }
     return {
       ok: true,
       scripts: loaded.settings.pageScripts.map((script) => ({
         ...script,
-        funnelName: funnels.find((item) => item.id === script.funnelId)?.name,
-        ...installManualOfSync(loaded.settings.telegramBotUsername, script, funnels.find((item) => item.id === script.funnelId)?.name),
+        funnelName: boards.funnels.find((item) => item.id === script.funnelId)?.name,
+        ...installManualOfSync(loaded.settings.telegramBotUsername, script, boards.funnels.find((item) => item.id === script.funnelId)?.name),
       })),
       unread: loaded.unread || undefined,
     }

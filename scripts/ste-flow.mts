@@ -102,7 +102,7 @@ import { displayContact, draftLeadField, formatPhoneContact, isPhoneLikeName, is
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, migrateLeadOrigin, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink, campaignFromStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument, wantsAuthHtml } from "../src/lib/auth-pages.ts"
-import { addPageScript, adsLandingDocument, adsLandingUrl, adsStartToken, installSettingsBlocked, pageInstallManual, pageScriptsListBlocked, pageScriptsMutationBlocked, pageScriptsWriteBlocked, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
+import { addPageScript, adsLandingDocument, adsLandingUrl, adsStartToken, installSettingsBlocked, pageInstallManual, pageScriptFunnelLabel, pageScriptFunnelPending, pageScriptsFunnelUnread, pageScriptsListBlocked, pageScriptsMutationBlocked, pageScriptsWriteBlocked, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
 import { leadCategoriesListBlocked, leadCategoriesMutationBlocked, leadCategoriesWriteBlocked, leadFromImport, leadImportGroupBlocked, parseLeadImportLine, parseLeadImportText } from "../src/lib/lead-category.ts"
 import { burstFacebookLeads, burstStartsBlocked, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
@@ -727,6 +727,15 @@ assert(pageScriptsListBlocked(true, []), "lista unread e oca bloqueia")
 assert(!pageScriptsListBlocked(true, [{ id: "deadbeef", name: "Landing", funnelId: "f1", createdAt: "t", updatedAt: "t" }]), "lista unread com script no KV segue")
 assert(!pageScriptsListBlocked(false, []), "lista lida vazia não bloqueia")
 assert(pageScriptsWriteBlocked(true), "settings unread bloqueia criar script")
+assert(pageScriptsFunnelUnread(true, [{ funnelId: "missing" }], []), "lista unread + funil miss não omite o nome")
+assert(!pageScriptsFunnelUnread(true, [{ funnelId: "fun-install" }], [{ id: "fun-install" }]), "funil leftover na lista segue")
+assert(!pageScriptsFunnelUnread(false, [{ funnelId: "missing" }], []), "GET confirmado + miss é órfão")
+assert(pageScriptFunnelPending(true, undefined), "UI unread + miss não é apagado")
+assert(!pageScriptFunnelPending(true, { id: "x" }), "funil leftover na UI mostra o nome")
+assert(!pageScriptFunnelPending(false, undefined), "GET confirmado + miss é órfão")
+assert(pageScriptFunnelLabel(true, undefined) === "Não confirmei o funil", "UI unread pede confirmação")
+assert(pageScriptFunnelLabel(false, undefined) === "já não está no CRM", "UI confirmada diz órfão")
+assert(pageScriptFunnelLabel(true, { name: "Quadro" }) === "Quadro", "leftover unread ainda mostra o nome")
 assert(!pageScriptsWriteBlocked(false), "settings lidas deixam criar script")
 assert(
   pageScriptsMutationBlocked(true, [{ id: "deadbeef", name: "Landing", funnelId: "f1", createdAt: "t", updatedAt: "t" }], [
@@ -5761,6 +5770,50 @@ const leftoverInstallMcpBody = (await leftoverInstallMcp.json()) as {
 const leftoverInstallMcpData = JSON.parse(leftoverInstallMcpBody.result?.content?.[0]?.text || "{}") as { error?: string }
 assert(leftoverInstallMcp.status === 200 && leftoverInstallMcpBody.result?.isError, "MCP não omite o funil unread do script")
 assert(leftoverInstallMcpData.error === "Não confirmei o funil deste script.", "MCP leftover pede confirmação do funil")
+const leftoverListMcp = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: leftoverInstallCookie },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 103,
+      method: "tools/call",
+      params: { name: "abilion_list_page_scripts", arguments: {} },
+    }),
+  }),
+  installUnreadEnv,
+  backgroundCtx()
+)
+const leftoverListMcpBody = (await leftoverListMcp.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const leftoverListMcpData = JSON.parse(leftoverListMcpBody.result?.content?.[0]?.text || "{}") as { error?: string }
+assert(leftoverListMcp.status === 200 && leftoverListMcpBody.result?.isError, "MCP não lista script cujo funil só está no Postgres")
+assert(leftoverListMcpData.error === "Não confirmei o funil deste script.", "MCP list leftover pede confirmação do funil")
+await saveFunnelsKv(installHollowKv, [{ ...emptySalesFunnel("Quadro do script"), id: "fun-install" }])
+const leftoverListOk = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: leftoverInstallCookie },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 104,
+      method: "tools/call",
+      params: { name: "abilion_list_page_scripts", arguments: {} },
+    }),
+  }),
+  installUnreadEnv,
+  backgroundCtx()
+)
+const leftoverListOkBody = (await leftoverListOk.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const leftoverListOkData = JSON.parse(leftoverListOkBody.result?.content?.[0]?.text || "{}") as {
+  ok?: boolean
+  scripts?: Array<{ funnelName?: string }>
+}
+assert(leftoverListOk.status === 200 && !leftoverListOkBody.result?.isError && leftoverListOkData.ok, "MCP lista script com funil leftover")
+assert(leftoverListOkData.scripts?.[0]?.funnelName === "Quadro do script", "lista leftover traz o nome do funil no KV")
 const scriptHookPrev = globalThis.fetch
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = String(input)

@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label"
 import { adsDeepLink } from "@/lib/telegram-start"
 import { ADS_ORIGIN, pixelPageHtml } from "@/lib/tracker-script"
 import { clipNewestIds } from "@/lib/crm"
-import { addPageScript, adsStartToken, funnelHasInstallableBoard, PAGE_INSTALL_STEPS, PAGE_SCRIPT_REMOVED_CAP, pageInstallManual, pageScriptsListBlocked, pageScriptsWriteBlocked, removePageScript } from "@/lib/page-script"
+import { addPageScript, adsStartToken, funnelHasInstallableBoard, PAGE_INSTALL_STEPS, PAGE_SCRIPT_REMOVED_CAP, pageInstallManual, pageScriptFunnelLabel, pageScriptFunnelPending, pageScriptsListBlocked, pageScriptsWriteBlocked, removePageScript } from "@/lib/page-script"
 import { useStore } from "@/lib/store"
 import { toast } from "sonner"
 
@@ -197,8 +197,11 @@ export function PixelSnippet({ origin, botUsername }: { origin: string; botUsern
             return (
               <li key={script.id} className="rounded-xl border border-border px-4 py-3">
                 <p className="text-[13.5px] font-medium">{script.name}</p>
-                <p className="mt-0.5 text-[12px] text-muted-foreground">
-                  Funil · {funnel?.name ?? "já não está no CRM"} · <code>s={script.id}</code>
+                <p
+                  className="mt-0.5 text-[12px] text-muted-foreground"
+                  data-pixel-funnel={pageScriptFunnelPending(boardsUnread, funnel) ? "unread" : funnel ? "ok" : "missing"}
+                >
+                  Funil · {pageScriptFunnelLabel(boardsUnread, funnel)} · <code>s={script.id}</code>
                   {script.pageUrl ? (
                     <>
                       {" "}
