@@ -288,14 +288,18 @@ async function handleMcpRoute(request: Request, env: Env) {
 
 async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionContext) {
   if (url.pathname === "/api/health") {
-    const { resolved } = await runtimeOf(env, webhookUrl(request, env))
-    const loaded = await readWorkspaceSettings(env)
-    const telegramBotUsername = cleanBotUsername(resolved.telegramBotUsername || loaded.settings.telegramBotUsername)
-    return json({
-      ok: true,
-      telegramBotUsername,
-      telegramBotUnread: loaded.unread && !telegramBotUsername ? true : undefined,
-    })
+    try {
+      const { resolved } = await runtimeOf(env, webhookUrl(request, env))
+      const loaded = await readWorkspaceSettings(env)
+      const telegramBotUsername = cleanBotUsername(resolved.telegramBotUsername || loaded.settings.telegramBotUsername)
+      return json({
+        ok: true,
+        telegramBotUsername,
+        telegramBotUnread: loaded.unread && !telegramBotUsername ? true : undefined,
+      })
+    } catch {
+      return json({ ok: true, telegramBotUsername: "", telegramBotUnread: true })
+    }
   }
 
   if (url.pathname === "/api/install" && request.method === "GET") {

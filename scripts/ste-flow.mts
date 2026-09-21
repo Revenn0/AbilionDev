@@ -6385,6 +6385,27 @@ assert(kvDownLanding.status === 200 && kvDownHtml.includes("/t.js"), "GET /l com
 assert(kvDownHtml.includes("Não confirmei o Telegram"), "GET /l catch não diz que o bot não está ligado")
 assert(!kvDownHtml.includes("ainda não está ligado"), "GET /l catch não usa a cópia de bot desligado")
 assert(!kvDownHtml.includes("<a data-abilion-cta"), "GET /l catch sem username não inventa CTA")
+const kvDownHealth = await handleRequest(
+  new Request("http://local.test/api/health"),
+  {
+    ASSETS: { fetch: async () => new Response("ok") },
+    AUTH: {
+      async get() {
+        throw new Error("kv down")
+      },
+      async put() {},
+    },
+  } as Env,
+  backgroundCtx()
+)
+const kvDownHealthBody = (await kvDownHealth.json()) as {
+  ok?: boolean
+  telegramBotUsername?: string
+  telegramBotUnread?: boolean
+}
+assert(kvDownHealth.status === 200 && kvDownHealthBody.ok, "GET /api/health com KV em baixo continua de pé")
+assert(kvDownHealthBody.telegramBotUnread === true && !kvDownHealthBody.telegramBotUsername, "health KV throw não finge bot desligado")
+assert(!("telegram" in kvDownHealthBody) && !("llm" in kvDownHealthBody), "health KV throw não expõe o runtime")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()
