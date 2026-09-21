@@ -5,10 +5,10 @@ import { campaignFor } from "../src/lib/labels.ts"
 import { advanceSteIfDue, isSteWait, rememberLeadTalk, replySte, replySteSmart, safeHttpUrl, steRuntimeFromFunnels, toTelegramHtml, type SteBeat } from "../src/lib/ste.ts"
 import { linkFollowUp, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { TRACKER_JS } from "../src/lib/tracker-script.ts"
-import { campaignFromStart, originFromStart, parseTelegramStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
+import { campaignFromInvite, campaignFromStart, normalizeInviteLink, originFromStart, parseTelegramStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { applyEvent, canAdvanceRemoteWait, dueWaits, leadFunnelUnread, pickLiveDueLead, snapshotForLead } from "../src/lib/runtime.ts"
 import { leadCategoriesMutationBlocked, leadGroupsMutationBlocked } from "../src/lib/lead-category.ts"
-import { adsLandingDocument, installSettingsBlocked, pageInstallManual, pageScriptById, pageScriptsMutationBlocked } from "../src/lib/page-script.ts"
+import { adsLandingDocument, installSettingsBlocked, pageInstallManual, pageScriptById, pageScriptForInvite, pageScriptsMutationBlocked } from "../src/lib/page-script.ts"
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument } from "../src/lib/auth-pages.ts"
 import { foldPublicPath, foldStudioPath, safeAppPath } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
@@ -67,7 +67,7 @@ import {
 } from "./runtime-secrets.ts"
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
 import { readJsonObject, readJsonStrict, type JsonFail } from "./json-body.ts"
-import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall, telegramJoinActor, telegramUpdateActor } from "./telegram.ts"
+import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall, telegramJoinActor, telegramJoinRequest, telegramUpdateActor } from "./telegram.ts"
 import { attachWorkspaceLeadEvents, fetchRemoteDueLeads, fetchRemoteLeadPage, fetchRemoteLeadsByIds, fetchRemotePageEvents, fillLeadHoles, findWorkspaceLead, hydrateWorkspaceLead, leadCatalogUnread, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, readInstallFunnelName, readWorkspaceFunnels, readWorkspaceSettings, resolveWorkspaceLeadWrite, rowToLead, searchWorkspaceLeads, summarizeWorkspaceTrack, type LeadRow } from "./workspace-settings.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -589,17 +589,15 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     const hook = webhookUrl(request, env)
     const webhookSecret = (env.TELEGRAM_WEBHOOK_SECRET || next.telegramWebhookSecret || randomToken()).trim()
     if (!env.TELEGRAM_WEBHOOK_SECRET) next.telegramWebhookSecret = webhookSecret
+    const pastedToken = typeof body.telegramBotToken === "string" ? body.telegramBotToken.trim() : ""
+    const relink = Boolean(pastedToken && !pastedToken.includes("•") && pastedToken === next.telegramBotToken)
+    const tokenChanged = Boolean(next.telegramBotToken && next.telegramBotToken !== current.telegramBotToken)
     let warning: string | undefined
-    if (next.telegramBotToken && next.telegramBotToken !== current.telegramBotToken) {
+    if (next.telegramBotToken && (tokenChanged || !current.webhookOk || relink)) {
       const hooked = await setTelegramWebhook(next.telegramBotToken, hook, webhookSecret)
-      if (!hooked.ok && /unauthorized/i.test(hooked.description)) {
+      if (tokenChanged && !hooked.ok && /unauthorized/i.test(hooked.description)) {
         return json({ error: "Token do Telegram recusado." }, 400)
       }
-      next.webhookUrl = hook
-      next.webhookOk = hooked.ok
-      if (!hooked.ok) warning = "O token ficou gravado. O webhook ainda não apontou — tenta Vincular outra vez."
-    } else if (next.telegramBotToken && !next.webhookOk) {
-      const hooked = await setTelegramWebhook(next.telegramBotToken, hook, webhookSecret)
       next.webhookUrl = hook
       next.webhookOk = hooked.ok
       if (!hooked.ok) warning = "O token ficou gravado. O webhook ainda não apontou — tenta Vincular outra vez."
@@ -947,6 +945,128 @@ async function runTelegram(env: Env, update: TelegramUpdate, secrets?: RuntimeSe
   }
 }
 
+function leadAlreadyTalked(lead: Lead) {
+  return (lead.messages ?? []).some((item) => item.role === "ste")
+}
+
+async function deliverJoinRequest(
+  env: Env,
+  update: TelegramUpdate,
+  token: string,
+  resolved?: ResolvedRuntime
+): Promise<{ sent: boolean } | null> {
+  const request = telegramJoinRequest(update)
+  if (!request?.from || typeof request.chat?.id !== "number") return null
+  const approved = await telegram(token, "approveChatJoinRequest", {
+    chat_id: request.chat.id,
+    user_id: request.from.id,
+  })
+  if (!approved.ok) return { sent: false }
+
+  const from = request.from
+  const contact = from.username ? `@${from.username}` : `tg:${from.id}`
+  const dmChatId = String(
+    typeof request.user_chat_id === "number" && Number.isFinite(request.user_chat_id) && request.user_chat_id > 0
+      ? request.user_chat_id
+      : from.id
+  )
+  const invite = normalizeInviteLink(request.invite_link?.invite_link || "")
+  const existing = await findLead(env, contact, from.id, dmChatId)
+  if (existing && leadAlreadyTalked(existing)) return { sent: true }
+
+  const live = resolved ?? (await runtimeOf(env)).resolved
+  let reservedId = ""
+  if (!existing) {
+    reservedId = env.AUTH ? await reserveLeadIdentity(env.AUTH, contact, dmChatId, crypto.randomUUID()) : crypto.randomUUID()
+  }
+  const raced =
+    !existing && env.AUTH && reservedId ? await loadLead(env.AUTH, reservedId, await removedIdsForRead(env.AUTH)) : null
+  const found = existing ?? raced
+  if (found && leadAlreadyTalked(found)) return { sent: true }
+
+  const telegramName = resolvePersonName([from.first_name, from.last_name].filter(Boolean).join(" "))
+  const name = isResolvedPersonName(telegramName) ? telegramName : contact
+  const now = new Date().toISOString()
+  let boards: { funnels: SalesFunnel[]; unread: boolean }
+  try {
+    boards = await readWorkspaceFunnels(env)
+  } catch {
+    boards = { funnels: [], unread: true }
+  }
+  let loaded: { settings: Settings; unread: boolean }
+  try {
+    loaded = await readWorkspaceSettings(env)
+  } catch {
+    loaded = { settings: emptySettings(), unread: true }
+  }
+  const settings = loaded.settings
+  const script = pageScriptForInvite(settings.pageScripts, invite, settings.telegramGroupUrl)
+  const campaign = campaignFromInvite(invite, script?.name)
+  if (
+    installSettingsBlocked(loaded.unread, script?.id, script) ||
+    leadFunnelUnread(boards.unread, script?.funnelId, boards.funnels) ||
+    (boards.unread && !boards.funnels.length && !script)
+  ) {
+    return { sent: true }
+  }
+
+  let lead: Lead
+  if (found) {
+    lead = found
+    if (isResolvedPersonName(telegramName)) {
+      lead.name = preferLeadName(lead.name, telegramName, contact, { email: lead.facts?.email, messages: lead.messages })
+    }
+    if (!lead.funnelId && script) lead.funnelId = script.funnelId
+    if (script || !lead.campaign) lead.campaign = campaign
+    if (lead.origin === "group_join") lead.origin = "facebook"
+  } else {
+    lead = {
+      id: reservedId || crypto.randomUUID(),
+      name,
+      contact,
+      channel: "telegram",
+      campaign,
+      origin: "facebook",
+      startPayload: invite || undefined,
+      temperature: "novo",
+      stage: "welcome",
+      memory: "",
+      facts: {},
+      events: [],
+      messages: [],
+      createdAt: now,
+      updatedAt: now,
+    }
+  }
+  if (script) {
+    lead.funnelId = script.funnelId
+    lead.campaign = campaign
+  }
+  lead.telegramChatId = dmChatId
+
+  const ste = steRuntimeFromFunnels(boards.funnels, settings, lead.funnelId)
+  const pending = lead
+  let delivered = ste.talking === false
+  if (ste.talking !== false) {
+    const talked = replySte(lead, null, Date.now(), ste)
+    const sent = await sendSteReplies(env, token, dmChatId, talked.replies, talked.beat, live)
+    if (sent.ok) {
+      lead = talked.lead
+      delivered = true
+    } else {
+      lead = rememberLeadTalk(pending, null)
+    }
+  }
+  if (delivered) {
+    if (!(await persistLeadAfterSend(env, lead))) console.error("telegram lead após envio não gravou")
+  } else {
+    if (!(await persistLeadAfterSend(env, lead))) console.error("telegram lead após recusa não gravou")
+    const updateId = typeof update.update_id === "number" && update.update_id > 0 ? update.update_id : 0
+    if (updateId && env.AUTH) await forgetTelegramUpdate(env.AUTH, updateId)
+  }
+  return { sent: delivered }
+}
+
 async function deliverTelegram(
   env: Env,
   update: TelegramUpdate,
@@ -954,6 +1074,8 @@ async function deliverTelegram(
   resolved?: ResolvedRuntime
 ): Promise<{ sent: boolean }> {
   const live = resolved ?? (await runtimeOf(env)).resolved
+  const requested = await deliverJoinRequest(env, update, token, live)
+  if (requested) return requested
   const joinUser = telegramJoinActor(update)
   const message = update.message
   const from = telegramUpdateActor(update)
@@ -1599,6 +1721,12 @@ type TelegramUpdate = {
   chat_member?: {
     chat: { id: number }
     new_chat_member: { status: string; user: TelegramUser }
+  }
+  chat_join_request?: {
+    chat?: { id?: number }
+    from?: TelegramUser
+    user_chat_id?: number
+    invite_link?: { invite_link?: string }
   }
 }
 

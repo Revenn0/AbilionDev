@@ -241,13 +241,15 @@ export async function saveSecrets(kv: KvLike, next: RuntimeSecrets) {
   }
 }
 
+export const TELEGRAM_ALLOWED_UPDATES = ["message", "chat_member", "my_chat_member", "chat_join_request"] as const
+
 export async function setTelegramWebhook(token: string, url: string, secret?: string) {
   const res = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       url,
-      allowed_updates: ["message", "chat_member", "my_chat_member"],
+      allowed_updates: [...TELEGRAM_ALLOWED_UPDATES],
       ...(secret ? { secret_token: secret } : {}),
     }),
   })

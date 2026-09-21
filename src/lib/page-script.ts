@@ -1,4 +1,4 @@
-import { adsDeepLink } from "./telegram-start.ts"
+import { adsDeepLink, normalizeInviteLink } from "./telegram-start.ts"
 import { ADS_ORIGIN, PAGE_INSTALL_STEPS, PIXEL_VERSION, pixelPageHtml } from "./tracker-script.ts"
 import type { PageScript, SalesFunnel } from "./types.ts"
 
@@ -207,6 +207,17 @@ ${cta}
 </main>
 </body>
 </html>`
+}
+
+/** Um script é a LP. Vários: o convite igual ao do estúdio escolhe o mais recente. */
+export function pageScriptForInvite(scripts: PageScript[] | undefined, invite: string, groupUrl?: string) {
+  const needle = normalizeInviteLink(invite)
+  const list = (scripts ?? []).filter((item) => PAGE_SCRIPT_ID.test(item.id) && item.funnelId)
+  if (!needle || !list.length) return undefined
+  if (list.length === 1) return list[0]
+  const group = normalizeInviteLink(groupUrl || "")
+  if (!group || group !== needle) return undefined
+  return list.slice().sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""))[0]
 }
 
 export function pageScriptById(scripts: PageScript[] | undefined, id: string | undefined) {

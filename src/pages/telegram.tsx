@@ -187,8 +187,10 @@ export function TelegramPage() {
         <section id="telegram-canal" className="surface scroll-mt-6 p-6">
           <p className="text-[14px] font-medium">Canal</p>
           <p className="mt-2 max-w-2xl text-[13.5px] leading-relaxed text-muted-foreground">
-            /start no privado: a Sté manda 3 boas-vindas e espera. Join no grupo só cria o lead da campanha Telegram. O token
-            grava-se em Configurações e fica no Worker, nunca no git.
+            /start no privado: a Sté manda 3 boas-vindas e espera. Um pedido de entrada pelo convite do canal é aprovado e,
+            se a pessoa ainda não falou com a Sté, abre o mesmo funil. Quem já entrou pelo /start só é aprovado. Join no grupo
+            só cria o lead da campanha Telegram. O token grava-se em Configurações e fica no Worker, nunca no git. Cola o token
+            outra vez e vincula para o Telegram passar a enviar os pedidos de entrada.
           </p>
           <p className="mt-4 text-[13px]">
             Link do anúncio Facebook:{" "}

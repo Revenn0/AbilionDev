@@ -120,6 +120,13 @@ export type TelegramActor = {
   last_name?: string
 }
 
+export type TelegramJoinRequest = {
+  chat?: { id?: number }
+  from?: TelegramActor
+  user_chat_id?: number
+  invite_link?: { invite_link?: string; name?: string }
+}
+
 export type TelegramActorUpdate = {
   message?: {
     from?: TelegramActor
@@ -128,6 +135,7 @@ export type TelegramActorUpdate = {
   chat_member?: {
     new_chat_member?: { status?: string; user?: TelegramActor }
   }
+  chat_join_request?: TelegramJoinRequest
 }
 
 function isTelegramActor(value: TelegramActor | undefined): value is TelegramActor {
@@ -142,8 +150,19 @@ export function telegramJoinActor(update: TelegramActorUpdate): TelegramActor | 
   return undefined
 }
 
+export function telegramJoinRequest(update: TelegramActorUpdate): TelegramJoinRequest | undefined {
+  const request = update.chat_join_request
+  if (!request || !isTelegramActor(request.from)) return undefined
+  if (typeof request.chat?.id !== "number" || !Number.isFinite(request.chat.id)) return undefined
+  return request
+}
+
 export function telegramUpdateActor(update: TelegramActorUpdate): TelegramActor | undefined {
-  return telegramJoinActor(update) ?? (isTelegramActor(update.message?.from) ? update.message.from : undefined)
+  return (
+    telegramJoinActor(update) ??
+    telegramJoinRequest(update)?.from ??
+    (isTelegramActor(update.message?.from) ? update.message.from : undefined)
+  )
 }
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>

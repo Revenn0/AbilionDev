@@ -1,4 +1,4 @@
-import { cleanBotUsername } from "./migrate.ts"
+import { cleanBotUsername, cleanTelegramGroupUrl } from "./migrate.ts"
 import type { LeadOrigin } from "./types.ts"
 
 export function parseTelegramStart(text?: string | null) {
@@ -40,6 +40,27 @@ export function campaignFromStart(payload: string) {
     return `Facebook · ${rest}`
   }
   return `Telegram · ${payload}`
+}
+
+export function normalizeInviteLink(value?: string | null) {
+  const clean = cleanTelegramGroupUrl(value || "")
+  if (!clean) return ""
+  try {
+    const url = new URL(clean)
+    url.hash = ""
+    url.search = ""
+    const path = url.pathname.replace(/\/+$/, "") || "/"
+    return `${url.origin}${path}`
+  } catch {
+    return ""
+  }
+}
+
+export function campaignFromInvite(invite: string, scriptName?: string) {
+  const name = scriptName?.trim()
+  if (name) return `Facebook · ${name}`.slice(0, 120)
+  const link = normalizeInviteLink(invite)
+  return (link ? `Facebook · ${link}` : "Facebook · convite").slice(0, 120)
 }
 
 export function adsDeepLink(username: string, payload = "fb") {

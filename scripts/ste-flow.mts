@@ -115,9 +115,9 @@ import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { contactLookups, normalizeTelegramContact, sameLeadContact, validateCapture } from "../src/lib/capture.ts"
 import { displayContact, draftLeadField, formatPhoneContact, isPhoneLikeName, isResolvedPersonName, leadMatchesQuery, nameFromMessages, preferLeadName, resolveLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, migrateLeadOrigin, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
-import { adsDeepLink, campaignFromStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
+import { adsDeepLink, campaignFromInvite, campaignFromStart, normalizeInviteLink, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument, wantsAuthHtml } from "../src/lib/auth-pages.ts"
-import { addPageScript, adsLandingDocument, adsLandingUrl, adsStartToken, installSettingsBlocked, pageInstallManual, pageScriptFunnelLabel, pageScriptFunnelPending, pageScriptsFunnelUnread, pageScriptsListBlocked, pageScriptsMutationBlocked, pageScriptsWriteBlocked, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
+import { addPageScript, adsLandingDocument, adsLandingUrl, adsStartToken, installSettingsBlocked, pageInstallManual, pageScriptForInvite, pageScriptFunnelLabel, pageScriptFunnelPending, pageScriptsFunnelUnread, pageScriptsListBlocked, pageScriptsMutationBlocked, pageScriptsWriteBlocked, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
 import { addLeadGroup, leadCategoriesListBlocked, leadCategoriesMutationBlocked, leadCategoriesWriteBlocked, leadFromImport, leadGroupsMutationBlocked, leadGroupsWriteBlocked, leadImportGroupBlocked, leadImportSubmitBlocked, listImportGroups, parseLeadImportLine, parseLeadImportText, seedLeadGroups } from "../src/lib/lead-category.ts"
 import { MCP_PUBLIC_URL, MCP_TOOLS, MCP_TOOL_GROUPS, mcpGroupedTools } from "../src/lib/mcp-catalog.ts"
 import { burstFacebookLeads, burstStartsBlocked, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
@@ -125,13 +125,13 @@ import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
 import { barShare, catalogMetricPending, crmSyncAfterFlush, eventsSyncAfterNarrowRead, funnelsWriteBlocked, hasConversation, isImportedLead, isOperatorLockedLead, leadCatalogClipped, leadCatalogEmpty, leadFilterCount, leadFilterPending, leadMatchesFilter, leadTimelinePending, leadWritesBlocked, leadsExportBlocked, leadsHydrating, leadsLoadFailed, metricPending, offerMetricPending, trackSyncAfterRead } from "../src/lib/ops.ts"
 import { usersWriteBlocked } from "../src/lib/users-api.ts"
-import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, RUNTIME_KEY, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
+import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, RUNTIME_KEY, saveSecrets, setTelegramWebhook, TELEGRAM_ALLOWED_UPDATES, tokenHint } from "../worker/runtime-secrets.ts"
 import { kvTrackStore, memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
 import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, confirmKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, gateActor, handleAuth, hashApiToken, hashPassword, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, readActor, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
 import { handleUsers } from "../worker/users.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
 import { ensureVoiceClip, VOICE_STORE_KEY, voiceClipStatus } from "../worker/ste-voice.ts"
-import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTelegramClaims, telegramCall, telegramJoinActor, telegramUpdateActor, TG_UPDATES } from "../worker/telegram.ts"
+import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTelegramClaims, telegramCall, telegramJoinActor, telegramJoinRequest, telegramUpdateActor, TG_UPDATES } from "../worker/telegram.ts"
 import { backgroundCtx, handleRequest, type Env } from "../worker/index.ts"
 import { clearSessionExpired, noteUnauthorized, subscribeSessionExpired } from "../src/lib/session.ts"
 
@@ -4114,6 +4114,216 @@ assert(
 assert(!telegramUpdateActor({ message: { from: { id: 0 } } }), "id 0 não é actor")
 assert(!telegramUpdateActor({ message: {} }), "mensagem sem from não é actor")
 assert(!telegramUpdateActor({}), "update vazio não é actor")
+const inviteLink = "https://t.me/+-6xhL8cV3Ds5MWRh"
+assert(normalizeInviteLink(`${inviteLink}/`) === inviteLink, "convite ignora a barra final")
+assert(campaignFromInvite(inviteLink, "Landing ads") === "Facebook · Landing ads", "convite com script usa o nome da LP")
+assert(campaignFromInvite(inviteLink).includes("t.me/+-6xhL8cV3Ds5MWRh"), "convite sem script fica na campanha")
+const olderScript = {
+  id: "aaaa1111",
+  name: "Antiga",
+  funnelId: "fun-old",
+  createdAt: "2026-09-01T00:00:00.000Z",
+  updatedAt: "2026-09-01T00:00:00.000Z",
+}
+const newerScript = {
+  id: "bbbb2222",
+  name: "Landing ads",
+  funnelId: "fun-join",
+  createdAt: "2026-09-21T00:00:00.000Z",
+  updatedAt: "2026-09-21T00:00:00.000Z",
+}
+assert(pageScriptForInvite([newerScript], inviteLink, "")?.id === "bbbb2222", "um script de página é a LP do convite")
+assert(
+  pageScriptForInvite([olderScript, newerScript], inviteLink, inviteLink)?.id === "bbbb2222",
+  "vários scripts: o convite do estúdio escolhe o mais recente"
+)
+assert(!pageScriptForInvite([olderScript, newerScript], "https://t.me/+outroConvite", inviteLink), "outro convite não escolhe script ao acaso")
+assert(
+  telegramJoinRequest({
+    chat_join_request: { chat: { id: -1005 }, from: { id: 7, username: "ana" }, invite_link: { invite_link: inviteLink } },
+  })?.from?.id === 7,
+  "pedido de entrada traz o utilizador"
+)
+assert(
+  !telegramJoinActor({
+    chat_join_request: { chat: { id: -1005 }, from: { id: 7 }, invite_link: { invite_link: inviteLink } },
+  }),
+  "pedido de entrada não é join silencioso"
+)
+assert(
+  telegramUpdateActor({
+    chat_join_request: { chat: { id: -1005 }, from: { id: 7, username: "ana" }, invite_link: { invite_link: inviteLink } },
+  })?.id === 7,
+  "pedido de entrada é actor"
+)
+assert(!telegramJoinRequest({ chat_join_request: { from: { id: 7 } } }), "pedido sem chat não segue")
+const joinFetchPrev = globalThis.fetch
+const joinCalls: Array<{ url: string; body: Record<string, unknown> }> = []
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  if (url.includes("api.telegram.org")) {
+    const body = JSON.parse(String(init?.body || "{}")) as Record<string, unknown>
+    joinCalls.push({ url, body })
+    if (url.endsWith("/approveChatJoinRequest") && body.user_id === 4242) {
+      return new Response(JSON.stringify({ ok: false, description: "Bad Request" }), { status: 400 })
+    }
+    return new Response(JSON.stringify({ ok: true }), { status: 200 })
+  }
+  return joinFetchPrev(input, init)
+}) as typeof fetch
+const webhookSet = await setTelegramWebhook("000:test", "https://staging.abilion.lol/api/telegram", "sec")
+assert(webhookSet.ok, "setWebhook de teste responde ok")
+const webhookBody = joinCalls.find((item) => item.url.endsWith("/setWebhook"))?.body
+assert(
+  Array.isArray(webhookBody?.allowed_updates) &&
+    (webhookBody.allowed_updates as string[]).includes("chat_join_request") &&
+    TELEGRAM_ALLOWED_UPDATES.includes("chat_join_request"),
+  "setWebhook pede chat_join_request"
+)
+const joinKv = memoryKv()
+const joinFunnel = emptySalesFunnel("Boas-vindas")
+joinFunnel.id = "fun-join"
+joinFunnel.status = "active"
+joinFunnel.production = {
+  name: "Boas-vindas",
+  publishedAt: "2026-09-21T00:00:00.000Z",
+  nodes: joinFunnel.nodes,
+  edges: joinFunnel.edges,
+}
+await saveFunnelsKv(joinKv, [joinFunnel])
+await saveSettingsKv(
+  joinKv,
+  migrateSettings({
+    ...defaultSettings,
+    telegramGroupUrl: inviteLink,
+    pageScripts: [newerScript],
+  })
+)
+const joinEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  AUTH: joinKv,
+  ABILION_ENV: "development",
+  TELEGRAM_WEBHOOK_SECRET: "hook-secret",
+  TELEGRAM_BOT_TOKEN: "000:test",
+} as Env
+const postJoin = async (updateId: number, userId: number, username: string) => {
+  const ctx = backgroundCtx()
+  const response = await handleRequest(
+    new Request("http://local.test/api/telegram", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+      body: JSON.stringify({
+        update_id: updateId,
+        chat_join_request: {
+          chat: { id: -1005, title: "STÉ | MÃE DO AVIATOR" },
+          from: { id: userId, username, first_name: "Lia" },
+          user_chat_id: userId,
+          invite_link: { invite_link: inviteLink },
+        },
+      }),
+    }),
+    joinEnv,
+    ctx
+  )
+  await ctx.flush()
+  return response
+}
+const failJoinCtx = backgroundCtx()
+const failJoin = await handleRequest(
+  new Request("http://local.test/api/telegram", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+    body: JSON.stringify({
+      update_id: 501,
+      chat_join_request: {
+        chat: { id: -1005 },
+        from: { id: 4242, username: "recusado" },
+        user_chat_id: 4242,
+        invite_link: { invite_link: inviteLink },
+      },
+    }),
+  }),
+  joinEnv,
+  failJoinCtx
+)
+assert(failJoin.status === 200, "pedido com approve falhado ainda é 200")
+await failJoinCtx.flush()
+assert(!(await listLeads(joinKv, 20, "all")).some((item) => item.contact === "@recusado"), "approve falhado não cria lead")
+const okJoinCtx = backgroundCtx()
+const okJoin = await handleRequest(
+  new Request("http://local.test/api/telegram", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+    body: JSON.stringify({
+      update_id: 502,
+      chat_join_request: {
+        chat: { id: -1005, title: "STÉ | MÃE DO AVIATOR" },
+        from: { id: 5151, username: "joiner", first_name: "Lia" },
+        user_chat_id: 5151,
+        invite_link: { invite_link: `${inviteLink}/` },
+      },
+    }),
+  }),
+  joinEnv,
+  okJoinCtx
+)
+assert(okJoin.status === 200, "pedido de entrada é 200")
+await okJoinCtx.flush()
+const inviteLead = (await listLeads(joinKv, 20, "all")).find((item) => item.contact === "@joiner")
+assert(inviteLead?.origin === "facebook", "convite entra como campanha da LP")
+assert(inviteLead?.funnelId === "fun-join", "convite amarra o funil do script")
+assert(inviteLead?.campaign === "Facebook · Landing ads", "convite usa o nome do script")
+assert(inviteLead?.telegramChatId === "5151", "boas-vindas vão para o privado")
+assert((inviteLead?.messages ?? []).some((item) => item.role === "ste"), "convite dispara as boas-vindas")
+const approveCall = joinCalls.find((item) => item.url.endsWith("/approveChatJoinRequest") && item.body.user_id === 5151)
+assert(approveCall?.body.chat_id === -1005 && approveCall.body.user_id === 5151, "approveChatJoinRequest leva chat e user")
+assert(
+  joinCalls.some((item) => item.url.endsWith("/sendMessage") && String(item.body.chat_id) === "5151"),
+  "DM das boas-vindas vai para o user_id"
+)
+const welcomed = (inviteLead?.messages ?? []).filter((item) => item.role === "ste").length
+const againJoin = await postJoin(503, 5151, "joiner")
+assert(againJoin.status === 200, "segundo pedido do mesmo user é 200")
+const inviteLeadAgain = (await listLeads(joinKv, 20, "all")).find((item) => item.contact === "@joiner")
+assert((inviteLeadAgain?.messages ?? []).filter((item) => item.role === "ste").length === welcomed, "segundo pedido não repete as boas-vindas")
+assert(
+  joinCalls.filter((item) => item.url.endsWith("/approveChatJoinRequest") && item.body.user_id === 5151).length === 2,
+  "segundo pedido ainda aprova"
+)
+const startJoinCtx = backgroundCtx()
+const startThenJoin = await handleRequest(
+  new Request("http://local.test/api/telegram", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+    body: JSON.stringify({
+      update_id: 504,
+      message: {
+        chat: { id: 6161 },
+        text: "/start fb_aabbccdd",
+        from: { id: 6161, username: "jaentrou", first_name: "Mia" },
+      },
+    }),
+  }),
+  joinEnv,
+  startJoinCtx
+)
+assert(startThenJoin.status === 200, "/start antes do convite é 200")
+await startJoinCtx.flush()
+const startedJoin = (await listLeads(joinKv, 20, "all")).find((item) => item.contact === "@jaentrou")
+const startedCount = (startedJoin?.messages ?? []).filter((item) => item.role === "ste").length
+assert(startedCount > 0, "/start já mandou boas-vindas")
+const afterStart = await postJoin(505, 6161, "jaentrou")
+assert(afterStart.status === 200, "convite de quem já fez /start é 200")
+const afterStartLead = (await listLeads(joinKv, 20, "all")).find((item) => item.contact === "@jaentrou")
+assert(
+  (afterStartLead?.messages ?? []).filter((item) => item.role === "ste").length === startedCount,
+  "quem já veio pelo /start não recebe boas-vindas outra vez"
+)
+assert(
+  joinCalls.some((item) => item.url.endsWith("/approveChatJoinRequest") && item.body.user_id === 6161),
+  "quem já é lead ainda é aprovado"
+)
+globalThis.fetch = joinFetchPrev
 globalThis.fetch = okFetch
 const noFromPrev = globalThis.fetch
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
