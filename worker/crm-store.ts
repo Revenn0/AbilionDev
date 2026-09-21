@@ -401,13 +401,22 @@ export async function forgetSentLead(kv: KvLike, id: string) {
   if (key) await kv.delete?.(key)
 }
 
+async function goneKeyPresent(kv: KvLike, key: string) {
+  if (!key) return false
+  try {
+    return Boolean(await kv.get(key, "json"))
+  } catch {
+    return false
+  }
+}
+
 async function leadIsGone(kv: KvLike, id: string, removedIds?: ReadonlySet<string>) {
   const next = id.trim()
   if (!next) return false
   if (removedIds?.has(next)) return true
   const key = goneLeadKey(next)
+  if (removedIds) return Boolean(key && (await goneKeyPresent(kv, key)))
   if (key && (await kv.get(key, "json"))) return true
-  if (removedIds) return false
   return (await loadRemovedLeadIds(kv)).includes(next)
 }
 
@@ -645,7 +654,7 @@ export async function funnelRemovedForRead(kv: KvLike, id: string): Promise<bool
   const removed = await removedFunnelIdsForRead(kv)
   if (removed.includes(next)) return true
   const key = goneFunnelKey(next)
-  return Boolean(key && (await kv.get(key, "json")))
+  return Boolean(key && (await goneKeyPresent(kv, key)))
 }
 
 async function collectGoneFunnelIdsForRead(kv: KvLike, ids: string[]) {

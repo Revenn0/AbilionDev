@@ -101,7 +101,7 @@ import { applyEvent, canAdvanceRemoteWait, eventFromOrigin, leadFunnelUnread, pi
 import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
-import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_INDEX, CRM_REMOVED, CRM_REMOVED_FUNNELS, CRM_SETTINGS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, leadPageCursor, leadPageFromRemote, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_INDEX, CRM_REMOVED, CRM_REMOVED_FUNNELS, CRM_SETTINGS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, goneFunnelKey, goneLeadKey, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, leadPageCursor, leadPageFromRemote, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { fetchRemoteDueLeads, fetchRemoteLeadByIdentity, fetchRemoteLeadsByIds, fetchRemotePageEvents, findWorkspaceLead, findWorkspaceLeadById, hydrateWorkspaceLead, leadCatalogUnread, leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceFunnels, readWorkspaceSettings, remoteLeadDuePath, remoteLeadIdentityPath, remoteLeadListPath, remoteLeadSearchPath, resolveWorkspaceLeadWrite, rowToLead, rowToTrackEvent, sanitizeRemoteSearchNeedle, searchWorkspaceLeads, summarizeWorkspaceTrack, telegramIdFromLead } from "../worker/workspace-settings.ts"
@@ -7312,6 +7312,38 @@ assert(removedFunnelsDownMcp.status === 200, "MCP list_funnels tombstone unread 
 assert(!removedFunnelsDownMcpData.error, "MCP list_funnels tombstone unread não pede 503")
 assert(removedFunnelsDownMcpData.funnels?.some((item) => item.id === "funil-throw"), "MCP list_funnels tombstone unread ainda manda o leftover")
 assert(!removedFunnelsDownMcpData.funnels?.some((item) => item.id === "funil-gone"), "MCP list_funnels tombstone unread não ressuscita o gone")
+const goneFunnelKeyDownEnv = { ...runtimeHoleBase, AUTH: kvThrowsOn(runtimeHoleKv, goneFunnelKey("funil-throw")) } as Env
+const goneFunnelKeyCrm = await handleRequest(
+  new Request("http://local.test/api/crm", { headers: { cookie: runtimeHoleCookie } }),
+  goneFunnelKeyDownEnv,
+  backgroundCtx()
+)
+const goneFunnelKeyCrmBody = (await goneFunnelKeyCrm.json()) as { ok?: boolean; error?: string; funnels?: Array<{ id?: string }> }
+assert(goneFunnelKeyCrm.status === 200 && goneFunnelKeyCrmBody.ok, "GET CRM chave gone unread ainda manda o leftover")
+assert(goneFunnelKeyCrm.status !== 503, "GET CRM chave gone unread não esconde o quadro leftover")
+assert(goneFunnelKeyCrmBody.funnels?.some((item) => item.id === "funil-throw"), "GET CRM chave gone unread não esconde o funil leftover")
+assert(!goneFunnelKeyCrmBody.funnels?.some((item) => item.id === "funil-gone"), "GET CRM chave gone unread não ressuscita o gone")
+const goneFunnelKeyMcp = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.242" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 242, method: "tools/call", params: { name: "abilion_list_funnels", arguments: {} } }),
+  }),
+  goneFunnelKeyDownEnv,
+  backgroundCtx()
+)
+const goneFunnelKeyMcpData = JSON.parse(
+  ((await goneFunnelKeyMcp.json()) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string; funnels?: Array<{ id?: string }> }
+assert(goneFunnelKeyMcp.status === 200 && !goneFunnelKeyMcpData.error, "MCP list_funnels chave gone unread não pede 503")
+assert(goneFunnelKeyMcpData.funnels?.some((item) => item.id === "funil-throw"), "MCP list_funnels chave gone unread ainda manda o leftover")
+let goneFunnelWriteThrew = false
+try {
+  await isFunnelRemoved(kvThrowsOn(runtimeHoleKv, goneFunnelKey("funil-throw")), "funil-throw")
+} catch {
+  goneFunnelWriteThrew = true
+}
+assert(goneFunnelWriteThrew, "isFunnelRemoved ainda lança se a chave gone falha")
 await saveFunnelsKv(runtimeHoleKv, [throwBoard])
 assert(
   (await persistFunnelsMerge(kvThrowsOn(runtimeHoleKv, CRM_REMOVED_FUNNELS), [{ ...throwBoard, name: "Throw unread" }])).some(
@@ -7951,6 +7983,28 @@ assert((await kvTrackStore(runtimeHoleKv).load()).some((item) => item.visitorId 
 const writeHoleLead = { ...lead("hole-lead", "@holelead"), memory: "leftover-ficha" }
 await upsertLeadKv(runtimeHoleKv, writeHoleLead)
 assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === "leftover-ficha", "KV do runtime hole ainda tem a ficha leftover")
+const goneLeadKeyDownEnv = { ...runtimeHoleBase, AUTH: kvThrowsOn(runtimeHoleKv, goneLeadKey("hole-lead")) } as Env
+const goneLeadKeyList = await handleRequest(
+  new Request("http://local.test/api/leads", { headers: { cookie: runtimeHoleCookie } }),
+  goneLeadKeyDownEnv,
+  backgroundCtx()
+)
+const goneLeadKeyListBody = (await goneLeadKeyList.json()) as { ok?: boolean; leads?: Array<{ id?: string }>; error?: string }
+assert(goneLeadKeyList.status === 200 && goneLeadKeyListBody.ok, "GET leads chave gone unread ainda manda o leftover")
+assert(goneLeadKeyList.status !== 500, "GET leads chave gone unread não é Falha interna")
+assert(goneLeadKeyListBody.leads?.some((item) => item.id === "hole-lead"), "GET leads chave gone unread não esconde a ficha leftover")
+assert(
+  (await filterLiveLeads(kvThrowsOn(runtimeHoleKv, goneLeadKey("hole-lead")), [writeHoleLead])).some((item) => item.id === "hole-lead"),
+  "filterLiveLeads chave gone unread não esconde o leftover"
+)
+assert((await loadLead(kvThrowsOn(runtimeHoleKv, goneLeadKey("hole-lead")), "hole-lead", new Set()))?.memory === "leftover-ficha", "loadLead chave gone unread ainda lê o leftover")
+let goneLeadWriteThrew = false
+try {
+  await isLeadRemoved(kvThrowsOn(runtimeHoleKv, goneLeadKey("hole-lead")), "hole-lead")
+} catch {
+  goneLeadWriteThrew = true
+}
+assert(goneLeadWriteThrew, "isLeadRemoved ainda lança se a chave gone falha")
 const leadKeyDownEnv = { ...runtimeHoleBase, AUTH: kvThrowsOn(runtimeHoleKv, leadKey("hole-lead")) } as Env
 const leadKeyDownResolved = await resolveWorkspaceLeadWrite(leadKeyDownEnv, { ...writeHoleLead, memory: "unread-write" })
 assert(!leadKeyDownResolved.ok && leadKeyDownResolved.unread, "resolve com ficha KV throw é unread")
