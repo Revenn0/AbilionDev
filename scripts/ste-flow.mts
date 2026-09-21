@@ -1192,6 +1192,9 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     remotePosts.push(String(init?.body || ""))
     return new Response("", { status: 201 })
   }
+  if (url.includes("/rest/v1/leads") && method === "GET") {
+    return new Response(JSON.stringify([]), { status: 200 })
+  }
   if (url.includes("/rest/v1/leads") && method === "POST") {
     remotePosts.push(String(init?.body || ""))
     return new Response("", { status: 201 })
@@ -1279,6 +1282,70 @@ const groupedPost = JSON.parse(remotePosts.filter((item) => item.includes(groupe
 }
 assert(!("category" in groupedPost), "lead do grupo também não manda coluna category")
 assert(groupedPost.facts?.category === "Grupo", "categoria do grupo vai no jsonb facts")
+const talkPosts: string[] = []
+const talkPrev = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  const method = (init?.method || "GET").toUpperCase()
+  if (url.includes("/rest/v1/leads") && method === "GET") {
+    return new Response(
+      JSON.stringify([
+        {
+          id: remoteLead.id,
+          name: "Rita Backup",
+          contact: "@rita",
+          channel: "telegram",
+          campaign: "fb",
+          origin: "facebook",
+          temperature: "hot",
+          stage: "chat",
+          memory: "ste:welcome",
+          facts: { email: "rita@keep.test" },
+          last_message: "oi do backup",
+          messages: [{ id: "m-keep", role: "lead", text: "oi do backup", at: "2026-01-01T00:00:00.000Z" }],
+          updated_at: "2026-01-02T00:00:00.000Z",
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+      ]),
+      { status: 200 }
+    )
+  }
+  if (url.includes("/rest/v1/leads") && method === "POST") {
+    talkPosts.push(String(init?.body || ""))
+    return new Response("", { status: 201 })
+  }
+  return talkPrev(input, init)
+}) as typeof fetch
+await persistRemoteLead(remoteEnv, {
+  ...remoteLead,
+  messages: [],
+  memory: "",
+  facts: {},
+  lastMessage: undefined,
+  updatedAt: "2026-08-01T00:00:00.000Z",
+})
+const talkSaved = JSON.parse(talkPosts.at(-1) || "{}") as {
+  messages?: Array<{ id?: string; text?: string }>
+  memory?: string
+  facts?: { email?: string }
+}
+assert(talkSaved.messages?.some((item) => item.id === "m-keep"), "POST oco do lead não apaga as falas do Postgres")
+assert(talkSaved.memory === "ste:welcome", "POST oco do lead não apaga a memória do Postgres")
+assert(talkSaved.facts?.email === "rita@keep.test", "POST oco do lead não apaga o e-mail do Postgres")
+const skipLeadPosts: string[] = []
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  const method = (init?.method || "GET").toUpperCase()
+  if (url.includes("/rest/v1/leads") && method === "GET") return new Response("nope", { status: 500 })
+  if (url.includes("/rest/v1/leads") && method === "POST") {
+    skipLeadPosts.push(String(init?.body || ""))
+    return new Response("", { status: 201 })
+  }
+  return talkPrev(input, init)
+}) as typeof fetch
+await persistRemoteLead(remoteEnv, { ...remoteLead, messages: [] })
+assert(skipLeadPosts.length === 0, "GET falho do lead não grava ficha oca no Postgres")
+globalThis.fetch = talkPrev
 const wsPersistKv = memoryKv()
 const wsBoard = emptySalesFunnel("Quadro workspace")
 await persistWorkspaceFunnels({ AUTH: wsPersistKv, ...remoteEnv }, [wsBoard])

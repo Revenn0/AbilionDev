@@ -1,4 +1,4 @@
-import { adoptFunnelStores, commitStoredSettings, emptySettings, publicSettings } from "../src/lib/crm.ts"
+import { adoptFunnelStores, commitStoredLead, commitStoredSettings, emptySettings, publicSettings } from "../src/lib/crm.ts"
 import { sanitizeLeadCategory } from "../src/lib/lead-category.ts"
 import { leadMatchesQuery } from "../src/lib/lead-name.ts"
 import { migrateSettings, sanitizeIncomingFunnel } from "../src/lib/migrate.ts"
@@ -386,49 +386,56 @@ export async function persistRemoteSettings(env: SettingsEnv, settings: Settings
   })
 }
 
+function leadRowForRemote(lead: Lead) {
+  return {
+    id: lead.id,
+    workspace_id: WORKSPACE,
+    name: lead.name,
+    contact: lead.contact,
+    channel: lead.channel,
+    campaign: lead.campaign,
+    origin: lead.origin,
+    start_payload: lead.startPayload ?? null,
+    visitor_id: lead.visitorId ?? null,
+    temperature: lead.temperature,
+    stage: lead.stage,
+    print_at: lead.printAt ?? null,
+    banca_at: lead.bancaAt ?? null,
+    memory: lead.memory,
+    facts: leadFactsForRemote(lead),
+    last_message: lead.lastMessage ?? null,
+    funnel_id: lead.funnelId ?? null,
+    node_id: lead.nodeId ?? null,
+    wait_until: lead.waitUntil ?? null,
+    paused: lead.paused ?? false,
+    messages: lead.messages ?? [],
+    ste_phase: lead.stePhase ?? null,
+    ste_blocked: lead.steBlocked ?? false,
+    ste_quiet: lead.steQuiet ?? false,
+    telegram_chat_id: lead.telegramChatId ?? null,
+    updated_at: lead.updatedAt,
+    created_at: lead.createdAt,
+  }
+}
+
 export async function persistRemoteLead(env: SettingsEnv, lead: Lead) {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return
+  const extras = await fetchRemoteLeadsByIds(env, [lead.id])
+  if (extras === null) return
+  const merged = extras[0] ? commitStoredLead(extras[0], lead, extras[0]) : lead
   await restWorkspace(env, "leads", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates" },
-    body: JSON.stringify({
-      id: lead.id,
-      workspace_id: WORKSPACE,
-      name: lead.name,
-      contact: lead.contact,
-      channel: lead.channel,
-      campaign: lead.campaign,
-      origin: lead.origin,
-      start_payload: lead.startPayload ?? null,
-      visitor_id: lead.visitorId ?? null,
-      temperature: lead.temperature,
-      stage: lead.stage,
-      print_at: lead.printAt ?? null,
-      banca_at: lead.bancaAt ?? null,
-      memory: lead.memory,
-      facts: leadFactsForRemote(lead),
-      last_message: lead.lastMessage ?? null,
-      funnel_id: lead.funnelId ?? null,
-      node_id: lead.nodeId ?? null,
-      wait_until: lead.waitUntil ?? null,
-      paused: lead.paused ?? false,
-      messages: lead.messages ?? [],
-      ste_phase: lead.stePhase ?? null,
-      ste_blocked: lead.steBlocked ?? false,
-      ste_quiet: lead.steQuiet ?? false,
-      telegram_chat_id: lead.telegramChatId ?? null,
-      updated_at: lead.updatedAt,
-      created_at: lead.createdAt,
-    }),
+    body: JSON.stringify(leadRowForRemote(merged)),
   })
-  if (lead.events.length) {
+  if (merged.events.length) {
     await restWorkspace(env, "lead_events", {
       method: "POST",
       headers: { Prefer: "resolution=merge-duplicates" },
       body: JSON.stringify(
-        lead.events.map((event: LeadEvent) => ({
+        merged.events.map((event: LeadEvent) => ({
           id: event.id,
-          lead_id: lead.id,
+          lead_id: merged.id,
           at: event.at,
           kind: event.kind,
           node_id: event.nodeId ?? null,

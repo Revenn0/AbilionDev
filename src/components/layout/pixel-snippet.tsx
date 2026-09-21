@@ -10,9 +10,11 @@ import { useStore } from "@/lib/store"
 import { toast } from "sonner"
 
 export function PixelSnippet({ origin, botUsername }: { origin: string; botUsername?: string }) {
-  const { state, saveSettings, flushCrmNow } = useStore()
+  const { state, saveSettings, flushCrmNow, crmSync, settingsSync } = useStore()
   const scripts = state.settings.pageScripts ?? []
   const boards = state.funnels.filter(funnelHasInstallableBoard)
+  const boardsUnread = boards.length === 0 && (crmSync === "idle" || crmSync === "error")
+  const scriptsUnread = scripts.length === 0 && (settingsSync === "idle" || settingsSync === "error")
   const [name, setName] = useState("")
   const [funnelId, setFunnelId] = useState(boards[0]?.id ?? "")
   const [pageUrl, setPageUrl] = useState("")
@@ -119,11 +121,19 @@ export function PixelSnippet({ origin, botUsername }: { origin: string; botUsern
           <Label htmlFor="page-script-funnel">Funil</Label>
           <select
             id="page-script-funnel"
+            data-pixel-funnels={crmSync === "idle" && boards.length === 0 ? "loading" : crmSync === "error" && boards.length === 0 ? "error" : boards.length ? "ok" : "empty"}
             value={funnelId || boards[0]?.id || ""}
             onChange={(event) => setFunnelId(event.target.value)}
             className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+            disabled={boardsUnread}
           >
-            {boards.length === 0 ? <option value="">Publica um funil primeiro</option> : null}
+            {crmSync === "idle" && boards.length === 0 ? (
+              <option value="">A carregar os funis…</option>
+            ) : crmSync === "error" && boards.length === 0 ? (
+              <option value="">Não li os funis</option>
+            ) : boards.length === 0 ? (
+              <option value="">Publica um funil primeiro</option>
+            ) : null}
             {boards.map((funnel) => (
               <option key={funnel.id} value={funnel.id}>
                 {funnel.name}
@@ -142,14 +152,24 @@ export function PixelSnippet({ origin, botUsername }: { origin: string; botUsern
           />
         </div>
         <div className="sm:col-span-2">
-          <Button type="submit" className="rounded-full" disabled={busy || !boards.length}>
+          <Button type="submit" className="rounded-full" disabled={busy || !boards.length || boardsUnread}>
             Criar script desta página
           </Button>
         </div>
       </form>
 
-      {scripts.length === 0 ? (
-        <p className="mt-4 text-[12.5px] text-muted-foreground">Ainda não há scripts extra. O geral cobre o funil publicado.</p>
+      {scriptsUnread && settingsSync === "idle" ? (
+        <p className="mt-4 text-[12.5px] text-muted-foreground" data-pixel-scripts="loading">
+          A carregar os scripts de página…
+        </p>
+      ) : scriptsUnread ? (
+        <p className="mt-4 text-[12.5px] text-muted-foreground" data-pixel-scripts="error" role="alert">
+          Não confirmei os scripts de página no Worker.
+        </p>
+      ) : scripts.length === 0 ? (
+        <p className="mt-4 text-[12.5px] text-muted-foreground" data-pixel-scripts="empty">
+          Ainda não há scripts extra. O geral cobre o funil publicado.
+        </p>
       ) : (
         <ul className="mt-4 space-y-4">
           {scripts.map((script) => {
