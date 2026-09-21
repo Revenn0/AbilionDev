@@ -217,9 +217,16 @@ export async function fetchRemoteDueLeads(env: SettingsEnv, nowIso: string): Pro
   return rows.map(rowToLead)
 }
 
+/** KV hit + ficha do backup: une as falas. Sem remoto, fica o KV. */
+export function hydrateWorkspaceLead(kv: Lead, remote?: Lead | null): Lead {
+  if (!remote) return kv
+  return commitStoredLead(remote, kv, remote)
+}
+
 /**
  * KV primeiro. Miss cai no Postgres.
  * Falha do backup (credenciais + `null`) lança — o webhook não mint um segundo UUID.
+ * Hit no KV + backup em baixo devolve o KV — não lança, não mint UUID.
  */
 export async function findWorkspaceLead(
   env: SettingsEnv,
@@ -230,7 +237,9 @@ export async function findWorkspaceLead(
   const kvLead = env.AUTH ? await findLeadInKv(env.AUTH, contact, telegramId, chatId) : null
   if (kvLead) {
     if (await isLeadRemoved(env.AUTH!, kvLead.id)) return null
-    return kvLead
+    const extras = await fetchRemoteLeadsByIds(env, [kvLead.id])
+    if (extras === null) return kvLead
+    return hydrateWorkspaceLead(kvLead, extras[0])
   }
   const remote = await fetchRemoteLeadByIdentity(env, contact, telegramId, chatId)
   if (remote === null) throw new Error("Não li o lead do Postgres.")
@@ -620,7 +629,7 @@ export async function persistRemoteLead(env: SettingsEnv, lead: Lead) {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return
   const extras = await fetchRemoteLeadsByIds(env, [lead.id])
   if (extras === null) return
-  const merged = extras[0] ? commitStoredLead(extras[0], lead, extras[0]) : lead
+  const merged = hydrateWorkspaceLead(lead, extras[0])
   await restWorkspace(env, "leads", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates" },

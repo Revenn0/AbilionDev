@@ -102,7 +102,7 @@ import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.t
 import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_INDEX, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, leadPageCursor, leadPageFromRemote, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
-import { fetchRemoteDueLeads, fetchRemoteLeadByIdentity, fetchRemoteLeadsByIds, fetchRemotePageEvents, findWorkspaceLead, leadCatalogUnread, leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceFunnels, readWorkspaceSettings, remoteLeadDuePath, remoteLeadIdentityPath, remoteLeadListPath, remoteLeadSearchPath, resolveWorkspaceLeadWrite, rowToLead, rowToTrackEvent, sanitizeRemoteSearchNeedle, searchWorkspaceLeads, summarizeWorkspaceTrack, telegramIdFromLead } from "../worker/workspace-settings.ts"
+import { fetchRemoteDueLeads, fetchRemoteLeadByIdentity, fetchRemoteLeadsByIds, fetchRemotePageEvents, findWorkspaceLead, hydrateWorkspaceLead, leadCatalogUnread, leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceFunnels, readWorkspaceSettings, remoteLeadDuePath, remoteLeadIdentityPath, remoteLeadListPath, remoteLeadSearchPath, resolveWorkspaceLeadWrite, rowToLead, rowToTrackEvent, sanitizeRemoteSearchNeedle, searchWorkspaceLeads, summarizeWorkspaceTrack, telegramIdFromLead } from "../worker/workspace-settings.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
@@ -3974,6 +3974,73 @@ assert(
   (await findWorkspaceLead({ AUTH: liveLookupKv, SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env, "@livekv", 55, "55"))?.id ===
     "live-kv",
   "KV vivo ganha mesmo com Postgres em baixo"
+)
+const kvThinTalk = {
+  ...lead("talk-kv", "@talkkv"),
+  telegramChatId: "91",
+  updatedAt: "2026-06-02T00:00:00.000Z",
+  messages: [{ id: "m-kv", at: "2026-06-02T00:00:00.000Z", role: "user" as const, text: "agora" }],
+}
+const pgFullTalk = {
+  ...lead("talk-kv", "@talkkv"),
+  telegramChatId: "91",
+  memory: "ficha no backup",
+  updatedAt: "2026-06-01T00:00:00.000Z",
+  messages: [
+    { id: "m-pg", at: "2026-06-01T00:00:00.000Z", role: "ste" as const, text: "já falámos" },
+    { id: "m-kv", at: "2026-06-02T00:00:00.000Z", role: "user" as const, text: "agora" },
+  ],
+}
+const unionTalk = hydrateWorkspaceLead(kvThinTalk, pgFullTalk)
+assert(
+  unionTalk.messages.some((item) => item.id === "m-pg") && unionTalk.messages.some((item) => item.id === "m-kv"),
+  "hydrate une falas do KV com o backup"
+)
+assert(hydrateWorkspaceLead(kvThinTalk, null).messages.every((item) => item.id === "m-kv"), "hydrate sem remoto fica o KV")
+assert(hydrateWorkspaceLead(kvThinTalk, null).messages.length === 1, "hydrate unread não inventa fala")
+const talkKv = memoryKv()
+await upsertLeadKv(talkKv, kvThinTalk)
+const talkRow = {
+  id: "talk-kv",
+  name: "Talk",
+  contact: "@talkkv",
+  channel: "telegram" as const,
+  campaign: "facebook",
+  origin: "facebook" as const,
+  temperature: "novo" as const,
+  stage: "welcome" as const,
+  memory: "ficha no backup",
+  facts: {},
+  messages: [{ id: "m-pg", at: "2026-06-01T00:00:00.000Z", role: "ste" as const, text: "já falámos" }],
+  telegram_chat_id: "91",
+  updated_at: "2026-06-01T00:00:00.000Z",
+  created_at: "2026-06-01T00:00:00.000Z",
+}
+globalThis.fetch = (async (input: RequestInfo | URL) => {
+  const url = String(input)
+  if (url.includes("id=in.") && url.includes("talk-kv")) {
+    return new Response(JSON.stringify([talkRow]), { status: 200 })
+  }
+  return new Response("[]", { status: 200 })
+}) as typeof fetch
+const talkHit = await findWorkspaceLead(
+  { AUTH: talkKv, SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env,
+  "@talkkv",
+  91,
+  "91"
+)
+assert(talkHit?.id === "talk-kv", "KV hit mantém o id")
+assert(
+  talkHit?.messages.some((item) => item.id === "m-pg") && talkHit?.messages.some((item) => item.id === "m-kv"),
+  "webhook no KV hit lê as falas do backup"
+)
+globalThis.fetch = (async () => {
+  throw new Error("postgres down")
+}) as typeof fetch
+assert(
+  (await findWorkspaceLead({ AUTH: talkKv, SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env, "@talkkv", 91, "91"))
+    ?.messages.some((item) => item.id === "m-kv"),
+  "KV hit + backup unread devolve o KV"
 )
 const mixedGhostRow = {
   id: "mixed-ghost",
