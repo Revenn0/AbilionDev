@@ -554,6 +554,17 @@ try {
     article?.querySelector<HTMLButtonElement>('[aria-label="Excluir funil"]')?.click()
   })
 
+  await open(page, "/configuracoes?tab=mcp")
+  await page.waitForSelector("[data-settings-mcp]", { timeout: 8_000 })
+  const mcpCopy = await page.evaluate(() => document.body.innerText)
+  assert(mcpCopy.includes("https://www.abilion.lol/mcp"), "MCP mostra o URL de produção")
+  assert(mcpCopy.includes("O que o agente pode fazer"), "MCP lista o que o agente faz")
+  assert(mcpCopy.includes("abilion_import_leads"), "MCP lista importar leads")
+  assert(mcpCopy.includes("abilion_publish_funnel"), "MCP lista publicar funil")
+  assert(mcpCopy.includes("abilion_create_page_script"), "MCP lista criar script")
+  assert(mcpCopy.includes("abilion://install"), "MCP lista o recurso do pixel")
+  assert(mcpCopy.includes("O que o agente não faz"), "MCP diz o que o agente não faz")
+
   await open(page, "/configuracoes?tab=plugins")
   await page.waitForFunction(() => document.body.innerText.includes("Exportar CSV"), { timeout: 8_000 })
   const pluginsCopy = await page.evaluate(() => document.body.innerText)

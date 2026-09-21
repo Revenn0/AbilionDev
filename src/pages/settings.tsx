@@ -28,6 +28,7 @@ import { cleanBotUsername, cleanTelegramGroupUrl } from "@/lib/migrate"
 import { useStore } from "@/lib/store"
 import { changePasswordRequest } from "@/lib/auth-api"
 import { PixelSnippet } from "@/components/layout/pixel-snippet"
+import { McpPane } from "@/components/settings/mcp-pane"
 import { workerUrl } from "@/lib/channel"
 import { fetchRuntime, prepareVoice, saveRuntime, type RuntimeStatus } from "@/lib/runtime-api"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_LLM_MODELS, normalizeSteModel } from "@/lib/llm"
@@ -40,8 +41,9 @@ import { toast } from "sonner"
 import { LEAD_LIST_CAP } from "@/lib/crm"
 
 const TABS = [
-  { id: "bot", label: "Bot Telegram" },
+  { id: "bot", label: "Telegram" },
   { id: "conta", label: "Conta" },
+  { id: "mcp", label: "MCP" },
   { id: "plugins", label: "Plugins" },
   { id: "notificacoes", label: "Notificações" },
   { id: "aparencia", label: "Aparência" },
@@ -57,7 +59,7 @@ const PLUGINS: Array<{
   exportCsv?: boolean
   icon: typeof Plug
 }> = [
-  { id: "telegram", title: "Telegram Bot", hint: "Liga-se em Bot Telegram. O interruptor daqui não mexe no token.", icon: Send },
+  { id: "telegram", title: "Telegram Bot", hint: "Liga-se em Telegram. O interruptor daqui não mexe no token.", icon: Send },
   { id: "forms", title: "Captura", hint: "Nova captura está em Leads. Não é um interruptor morto.", icon: FormInput },
   { id: "webhooks", title: "Webhooks de saída", hint: "O webhook do Telegram já corre no Worker. Eventos para um URL teu ficam para depois.", icon: Webhook, soon: true },
   { id: "reports", title: "Relatórios", hint: "Exporta a base de leads em CSV. Sem toggle falso.", icon: FileSpreadsheet, exportCsv: true },
@@ -75,6 +77,7 @@ export function SettingsPage() {
   const { crmSync, persistSync, catalogComplete, settingsSync } = useStore()
   const tab = readTab(params)
   useHashScroll("pixel", tab === "bot")
+  useHashScroll("mcp", tab === "mcp")
 
   const go = (next: TabId) => {
     const copy = new URLSearchParams(params)
@@ -84,6 +87,12 @@ export function SettingsPage() {
   }
 
   useEffect(() => {
+    if (hash === "#mcp" && tab !== "mcp") {
+      const copy = new URLSearchParams(params)
+      copy.set("tab", "mcp")
+      setParams(copy, { replace: true })
+      return
+    }
     if (hash !== "#pixel" || tab === "bot") return
     const copy = new URLSearchParams(params)
     copy.delete("tab")
@@ -94,6 +103,13 @@ export function SettingsPage() {
     <div className="h-full overflow-y-auto">
       <div className="page-shell">
         <PageChrome icon={SettingsIcon} title="Configurações" />
+        <p className="max-w-3xl text-[13px] leading-relaxed text-muted-foreground">
+          Telegram e pixel nesta primeira aba. O agente MCP — URL, token e o que ele pode fazer no estúdio — fica em{" "}
+          <button type="button" className="font-medium text-foreground underline-offset-2 hover:underline" onClick={() => go("mcp")}>
+            MCP
+          </button>
+          . Conta, CSV e tema não se misturam com o bot.
+        </p>
         <div data-settings-sync={settingsSync} data-settings-error={settingsSync === "error" ? "1" : undefined}>
           <SyncBanner
             items={[
@@ -143,6 +159,7 @@ export function SettingsPage() {
         <div role="tabpanel" id={`settings-panel-${tab}`} aria-labelledby={`settings-tab-${tab}`} tabIndex={0}>
           {tab === "bot" && <BotPane />}
           {tab === "conta" && <AccountPane />}
+          {tab === "mcp" && <McpPane />}
           {tab === "plugins" && <PluginsPane />}
           {tab === "notificacoes" && <NotifyPane />}
           {tab === "aparencia" && <ThemePane />}
@@ -164,6 +181,7 @@ function BotPane() {
   const [voiceId, setVoiceId] = useState("")
   const [model, setModel] = useState(STE_LLM_MODEL)
   const [busy, setBusy] = useState(false)
+  const [modelBusy, setModelBusy] = useState(false)
   const [voiceBusy, setVoiceBusy] = useState(false)
   const [botError, setBotError] = useState("")
   const [groupError, setGroupError] = useState("")
@@ -171,6 +189,7 @@ function BotPane() {
   const [runtimeLoaded, setRuntimeLoaded] = useState(false)
   const [runtime, setRuntime] = useState<RuntimeStatus>({ ok: false })
   const botLock = useRef(false)
+  const modelLock = useRef(false)
   const voiceLock = useRef(false)
   const userDirty = useRef(false)
   const groupDirty = useRef(false)
@@ -232,10 +251,14 @@ function BotPane() {
         botUsername={cleanBotUsername(username) || runtime.telegramBotUsername || state.settings.telegramBotUsername}
       />
       <section className="surface p-6">
-        <p className="text-[14px] font-medium">Telegram em produção</p>
+        <p className="text-[14px] font-medium">Bot Telegram</p>
         <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
-          Vincular grava o token no Worker e aponta o webhook. O que a Sté fala fica no funil publicado — não aqui. O
-          token não fica no browser nem no git.
+          Username, token e convite do grupo. Vincular grava no Worker e aponta o webhook. O token não fica no browser
+          nem no git. Modelo, chaves da IA e voz ficam nas secções abaixo. O que a Sté fala edita-se no{" "}
+          <Link className="font-medium text-foreground underline-offset-2 hover:underline" to="/fluxo">
+            funil
+          </Link>
+          .
         </p>
         <div className="mt-4 flex flex-wrap gap-1.5">
           <StatusPill tone={runtime.telegram ? "success" : "muted"}>
@@ -302,7 +325,7 @@ function BotPane() {
               setGroupError("O convite tem de ser um link https://t.me/…")
               return
             }
-            if (!cleanUser && !runtime.telegramBotUsername && !token.trim() && !glm.trim() && !opencode.trim() && !cleanGroup) {
+            if (!cleanUser && !runtime.telegramBotUsername && !token.trim() && !cleanGroup) {
               setBotError("Informa o username do bot ou cola o token.")
               return
             }
@@ -314,23 +337,12 @@ function BotPane() {
               telegramBotUsername: cleanUser,
               telegramGroupUrl: cleanGroup,
               ...(token.trim() ? { telegramBotToken: token.trim() } : {}),
-              ...(glm.trim() ? { openaiApiKey: glm.trim() } : {}),
-              ...(opencode.trim() ? { opencodeApiKey: opencode.trim() } : {}),
-              ...(elevenKey.trim() ? { elevenApiKey: elevenKey.trim() } : {}),
-              ...(voiceId.trim() ? { elevenVoiceId: voiceId.trim() } : {}),
-              steModel: model,
-              steFallbackModel: STE_LLM_FALLBACK,
             })
               .then((next) => {
                 setRuntime(next)
                 setToken("")
-                setGlm("")
-                setOpencode("")
-                setElevenKey("")
-                setVoiceId("")
                 userDirty.current = false
                 groupDirty.current = false
-                modelDirty.current = false
                 saveSettings({
                   telegramBotUsername: next.telegramBotUsername || cleanUser,
                   telegramGroupUrl: next.telegramGroupUrl || group.trim(),
@@ -405,69 +417,96 @@ function BotPane() {
               </p>
             ) : null}
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="bot-model">Modelo OpenRouter</Label>
-            <select
-              id="bot-model"
-              value={model}
-              onChange={(event) => {
-                modelDirty.current = true
-                setModel(normalizeSteModel(event.target.value))
-              }}
-              className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
-            >
-              {STE_LLM_MODELS.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-            <p className="text-[12px] text-muted-foreground">
-              A Sté fala primeiro com DeepSeek V4.1 Flash no OpenCode. Se cair, usa este modelo no OpenRouter e depois o
-              DeepSeek V4 Flash.
-            </p>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="bot-opencode">Chave OpenCode</Label>
-            <Input
-              id="bot-opencode"
-              type="password"
-              autoComplete="off"
-              value={opencode}
-              onChange={(event) => setOpencode(event.target.value)}
-              placeholder={runtime.llm && runtime.model?.includes("deepseek-v4.1") ? "OpenCode já ligada. Cola outra chave oc_sk_… para trocar." : "Cola a chave oc_sk_… (DeepSeek V4.1 Flash)"}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="bot-glm">Chave OpenRouter</Label>
-            <Input
-              id="bot-glm"
-              type="password"
-              autoComplete="off"
-              value={glm}
-              onChange={(event) => setGlm(event.target.value)}
-              placeholder={runtime.llm ? "Reserva já ligada. Cola outra chave sk-or-v1… para trocar." : "Cola a chave sk-or-v1…"}
-            />
-          </div>
-          <p className="text-[12.5px] leading-relaxed text-muted-foreground">
-            Boas-vindas, minicurso, Superbet, remarketing e o silêncio depois das 7 h editam-se no{" "}
-            <Link className="font-medium text-foreground underline-offset-2 hover:underline" to="/fluxo">
-              template do funil
-            </Link>
-            . Publica o quadro para a Sté falar essa cópia.
-          </p>
-          <p className="break-all text-[12px] text-muted-foreground">Anúncio Facebook · {landing}</p>
-          {ads ? <p className="break-all text-[12px] text-muted-foreground">Botão da landing · {ads}</p> : null}
-          <p className="break-all text-[12px] text-muted-foreground">Webhook · {hook}</p>
           <Button type="submit" className="rounded-full" disabled={busy || !owner}>
             {busy ? "A ligar…" : "Vincular Telegram"}
           </Button>
           </fieldset>
           {!owner ? (
             <p data-runtime-owner-hint className="text-[12.5px] text-muted-foreground">
-              Só o dono liga o token, as chaves e o webhook. O operador vê o estado e o pixel.
+              Só o dono liga o token e o webhook. O operador vê o estado e o pixel.
             </p>
           ) : null}
+        </form>
+      </section>
+      <section className="surface p-6">
+        <p className="text-[14px] font-medium">Sté · modelo</p>
+        <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+          A Sté fala primeiro com DeepSeek V4.1 Flash no OpenCode. Se cair, usa o modelo do OpenRouter e depois o
+          DeepSeek V4 Flash. As chaves não entram no git.
+        </p>
+        <form
+          className="mt-5 space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (!owner || modelLock.current || modelBusy) return
+            modelLock.current = true
+            setModelBusy(true)
+            void saveRuntime({
+              ...(glm.trim() ? { openaiApiKey: glm.trim() } : {}),
+              ...(opencode.trim() ? { opencodeApiKey: opencode.trim() } : {}),
+              steModel: model,
+              steFallbackModel: STE_LLM_FALLBACK,
+            })
+              .then((next) => {
+                setRuntime(next)
+                setGlm("")
+                setOpencode("")
+                modelDirty.current = false
+                if (next.warning) toast.warning(next.warning)
+                else toast.success(next.llm ? "Modelo gravado no Worker." : "Modelo gravado. Falta a chave da IA.")
+              })
+              .catch((error: Error) => toast.error(error.message))
+              .finally(() => {
+                modelLock.current = false
+                setModelBusy(false)
+              })
+          }}
+        >
+          <fieldset disabled={!owner} className="min-w-0 space-y-4 border-0 p-0">
+            <div className="space-y-1.5">
+              <Label htmlFor="bot-model">Modelo OpenRouter</Label>
+              <select
+                id="bot-model"
+                value={model}
+                onChange={(event) => {
+                  modelDirty.current = true
+                  setModel(normalizeSteModel(event.target.value))
+                }}
+                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+              >
+                {STE_LLM_MODELS.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="bot-opencode">Chave OpenCode</Label>
+              <Input
+                id="bot-opencode"
+                type="password"
+                autoComplete="off"
+                value={opencode}
+                onChange={(event) => setOpencode(event.target.value)}
+                placeholder={runtime.llm && runtime.model?.includes("deepseek-v4.1") ? "OpenCode já ligada. Cola outra chave oc_sk_… para trocar." : "Cola a chave oc_sk_… (DeepSeek V4.1 Flash)"}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="bot-glm">Chave OpenRouter</Label>
+              <Input
+                id="bot-glm"
+                type="password"
+                autoComplete="off"
+                value={glm}
+                onChange={(event) => setGlm(event.target.value)}
+                placeholder={runtime.llm ? "Reserva já ligada. Cola outra chave sk-or-v1… para trocar." : "Cola a chave sk-or-v1…"}
+              />
+            </div>
+            <Button type="submit" className="rounded-full" disabled={modelBusy || !owner}>
+              {modelBusy ? "A gravar…" : "Guardar modelo"}
+            </Button>
+          </fieldset>
         </form>
       </section>
       <section className="surface p-6">
@@ -616,9 +655,14 @@ function AccountPane() {
     <section className="surface max-w-3xl p-6">
       <p className="text-[14px] font-medium">Conta do operador</p>
       <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
-        Em produção o “Esqueceu a senha?” não envia e-mail. Troca a senha aqui com a senha actual. Contas novas e tokens MCP ficam em{" "}
+        Em produção o “Esqueceu a senha?” não envia e-mail. Troca a senha aqui com a senha actual. Contas novas e o token
+        do agente ficam em{" "}
         <Link to="/utilizadores" className="underline underline-offset-3">
           Utilizadores
+        </Link>
+        . O URL do MCP e o que o agente pode fazer estão em{" "}
+        <Link to="/configuracoes?tab=mcp" className="underline underline-offset-3">
+          MCP
         </Link>
         .
       </p>
@@ -746,7 +790,9 @@ function PluginsPane() {
       <div className="mb-3 flex items-end justify-between gap-3">
         <div>
           <p className="text-[14px] font-medium">Plugins</p>
-          <p className="mt-0.5 text-[12.5px] text-muted-foreground">O canal activo é o Telegram. Interruptores sem efeito saíram daqui.</p>
+          <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+            CSV e atalhos. O bot liga-se em Telegram. O agente MCP tem aba própria.
+          </p>
         </div>
         <p className="text-[12.5px] text-muted-foreground">{leadCount} leads na base</p>
       </div>

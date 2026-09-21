@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { Link } from "react-router-dom"
 import { Copy, Eye, EyeOff, KeyRound, UserRoundCog } from "lucide-react"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
 import { Button } from "@/components/ui/button"
@@ -301,7 +302,12 @@ export function UsersPage() {
           </div>
           <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
             O Claude Code e outros agentes falam com <code className="text-[12px]">https://www.abilion.lol/mcp</code> com um Bearer{" "}
-            <code className="text-[12px]">abn_…</code>. O valor completo só aparece uma vez.
+            <code className="text-[12px]">abn_…</code>. O valor completo só aparece uma vez. O catálogo do que o agente
+            faz — funis, leads, pixel, contas — está em{" "}
+            <Link to="/configuracoes?tab=mcp" className="underline underline-offset-3">
+              Configurações → MCP
+            </Link>
+            .
           </p>
           <form
             className="mt-4 flex flex-wrap items-end gap-2"

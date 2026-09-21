@@ -9,7 +9,7 @@ export const PAGE_INSTALL_STEPS = [
   },
   {
     title: "Cria um script para a landing",
-    body: "Em Telegram ou Configurações → Pixel, ou via MCP (abilion_create_page_script). Dá um nome, escolhe o funil e, se quiseres, a URL da página. Máximo 20 scripts.",
+    body: "Em Configurações → Telegram (pixel), ou via MCP (abilion_create_page_script). Dá um nome, escolhe o funil e, se quiseres, a URL da página. Máximo 20 scripts.",
   },
   {
     title: "Cola o snippet na página",

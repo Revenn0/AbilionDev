@@ -119,6 +119,7 @@ import { adsDeepLink, campaignFromStart, scriptIdFromStart, visitorIdFromStart }
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument, wantsAuthHtml } from "../src/lib/auth-pages.ts"
 import { addPageScript, adsLandingDocument, adsLandingUrl, adsStartToken, installSettingsBlocked, pageInstallManual, pageScriptFunnelLabel, pageScriptFunnelPending, pageScriptsFunnelUnread, pageScriptsListBlocked, pageScriptsMutationBlocked, pageScriptsWriteBlocked, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
 import { addLeadGroup, leadCategoriesListBlocked, leadCategoriesMutationBlocked, leadCategoriesWriteBlocked, leadFromImport, leadGroupsMutationBlocked, leadGroupsWriteBlocked, leadImportGroupBlocked, leadImportSubmitBlocked, listImportGroups, parseLeadImportLine, parseLeadImportText, seedLeadGroups } from "../src/lib/lead-category.ts"
+import { MCP_PUBLIC_URL, MCP_TOOLS, MCP_TOOL_GROUPS, mcpGroupedTools } from "../src/lib/mcp-catalog.ts"
 import { burstFacebookLeads, burstStartsBlocked, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
@@ -1735,6 +1736,16 @@ assert(!leadGroupsMutationBlocked(true, [{ id: "g1", name: "VIP", url: "" }], [{
 assert(leadImportSubmitBlocked(false, ""), "import sem grupo escolhido não activa o botão")
 assert(leadImportSubmitBlocked(true, "g1"), "persist unread não activa o import")
 assert(!leadImportSubmitBlocked(false, "g1"), "grupo escolhido e persist ok activam o import")
+const mcpCatalogNames = MCP_TOOLS.map((item) => item.name)
+const mcpGroupedNames = MCP_TOOL_GROUPS.flatMap((group) => [...group.tools])
+assert(MCP_PUBLIC_URL === "https://www.abilion.lol/mcp", "URL público do MCP é produção")
+assert(mcpCatalogNames.length === 19, "catálogo MCP tem as 19 tools do Worker")
+assert(mcpGroupedNames.length === mcpCatalogNames.length, "grupos MCP cobrem todas as tools")
+assert(
+  mcpGroupedNames.every((name) => mcpCatalogNames.includes(name)) && mcpCatalogNames.every((name) => mcpGroupedNames.includes(name)),
+  "grupos MCP não inventam nem omitem tool"
+)
+assert(mcpGroupedTools().every((group) => group.items.every((item) => item.description)), "cada tool do painel tem a descrição do Worker")
 const importedNamed = leadFromImport({ name: "Bia", contact: "@bia" }, { group: { name: "VIP", url: "https://t.me/+vip" } })
 assert(importedNamed.stage === "group" && importedNamed.category === "VIP" && importedNamed.campaign === "VIP", "import escolhe o grupo criado")
 assert(importedNamed.memory.includes("t.me"), "import para o grupo criado guarda o convite")
@@ -11167,6 +11178,10 @@ assert(mcpToolNames.includes("abilion_revoke_token"), "MCP lista revoke_token")
 assert(mcpToolNames.includes("abilion_page_install_manual"), "MCP lista o manual de instalação")
 assert(mcpToolNames.includes("abilion_create_page_script"), "MCP lista criar script de página")
 assert(mcpToolNames.includes("abilion_get_lead"), "MCP lista get_lead")
+assert(
+  mcpCatalogNames.every((name) => mcpToolNames.includes(name)) && mcpToolNames.length === mcpCatalogNames.length,
+  "tools/list é o catálogo do painel"
+)
 
 const mcpCreate = await handleRequest(
   new Request("http://local.test/mcp", {
