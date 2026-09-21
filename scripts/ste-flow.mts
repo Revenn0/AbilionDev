@@ -2169,6 +2169,7 @@ assert(!applyRemovedLeads([freshLead, liveLead], ["fresh"]).some((item) => item.
 assert(leadDeleteAck(200).keepTombstone && leadDeleteAck(200).ok, "DELETE 200 persiste o hide")
 assert(leadDeleteAck(204).keepTombstone && leadDeleteAck(204).ok, "DELETE 204 persiste o hide")
 assert(leadDeleteAck(503).keepTombstone && !leadDeleteAck(503).ok, "DELETE 503 persiste o hide — KV já tombstoneou")
+assert(!leadDeleteAck(409).keepTombstone && !leadDeleteAck(409).ok, "DELETE 409 não esconde o leftover — KV não confirmou tombstone")
 assert(!leadDeleteAck(401).keepTombstone && !leadDeleteAck(401).ok, "DELETE 401 não esconde o lead para sempre")
 assert(!leadDeleteAck(429).keepTombstone, "DELETE 429 não tombstoneia o local")
 assert(!leadDeleteAck(400).keepTombstone, "DELETE 400 não tombstoneia o local")
@@ -7689,6 +7690,37 @@ assert(leadKeyDownMcp.status === 200, "MCP get_lead KV throw não cai em 500")
 assert(leadKeyDownMcpData.error === "Não li o lead do Postgres.", "MCP get_lead KV throw pede confirmação")
 assert(!leadKeyDownMcpData.lead, "MCP get_lead KV throw não finge que a ficha já não está")
 assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === "leftover-ficha", "MCP get_lead KV throw não pisa a ficha leftover")
+const leadKeyDownDelete = await handleRequest(
+  new Request("http://local.test/api/leads?id=hole-lead", {
+    method: "DELETE",
+    headers: { cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.181" },
+  }),
+  leadKeyDownEnv,
+  backgroundCtx()
+)
+const leadKeyDownDeleteBody = (await leadKeyDownDelete.json()) as { error?: string; ok?: boolean }
+assert(leadKeyDownDelete.status === 409, "DELETE lead KV throw é 409")
+assert(leadKeyDownDelete.status !== 500, "DELETE lead KV throw não é Falha interna")
+assert(leadKeyDownDelete.status !== 503, "DELETE lead KV throw antes do tombstone não é 503")
+assert(leadKeyDownDeleteBody.error === "Não confirmei a exclusão do lead.", "DELETE lead KV throw pede confirmação")
+assert(leadKeyDownDeleteBody.ok !== true, "DELETE lead KV throw não mente ok")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === "leftover-ficha", "DELETE lead KV throw não pisa a ficha leftover")
+assert(!(await isLeadRemoved(runtimeHoleKv, "hole-lead")), "DELETE lead KV throw não tombstoneia o leftover")
+const removedPutDownDelete = await handleRequest(
+  new Request("http://local.test/api/leads?id=hole-lead", {
+    method: "DELETE",
+    headers: { cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.182" },
+  }),
+  { ...runtimeHoleBase, AUTH: kvThrowsOnPut(runtimeHoleKv, CRM_REMOVED) } as Env,
+  backgroundCtx()
+)
+const removedPutDownDeleteBody = (await removedPutDownDelete.json()) as { error?: string; ok?: boolean }
+assert(removedPutDownDelete.status === 409, "DELETE tombstone put throw é 409")
+assert(removedPutDownDelete.status !== 500, "DELETE tombstone put throw não é Falha interna")
+assert(removedPutDownDelete.status !== 503, "DELETE tombstone put throw não é 503")
+assert(removedPutDownDeleteBody.error === "Não confirmei a exclusão do lead.", "DELETE tombstone put throw pede confirmação")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === "leftover-ficha", "DELETE tombstone put throw não pisa a ficha leftover")
+assert(!(await isLeadRemoved(runtimeHoleKv, "hole-lead")), "DELETE tombstone put throw não tombstoneia")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()

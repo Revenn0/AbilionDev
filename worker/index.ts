@@ -810,7 +810,9 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (limited) return limited
     const id = (url.searchParams.get("id") || "").trim()
     if (!id || id.length > 80) return json({ error: "Falta o id do lead." }, 400)
-    if (!(await removeLead(env, id))) return json({ error: "Não apaguei o lead do Postgres." }, 503)
+    const removed = await removeLead(env, id)
+    if (removed === "unread") return json({ error: "Não confirmei a exclusão do lead." }, 409)
+    if (!removed) return json({ error: "Não apaguei o lead do Postgres." }, 503)
     return json({ ok: true })
   }
 
@@ -1281,8 +1283,22 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
   }
 }
 
-async function removeLead(env: Env, id: string) {
-  if (env.AUTH) await deleteLeadKv(env.AUTH, id)
+async function leadRemovalTombstoned(kv: KvLike, id: string) {
+  try {
+    return await isLeadRemoved(kv, id)
+  } catch {
+    return false
+  }
+}
+
+async function removeLead(env: Env, id: string): Promise<true | false | "unread"> {
+  if (env.AUTH) {
+    try {
+      await deleteLeadKv(env.AUTH, id)
+    } catch {
+      if (!(await leadRemovalTombstoned(env.AUTH, id))) return "unread"
+    }
+  }
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return true
   for (let attempt = 0; attempt < 4; attempt++) {
     const leadGone = await rest(env, `leads?id=eq.${encodeURIComponent(id)}&workspace_id=eq.${WORKSPACE}`, { method: "DELETE" })
