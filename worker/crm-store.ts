@@ -353,16 +353,16 @@ export async function persistFunnelsMerge(kv: KvLike, incoming: SalesFunnel[], i
   if (!incoming.length) throw new Error("Mantém pelo menos um funil.")
   let clean = incoming
   for (let attempt = 0; attempt < 8; attempt++) {
-    const gone = await collectGoneFunnelIds(kv, [...incoming.map((item) => item.id), ...incomingRemoved])
-    const latestRemoved = clipRemovedIds([...(await loadRemovedFunnelIds(kv)), ...gone], FUNNEL_REMOVED_CAP)
+    const gone = await collectGoneFunnelIdsForRead(kv, [...incoming.map((item) => item.id), ...incomingRemoved])
+    const latestRemoved = clipRemovedIds([...(await removedFunnelIdsForRead(kv)), ...gone], FUNNEL_REMOVED_CAP)
     const latest = applyRemovedFunnels(await loadFunnelsKv(kv), latestRemoved)
     clean = enforceSinglePublished(commitCrmFunnels(latest, incoming, latestRemoved, incomingRemoved, latest, latestRemoved))
     if (!clean.length) throw new Error("Mantém pelo menos um funil.")
     if (clean.length > FUNNEL_CAP) throw new Error(`O estúdio aceita no máximo ${FUNNEL_CAP} funis.`)
     await saveFunnelsKv(kv, clean)
     if (incomingRemoved.length) await rememberRemovedFunnels(kv, incomingRemoved)
-    const afterGone = await collectGoneFunnelIds(kv, [...incoming.map((item) => item.id), ...incomingRemoved])
-    const afterRemoved = clipRemovedIds([...(await loadRemovedFunnelIds(kv)), ...afterGone], FUNNEL_REMOVED_CAP)
+    const afterGone = await collectGoneFunnelIdsForRead(kv, [...incoming.map((item) => item.id), ...incomingRemoved])
+    const afterRemoved = clipRemovedIds([...(await removedFunnelIdsForRead(kv)), ...afterGone], FUNNEL_REMOVED_CAP)
     const after = applyRemovedFunnels(await loadFunnelsKv(kv), afterRemoved)
     const again = enforceSinglePublished(commitCrmFunnels(after, incoming, afterRemoved, incomingRemoved, after, afterRemoved))
     if (funnelPersistKey(after) === funnelPersistKey(again)) break
@@ -648,14 +648,14 @@ export async function funnelRemovedForRead(kv: KvLike, id: string): Promise<bool
   return Boolean(key && (await kv.get(key, "json")))
 }
 
-async function collectGoneFunnelIds(kv: KvLike, ids: string[]) {
+async function collectGoneFunnelIdsForRead(kv: KvLike, ids: string[]) {
   const gone: string[] = []
   const seen = new Set<string>()
   for (const id of ids) {
     const next = id.trim()
     if (!next || seen.has(next)) continue
     seen.add(next)
-    if (await isFunnelRemoved(kv, next)) gone.push(next)
+    if (await funnelRemovedForRead(kv, next)) gone.push(next)
   }
   return gone
 }

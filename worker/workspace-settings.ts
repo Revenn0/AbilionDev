@@ -721,17 +721,34 @@ export async function persistRemoteFunnels(env: SettingsEnv, funnels: SalesFunne
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return
   const remote = await fetchRemoteFunnels(env)
   if (remote === null) return
-  const removed = env.AUTH ? await loadRemovedFunnelIds(env.AUTH) : []
-  const keep = adoptFunnelStores(funnels, remote, removed)
-  if (keep.length) {
+  let removed: string[] = []
+  let listUnread = false
+  if (env.AUTH) {
+    try {
+      removed = await loadRemovedFunnelIds(env.AUTH)
+    } catch {
+      listUnread = true
+    }
+  }
+  const keep = listUnread ? funnels : adoptFunnelStores(funnels, remote, removed)
+  const live: SalesFunnel[] = []
+  for (const funnel of keep) {
+    if (env.AUTH && (await funnelRemovedForRead(env.AUTH, funnel.id))) continue
+    live.push(funnel)
+  }
+  if (live.length) {
     const wrote = await restWorkspace(env, "funnels", {
       method: "POST",
       headers: { Prefer: "resolution=merge-duplicates" },
-      body: JSON.stringify(keep.map(funnelRowForRemote)),
+      body: JSON.stringify(live.map(funnelRowForRemote)),
     })
     if (wrote === null) return
   }
   const gone = new Set(removed)
+  for (const row of remote) {
+    if (!row.id) continue
+    if (env.AUTH && (await funnelRemovedForRead(env.AUTH, row.id))) gone.add(row.id)
+  }
   for (const row of remote.filter((item) => item.id && gone.has(item.id)).slice(0, 40)) {
     await restWorkspace(env, `funnels?id=eq.${encodeURIComponent(row.id)}&workspace_id=eq.${WORKSPACE}`, { method: "DELETE" })
   }
