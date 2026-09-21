@@ -7726,6 +7726,43 @@ try {
 assert(!(await listLeads(runtimeHoleKv, 20, "all")).some((item) => item.contact === "@hookkv"), "webhook KV throw não cria lead")
 assert((await loadSecrets(runtimeHoleKv)).telegramWebhookSecret === "hook-kv", "webhook KV throw não apaga o secret leftover")
 assert((await loadSecrets(runtimeHoleKv)).telegramBotToken === "000:kv-token", "webhook KV throw não apaga o token leftover")
+const hookKvAfterCtx = backgroundCtx()
+let hookKvAfterCalls = 0
+const hookKvAfterPrev = globalThis.fetch
+try {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("api.telegram.org")) {
+      hookKvAfterCalls += 1
+      return new Response(JSON.stringify({ ok: true }), { status: 200 })
+    }
+    return hookKvAfterPrev(input, init)
+  }) as typeof fetch
+  const hookKvAfter = await handleRequest(
+    new Request("http://local.test/api/telegram", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-kv" },
+      body: JSON.stringify({
+        update_id: 88004,
+        message: {
+          chat: { id: 88004 },
+          text: "/start fb_hookafter",
+          from: { id: 88004, username: "hookafter", first_name: "After" },
+        },
+      }),
+    }),
+    { ...runtimeHoleBase, AUTH: kvThrowsAfter(runtimeHoleKv, RUNTIME_KEY, 1) } as Env,
+    hookKvAfterCtx
+  )
+  const hookKvAfterBody = (await hookKvAfter.json()) as { ok?: boolean; error?: string }
+  assert(hookKvAfter.status === 200 && hookKvAfterBody.ok, "webhook secrets leftover ainda acka o Telegram")
+  assert(hookKvAfter.status !== 503, "webhook secrets leftover não pede as chaves outra vez")
+  await hookKvAfterCtx.flush()
+  assert(hookKvAfterCalls >= 1, "webhook secrets leftover ainda entrega no waitUntil")
+} finally {
+  globalThis.fetch = hookKvAfterPrev
+}
+assert((await listLeads(runtimeHoleKv, 20, "all")).some((item) => item.contact === "@hookafter"), "webhook secrets leftover ainda cria o lead")
+assert((await loadSecrets(runtimeHoleKv)).telegramBotToken === "000:kv-token", "webhook secrets leftover não apaga o token")
 const leftoverAuth = (await runtimeHoleKv.get("snapshot", "json")) as {
   users?: Array<{ email?: string; passwordHash?: string }>
   sessions?: unknown[]

@@ -62,6 +62,7 @@ import {
   resolveRuntime,
   saveSecrets,
   setTelegramWebhook,
+  type ResolvedRuntime,
   type RuntimeSecrets,
 } from "./runtime-secrets.ts"
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
@@ -862,7 +863,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     const parsed = await readJsonStrict(request, 65_536)
     if (!parsed.ok) return json({ ok: false }, parsed.status)
     const update = parsed.value as TelegramUpdate
-    ctx.waitUntil(handleTelegram(env, update))
+    ctx.waitUntil(handleTelegram(env, update, secrets))
     return json({ ok: true })
   }
 
@@ -890,16 +891,16 @@ function webhookUrl(request: Request, env: Env) {
   return `${origin}/api/telegram`
 }
 
-async function handleTelegram(env: Env, update: TelegramUpdate) {
+async function handleTelegram(env: Env, update: TelegramUpdate, secrets?: RuntimeSecrets) {
   try {
-    await runTelegram(env, update)
+    await runTelegram(env, update, secrets)
   } catch {
     console.error("telegram update falhou", typeof update.update_id === "number" ? update.update_id : "")
   }
 }
 
-async function runTelegram(env: Env, update: TelegramUpdate) {
-  const { resolved } = await runtimeOf(env)
+async function runTelegram(env: Env, update: TelegramUpdate, secrets?: RuntimeSecrets) {
+  const resolved = secrets ? resolveRuntime(env, secrets) : (await runtimeOf(env)).resolved
   if (!resolved.telegramBotToken) return
   if (!telegramUpdateActor(update)) return
   const updateId = typeof update.update_id === "number" && update.update_id > 0 ? update.update_id : 0
@@ -907,7 +908,7 @@ async function runTelegram(env: Env, update: TelegramUpdate) {
   if (updateId && kv && !(await claimTelegramUpdate(kv, updateId))) return
   let sent = false
   try {
-    sent = (await deliverTelegram(env, update, resolved.telegramBotToken)).sent
+    sent = (await deliverTelegram(env, update, resolved.telegramBotToken, resolved)).sent
   } catch (error) {
     if (updateId && kv && !sent) await forgetTelegramUpdate(kv, updateId)
     throw error
@@ -915,8 +916,13 @@ async function runTelegram(env: Env, update: TelegramUpdate) {
   if (updateId && kv && !sent) await forgetTelegramUpdate(kv, updateId)
 }
 
-async function deliverTelegram(env: Env, update: TelegramUpdate, token: string): Promise<{ sent: boolean }> {
-  const { resolved } = await runtimeOf(env)
+async function deliverTelegram(
+  env: Env,
+  update: TelegramUpdate,
+  token: string,
+  resolved?: ResolvedRuntime
+): Promise<{ sent: boolean }> {
+  const live = resolved ?? (await runtimeOf(env)).resolved
   const joinUser = telegramJoinActor(update)
   const message = update.message
   const from = telegramUpdateActor(update)
@@ -1016,15 +1022,15 @@ async function deliverTelegram(env: Env, update: TelegramUpdate, token: string):
   if (shouldTalk) {
     const talked = incoming?.trim()
       ? await replySteSmart(lead, incoming, {
-          apiKey: resolved.openaiApiKey || undefined,
-          openRouterKey: resolved.openaiApiKey || undefined,
-          openCodeKey: resolved.opencodeApiKey || undefined,
-          model: resolved.opencodeApiKey ? resolved.fallbackModel : resolved.model,
-          fallbackModel: resolved.opencodeApiKey ? undefined : resolved.fallbackModel,
+          apiKey: live.openaiApiKey || undefined,
+          openRouterKey: live.openaiApiKey || undefined,
+          openCodeKey: live.opencodeApiKey || undefined,
+          model: live.opencodeApiKey ? live.fallbackModel : live.model,
+          fallbackModel: live.opencodeApiKey ? undefined : live.fallbackModel,
           runtime: ste,
         })
       : replySte(lead, incoming, Date.now(), ste)
-    const sent = await sendSteReplies(env, token, chatId, talked.replies, talked.beat)
+    const sent = await sendSteReplies(env, token, chatId, talked.replies, talked.beat, live)
     if (sent.ok) {
       lead = talked.lead
       delivered = true
@@ -1138,7 +1144,7 @@ async function processWaits(env: Env): Promise<{ advanced: number; remoteUnread:
           if (!talked.replies.length && talked.lead.waitUntil === lead.waitUntil) continue
           if (!(await saveLead(env, talked.lead))) continue
           if (token && lead.telegramChatId && talked.replies.length) {
-            const sent = await sendSteReplies(env, token, lead.telegramChatId, talked.replies, talked.beat)
+            const sent = await sendSteReplies(env, token, lead.telegramChatId, talked.replies, talked.beat, resolved)
             if (!sent.ok) {
               await restoreQueuedLead(env, lead)
               continue
@@ -1425,16 +1431,30 @@ async function rest<T>(env: Env, path: string, init?: RequestInit): Promise<T | 
   }
 }
 
-async function sendSteReplies(env: Env, token: string, chatId: string, replies: string[], beat?: SteBeat) {
+async function sendSteReplies(
+  env: Env,
+  token: string,
+  chatId: string,
+  replies: string[],
+  beat?: SteBeat,
+  resolved?: ResolvedRuntime
+) {
   if (!replies.length) return { ok: true }
   let delivered = false
   const clip = beat ? voiceClipFor(beat.kind) : null
   const kv = kvOf(env)
   if (clip && kv) {
-    const { resolved } = await runtimeOf(env)
-    if (resolved.voice) {
+    let voice = resolved
+    if (!voice) {
       try {
-        const stored = await ensureVoiceClip(kv, clip, resolved.elevenApiKey, resolved.elevenVoiceId)
+        voice = (await runtimeOf(env)).resolved
+      } catch {
+        voice = undefined
+      }
+    }
+    if (voice?.voice) {
+      try {
+        const stored = await ensureVoiceClip(kv, clip, voice.elevenApiKey, voice.elevenVoiceId)
         const fileId = await sendStoredVoice(token, chatId, stored)
         if (fileId) {
           delivered = true
