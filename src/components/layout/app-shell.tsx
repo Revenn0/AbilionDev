@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Navigate, useLocation, useNavigate } from "react-router-dom"
+import { useLocation } from "react-router-dom"
 import { Menu, X } from "lucide-react"
 import { Sidebar } from "./sidebar"
 import { Button } from "@/components/ui/button"
@@ -27,7 +27,6 @@ function pageTitle(pathname: string) {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { ready, sessionSync, state } = useStore()
-  const navigate = useNavigate()
   const location = useLocation()
   const pathname = location.pathname
   const loginNext = withSafeNext("/login", `${pathname}${location.search}`)
@@ -83,9 +82,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    if (!ready) return
-    if (!state.user) navigate(loginNext, { replace: true })
-  }, [ready, state.user, navigate, loginNext])
+    if (!ready || state.user) return
+    window.location.replace(loginNext)
+  }, [ready, state.user, loginNext])
 
   if (!ready) {
     return (
@@ -94,7 +93,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
     )
   }
-  if (!state.user) return <Navigate to={loginNext} replace />
+  if (!state.user) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-background" role="status" aria-live="polite">
+        <p className="text-[13px] text-muted-foreground">A ir para o login…</p>
+      </div>
+    )
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">

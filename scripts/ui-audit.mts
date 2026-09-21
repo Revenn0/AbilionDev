@@ -283,6 +283,8 @@ try {
   await page.evaluate(() => window.dispatchEvent(new Event("focus")))
   await page.waitForFunction(() => location.pathname.includes("/login"), { timeout: 8_000 })
   assert(page.url().includes("/login"), "cookie apagado volta ao login")
+  await page.waitForSelector('form[action="/api/auth/login"]', { timeout: 8_000 })
+  assert(await page.$('form[action="/api/auth/login"]'), "cookie apagado abre o login do Worker")
   await login(page)
 
   await open(page, "/configuracoes")
@@ -501,6 +503,8 @@ try {
   await page.waitForSelector('button[aria-label="Sair"]', { timeout: 10_000, visible: true })
   await page.click('button[aria-label="Sair"]')
   await page.waitForFunction(() => location.pathname.includes("/login"), { timeout: 10_000 })
+  await page.waitForSelector('form[action="/api/auth/login"]', { timeout: 8_000 })
+  assert(await page.$('form[action="/api/auth/login"]'), "Sair abre o login do Worker")
 
   await open(page, "/forgot")
   assert(page.url().includes("/forgot"), "logout → forgot sem AuthGate a empurrar")
