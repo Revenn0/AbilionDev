@@ -1067,9 +1067,9 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
   const keep = new Set(filled.leads.map((lead) => lead.id))
   const scoped = remote.filter((lead) => keep.has(lead.id))
   const live = env.AUTH ? await filterLiveLeads(env.AUTH, scoped) : scoped
-  const attached = await attachLeadEvents(env, live)
+  const attached = await attachLeadEvents(env, adoptLeadStores(filled.leads, live))
   return {
-    leads: adoptLeadStores(filled.leads, attached.leads).slice(0, Math.max(limit, filled.leads.length)),
+    leads: attached.leads.slice(0, Math.max(limit, filled.leads.length)),
     nextCursor: page.stale ? undefined : page.nextCursor,
     stale: page.stale,
     clipped: page.clipped === true || filled.holesOpen,
