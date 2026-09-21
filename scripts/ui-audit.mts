@@ -270,6 +270,10 @@ try {
   const pixelCopy = await page.$eval("#pixel", (el) => el.textContent || "")
   assert(pixelCopy.includes("Manual") || pixelCopy.includes("scripts de página") || pixelCopy.includes("Instalar"), "pixel mostra o manual de instalação")
   assert(Boolean(await page.$("#page-script-name")), "pixel deixa criar script de outra página")
+  assert(
+    (await page.$eval("#page-script-name", (el) => (el as HTMLInputElement).disabled)) === false,
+    "pixel com settings confirmadas deixa preencher o nome do script"
+  )
   assert(pixelCopy.includes("www.abilion.lol/t.js"), "telegram mostra o snippet de produção")
   assert(pixelCopy.includes("data-abilion-cta"), "telegram pede o atributo no botão")
   const telegramCopy = await page.evaluate(() => document.body.innerText)
@@ -340,6 +344,11 @@ try {
   await clickNamed(page, "Nova captura")
   await page.waitForSelector("#lead-name", { timeout: 5_000 })
   assert(Boolean(await page.$("#lead-category")), "captura deixa escolher categoria")
+  assert(Boolean(await page.$("#lead-category-new")), "captura deixa criar categoria")
+  assert(
+    (await page.$eval("#lead-category-new", (el) => (el as HTMLInputElement).disabled)) === false,
+    "captura com settings confirmadas deixa criar categoria"
+  )
   await page.click('button[type="submit"]')
   await page.waitForSelector("#lead-name-error", { timeout: 3_000 })
   assert(await page.$("#lead-contact-error"), "captura mostra os dois erros")

@@ -17,7 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useStore } from "@/lib/store"
-import { addLeadCategory, leadFromImport, leadImportGroupBlocked, mergeLeadCategories, parseLeadImportText } from "@/lib/lead-category"
+import { addLeadCategory, leadCategoriesListBlocked, leadFromImport, leadImportGroupBlocked, mergeLeadCategories, parseLeadImportText } from "@/lib/lead-category"
 import { captureAgainstFunnels } from "@/lib/templates"
 import { ORIGIN_LABEL, STAGE_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { isImportedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadsHydrating } from "@/lib/ops"
@@ -63,6 +63,13 @@ export function LeadsPage() {
     () => mergeLeadCategories(state.settings.leadCategories, state.leads.map((item) => item.category).filter(Boolean) as string[]),
     [state.leads, state.settings.leadCategories]
   )
+  const categoriesUnread = leadCategoriesListBlocked(settingsSync !== "ok", state.settings.leadCategories)
+  const createCategory = (name: string) => {
+    if (categoriesUnread) return { ok: false as const, error: "Não confirmei as categorias." }
+    const made = addLeadCategory(state.settings.leadCategories, name)
+    if (made.ok) saveSettings({ leadCategories: made.categories })
+    return made
+  }
   const filterCounts = useMemo(() => {
     const next: Record<string, number> = { all: state.leads.length }
     for (const item of FILTERS) next[item.id] = leadFilterCount(state.leads, item.id)
@@ -235,34 +242,25 @@ export function LeadsPage() {
         onCreate={createLead}
         funnels={state.funnels}
         categories={categories}
-        onCategory={(name) => {
-          const made = addLeadCategory(state.settings.leadCategories, name)
-          if (made.ok) saveSettings({ leadCategories: made.categories })
-          return made
-        }}
+        categoriesUnread={categoriesUnread}
+        onCategory={createCategory}
       />
       <ImportLeadsDialog
         open={importing}
         onOpenChange={setImporting}
         categories={categories}
+        categoriesUnread={categoriesUnread}
         groupUrl={state.settings.telegramGroupUrl}
         settingsSync={settingsSync}
-        onCategory={(name) => {
-          const made = addLeadCategory(state.settings.leadCategories, name)
-          if (made.ok) saveSettings({ leadCategories: made.categories })
-          return made
-        }}
+        onCategory={createCategory}
         onImport={async (leads) => createLeads(leads)}
       />
       <LeadDrawer
         lead={lead}
         funnels={state.funnels}
         categories={categories}
-        onCategory={(name) => {
-          const made = addLeadCategory(state.settings.leadCategories, name)
-          if (made.ok) saveSettings({ leadCategories: made.categories })
-          return made
-        }}
+        categoriesUnread={categoriesUnread}
+        onCategory={createCategory}
         geos={summary.geos}
         onClose={() => setSelected(null)}
         onSave={saveLead}
@@ -283,6 +281,7 @@ function CaptureDialog({
   onCreate,
   funnels,
   categories,
+  categoriesUnread,
   onCategory,
 }: {
   open: boolean
@@ -290,6 +289,7 @@ function CaptureDialog({
   onCreate: (lead: Lead) => void | Promise<boolean>
   funnels: SalesFunnel[]
   categories: string[]
+  categoriesUnread?: boolean
   onCategory: (name: string) => { ok: true; category: string } | { ok: false; error: string }
 }) {
   const [name, setName] = useState("")
@@ -373,7 +373,14 @@ function CaptureDialog({
               <option value="closing">Fechamento</option>
             </select>
           </div>
-          <CategoryField id="lead-category" value={category} categories={categories} onChange={setCategory} onCreate={onCategory} />
+          <CategoryField
+            id="lead-category"
+            value={category}
+            categories={categories}
+            unread={categoriesUnread}
+            onChange={setCategory}
+            onCreate={onCategory}
+          />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
@@ -390,12 +397,14 @@ function CategoryField({
   id,
   value,
   categories,
+  unread,
   onChange,
   onCreate,
 }: {
   id: string
   value: string
   categories: string[]
+  unread?: boolean
   onChange: (value: string) => void
   onCreate: (name: string) => { ok: true; category: string } | { ok: false; error: string }
 }) {
@@ -409,7 +418,7 @@ function CategoryField({
         onChange={(event) => onChange(event.target.value)}
         className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
       >
-        <option value="">Sem categoria</option>
+        <option value="">{unread && !categories.length ? "Não confirmei as categorias" : "Sem categoria"}</option>
         {categories.map((item) => (
           <option key={item} value={item}>
             {item}
@@ -425,11 +434,13 @@ function CategoryField({
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           placeholder="Nova categoria"
+          disabled={unread}
         />
         <Button
           type="button"
           variant="outline"
           className="rounded-full"
+          disabled={unread}
           onClick={() => {
             const made = onCreate(draft)
             if (!made.ok) {
@@ -443,6 +454,11 @@ function CategoryField({
           Criar
         </Button>
       </div>
+      {unread ? (
+        <p className="text-[12px] text-muted-foreground" data-lead-categories="unread" role="alert">
+          Não confirmei as categorias no Worker.
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -451,6 +467,7 @@ function ImportLeadsDialog({
   open,
   onOpenChange,
   categories,
+  categoriesUnread,
   groupUrl,
   settingsSync,
   onCategory,
@@ -459,6 +476,7 @@ function ImportLeadsDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
   categories: string[]
+  categoriesUnread?: boolean
   groupUrl?: string
   settingsSync: "idle" | "ok" | "error"
   onCategory: (name: string) => { ok: true; category: string } | { ok: false; error: string }
@@ -536,7 +554,14 @@ function ImportLeadsDialog({
               </p>
             ) : null}
           </div>
-          <CategoryField id="lead-import-category" value={category} categories={categories} onChange={setCategory} onCreate={onCategory} />
+          <CategoryField
+            id="lead-import-category"
+            value={category}
+            categories={categories}
+            unread={categoriesUnread}
+            onChange={setCategory}
+            onCreate={onCategory}
+          />
           <label className="flex items-start gap-2 text-[13px] leading-relaxed">
             <input
               id="lead-import-group"
@@ -628,6 +653,7 @@ function LeadDrawer({
   lead,
   funnels,
   categories,
+  categoriesUnread,
   onCategory,
   geos,
   onClose,
@@ -638,6 +664,7 @@ function LeadDrawer({
   lead: Lead | null
   funnels: SalesFunnel[]
   categories: string[]
+  categoriesUnread?: boolean
   onCategory: (name: string) => { ok: true; category: string } | { ok: false; error: string }
   geos?: Record<string, { country?: string; countryCode?: string; city?: string; region?: string; regionCode?: string }>
   onClose: () => void
@@ -859,6 +886,7 @@ function LeadDrawer({
             id="lead-drawer-category"
             value={lead.category ?? ""}
             categories={categories}
+            unread={categoriesUnread}
             onChange={(value) => commit({ ...lead, category: value, updatedAt: new Date().toISOString() })}
             onCreate={onCategory}
           />

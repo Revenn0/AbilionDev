@@ -216,6 +216,15 @@ function BotPane() {
           </button>
         </p>
       )}
+      {runtimeLoaded && runtime.ok && runtime.settingsUnread ? (
+        <p
+          role="alert"
+          data-runtime-settings-unread
+          className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-[12.5px] text-destructive"
+        >
+          Não confirmei as definições no Postgres. Username, grupo e scripts de página podem estar desactualizados.
+        </p>
+      ) : null}
       <PixelSnippet
         origin={origin}
         botUsername={cleanBotUsername(username) || runtime.telegramBotUsername || state.settings.telegramBotUsername}
@@ -234,7 +243,9 @@ function BotPane() {
             Webhook · {runtime.webhookOk ? "activo" : "ainda não apontado"}
           </StatusPill>
           <StatusPill tone={runtime.telegramBotUsername || username ? "success" : "muted"}>
-            {runtime.telegramBotUsername || username || "Username vazio"}
+            {runtime.settingsUnread && !runtime.telegramBotUsername && !username
+              ? "Não confirmei o username"
+              : runtime.telegramBotUsername || username || "Username vazio"}
           </StatusPill>
           <StatusPill tone={runtime.tokenHint ? "success" : "muted"}>
             {runtime.tokenHint ? `Token ${runtime.tokenHint}` : "Sem token no Worker"}

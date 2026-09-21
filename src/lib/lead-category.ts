@@ -117,6 +117,11 @@ export function leadImportGroupBlocked(settingsSync: "idle" | "ok" | "error", gr
   return !String(groupUrl || "").trim() && settingsSync !== "ok"
 }
 
+/** Lista unread e oca: não fingir que ainda não há categorias. Se o KV já tem alguma, criar segue. */
+export function leadCategoriesListBlocked(unread: boolean, categories?: string[]) {
+  return unread && !migrateLeadCategories(categories).length
+}
+
 export function leadFromImport(
   row: { name: string; contact: string },
   input: { category?: string; toGroup?: boolean; groupUrl?: string } = {}

@@ -101,8 +101,10 @@ export function PixelSnippet({ origin, botUsername }: { origin: string; botUsern
       </p>
       <form
         className="mt-3 grid gap-3 sm:grid-cols-2"
+        data-pixel-create={scriptsUnread ? (settingsSync === "idle" ? "loading" : "error") : "ok"}
         onSubmit={(event) => {
           event.preventDefault()
+          if (scriptsUnread || boardsUnread) return
           const made = addPageScript(scripts, { name, funnelId: funnelId || boards[0]?.id || "", pageUrl })
           if (!made.ok) {
             toast.error(made.error)
@@ -113,6 +115,7 @@ export function PixelSnippet({ origin, botUsername }: { origin: string; botUsern
           persist(made.scripts, undefined, "Script da página criado.", "Não gravei o script no Worker.")
         }}
       >
+        <fieldset disabled={scriptsUnread} className="col-span-full grid gap-3 border-0 p-0 sm:grid-cols-2">
         <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="page-script-name">Nome da página</Label>
           <Input id="page-script-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Landing Superbet" />
@@ -156,6 +159,7 @@ export function PixelSnippet({ origin, botUsername }: { origin: string; botUsern
             Criar script desta página
           </Button>
         </div>
+        </fieldset>
       </form>
 
       {scriptsUnread && settingsSync === "idle" ? (

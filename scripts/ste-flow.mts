@@ -102,7 +102,7 @@ import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, mig
 import { adsDeepLink, campaignFromStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument, wantsAuthHtml } from "../src/lib/auth-pages.ts"
 import { addPageScript, adsLandingDocument, adsLandingUrl, adsStartToken, installSettingsBlocked, pageInstallManual, pageScriptsListBlocked, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
-import { leadFromImport, leadImportGroupBlocked, parseLeadImportLine, parseLeadImportText } from "../src/lib/lead-category.ts"
+import { leadCategoriesListBlocked, leadFromImport, leadImportGroupBlocked, parseLeadImportLine, parseLeadImportText } from "../src/lib/lead-category.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
@@ -1535,6 +1535,10 @@ assert(leadImportGroupBlocked("error", ""), "import toGroup bloqueia se settings
 assert(leadImportGroupBlocked("idle", ""), "import toGroup bloqueia enquanto as settings carregam sem URL")
 assert(!leadImportGroupBlocked("ok", ""), "import toGroup sem URL confirmado continua")
 assert(!leadImportGroupBlocked("error", "https://t.me/+abc"), "import toGroup unread com URL no KV segue")
+assert(leadCategoriesListBlocked(true, []), "categorias unread e ocas bloqueiam criar")
+assert(leadCategoriesListBlocked(true, undefined), "categorias unread sem lista bloqueiam criar")
+assert(!leadCategoriesListBlocked(true, ["VIP"]), "categorias unread com lista no KV seguem")
+assert(!leadCategoriesListBlocked(false, []), "categorias lidas vazias não bloqueiam criar")
 assert(leadsToCsv([importedGroup]).includes("category"), "CSV exporta categoria")
 assert(!canFlushCrm(false), "sem hydrate o painel não grava CRM")
 assert(canFlushCrm(true), "depois do GET o painel pode gravar")
@@ -6498,6 +6502,28 @@ const mcpImportGroupUnreadBody = (await mcpImportGroupUnread.json()) as {
 const mcpImportGroupUnreadData = JSON.parse(mcpImportGroupUnreadBody.result?.content?.[0]?.text || "{}") as { error?: string }
 assert(mcpImportGroupUnread.status === 200 && mcpImportGroupUnreadBody.result?.isError, "MCP não importa para o grupo se o URL unread")
 assert(mcpImportGroupUnreadData.error === "Não confirmei o grupo do Telegram.", "MCP import toGroup unread pede o grupo")
+const mcpImportCategoryUnread = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 198,
+      method: "tools/call",
+      params: { name: "abilion_import_leads", arguments: { text: "Rita, 11911112222", category: "VIP" } },
+    }),
+  }),
+  mcpInstallDownEnv,
+  backgroundCtx()
+)
+const mcpImportCategoryUnreadBody = (await mcpImportCategoryUnread.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const mcpImportCategoryUnreadData = JSON.parse(mcpImportCategoryUnreadBody.result?.content?.[0]?.text || "{}") as {
+  error?: string
+}
+assert(mcpImportCategoryUnread.status === 200 && mcpImportCategoryUnreadBody.result?.isError, "MCP não cria categoria se a lista unread está oca")
+assert(mcpImportCategoryUnreadData.error === "Não confirmei as categorias.", "MCP import unread pede confirmação das categorias")
 
 const mcpImport = await handleRequest(
   new Request("http://local.test/mcp", {
