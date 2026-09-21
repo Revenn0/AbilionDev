@@ -690,16 +690,25 @@ export async function releaseCronLock(kv: KvLike, owner?: string) {
   await kv.delete?.(CRM_CRON_LOCK)
 }
 
-/** Esperas do índice. `missingIds` são waits sem `crm:lead` e sem tombstone. */
+/** Esperas do índice. `missingIds` são waits sem ficha, sem espera na ficha, ou sem tombstone. */
 export async function dueLeadsKv(kv: KvLike, nowIso: string): Promise<{ leads: Lead[]; missingIds: string[] }> {
   const index = await loadIndex(kv)
   const ids = index.entries.filter((item) => item.waitUntil && item.waitUntil <= nowIso).map((item) => item.id)
   const removed = new Set(await loadRemovedLeadIds(kv))
   const loaded = await Promise.all(ids.map(async (id) => ({ id, lead: await loadLead(kv, id, removed) })))
-  const leads = loaded.map((row) => row.lead).filter((lead): lead is Lead => Boolean(lead))
+  const leads: Lead[] = []
   const missingIds: string[] = []
   for (const row of loaded) {
-    if (row.lead) continue
+    if (row.lead) {
+      if (row.lead.waitUntil && row.lead.waitUntil <= nowIso) {
+        leads.push(row.lead)
+        continue
+      }
+      if (row.lead.waitUntil) continue
+      if (await leadIsGone(kv, row.id, removed)) continue
+      missingIds.push(row.id)
+      continue
+    }
     if (await leadIsGone(kv, row.id, removed)) continue
     missingIds.push(row.id)
   }

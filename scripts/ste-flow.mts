@@ -2695,6 +2695,16 @@ assert(
   "cron nao adopta lead tombstoned"
 )
 assert(adoptDueLeads([first], [staleGone], []).some((item) => item.id === "crm-1"), "cron prefere o KV")
+const dueMixWait = "2026-06-01T00:00:00.000Z"
+const dueMixKv = { ...lead("due-mix", "@duemix"), waitUntil: undefined, updatedAt: "2026-06-01T00:00:00.000Z" }
+const dueMixPg = { ...lead("due-mix", "@duemix"), waitUntil: dueMixWait, updatedAt: "2026-06-02T00:00:00.000Z" }
+assert(
+  adoptDueLeads([dueMixKv], [dueMixPg], []).some((item) => item.id === "due-mix" && item.waitUntil === dueMixWait),
+  "cron não deixa a espera do backup se o KV está velho"
+)
+const dueAteKv = { ...lead("due-ate", "@dueate"), waitUntil: undefined, updatedAt: "2026-06-03T00:00:00.000Z" }
+const dueAtePg = { ...lead("due-ate", "@dueate"), waitUntil: dueMixWait, updatedAt: "2026-06-01T00:00:00.000Z" }
+assert(!adoptDueLeads([dueAteKv], [dueAtePg], [])[0]?.waitUntil, "cron não ressuscita espera que o KV já comeu")
 assert(!(await upsertLeadKv(kv, gone)), "upsert não ressuscita tombstone")
 assert(await isLeadRemoved(kv, "gone"), "voltar a gravar não limpa o tombstone")
 assert((await loadLead(kv, "gone")) === null, "ficha apagada não volta pelo upsert")
@@ -3921,11 +3931,16 @@ await dueHoleKv.put(
   JSON.stringify({ ...lead("due-live", "@duelive"), waitUntil: dueStamp, updatedAt: "2026-06-02T00:00:00.000Z" })
 )
 await dueHoleKv.put(
+  leadKey("due-thin"),
+  JSON.stringify({ ...lead("due-thin", "@duethin"), updatedAt: "2026-06-01T00:00:00.000Z" })
+)
+await dueHoleKv.put(
   CRM_INDEX,
   JSON.stringify({
     entries: [
       { id: "due-live", contact: "@duelive", waitUntil: dueStamp, updatedAt: "2026-06-02T00:00:00.000Z", channel: "telegram" },
       { id: "due-ghost", contact: "@dueghost", waitUntil: dueStamp, updatedAt: "2026-06-01T00:00:00.000Z", channel: "telegram" },
+      { id: "due-thin", contact: "@duethin", waitUntil: dueStamp, updatedAt: "2026-06-01T00:00:00.000Z", channel: "telegram" },
       { id: "due-gone", contact: "@duegone", waitUntil: dueStamp, updatedAt: "2026-05-01T00:00:00.000Z", channel: "telegram" },
       { id: "due-later", contact: "@duelater", waitUntil: "2026-06-03T00:00:00.000Z", updatedAt: "2026-06-02T00:00:00.000Z", channel: "telegram" },
     ],
@@ -3935,6 +3950,8 @@ await rememberRemovedLead(dueHoleKv, "due-gone")
 const dueHoles = await dueLeadsKv(dueHoleKv, "2026-06-02T00:00:00.000Z")
 assert(dueHoles.leads.some((item) => item.id === "due-live"), "cron lê a espera viva no KV")
 assert(dueHoles.missingIds.includes("due-ghost"), "cron aponta a espera oca do índice")
+assert(dueHoles.missingIds.includes("due-thin"), "ficha sem espera é buraco do cron")
+assert(!dueHoles.leads.some((item) => item.id === "due-thin"), "ficha sem espera não entra como viva")
 assert(!dueHoles.missingIds.includes("due-gone"), "tombstone vencido não é buraco do cron")
 assert(!dueHoles.missingIds.includes("due-live"), "espera viva não entra nos buracos do cron")
 assert(!dueHoles.leads.some((item) => item.id === "due-later"), "espera futura não entra na fila")
@@ -6532,6 +6549,10 @@ const dueFuture = { ...dueQueued, waitUntil: new Date(Date.now() + 86_400_000).t
 assert(pickLiveDueLead(dueQueued, dueQueued)?.id === "due-live", "espera ainda vencida segue")
 assert(pickLiveDueLead(dueQueued, dueFuture) === null, "outro cron já comeu a espera")
 assert(pickLiveDueLead(dueQueued, null)?.id === "due-live", "sem KV usa a cópia da fila")
+const dueStale = { ...dueQueued, waitUntil: undefined, updatedAt: "1999-01-01T00:00:00.000Z" }
+assert(pickLiveDueLead(dueQueued, dueStale)?.waitUntil === dueQueued.waitUntil, "KV velho sem espera não come a fila")
+const dueAte = { ...dueQueued, waitUntil: undefined, updatedAt: "2099-01-01T00:00:00.000Z" }
+assert(pickLiveDueLead(dueQueued, dueAte) === null, "KV novo sem espera já comeu")
 await upsertLeadKv(cronEnv.AUTH, {
   ...lead("hold-tg", "@hold"),
   telegramChatId: "8800",
@@ -7040,6 +7061,73 @@ try {
   assert((await loadLead(holeKv, "due-hole"))?.waitUntil !== holeWait, "cron comeu a espera oca")
 } finally {
   globalThis.fetch = holeFetch
+}
+
+const thinWait = new Date(Date.now() - 2000).toISOString()
+const thinKv = memoryKv()
+await thinKv.put(
+  leadKey("due-thin-cron"),
+  JSON.stringify({
+    ...lead("due-thin-cron", "@duethincron"),
+    updatedAt: "1999-01-01T00:00:00.000Z",
+    memory: "ste:remarketing",
+    stePhase: "offer",
+  })
+)
+await thinKv.put(
+  CRM_INDEX,
+  JSON.stringify({
+    entries: [
+      {
+        id: "due-thin-cron",
+        contact: "@duethincron",
+        waitUntil: thinWait,
+        updatedAt: thinWait,
+        channel: "telegram",
+      },
+    ],
+  })
+)
+const thinEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: thinKv,
+  CRON_SECRET: "cron",
+  ABILION_ENV: "development",
+} as Env
+const thinRow = {
+  id: "due-thin-cron",
+  name: "Talk",
+  contact: "@duethincron",
+  channel: "telegram" as const,
+  campaign: "facebook",
+  origin: "facebook" as const,
+  temperature: "novo" as const,
+  stage: "welcome" as const,
+  memory: "ste:remarketing",
+  facts: {},
+  messages: [],
+  ste_phase: "offer",
+  wait_until: thinWait,
+  updated_at: thinWait,
+  created_at: thinWait,
+}
+const thinFetch = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL) => {
+  const url = String(input)
+  if (url.includes("/rest/v1/leads") && (url.includes("due-thin-cron") || url.includes("wait_until"))) {
+    return new Response(JSON.stringify([thinRow]), { status: 200, headers: { "content-type": "application/json" } })
+  }
+  return new Response("[]", { status: 200, headers: { "content-type": "application/json" } })
+}) as typeof fetch
+try {
+  const thinCron = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), thinEnv, backgroundCtx())
+  const thinBody = (await thinCron.json()) as { ok?: boolean; advanced?: number }
+  assert(thinCron.status === 200 && thinBody.ok && (thinBody.advanced ?? 0) >= 1, "cron avança espera que o KV velho tinha perdido")
+  assert((await loadLead(thinKv, "due-thin-cron"))?.waitUntil !== thinWait, "cron comeu a espera da ficha oca")
+} finally {
+  globalThis.fetch = thinFetch
 }
 
 const unreadDueKv = memoryKv()

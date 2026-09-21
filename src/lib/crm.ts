@@ -532,7 +532,11 @@ export function adoptDueLeads(kvLeads: Lead[], remoteLeads: Lead[], removedIds: 
   for (const lead of remoteLeads) {
     if (!removed.has(lead.id)) byId.set(lead.id, lead)
   }
-  for (const lead of kvLeads) byId.set(lead.id, lead)
+  for (const lead of kvLeads) {
+    if (removed.has(lead.id)) continue
+    const prev = byId.get(lead.id)
+    byId.set(lead.id, prev ? commitStoredLead(prev, lead, prev) : lead)
+  }
   return [...byId.values()]
 }
 

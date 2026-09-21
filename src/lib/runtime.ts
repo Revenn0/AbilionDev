@@ -386,11 +386,11 @@ export function dueWaits(leads: Lead[], nowMs = Date.now()) {
   return leads.filter((lead) => lead.waitUntil && new Date(lead.waitUntil).getTime() <= nowMs)
 }
 
-/** Relê o KV antes de avançar: se outro cron já comeu a espera, esta cópia sai. */
+/** Relê o KV antes de avançar: se outro cron já comeu a espera, esta cópia sai. Ficha velha sem espera não come a fila. */
 export function pickLiveDueLead(queued: Lead, live: Lead | null, nowMs = Date.now()): Lead | null {
-  const current = live ?? queued
-  if (current.id !== queued.id) return null
-  return dueWaits([current], nowMs)[0] ?? null
+  if (live && live.id !== queued.id) return null
+  if (live && live.updatedAt >= queued.updatedAt) return dueWaits([live], nowMs)[0] ?? null
+  return dueWaits([queued], nowMs)[0] ?? null
 }
 
 /** Espera com chat real só avança quando o Worker tem token — senão o cron come o follow-up sem mandar. Importado nunca corre no cron. */
