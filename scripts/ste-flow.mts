@@ -7055,6 +7055,75 @@ assert(
   kvDownMcpInstallResBody.error?.message === "Não confirmei o script desta página.",
   "resources/read KV throw pede o mesmo erro do HTTP"
 )
+const settingsThrowEnv = { ...runtimeHoleBase, AUTH: kvThrowsOn(runtimeHoleKv, CRM_SETTINGS) } as Env
+const settingsThrowMcp = async (id: number, name: string, args: Record<string, unknown> = {}) =>
+  handleRequest(
+    new Request("http://local.test/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.110" },
+      body: JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } }),
+    }),
+    settingsThrowEnv,
+    backgroundCtx()
+  )
+const kvDownMcpSettings = await settingsThrowMcp(220, "abilion_get_settings")
+const kvDownMcpSettingsBody = (await kvDownMcpSettings.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const kvDownMcpSettingsData = JSON.parse(kvDownMcpSettingsBody.result?.content?.[0]?.text || "{}") as { error?: string; ok?: boolean }
+assert(kvDownMcpSettings.status === 200 && kvDownMcpSettingsBody.result?.isError, "MCP get_settings KV throw não finge settings")
+assert(kvDownMcpSettingsData.error === "Não confirmei as definições no Postgres.", "MCP get_settings KV throw pede confirmação")
+assert(kvDownMcpSettingsData.error !== "kv down", "MCP get_settings KV throw não vaza o erro interno")
+assert(kvDownMcpSettingsData.ok !== true, "MCP get_settings KV throw não devolve settings ocas")
+const kvDownMcpScripts = await settingsThrowMcp(221, "abilion_list_page_scripts")
+const kvDownMcpScriptsData = JSON.parse(
+  ((await kvDownMcpScripts.json()) as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string; scripts?: unknown[] }
+assert(kvDownMcpScripts.status === 200, "MCP list_page_scripts KV throw não cai em 500")
+assert(kvDownMcpScriptsData.error === "Não confirmei os scripts desta página.", "MCP list_page_scripts KV throw pede confirmação")
+assert(!kvDownMcpScriptsData.scripts, "MCP list_page_scripts KV throw não lista scripts vazios")
+const throwBoard = {
+  ...emptySalesFunnel("Throw"),
+  id: "funil-throw",
+  production: { name: "Throw", publishedAt: "2026-01-01T00:00:00.000Z", nodes: [], edges: [] },
+}
+await saveFunnelsKv(runtimeHoleKv, [throwBoard])
+const kvDownMcpCreateScript = await settingsThrowMcp(222, "abilion_create_page_script", {
+  name: "Landing throw",
+  funnelId: "funil-throw",
+})
+const kvDownMcpCreateScriptData = JSON.parse(
+  ((await kvDownMcpCreateScript.json()) as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string; script?: { id?: string } }
+assert(kvDownMcpCreateScriptData.error === "Não confirmei os scripts desta página.", "MCP create_page_script KV throw pede confirmação")
+assert(!kvDownMcpCreateScriptData.script, "MCP create_page_script KV throw não inventa script")
+const kvDownMcpImport = await settingsThrowMcp(223, "abilion_import_leads", { text: "Ana, 11999999999" })
+const kvDownMcpImportData = JSON.parse(
+  ((await kvDownMcpImport.json()) as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string; imported?: number }
+assert(kvDownMcpImportData.error === "Não confirmei as definições no Postgres.", "MCP import KV throw pede confirmação")
+assert(kvDownMcpImportData.imported !== 1, "MCP import KV throw não importa")
+const settingsBeforeThrow = await loadSettingsKv(runtimeHoleKv)
+const kvDownCrmSettings = await handleRequest(
+  new Request("http://local.test/api/crm", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: runtimeHoleCookie,
+      "x-forwarded-for": "203.0.113.111",
+    },
+    body: JSON.stringify({ settings: { telegramBotUsername: "@ste_defs" } }),
+  }),
+  settingsThrowEnv,
+  backgroundCtx()
+)
+const kvDownCrmSettingsBody = (await kvDownCrmSettings.json()) as { error?: string; ok?: boolean }
+assert(kvDownCrmSettings.status === 503, "POST CRM settings KV throw não cai em 500")
+assert(kvDownCrmSettingsBody.error === "Não confirmei as definições no Postgres.", "POST CRM settings KV throw pede confirmação")
+assert(kvDownCrmSettingsBody.error !== "Falha interna.", "POST CRM settings KV throw não vira Falha interna")
+assert(kvDownCrmSettingsBody.ok !== true, "POST CRM settings KV throw não finge gravado")
+assert((await loadSettingsKv(runtimeHoleKv)).telegramBotUsername === settingsBeforeThrow.telegramBotUsername, "POST CRM settings KV throw não pisa o username leftover")
+assert((await loadSettingsKv(runtimeHoleKv)).telegramBotUsername !== "@ste_defs", "POST CRM settings KV throw não grava username unread")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()

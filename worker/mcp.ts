@@ -292,6 +292,14 @@ const TOOLS = [
   },
 ] as const
 
+async function workspaceSettingsOf(env: McpEnv, unread: string) {
+  try {
+    return await readWorkspaceSettings(env)
+  } catch {
+    throw new Error(unread)
+  }
+}
+
 async function saveFunnels(env: McpEnv, funnels: SalesFunnel[]) {
   await persistWorkspaceFunnels(env, funnels)
 }
@@ -507,7 +515,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
   }
   if (name === "abilion_get_settings") {
     if (!env.AUTH) throw new Error("Auth ainda sem KV.")
-    const loaded = await readWorkspaceSettings(env)
+    const loaded = await workspaceSettingsOf(env, "Não confirmei as definições no Postgres.")
     if (pageScriptsListBlocked(loaded.unread, loaded.settings.pageScripts) && !loaded.settings.telegramBotUsername) {
       throw new Error("Não confirmei as definições no Postgres.")
     }
@@ -532,7 +540,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
   }
   if (name === "abilion_list_page_scripts") {
     if (!env.AUTH) throw new Error("Auth ainda sem KV.")
-    const loaded = await readWorkspaceSettings(env)
+    const loaded = await workspaceSettingsOf(env, "Não confirmei os scripts desta página.")
     if (pageScriptsListBlocked(loaded.unread, loaded.settings.pageScripts)) {
       throw new Error("Não confirmei os scripts desta página.")
     }
@@ -558,7 +566,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     if (!funnel?.production) {
       throw new Error("Publica este funil antes de criar o script da página.")
     }
-    const loaded = await readWorkspaceSettings(env)
+    const loaded = await workspaceSettingsOf(env, "Não confirmei os scripts desta página.")
     if (pageScriptsWriteBlocked(loaded.unread)) {
       throw new Error("Não confirmei os scripts desta página.")
     }
@@ -580,7 +588,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     if (!env.AUTH) throw new Error("Auth ainda sem KV.")
     const id = str(args.id).trim()
     if (!id) throw new Error("Falta o id do script.")
-    const loaded = await readWorkspaceSettings(env)
+    const loaded = await workspaceSettingsOf(env, "Não confirmei o script desta página.")
     const settings = loaded.settings
     const current = pageScriptById(settings.pageScripts, id)
     if (pageScriptsWriteBlocked(loaded.unread) || installSettingsBlocked(loaded.unread, id, current)) {
@@ -599,7 +607,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     if (!env.AUTH) throw new Error("Auth ainda sem KV.")
     const parsed = parseLeadImportText(str(args.text))
     if (parsed.error) throw new Error(parsed.error)
-    const loaded = await readWorkspaceSettings(env)
+    const loaded = await workspaceSettingsOf(env, "Não confirmei as definições no Postgres.")
     const settings = loaded.settings
     const toGroup = args.toGroup === true
     if (toGroup && loaded.unread && !settings.telegramGroupUrl) {

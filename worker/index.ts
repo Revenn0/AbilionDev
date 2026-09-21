@@ -656,7 +656,12 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       }
     }
     if (body.settings) {
-      const loaded = await readWorkspaceSettings(env)
+      let loaded
+      try {
+        loaded = await readWorkspaceSettings(env)
+      } catch {
+        return json({ error: "Não confirmei as definições no Postgres." }, 503)
+      }
       if (
         pageScriptsMutationBlocked(
           loaded.unread,
