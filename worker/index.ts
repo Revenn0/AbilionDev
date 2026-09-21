@@ -52,6 +52,7 @@ import {
   upsertLeadKv,
 } from "./crm-store.ts"
 import {
+  emptySecrets,
   loadSecrets,
   mergeSecrets,
   publicRuntime,
@@ -437,9 +438,25 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!gate.ok) return gate.response
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const hook = webhookUrl(request, env)
-    const { resolved } = await runtimeOf(env, hook)
-    const loaded = await readWorkspaceSettings(env)
-    const published = await publishedRuntime(env, { ...resolved, webhookUrl: resolved.webhookUrl || hook })
+    let resolved
+    try {
+      resolved = (await runtimeOf(env, hook)).resolved
+    } catch {
+      resolved = resolveRuntime(env, emptySecrets(), hook)
+    }
+    let loaded: { settings: { telegramBotUsername?: string; telegramGroupUrl?: string }; unread: boolean }
+    try {
+      loaded = await readWorkspaceSettings(env)
+    } catch {
+      loaded = { settings: { telegramBotUsername: "", telegramGroupUrl: "" }, unread: true }
+    }
+    const wired = { ...resolved, webhookUrl: resolved.webhookUrl || hook }
+    let published
+    try {
+      published = await publishedRuntime(env, wired)
+    } catch {
+      published = publicRuntime(wired)
+    }
     return json({
       ...published,
       telegramBotUsername: cleanBotUsername(resolved.telegramBotUsername || loaded.settings.telegramBotUsername),

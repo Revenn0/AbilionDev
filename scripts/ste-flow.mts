@@ -101,7 +101,7 @@ import { applyEvent, canAdvanceRemoteWait, eventFromOrigin, leadFunnelUnread, pi
 import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
-import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_INDEX, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, leadPageCursor, leadPageFromRemote, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_INDEX, CRM_REMOVED, CRM_REMOVED_FUNNELS, CRM_SETTINGS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, leadPageCursor, leadPageFromRemote, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { fetchRemoteDueLeads, fetchRemoteLeadByIdentity, fetchRemoteLeadsByIds, fetchRemotePageEvents, findWorkspaceLead, findWorkspaceLeadById, hydrateWorkspaceLead, leadCatalogUnread, leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceFunnels, readWorkspaceSettings, remoteLeadDuePath, remoteLeadIdentityPath, remoteLeadListPath, remoteLeadSearchPath, resolveWorkspaceLeadWrite, rowToLead, rowToTrackEvent, sanitizeRemoteSearchNeedle, searchWorkspaceLeads, summarizeWorkspaceTrack, telegramIdFromLead } from "../worker/workspace-settings.ts"
@@ -124,7 +124,7 @@ import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
 import { barShare, catalogMetricPending, crmSyncAfterFlush, eventsSyncAfterNarrowRead, funnelsWriteBlocked, hasConversation, isImportedLead, isOperatorLockedLead, leadCatalogClipped, leadCatalogEmpty, leadFilterCount, leadFilterPending, leadMatchesFilter, leadTimelinePending, leadWritesBlocked, leadsExportBlocked, leadsHydrating, leadsLoadFailed, metricPending, offerMetricPending, trackSyncAfterRead } from "../src/lib/ops.ts"
 import { usersWriteBlocked } from "../src/lib/users-api.ts"
-import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
+import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, RUNTIME_KEY, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { kvTrackStore, memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
 import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, gateActor, handleAuth, hashApiToken, hashPassword, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, readActor, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
@@ -155,6 +155,18 @@ function lead(id = "lead-1", contact = "@fb1"): Lead {
 
 function assert(cond: unknown, message: string) {
   if (!cond) throw new Error(message)
+}
+
+function kvThrowsOn(base: ReturnType<typeof memoryKv>, ...blocked: string[]) {
+  return {
+    async get(key: string, type: "json") {
+      if (blocked.includes(key)) throw new Error("kv down")
+      return base.get(key, type)
+    },
+    async put(key: string, value: string) {
+      return base.put(key, value)
+    },
+  }
 }
 
 const script = steRuntimeFromSnapshot(emptySalesFunnel("teste"))
@@ -6523,6 +6535,157 @@ const kvDownInstallBad = await handleRequest(
   backgroundCtx()
 )
 assert(kvDownInstallBad.status === 200, "s= inválido com KV em baixo não é 503")
+const runtimeHoleKv = memoryKv()
+const runtimeHoleBase = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  AUTH: runtimeHoleKv,
+  ABILION_ENV: "development",
+} as Env
+const runtimeHoleLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  runtimeHoleBase,
+  backgroundCtx()
+)
+assert(runtimeHoleLogin.status === 200, "login no KV do runtime hole")
+const runtimeHoleCookie = runtimeHoleLogin.headers.get("set-cookie") || ""
+await saveSettingsKv(runtimeHoleKv, migrateSettings({ telegramBotUsername: "@steaviator" }))
+await saveSecrets(runtimeHoleKv, { telegramBotToken: "000:kv-token" })
+const secretsSettingsDownEnv = {
+  ...runtimeHoleBase,
+  AUTH: kvThrowsOn(runtimeHoleKv, CRM_SETTINGS, RUNTIME_KEY),
+  TELEGRAM_BOT_TOKEN: "000:env-token",
+} as Env
+const kvDownRuntime = await handleRequest(
+  new Request("http://local.test/api/runtime", { headers: { cookie: runtimeHoleCookie } }),
+  secretsSettingsDownEnv,
+  backgroundCtx()
+)
+const kvDownRuntimeBody = (await kvDownRuntime.json()) as {
+  ok?: boolean
+  telegram?: boolean
+  telegramBotUsername?: string
+  settingsUnread?: boolean
+  tokenHint?: string
+}
+assert(kvDownRuntime.status === 200 && kvDownRuntimeBody.ok, "GET /api/runtime com settings/secrets a falhar continua de pé")
+assert(kvDownRuntimeBody.settingsUnread === true, "runtime KV throw marca settings unread")
+assert(kvDownRuntimeBody.telegram === true, "runtime KV throw ainda lê o token do env")
+assert(!kvDownRuntimeBody.telegramBotUsername, "runtime KV throw não inventa username")
+assert(!JSON.stringify(kvDownRuntimeBody).includes("000:env-token"), "runtime KV throw não vaza o token do env")
+const secretsOnlyDownEnv = {
+  ...runtimeHoleBase,
+  AUTH: kvThrowsOn(runtimeHoleKv, RUNTIME_KEY),
+} as Env
+const secretsOnlyRuntime = await handleRequest(
+  new Request("http://local.test/api/runtime", { headers: { cookie: runtimeHoleCookie } }),
+  secretsOnlyDownEnv,
+  backgroundCtx()
+)
+const secretsOnlyRuntimeBody = (await secretsOnlyRuntime.json()) as {
+  ok?: boolean
+  telegram?: boolean
+  telegramBotUsername?: string
+  settingsUnread?: boolean
+}
+assert(secretsOnlyRuntime.status === 200 && secretsOnlyRuntimeBody.ok, "GET runtime com secrets a falhar ainda lê settings")
+assert(secretsOnlyRuntimeBody.telegramBotUsername === "@steaviator", "runtime secrets throw não apaga o username leftover")
+assert(!secretsOnlyRuntimeBody.settingsUnread, "settings leftover confirmadas não ficam unread por causa dos secrets")
+assert(secretsOnlyRuntimeBody.telegram !== true, "sem token no env o runtime não finge bot ligado")
+const kvDownMcpHealth = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 210,
+      method: "tools/call",
+      params: { name: "abilion_health", arguments: {} },
+    }),
+  }),
+  secretsSettingsDownEnv,
+  backgroundCtx()
+)
+const kvDownMcpHealthBody = (await kvDownMcpHealth.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const kvDownMcpHealthData = JSON.parse(kvDownMcpHealthBody.result?.content?.[0]?.text || "{}") as {
+  ok?: boolean
+  telegramBound?: boolean
+  unread?: boolean
+  telegramBotUsername?: string
+  error?: string
+}
+assert(kvDownMcpHealth.status === 200 && !kvDownMcpHealthBody.result?.isError && kvDownMcpHealthData.ok, "MCP health KV throw continua de pé")
+assert(kvDownMcpHealthData.unread === true && !kvDownMcpHealthData.telegramBotUsername, "MCP health KV throw não finge bot desligado")
+assert(kvDownMcpHealthData.telegramBound === true, "MCP health KV throw ainda lê o token do env")
+assert(kvDownMcpHealthData.error !== "kv down", "MCP health KV throw não vaza o erro interno")
+const kvDownMcpInstall = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 211,
+      method: "tools/call",
+      params: { name: "abilion_page_install_manual", arguments: {} },
+    }),
+  }),
+  secretsSettingsDownEnv,
+  backgroundCtx()
+)
+const kvDownMcpInstallBody = (await kvDownMcpInstall.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const kvDownMcpInstallData = JSON.parse(kvDownMcpInstallBody.result?.content?.[0]?.text || "{}") as {
+  ok?: boolean
+  steps?: unknown[]
+  script?: { id?: string }
+}
+assert(
+  kvDownMcpInstall.status === 200 && !kvDownMcpInstallBody.result?.isError && kvDownMcpInstallData.ok,
+  "MCP manual geral KV throw continua de pé"
+)
+assert((kvDownMcpInstallData.steps?.length ?? 0) >= 5, "MCP manual geral KV throw ainda tem os passos")
+assert(!kvDownMcpInstallData.script, "MCP manual geral KV throw não inventa script")
+const kvDownMcpInstallMiss = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 212,
+      method: "tools/call",
+      params: { name: "abilion_page_install_manual", arguments: { scriptId: "deadbeef" } },
+    }),
+  }),
+  secretsSettingsDownEnv,
+  backgroundCtx()
+)
+const kvDownMcpInstallMissBody = (await kvDownMcpInstallMiss.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const kvDownMcpInstallMissData = JSON.parse(kvDownMcpInstallMissBody.result?.content?.[0]?.text || "{}") as { error?: string }
+assert(kvDownMcpInstallMiss.status === 200 && kvDownMcpInstallMissBody.result?.isError, "MCP install?s= KV throw não finge script em falta")
+assert(kvDownMcpInstallMissData.error === "Não confirmei o script desta página.", "MCP install KV throw pede confirmação do script")
+const kvDownMcpInstallRes = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 213, method: "resources/read", params: { uri: "abilion://install/deadbeef" } }),
+  }),
+  secretsSettingsDownEnv,
+  backgroundCtx()
+)
+const kvDownMcpInstallResBody = (await kvDownMcpInstallRes.json()) as { error?: { message?: string } }
+assert(kvDownMcpInstallRes.status === 200, "resources/read KV throw não rebenta o MCP")
+assert(
+  kvDownMcpInstallResBody.error?.message === "Não confirmei o script desta página.",
+  "resources/read KV throw pede o mesmo erro do HTTP"
+)
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()

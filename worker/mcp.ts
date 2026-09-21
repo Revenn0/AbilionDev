@@ -342,8 +342,22 @@ async function callHttp(
 
 async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name: string, args: Record<string, unknown>) {
   if (name === "abilion_health") {
-    const loaded = env.AUTH ? await readWorkspaceSettings(env) : { settings: { telegramBotUsername: "" }, unread: false }
-    const secrets = env.AUTH ? await loadSecrets(env.AUTH) : emptySecrets()
+    let loaded = { settings: { telegramBotUsername: "" }, unread: false }
+    if (env.AUTH) {
+      try {
+        loaded = await readWorkspaceSettings(env)
+      } catch {
+        loaded = { settings: { telegramBotUsername: "" }, unread: true }
+      }
+    }
+    let secrets = emptySecrets()
+    if (env.AUTH) {
+      try {
+        secrets = await loadSecrets(env.AUTH)
+      } catch {
+        loaded = { ...loaded, unread: true }
+      }
+    }
     const resolved = resolveRuntime(env, secrets)
     const telegramBotUsername = cleanBotUsername(resolved.telegramBotUsername || loaded.settings.telegramBotUsername)
     return {
@@ -617,24 +631,34 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
 
 async function installManualOf(env: McpEnv, scriptId?: string) {
   if (!env.AUTH) throw new Error("Auth ainda sem KV.")
-  const loaded = await readWorkspaceSettings(env)
-  const script = pageScriptById(loaded.settings.pageScripts, scriptId)
-  if (installSettingsBlocked(loaded.unread, scriptId, script)) {
-    throw new Error("Não confirmei o script desta página.")
-  }
-  let funnelName: string | undefined
-  if (script) {
-    try {
-      const boards = await readWorkspaceFunnels(env)
-      const named = boards.funnels.find((item) => item.id === script.funnelId)
-      if (!named && boards.unread) throw new Error("Não confirmei o funil deste script.")
-      funnelName = named?.name
-    } catch (error) {
-      if (error instanceof Error && error.message === "Não confirmei o funil deste script.") throw error
-      throw new Error("Não confirmei o funil deste script.")
+  try {
+    const loaded = await readWorkspaceSettings(env)
+    const script = pageScriptById(loaded.settings.pageScripts, scriptId)
+    if (installSettingsBlocked(loaded.unread, scriptId, script)) {
+      throw new Error("Não confirmei o script desta página.")
     }
+    let funnelName: string | undefined
+    if (script) {
+      try {
+        const boards = await readWorkspaceFunnels(env)
+        const named = boards.funnels.find((item) => item.id === script.funnelId)
+        if (!named && boards.unread) throw new Error("Não confirmei o funil deste script.")
+        funnelName = named?.name
+      } catch (error) {
+        if (error instanceof Error && error.message === "Não confirmei o funil deste script.") throw error
+        throw new Error("Não confirmei o funil deste script.")
+      }
+    }
+    return pageInstallManual({ botUsername: loaded.settings.telegramBotUsername, script, funnelName })
+  } catch (error) {
+    if (error instanceof Error && (error.message === "Não confirmei o script desta página." || error.message === "Não confirmei o funil deste script.")) {
+      throw error
+    }
+    if (installSettingsBlocked(true, scriptId, undefined)) {
+      throw new Error("Não confirmei o script desta página.")
+    }
+    return pageInstallManual({ botUsername: "" })
   }
-  return pageInstallManual({ botUsername: loaded.settings.telegramBotUsername, script, funnelName })
 }
 
 function installManualOfSync(botUsername: string, script: { id: string; name: string; funnelId: string; pageUrl?: string; createdAt: string; updatedAt: string }, funnelName?: string) {
