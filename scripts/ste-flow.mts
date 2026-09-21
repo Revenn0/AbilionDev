@@ -1142,6 +1142,10 @@ const kvBoard = emptySalesFunnel("Quadro KV")
 const pgBoard = emptySalesFunnel("Quadro PG")
 assert(adoptFunnelStores([], [pgBoard])[0]?.name === "Quadro PG", "KV vazio recupera funis do Postgres")
 assert(adoptFunnelStores([kvBoard], [pgBoard])[0]?.name === "Quadro KV", "KV com quadro ganha ao Postgres")
+assert(
+  adoptFunnelStores([kvBoard], [pgBoard]).some((item) => item.id === pgBoard.id),
+  "KV com quadro já não esconde o funil que só está no Postgres"
+)
 assert(adoptFunnelStores([kvBoard], [], [kvBoard.id]).length === 0, "tombstone remove o funil do KV")
 assert(adoptFunnelStores([], [pgBoard], [pgBoard.id]).length === 0, "tombstone remove o funil do Postgres")
 const adoptFunnelKv = memoryKv()
@@ -1165,6 +1169,37 @@ await saveSettingsKv(pgDownEnv.AUTH, migrateSettings({ telegramBotUsername: "@st
 assert((await loadWorkspaceSettings(pgDownEnv)).telegramBotUsername === "@ste_bot", "settings no KV sobrevivem ao Postgres em baixo")
 assert((await loadWorkspaceFunnels({ AUTH: adoptFunnelKv, SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" }))[0]?.name === "Quadro KV", "KV com quadro não depende do Postgres")
 globalThis.fetch = pgDownPrev
+const unionLoadPrev = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("/rest/v1/funnels") && (init?.method || "GET").toUpperCase() === "GET") {
+    return new Response(
+      JSON.stringify([
+        {
+          id: pgBoard.id,
+          name: pgBoard.name,
+          mode: pgBoard.mode,
+          status: pgBoard.status,
+          updated_at: pgBoard.updatedAt,
+          nodes: pgBoard.nodes,
+          edges: pgBoard.edges,
+          production: pgBoard.production ?? null,
+        },
+      ]),
+      { status: 200 }
+    )
+  }
+  return unionLoadPrev(input, init)
+}) as typeof fetch
+const unionLoaded = await loadWorkspaceFunnels({
+  AUTH: adoptFunnelKv,
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+})
+assert(
+  unionLoaded.some((item) => item.id === kvBoard.id) && unionLoaded.some((item) => item.id === pgBoard.id),
+  "GET dos funis junta o quadro do KV com o do Postgres"
+)
+globalThis.fetch = unionLoadPrev
 const adoptGoneKv = memoryKv()
 await rememberRemovedFunnels(adoptGoneKv, [kvBoard.id])
 await saveFunnelsKv(adoptGoneKv, [kvBoard])
@@ -1205,7 +1240,58 @@ const remoteEnv = { SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "rol
 const remoteBoard = emptySalesFunnel("Quadro remoto")
 await persistRemoteFunnels(remoteEnv, [remoteBoard])
 assert(remotePosts.some((item) => item.includes(remoteBoard.id) && item.includes("Quadro remoto")), "persistRemoteFunnels grava o funil no Postgres")
-assert(remotePosts.some((item) => item.includes("DELETE") && item.includes("gone-remote")), "persistRemoteFunnels apaga funil que já não está no KV")
+assert(
+  !remotePosts.some((item) => item.includes("DELETE") && item.includes("gone-remote")),
+  "funil remoto sem tombstone não é apagado só porque o KV tem outro quadro"
+)
+const extraBoard = emptySalesFunnel("Quadro extra")
+const unionPosts: string[] = []
+const unionDeletes: string[] = []
+const unionPrev = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  const method = (init?.method || "GET").toUpperCase()
+  if (url.includes("/rest/v1/funnels") && method === "GET") {
+    return new Response(
+      JSON.stringify([
+        {
+          id: extraBoard.id,
+          name: extraBoard.name,
+          mode: extraBoard.mode,
+          status: extraBoard.status,
+          updated_at: extraBoard.updatedAt,
+          nodes: extraBoard.nodes,
+          edges: extraBoard.edges,
+          production: extraBoard.production ?? null,
+        },
+      ]),
+      { status: 200 }
+    )
+  }
+  if (url.includes("/rest/v1/funnels") && method === "POST") {
+    unionPosts.push(String(init?.body || ""))
+    return new Response("", { status: 201 })
+  }
+  if (url.includes("/rest/v1/funnels") && method === "DELETE") {
+    unionDeletes.push(url)
+    return new Response("", { status: 204 })
+  }
+  return unionPrev(input, init)
+}) as typeof fetch
+await persistRemoteFunnels(remoteEnv, [remoteBoard])
+assert(
+  unionPosts.some((item) => item.includes(remoteBoard.id) && item.includes(extraBoard.id)),
+  "persistRemoteFunnels junta o quadro do KV com o do Postgres"
+)
+assert(unionDeletes.length === 0, "quadro extra sem tombstone sobrevive ao persist")
+const goneFunnelKv = memoryKv()
+await rememberRemovedFunnels(goneFunnelKv, [extraBoard.id])
+unionDeletes.length = 0
+unionPosts.length = 0
+await persistRemoteFunnels({ AUTH: goneFunnelKv, ...remoteEnv }, [remoteBoard])
+assert(unionDeletes.some((item) => item.includes(extraBoard.id)), "tombstone do funil apaga o backup")
+assert(!unionPosts.some((item) => item.includes(extraBoard.id)), "tombstone não volta a gravar o funil no Postgres")
+globalThis.fetch = unionPrev
 await persistRemoteSettings(remoteEnv, migrateSettings({ telegramBotUsername: "@ste_bot" }))
 assert(remotePosts.some((item) => item.includes("@ste_bot")), "persistRemoteSettings grava settings no Postgres")
 const mergePosts: string[] = []

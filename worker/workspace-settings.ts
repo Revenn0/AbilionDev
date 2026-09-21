@@ -1,4 +1,4 @@
-import { adoptFunnelStores, commitStoredLead, commitStoredSettings, emptySettings, publicSettings } from "../src/lib/crm.ts"
+import { adoptFunnelStores, applyRemovedFunnels, commitStoredLead, commitStoredSettings, emptySettings, publicSettings } from "../src/lib/crm.ts"
 import { sanitizeLeadCategory } from "../src/lib/lead-category.ts"
 import { leadMatchesQuery } from "../src/lib/lead-name.ts"
 import { migrateSettings, sanitizeIncomingFunnel } from "../src/lib/migrate.ts"
@@ -306,12 +306,15 @@ async function fetchRemoteFunnels(env: SettingsEnv): Promise<SalesFunnel[] | nul
   }
 }
 
-/** Painel e MCP: KV sem quadro cai no Postgres; tombstone de funil continua a valer. */
+/** Painel e MCP: KV e Postgres juntam-se. KV oco + backup em baixo é erro; KV com quadro sobrevive. */
 export async function loadWorkspaceFunnels(env: SettingsEnv): Promise<SalesFunnel[]> {
   const kv = env.AUTH ? await loadFunnelsKv(env.AUTH) : []
-  const remote = kv.length ? [] : await fetchRemoteFunnels(env)
-  if (remote === null) throw new Error("Não li os funis do Postgres.")
+  const remote = await fetchRemoteFunnels(env)
   const removed = env.AUTH ? await loadRemovedFunnelIds(env.AUTH) : []
+  if (remote === null) {
+    if (!kv.length) throw new Error("Não li os funis do Postgres.")
+    return applyRemovedFunnels(kv, removed)
+  }
   return adoptFunnelStores(kv, remote, removed)
 }
 
@@ -344,32 +347,37 @@ async function restWorkspace<T>(env: SettingsEnv, path: string, init?: RequestIn
   return null
 }
 
-/** Painel e MCP: o KV continua a ser a fonte; o Postgres fica com a mesma cópia. */
+function funnelRowForRemote(funnel: SalesFunnel) {
+  return {
+    id: funnel.id,
+    workspace_id: WORKSPACE,
+    name: funnel.name,
+    mode: funnel.mode,
+    status: funnel.status,
+    nodes: funnel.nodes,
+    edges: funnel.edges,
+    production: funnel.production ?? null,
+    updated_at: funnel.updatedAt,
+  }
+}
+
+/** Painel e MCP: junta o KV com o backup. Só apaga tombstone — um quadro no KV não limpa os outros. */
 export async function persistRemoteFunnels(env: SettingsEnv, funnels: SalesFunnel[]) {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return
-  if (funnels.length) {
+  const remote = await fetchRemoteFunnels(env)
+  const removed = env.AUTH ? await loadRemovedFunnelIds(env.AUTH) : []
+  const keep = remote === null ? funnels : adoptFunnelStores(funnels, remote, removed)
+  if (keep.length) {
     const wrote = await restWorkspace(env, "funnels", {
       method: "POST",
       headers: { Prefer: "resolution=merge-duplicates" },
-      body: JSON.stringify(
-        funnels.map((funnel) => ({
-          id: funnel.id,
-          workspace_id: WORKSPACE,
-          name: funnel.name,
-          mode: funnel.mode,
-          status: funnel.status,
-          nodes: funnel.nodes,
-          edges: funnel.edges,
-          production: funnel.production ?? null,
-          updated_at: funnel.updatedAt,
-        }))
-      ),
+      body: JSON.stringify(keep.map(funnelRowForRemote)),
     })
     if (wrote === null) return
   }
-  const rows = (await restWorkspace<{ id: string }[]>(env, `funnels?workspace_id=eq.${WORKSPACE}&select=id`)) ?? []
-  const keep = new Set(funnels.map((item) => item.id))
-  for (const row of rows.filter((item) => item.id && !keep.has(item.id)).slice(0, 40)) {
+  if (remote === null) return
+  const gone = new Set(removed)
+  for (const row of remote.filter((item) => item.id && gone.has(item.id)).slice(0, 40)) {
     await restWorkspace(env, `funnels?id=eq.${encodeURIComponent(row.id)}&workspace_id=eq.${WORKSPACE}`, { method: "DELETE" })
   }
 }

@@ -379,9 +379,11 @@ export function hydrateLeads(
   return overlayPendingLeads(next, pending, removed)
 }
 
-/** GET/MCP: KV sem quadro cai no Postgres; KV com funis ganha. Tombstones continuam a valer. */
+/** GET/MCP: KV e Postgres juntam-se; tombstone continua a valer. KV oco não esconde o backup. */
 export function adoptFunnelStores(kv: SalesFunnel[], remote: SalesFunnel[] = [], removedIds: Iterable<string> = []) {
-  return applyRemovedFunnels(kv.length ? kv : remote, [...removedIds])
+  const merged = applyRemovedFunnels(reconcileFunnels(remote, kv), [...removedIds])
+  if (merged.length <= FUNNEL_CAP) return merged
+  return clipFunnelsKeepBoards(merged, kv.map((item) => item.id))
 }
 
 /** GET: objecto vazio no KV não esconde username, scripts e categorias que ainda estão no Postgres. */
