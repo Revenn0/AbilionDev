@@ -4742,6 +4742,34 @@ const landingCase = await handleRequest(
   backgroundCtx()
 )
 assert(landingCase.status === 200 && (await landingCase.text()).includes("/t.js"), "GET /L/ é a landing do Worker")
+const mcpCase = await handleRequest(
+  new Request("http://local.test/Mcp"),
+  {
+    ...liveEnv,
+    ASSETS: {
+      fetch: async () => {
+        throw new Error("assets down")
+      },
+    },
+  } as Env,
+  backgroundCtx()
+)
+const mcpCaseBody = (await mcpCase.json()) as { ok?: boolean; name?: string }
+assert(mcpCase.status === 200 && mcpCaseBody.ok && mcpCaseBody.name === "abilion", "GET /Mcp é o MCP do Worker")
+const apiCase = await handleRequest(
+  new Request("http://local.test/Api/health"),
+  {
+    ...liveEnv,
+    ASSETS: {
+      fetch: async () => {
+        throw new Error("assets down")
+      },
+    },
+  } as Env,
+  backgroundCtx()
+)
+const apiCaseBody = (await apiCase.json()) as { ok?: boolean }
+assert(apiCase.status === 200 && apiCaseBody.ok, "GET /Api/health é a API do Worker")
 const forgotHtml = await handleRequest(new Request("http://local.test/forgot"), liveEnv, backgroundCtx())
 assert(forgotHtml.status === 200 && (await forgotHtml.text()).includes('action="/api/auth/forgot"'), "GET /forgot é HTML do Worker")
 const resetEmptyHtml = await handleRequest(

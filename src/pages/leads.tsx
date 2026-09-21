@@ -20,7 +20,7 @@ import { useStore } from "@/lib/store"
 import { addLeadCategory, leadFromImport, mergeLeadCategories, parseLeadImportText } from "@/lib/lead-category"
 import { captureAgainstFunnels } from "@/lib/templates"
 import { ORIGIN_LABEL, STAGE_LABEL, TEMP_LABEL } from "@/lib/labels"
-import { isImportedLead, needsEster } from "@/lib/ops"
+import { isImportedLead, leadsHydrating, leadsLoadFailed, needsEster } from "@/lib/ops"
 import { applyEvent, nodeTitle, publishedSnapshot, type RuntimeEvent } from "@/lib/runtime"
 import { canTickSteLocally } from "@/lib/ste"
 import { timeAgo } from "@/lib/format"
@@ -51,6 +51,8 @@ export function LeadsPage() {
   const [filter, setFilter] = useState<string>("all")
   const [query, setQuery] = useState("")
   const searchStatus = useRemoteLeadSearch(query)
+  const hydrating = leadsHydrating(persistSync, state.leads.length)
+  const failed = leadsLoadFailed(persistSync, state.leads.length)
   const [open, setOpen] = useState(false)
   const [importing, setImporting] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
@@ -121,7 +123,7 @@ export function LeadsPage() {
               >
                 {item.label}{" "}
                 <span className="text-muted-foreground">
-                  {persistSync === "idle" && state.leads.length === 0
+                  {hydrating || failed
                     ? "…"
                     : item.id === "all"
                       ? state.leads.length
@@ -152,7 +154,7 @@ export function LeadsPage() {
               >
                 {category}{" "}
                 <span className="text-muted-foreground">
-                  {state.leads.filter((row) => row.category === category).length}
+                  {hydrating || failed ? "…" : state.leads.filter((row) => row.category === category).length}
                 </span>
               </button>
             ))}
@@ -167,9 +169,9 @@ export function LeadsPage() {
             <p>Quando</p>
           </div>
 
-          {rows.length === 0 && persistSync === "idle" && !query.trim() && filter === "all" ? (
+          {rows.length === 0 && hydrating && !query.trim() ? (
             <HydratePanel>A carregar os leads…</HydratePanel>
-          ) : rows.length === 0 && persistSync === "error" && !query.trim() && filter === "all" ? (
+          ) : rows.length === 0 && failed && !query.trim() ? (
             <div className="grid place-items-center px-6 py-16 text-center" role="alert">
               <p className="text-[14px] font-medium">Não li os leads</p>
               <p className="mt-1 max-w-md text-[13px] text-muted-foreground">

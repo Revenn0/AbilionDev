@@ -239,11 +239,13 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext) {
       })
     )
   }
-  if (url.pathname === "/mcp" || url.pathname === "/api/mcp") {
+  if (path === "/mcp" || path === "/api/mcp") {
     return withSecurityHeaders(await handleMcpRoute(request, env))
   }
-  if (url.pathname.startsWith("/api/")) {
-    return withSecurityHeaders(await handleApi(request, env, url, ctx))
+  if (path.startsWith("/api/")) {
+    const apiUrl = new URL(request.url)
+    apiUrl.pathname = path
+    return withSecurityHeaders(await handleApi(request, env, apiUrl, ctx))
   }
   return withSecurityHeaders(await env.ASSETS.fetch(request))
 }
