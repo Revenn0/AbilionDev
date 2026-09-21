@@ -332,6 +332,7 @@ export function telegramIdFromLead(lead: Pick<Lead, "contact">) {
 /**
  * POST/MCP: KV primeiro. Miss cai no Postgres.
  * Falha do backup (credenciais + `null`) recusa — o operador não mint um segundo UUID.
+ * Identidade leftover no Postgres + chave unread recusa — não grava sem confirmar o KV.
  */
 export async function resolveWorkspaceLeadWrite(
   env: SettingsEnv,
@@ -348,10 +349,15 @@ export async function resolveWorkspaceLeadWrite(
     try {
       const found = await findWorkspaceLead(env, lead.contact, telegramIdFromLead(lead), lead.telegramChatId ?? "")
       if (found) {
-        return {
-          ok: true,
-          incoming: { ...lead, id: found.id, createdAt: found.createdAt },
-          prev: found,
+        try {
+          const live = await loadLead(env.AUTH, found.id, removed)
+          return {
+            ok: true,
+            incoming: { ...lead, id: found.id, createdAt: found.createdAt },
+            prev: live ?? found,
+          }
+        } catch {
+          return { ok: false, unread: true }
         }
       }
     } catch {

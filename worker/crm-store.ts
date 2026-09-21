@@ -339,14 +339,18 @@ export async function resolveLeadWrite(kv: KvLike, lead: Lead): Promise<{ incomi
 }
 
 export async function importOrAdoptLead(kv: KvLike, lead: Lead): Promise<Lead | null> {
-  const { incoming, prev } = await resolveLeadWrite(kv, lead)
-  if ((await leadRemovedForRead(kv, incoming.id)) || (await leadRemovedForRead(kv, lead.id))) return null
-  const next = adoptOperatorLead(prev, incoming)
-  let bounded = commitStoredLead(prev, next)
-  const latest = await loadLead(kv, bounded.id, await removedIdsForRead(kv))
-  bounded = commitStoredLead(prev, bounded, latest)
-  if (!(await upsertLeadKv(kv, bounded))) return null
-  return bounded
+  try {
+    const { incoming, prev } = await resolveLeadWrite(kv, lead)
+    if ((await leadRemovedForRead(kv, incoming.id)) || (await leadRemovedForRead(kv, lead.id))) return null
+    const next = adoptOperatorLead(prev, incoming)
+    let bounded = commitStoredLead(prev, next)
+    const latest = await loadLead(kv, bounded.id, await removedIdsForRead(kv))
+    bounded = commitStoredLead(prev, bounded, latest)
+    if (!(await upsertLeadKv(kv, bounded))) return null
+    return bounded
+  } catch {
+    return null
+  }
 }
 
 export function settingsPersistSettled(after: Settings, again: Settings) {

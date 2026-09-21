@@ -9154,6 +9154,91 @@ try {
 assert((await loadLead(runtimeHoleKv, "keep-lead"))?.memory === "leftover-keep", "lista chave unread não pisa o leftover irmão")
 assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === leadBeforePg?.memory, "lista chave unread não pisa a ficha leftover")
 assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory !== "leftover-pg-list", "lista chave unread não grava a ficha do Postgres em cima do KV unread")
+const writePgPrev = globalThis.fetch
+const writePgIncoming = { ...lead("mint-import", "@holelead"), memory: "import-unread-pg" }
+const writePgEnv = {
+  ...runtimeHoleBase,
+  AUTH: kvThrowsOn(runtimeHoleKv, leadKey("hole-lead")),
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+} as Env
+try {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url.includes("/rest/v1/leads")) {
+      return new Response(
+        JSON.stringify([
+          {
+            id: "hole-lead",
+            name: "Hole leftover",
+            contact: "@holelead",
+            channel: "telegram",
+            campaign: "facebook",
+            origin: "facebook",
+            temperature: "novo",
+            stage: "welcome",
+            memory: "leftover-pg-write",
+            facts: {},
+            messages: [],
+            telegram_chat_id: "88001",
+            updated_at: "2026-01-01T00:00:00.000Z",
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+        ]),
+        { status: 200 }
+      )
+    }
+    if (url.includes("/rest/v1/lead_events")) return new Response("[]", { status: 200 })
+    return writePgPrev(input, init)
+  }) as typeof fetch
+  const writePgResolved = await resolveWorkspaceLeadWrite(writePgEnv, writePgIncoming)
+  assert(!writePgResolved.ok && writePgResolved.unread, "resolve identidade leftover + chave unread é unread")
+  assert((await importOrAdoptLead(kvThrowsOn(runtimeHoleKv, leadKey("hole-lead")), writePgIncoming)) === null, "import chave unread não grava em cima do leftover")
+  const writePgPost = await handleRequest(
+    new Request("http://local.test/api/leads", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: runtimeHoleCookie },
+      body: JSON.stringify({ lead: writePgIncoming }),
+    }),
+    writePgEnv,
+    backgroundCtx()
+  )
+  const writePgPostBody = (await writePgPost.json()) as { error?: string; ok?: boolean; saved?: number; ids?: string[] }
+  assert(writePgPost.status === 503, "POST identidade leftover + chave unread é 503")
+  assert(writePgPost.status !== 500, "POST identidade leftover + chave unread não é Falha interna")
+  assert(
+    writePgPostBody.error === "Não li o lead do Postgres." || writePgPostBody.error === "Não li os leads do Postgres.",
+    "POST identidade leftover + chave unread pede confirmação"
+  )
+  assert(writePgPostBody.ok !== true && writePgPostBody.saved !== 1, "POST identidade leftover + chave unread não finge gravar")
+  assert(!writePgPostBody.ids?.includes("mint-import"), "POST identidade leftover + chave unread não mint o segundo UUID")
+  const writePgMcp = await handleRequest(
+    new Request("http://local.test/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.253" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 273,
+        method: "tools/call",
+        params: { name: "abilion_import_leads", arguments: { text: "Hole leftover, @holelead" } },
+      }),
+    }),
+    writePgEnv,
+    backgroundCtx()
+  )
+  const writePgMcpData = JSON.parse(
+    ((await writePgMcp.json()) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+  ) as { error?: string; imported?: number; leads?: Array<{ id?: string }> }
+  assert(writePgMcp.status === 200, "MCP import identidade leftover + chave unread não cai em 500")
+  assert(writePgMcpData.error === "Não li o lead do Postgres." || writePgMcpData.error === "Não li os leads do Postgres.", "MCP import identidade leftover + chave unread pede confirmação")
+  assert(writePgMcpData.imported !== 1, "MCP import identidade leftover + chave unread não finge importar")
+  assert(!writePgMcpData.leads?.some((item) => item.id === "mint-import"), "MCP import identidade leftover + chave unread não mint o segundo UUID")
+} finally {
+  globalThis.fetch = writePgPrev
+}
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === leadBeforePg?.memory, "POST/import chave unread não pisa a ficha leftover")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory !== "import-unread-pg", "POST/import chave unread não grava a importação em cima do leftover")
+assert(!(await listLeads(runtimeHoleKv, 40, "all")).some((item) => item.id === "mint-import"), "POST/import chave unread não deixa o UUID mintado")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()
