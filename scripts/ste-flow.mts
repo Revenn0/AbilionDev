@@ -49,6 +49,7 @@ import {
   adoptSettingsStores,
   canCreateFunnel,
   canDeleteFunnel,
+  funnelsListBlocked,
   cacheLeadsForStorage,
   canFlushCrm,
   clipNewestIds,
@@ -725,6 +726,9 @@ assert(pageScriptsListBlocked(true, []), "lista unread e oca bloqueia")
 assert(!pageScriptsListBlocked(true, [{ id: "deadbeef", name: "Landing", funnelId: "f1", createdAt: "t", updatedAt: "t" }]), "lista unread com script no KV segue")
 assert(!pageScriptsListBlocked(false, []), "lista lida vazia não bloqueia")
 assert(FUNNEL_CAP === 20 && !canCreateFunnel(Array.from({ length: 20 }, () => emptySalesFunnel("x"))).ok, "criar o 21.º funil é recusado")
+assert(funnelsListBlocked(true, []), "funis unread e ocas bloqueiam criar")
+assert(!funnelsListBlocked(true, [emptySalesFunnel("x")]), "funis unread com lista no KV seguem")
+assert(!funnelsListBlocked(false, []), "funis lidos vazios não bloqueiam criar")
 const twentyOne = Array.from({ length: 21 }, (_, index) => ({ ...emptySalesFunnel(`n${index}`), id: `funil-${index}` }))
 assert(reconcileFunnels([], twentyOne).length === 21, "reconcile não corta o 21.º quadro à calada")
 assert(commitCrmFunnels([], twentyOne, [], []).length === 21, "commit do CRM não corta o 21.º à calada")

@@ -432,6 +432,17 @@ try {
       ),
     { timeout: 8_000 }
   )
+  assert(
+    (await page.$eval("[data-new-funnel]", (el) => (el as HTMLButtonElement).disabled)) === false,
+    "fluxo com CRM confirmado deixa criar funil"
+  )
+  const funnelScript = await page.$("[data-funnel-script]")
+  if (funnelScript) {
+    assert(
+      (await funnelScript.evaluate((el) => (el as HTMLButtonElement).disabled)) === false,
+      "fluxo com settings confirmadas deixa criar script do quadro"
+    )
+  }
   const reopened = await page.evaluate(() => {
     const article = [...document.querySelectorAll("article")].find((el) => (el.textContent || "").includes("Novo funil"))
     const open = article ? [...article.querySelectorAll("a")].find((item) => (item.textContent || "").includes("Abrir")) : null

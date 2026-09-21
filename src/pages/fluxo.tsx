@@ -8,8 +8,8 @@ import { HydratePanel } from "@/components/layout/hydrate-panel"
 import { SyncBanner } from "@/components/layout/sync-banner"
 import { FunnelPreview } from "@/components/sales/preview"
 import { RenameFunnelDialog } from "@/components/sales/rename-dialog"
-import { canCreateFunnel, canDeleteFunnel } from "@/lib/crm"
-import { addPageScript, funnelHasInstallableBoard } from "@/lib/page-script"
+import { canCreateFunnel, canDeleteFunnel, funnelsListBlocked } from "@/lib/crm"
+import { addPageScript, funnelHasInstallableBoard, pageScriptsListBlocked } from "@/lib/page-script"
 import { useStore } from "@/lib/store"
 import { emptySalesFunnel } from "@/lib/templates"
 import { timeAgo } from "@/lib/format"
@@ -17,14 +17,18 @@ import type { SalesFunnel } from "@/lib/types"
 import { toast } from "sonner"
 
 export function FluxoPage() {
-  const { state, createFunnel, saveFunnel, deleteFunnel, flushCrmNow, saveSettings, crmSync } = useStore()
+  const { state, createFunnel, saveFunnel, deleteFunnel, flushCrmNow, saveSettings, crmSync, settingsSync } = useStore()
   const navigate = useNavigate()
   const funnels = state.funnels
   const [renaming, setRenaming] = useState<SalesFunnel | null>(null)
   const [importing, setImporting] = useState(false)
   const creating = useRef(false)
+  const funnelsUnread = funnelsListBlocked(crmSync !== "ok", funnels)
+  const scriptsUnread = pageScriptsListBlocked(settingsSync !== "ok", state.settings.pageScripts)
 
-  const createGate = canCreateFunnel(funnels)
+  const createGate = funnelsUnread
+    ? { ok: false as const, reason: "Não confirmei os funis no Worker." }
+    : canCreateFunnel(funnels)
 
   const createSales = () => {
     if (creating.current) return
@@ -51,10 +55,20 @@ export function FluxoPage() {
     <div className="h-full overflow-y-auto">
       <div className="page-shell">
         <SyncBanner
-          items={[{ ok: crmSync !== "error", message: "Não consegui ler os funis do Worker. O quadro local pode estar desactualizado." }]}
+          items={[
+            { ok: crmSync !== "error", message: "Não consegui ler os funis do Worker. O quadro local pode estar desactualizado." },
+            { ok: settingsSync !== "error", message: "Não confirmei as definições no Postgres. O botão Script pode estar desactualizado." },
+          ]}
         />
         <PageChrome icon={Workflow} title="Funil">
-          <Button type="button" variant="outline" className="h-8 rounded-full px-3.5" onClick={() => setImporting(true)}>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-8 rounded-full px-3.5"
+            disabled={funnelsUnread}
+            title={funnelsUnread ? "Não confirmei os funis no Worker." : undefined}
+            onClick={() => setImporting(true)}
+          >
             <Upload /> Importar
           </Button>
           <Button
@@ -86,7 +100,14 @@ export function FluxoPage() {
                 O quadro publicado é o que a Sté fala. Boas-vindas, minicurso, Superbet e remarketing editam-se aqui. O rascunho grava sozinho.
               </p>
               <div className="mt-5 flex flex-wrap justify-center gap-2">
-                <Button type="button" variant="outline" className="rounded-full" onClick={() => setImporting(true)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-full"
+                  disabled={funnelsUnread}
+                  title={funnelsUnread ? "Não confirmei os funis no Worker." : undefined}
+                  onClick={() => setImporting(true)}
+                >
                   <Upload /> Importar
                 </Button>
                 <Button
@@ -133,7 +154,14 @@ export function FluxoPage() {
                       variant="ghost"
                       size="sm"
                       className="rounded-full"
+                      disabled={scriptsUnread}
+                      title={scriptsUnread ? "Não confirmei os scripts de página." : undefined}
+                      data-funnel-script
                       onClick={() => {
+                        if (scriptsUnread) {
+                          toast.error("Não confirmei os scripts de página.")
+                          return
+                        }
                         const made = addPageScript(state.settings.pageScripts, { name: funnel.name, funnelId: funnel.id })
                         if (!made.ok) {
                           toast.error(made.error)
@@ -186,6 +214,10 @@ export function FluxoPage() {
         open={importing}
         onOpenChange={setImporting}
         onImported={(funnel) => {
+          if (funnelsUnread) {
+            toast.error("Não confirmei os funis no Worker.")
+            return
+          }
           createFunnel(funnel)
           navigate(`/fluxo/funil/${funnel.id}`)
           void flushCrmNow().then((result) => {

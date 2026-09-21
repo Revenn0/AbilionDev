@@ -551,6 +551,11 @@ export function canCreateFunnel(funnels: SalesFunnel[]): { ok: true } | { ok: fa
   return { ok: true }
 }
 
+/** Lista unread e oca: não fingir que ainda não há funis. Se o KV já tem algum, criar segue. */
+export function funnelsListBlocked(unread: boolean, funnels?: SalesFunnel[]) {
+  return unread && !(funnels ?? []).length
+}
+
 /** POST do CRM: une o snapshot lido no início com o KV no instante do persist. */
 export function commitCrmFunnels(
   stored: SalesFunnel[],
