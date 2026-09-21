@@ -124,6 +124,11 @@ export function leadTimelinePending(
   return count === 0 && eventsSync !== "ok"
 }
 
+/** Inbox 5s e busca `?q=`: unread marca erro. Recorte sem unread não confirma o universo da timeline. */
+export function eventsSyncAfterNarrowRead(current: "idle" | "ok" | "error", unread: boolean) {
+  return unread ? "error" : current
+}
+
 /** Captura, import e lote: GET unread não é catálogo vazio. `funnelsUnread` bloqueia o que precisa do quadro. */
 export function leadWritesBlocked(
   persistSync: "idle" | "ok" | "error",

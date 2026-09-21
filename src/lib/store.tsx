@@ -30,7 +30,7 @@ import {
   recoverPendingFunnelIds,
   settingsWriteFingerprint,
 } from "@/lib/crm"
-import { crmSyncAfterFlush } from "@/lib/ops"
+import { crmSyncAfterFlush, eventsSyncAfterNarrowRead } from "@/lib/ops"
 import { sameLeadContact } from "@/lib/capture"
 import { migrateFunnel, migrateLead, migrateSettings } from "@/lib/migrate"
 import { fetchCrm, fetchInbox, fetchLeads, fetchRuntime, persistLeads, removeRemoteLead, saveCrm } from "@/lib/runtime-api"
@@ -161,6 +161,7 @@ type Store = {
   createLeads: (leads: Lead[]) => Promise<boolean>
   saveLead: (lead: Lead) => void
   ingestRemoteLeads: (leads: Lead[]) => void
+  noteEventsUnread: () => void
   deleteLead: (id: string) => Promise<boolean>
   saveSettings: (patch: Partial<Settings>) => void
 }
@@ -528,7 +529,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setInboxSync(inbox.ok ? "ok" : "error")
       if (inbox.ok) {
         ingestRemoteRemoved(inbox.removed)
-        setEventsSync(inbox.eventsUnread ? "error" : "ok")
+        setEventsSync((current) => eventsSyncAfterNarrowRead(current, inbox.eventsUnread))
       }
       const incoming = applyRemovedLeads(inbox.leads.map((lead) => migrateLead(lead)), removedLeadIds.current)
       setState((prev) => {
@@ -828,6 +829,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const leads = overlayPendingLeads(mergeLeads(prev.leads, fresh, fresh.map((lead) => lead.id)), pendingLeadWrites.current, removedLeadIds.current)
         if (leads === prev.leads) return
         commitState({ ...prev, leads })
+      },
+      noteEventsUnread: () => {
+        setEventsSync((current) => eventsSyncAfterNarrowRead(current, true))
       },
       deleteLead: (id) => {
         pendingLeadWrites.current.delete(id)

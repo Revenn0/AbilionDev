@@ -107,7 +107,7 @@ import { leadCategoriesListBlocked, leadCategoriesMutationBlocked, leadCategorie
 import { burstFacebookLeads, burstStartsBlocked, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
-import { barShare, catalogMetricPending, crmSyncAfterFlush, funnelsWriteBlocked, hasConversation, isImportedLead, isOperatorLockedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadTimelinePending, leadWritesBlocked, leadsHydrating, leadsLoadFailed, metricPending } from "../src/lib/ops.ts"
+import { barShare, catalogMetricPending, crmSyncAfterFlush, eventsSyncAfterNarrowRead, funnelsWriteBlocked, hasConversation, isImportedLead, isOperatorLockedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadTimelinePending, leadWritesBlocked, leadsHydrating, leadsLoadFailed, metricPending } from "../src/lib/ops.ts"
 import { usersWriteBlocked } from "../src/lib/users-api.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
@@ -5525,6 +5525,16 @@ const downLeadsBody = (await downLeads.json()) as { ok?: boolean; eventsUnread?:
 assert(downLeads.status === 200 && downLeadsBody.ok, "GET leads com KV ainda responde se o Postgres cair")
 assert(downLeadsBody.eventsUnread === true, "GET leads com Postgres em baixo marca a timeline unread")
 assert(Array.isArray(downLeadsBody.leads), "GET leads unread não apaga os leads do KV")
+const downLeadId = (downLeadsBody.leads ?? []).map((item) => (item as { id?: string }).id).find(Boolean)
+assert(downLeadId, "GET leads unread ainda tem um id no KV para a busca")
+const downSearch = await handleRequest(
+  new Request(`http://local.test/api/leads?q=${encodeURIComponent(downLeadId!)}`, { headers: { cookie: liveCookie } }),
+  downEnv,
+  backgroundCtx()
+)
+const downSearchBody = (await downSearch.json()) as { ok?: boolean; eventsUnread?: boolean; leads?: unknown[] }
+assert(downSearch.status === 200 && downSearchBody.ok, "GET ?q= com KV ainda responde se o Postgres cair")
+assert(downSearchBody.eventsUnread === true, "GET ?q= com Postgres em baixo marca a timeline unread")
 const downCrmBoards = Array.isArray(downCrmBody.funnels) ? downCrmBody.funnels : []
 const downCrmAdd = await handleRequest(
   new Request("http://local.test/api/crm", {
@@ -6136,6 +6146,10 @@ assert(leadTimelinePending("idle", 0), "timeline hidrata sem eventos")
 assert(leadTimelinePending("error", 0), "timeline unread sem eventos não finge vazia")
 assert(!leadTimelinePending("ok", 0), "timeline confirmada vazia esconde a lista")
 assert(!leadTimelinePending("error", 2), "timeline unread com eventos do KV ainda mostra")
+assert(eventsSyncAfterNarrowRead("ok", true) === "error", "inbox/busca unread marca a timeline")
+assert(eventsSyncAfterNarrowRead("error", false) === "error", "inbox/busca sem unread não confirma a timeline")
+assert(eventsSyncAfterNarrowRead("idle", false) === "idle", "inbox/busca cedo não confirma a timeline")
+assert(eventsSyncAfterNarrowRead("ok", false) === "ok", "inbox/busca sem unread conserva o GET confirmado")
 assert(linkRuntimeSettings(null, { telegramBotUsername: "ste" }) === null, "Vincular sem settings não inventa um objecto oco")
 assert(
   linkRuntimeSettings(emptySettings(), { telegramBotUsername: "ste_bot", telegramBotToken: "tok" })?.telegramBotUsername ===

@@ -7,13 +7,15 @@ export { remoteSearchBlank, type RemoteLeadSearchStatus } from "@/lib/lead-searc
 
 /** Se a lista hidratada já não tem o lead, o Worker procura por id, @user, telefone e nome. */
 export function useRemoteLeadSearch(query: string): RemoteLeadSearchStatus {
-  const { ingestRemoteLeads } = useStore()
+  const { ingestRemoteLeads, noteEventsUnread } = useStore()
   const ingestRef = useRef(ingestRemoteLeads)
+  const noteEventsRef = useRef(noteEventsUnread)
   const [status, setStatus] = useState<RemoteLeadSearchStatus>("idle")
 
   useEffect(() => {
     ingestRef.current = ingestRemoteLeads
-  }, [ingestRemoteLeads])
+    noteEventsRef.current = noteEventsUnread
+  }, [ingestRemoteLeads, noteEventsUnread])
 
   useEffect(() => {
     const needle = query.trim()
@@ -30,6 +32,7 @@ export function useRemoteLeadSearch(query: string): RemoteLeadSearchStatus {
           setStatus("error")
           return
         }
+        if (result.eventsUnread) noteEventsRef.current()
         if (result.leads.length) ingestRef.current(result.leads)
         setStatus("ok")
       })

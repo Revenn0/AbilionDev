@@ -157,7 +157,7 @@ export async function fetchLeadQuery(query: string) {
     if (!Array.isArray(data.leads)) return { ok: false as const, leads: [] as Lead[], eventsUnread: false }
     return { ok: true as const, leads: data.leads, eventsUnread: data.eventsUnread === true }
   } catch {
-    return { ok: false as const, leads: [] as Lead[] }
+    return { ok: false as const, leads: [] as Lead[], eventsUnread: false }
   }
 }
 
