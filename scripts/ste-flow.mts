@@ -7928,6 +7928,41 @@ assert(
 assert((await loadLead(runtimeHoleKv, "hole-lead"))?.id === "hole-lead", "upsert tombstone unread não apaga o leftover")
 assert((await loadLead(runtimeHoleKv, "hole-lead"))?.contact === "@holelead", "upsert tombstone unread não troca o contacto leftover")
 assert(!(await upsertLeadKv(kvThrowsOn(durableGone, CRM_REMOVED), lead("old-id", "@oldgone"))), "upsert não ressuscita id com chave gone")
+const removedDownById = await findWorkspaceLeadById(removedDownEnv, "hole-lead")
+assert(removedDownById?.id === "hole-lead", "get_lead tombstone unread ainda devolve o leftover")
+assert(removedDownById?.contact === "@holelead", "get_lead tombstone unread não esconde o contacto leftover")
+const removedDownGetLead = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.186" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 264,
+      method: "tools/call",
+      params: { name: "abilion_get_lead", arguments: { id: "hole-lead" } },
+    }),
+  }),
+  removedDownEnv,
+  backgroundCtx()
+)
+const removedDownGetLeadData = JSON.parse(
+  ((await removedDownGetLead.json()) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string; lead?: { id?: string; contact?: string } }
+assert(removedDownGetLead.status === 200, "MCP get_lead tombstone unread não cai em 500")
+assert(!removedDownGetLeadData.error, "MCP get_lead tombstone unread não pede 503")
+assert(removedDownGetLeadData.lead?.id === "hole-lead", "MCP get_lead tombstone unread ainda manda o leftover")
+assert(removedDownGetLeadData.lead?.contact === "@holelead", "MCP get_lead tombstone unread não esconde o contacto leftover")
+assert(
+  (await reserveLeadIdentity(kvThrowsOn(runtimeHoleKv, CRM_REMOVED), "@holelead", "88002", "mint-removed")) === "hole-lead",
+  "reserve tombstone unread não mint o segundo UUID"
+)
+const importedHole = await importOrAdoptLead(kvThrowsOn(runtimeHoleKv, CRM_REMOVED), {
+  ...lead("hole-lead", "@holelead"),
+  memory: "import-unread",
+})
+assert(importedHole?.id === "hole-lead", "import tombstone unread ainda adota o leftover")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.id === "hole-lead", "import tombstone unread não apaga o leftover")
+assert((await importOrAdoptLead(kvThrowsOn(durableGone, CRM_REMOVED), lead("old-id", "@oldgone"))) === null, "import tombstone unread não ressuscita id gone")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()

@@ -239,8 +239,9 @@ async function loadAlias(kv: KvLike, kind: "contact" | "chat", value: string): P
 }
 
 async function aliasOwnerState(kv: KvLike, id: string): Promise<"live" | "reserved" | "dead"> {
-  if (await isLeadRemoved(kv, id)) return "dead"
-  if (await loadLead(kv, id)) return "live"
+  const removed = await removedIdsForRead(kv)
+  if (await leadIsGone(kv, id, removed)) return "dead"
+  if (await loadLead(kv, id, removed)) return "live"
   return "reserved"
 }
 
@@ -314,7 +315,7 @@ export async function resolveLeadWrite(kv: KvLike, lead: Lead): Promise<{ incomi
 
 export async function importOrAdoptLead(kv: KvLike, lead: Lead): Promise<Lead | null> {
   const { incoming, prev } = await resolveLeadWrite(kv, lead)
-  if ((await isLeadRemoved(kv, incoming.id)) || (await isLeadRemoved(kv, lead.id))) return null
+  if ((await leadRemovedForRead(kv, incoming.id)) || (await leadRemovedForRead(kv, lead.id))) return null
   const next = adoptOperatorLead(prev, incoming)
   let bounded = commitStoredLead(prev, next)
   const latest = await loadLead(kv, bounded.id)

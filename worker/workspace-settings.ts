@@ -6,7 +6,7 @@ import { migrateSettings, sanitizeIncomingFunnel } from "../src/lib/migrate.ts"
 import { sanitizeVisitorId, summarizeTrack, type TrackEvent, type TrackKind, type TrackSummary } from "../src/lib/track.ts"
 import type { Lead, LeadEvent, SalesFunnel, Settings } from "../src/lib/types.ts"
 import { mergeTrackEvents } from "./track-store.ts"
-import { filterLiveLeads, findLeadInKv, isLeadPageCursor, isLeadRemoved, listLeadPage, loadAdoptedSettings, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge, removedIdsForRead, resolveLeadWrite } from "./crm-store.ts"
+import { filterLiveLeads, findLeadInKv, isLeadPageCursor, isLeadRemoved, leadRemovedForRead, listLeadPage, loadAdoptedSettings, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge, removedIdsForRead, resolveLeadWrite } from "./crm-store.ts"
 import type { KvLike } from "./kv.ts"
 
 const WORKSPACE = "local"
@@ -286,23 +286,32 @@ export async function findWorkspaceLead(
 export async function findWorkspaceLeadById(env: SettingsEnv, id: string): Promise<Lead | null> {
   const needle = id.trim()
   if (!needle || needle.length > 80) return null
-  try {
-    if (env.AUTH && (await isLeadRemoved(env.AUTH, needle))) return null
-    const kvLead = env.AUTH ? await loadLead(env.AUTH, needle) : null
-    if (kvLead) {
-      const extras = await fetchRemoteLeadsByIds(env, [kvLead.id])
-      if (extras === null) return kvLead
-      return hydrateWorkspaceLead(kvLead, extras[0])
+  if (env.AUTH) {
+    try {
+      const removed = await removedIdsForRead(env.AUTH)
+      if (await leadRemovedForRead(env.AUTH, needle)) return null
+      const kvLead = await loadLead(env.AUTH, needle, removed)
+      if (kvLead) {
+        const extras = await fetchRemoteLeadsByIds(env, [kvLead.id])
+        if (extras === null) return kvLead
+        return hydrateWorkspaceLead(kvLead, extras[0])
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message === "Não li o lead do Postgres.") throw error
+      throw new Error("Não li o lead do Postgres.")
     }
-  } catch (error) {
-    if (error instanceof Error && error.message === "Não li o lead do Postgres.") throw error
-    throw new Error("Não li o lead do Postgres.")
   }
   const extras = await fetchRemoteLeadsByIds(env, [needle])
   if (extras === null) throw new Error("Não li o lead do Postgres.")
   const remote = extras[0]
   if (!remote) return null
-  if (env.AUTH && (await isLeadRemoved(env.AUTH, remote.id))) return null
+  if (env.AUTH) {
+    try {
+      if (await leadRemovedForRead(env.AUTH, remote.id)) return null
+    } catch {
+      throw new Error("Não li o lead do Postgres.")
+    }
+  }
   return remote
 }
 
