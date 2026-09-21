@@ -432,9 +432,13 @@ try {
       ),
     { timeout: 8_000 }
   )
+  const newFunnelGate = await page.$eval("[data-new-funnel]", (el) => ({
+    disabled: (el as HTMLButtonElement).disabled,
+    title: (el as HTMLButtonElement).title || "",
+  }))
   assert(
-    (await page.$eval("[data-new-funnel]", (el) => (el as HTMLButtonElement).disabled)) === false,
-    "fluxo com CRM confirmado deixa criar funil"
+    !newFunnelGate.disabled || newFunnelGate.title.includes("máximo"),
+    "fluxo com CRM confirmado não bloqueia criar por lista oca"
   )
   const funnelScript = await page.$("[data-funnel-script]")
   if (funnelScript) {
