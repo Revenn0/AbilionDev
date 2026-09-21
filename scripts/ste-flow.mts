@@ -129,7 +129,7 @@ import { kvTrackStore, memoryTrackStore, mergeTrackEvents, recordTrack } from ".
 import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, confirmKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, gateActor, handleAuth, hashApiToken, hashPassword, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, readActor, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
 import { ensureVoiceClip, VOICE_STORE_KEY, voiceClipStatus } from "../worker/ste-voice.ts"
-import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTelegramClaims, telegramCall, telegramJoinActor, telegramUpdateActor } from "../worker/telegram.ts"
+import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTelegramClaims, telegramCall, telegramJoinActor, telegramUpdateActor, TG_UPDATES } from "../worker/telegram.ts"
 import { backgroundCtx, handleRequest, type Env } from "../worker/index.ts"
 import { clearSessionExpired, noteUnauthorized, subscribeSessionExpired } from "../src/lib/session.ts"
 
@@ -7763,6 +7763,43 @@ try {
 }
 assert((await listLeads(runtimeHoleKv, 20, "all")).some((item) => item.contact === "@hookafter"), "webhook secrets leftover ainda cria o lead")
 assert((await loadSecrets(runtimeHoleKv)).telegramBotToken === "000:kv-token", "webhook secrets leftover não apaga o token")
+const hookClaimCtx = backgroundCtx()
+let hookClaimCalls = 0
+const hookClaimPrev = globalThis.fetch
+try {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("api.telegram.org")) {
+      hookClaimCalls += 1
+      return new Response(JSON.stringify({ ok: true }), { status: 200 })
+    }
+    return hookClaimPrev(input, init)
+  }) as typeof fetch
+  const hookClaim = await handleRequest(
+    new Request("http://local.test/api/telegram", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-kv" },
+      body: JSON.stringify({
+        update_id: 88005,
+        message: {
+          chat: { id: 88005 },
+          text: "/start fb_hookclaim",
+          from: { id: 88005, username: "hookclaim", first_name: "Claim" },
+        },
+      }),
+    }),
+    { ...runtimeHoleBase, AUTH: kvThrowsOn(runtimeHoleKv, TG_UPDATES) } as Env,
+    hookClaimCtx
+  )
+  const hookClaimBody = (await hookClaim.json()) as { ok?: boolean; error?: string }
+  assert(hookClaim.status === 200 && hookClaimBody.ok, "webhook claim unread ainda acka o Telegram")
+  assert(hookClaim.status !== 503, "webhook claim unread não pede as chaves")
+  await hookClaimCtx.flush()
+  assert(hookClaimCalls >= 1, "webhook claim unread ainda entrega no waitUntil")
+} finally {
+  globalThis.fetch = hookClaimPrev
+}
+assert((await listLeads(runtimeHoleKv, 20, "all")).some((item) => item.contact === "@hookclaim"), "webhook claim unread ainda cria o lead")
+assert((await loadSecrets(runtimeHoleKv)).telegramBotToken === "000:kv-token", "webhook claim unread não apaga o token leftover")
 const leftoverAuth = (await runtimeHoleKv.get("snapshot", "json")) as {
   users?: Array<{ email?: string; passwordHash?: string }>
   sessions?: unknown[]

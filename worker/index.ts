@@ -905,15 +905,33 @@ async function runTelegram(env: Env, update: TelegramUpdate, secrets?: RuntimeSe
   if (!telegramUpdateActor(update)) return
   const updateId = typeof update.update_id === "number" && update.update_id > 0 ? update.update_id : 0
   const kv = kvOf(env)
-  if (updateId && kv && !(await claimTelegramUpdate(kv, updateId))) return
+  if (updateId && kv) {
+    try {
+      if (!(await claimTelegramUpdate(kv, updateId))) return
+    } catch {
+      /* claim unread — o 200 já saiu; leftover não é “já visto” */
+    }
+  }
   let sent = false
   try {
     sent = (await deliverTelegram(env, update, resolved.telegramBotToken, resolved)).sent
   } catch (error) {
-    if (updateId && kv && !sent) await forgetTelegramUpdate(kv, updateId)
+    if (updateId && kv && !sent) {
+      try {
+        await forgetTelegramUpdate(kv, updateId)
+      } catch {
+        /* claim unread */
+      }
+    }
     throw error
   }
-  if (updateId && kv && !sent) await forgetTelegramUpdate(kv, updateId)
+  if (updateId && kv && !sent) {
+    try {
+      await forgetTelegramUpdate(kv, updateId)
+    } catch {
+      /* claim unread */
+    }
+  }
 }
 
 async function deliverTelegram(
