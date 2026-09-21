@@ -9,19 +9,20 @@ import { PageChrome, StatusPill } from "@/components/layout/chrome"
 import { SyncBanner } from "@/components/layout/sync-banner"
 import { StudioPanel } from "@/components/layout/studio"
 import { funnelFrom, periodDelta, pixelFigure, splitSeries } from "@/lib/analytics-view"
-import { catalogMetricPending } from "@/lib/ops"
+import { catalogMetricPending, leadCatalogClipped } from "@/lib/ops"
 import { useStore } from "@/lib/store"
 import { facebookOf, formatPercent, formatSession } from "@/lib/track"
 import { useTrackSummary } from "@/lib/use-track-summary"
 
 export function AnalyticsPage() {
-  const { state, persistSync, inboxSync } = useStore()
+  const { state, persistSync, catalogComplete, inboxSync } = useStore()
   const { summary, status, hasData, retry } = useTrackSummary(4000)
   const facebook = facebookOf(summary)
   const pixelReady = status === "ok" || hasData
   const empty =
     pixelReady &&
     persistSync === "ok" &&
+    catalogComplete &&
     summary.visitors === 0 &&
     summary.clicks === 0 &&
     summary.telegrams === 0 &&
@@ -32,7 +33,7 @@ export function AnalyticsPage() {
   const periods = splitSeries(summary.series)
   const funnel = funnelFrom(summary, state.leads)
   const chatStartedCount = funnel.find((item) => item.id === "chat")?.value ?? 0
-  const leadsReady = !catalogMetricPending(persistSync, chatStartedCount, inboxSync === "error")
+  const leadsReady = !catalogMetricPending(persistSync, chatStartedCount, inboxSync === "error") && !(leadCatalogClipped(persistSync, catalogComplete) && chatStartedCount === 0)
   const viewSpark = summary.series.map((item) => item.views)
   const clickSpark = summary.series.map((item) => item.clicks)
   const telegramSpark = summary.series.map((item) => item.telegrams)
@@ -47,6 +48,10 @@ export function AnalyticsPage() {
             {
               ok: persistSync !== "error",
               message: "Não consegui ler os leads do Worker. O passo Chat do funil pode estar desactualizado.",
+            },
+            {
+              ok: !leadCatalogClipped(persistSync, catalogComplete),
+              message: "A lista do Worker veio recortada. O passo Chat do funil pode estar incompleto.",
             },
             {
               ok: inboxSync !== "error",

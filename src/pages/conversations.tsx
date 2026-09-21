@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { simulateOpenLead } from "@/lib/burst"
 import { useStore } from "@/lib/store"
 import { pixelFigure, pixelGeoEmpty } from "@/lib/analytics-view"
-import { funnelsWriteBlocked, hasConversation, leadsHydrating, leadsLoadFailed } from "@/lib/ops"
+import { funnelsWriteBlocked, hasConversation, leadCatalogClipped, leadsHydrating, leadsLoadFailed } from "@/lib/ops"
 import { ORIGIN_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { GeoBadge } from "@/components/crm/geo-badge"
 import { factsWithTrack } from "@/lib/geo"
@@ -54,7 +54,7 @@ function matchesFilter(lead: Lead, filter: FilterId) {
 }
 
 export function ConversationsPage() {
-  const { state, saveLead, createLead, flushLeadNow, crmSync, inboxSync, persistSync } = useStore()
+  const { state, saveLead, createLead, flushLeadNow, crmSync, inboxSync, persistSync, catalogComplete } = useStore()
   const { summary, status, hasData } = useTrackSummary(4000)
   const geoEmpty = pixelGeoEmpty(status, hasData)
   const runtime = steRuntimeFromFunnels(state.funnels, state.settings)
@@ -82,6 +82,7 @@ export function ConversationsPage() {
   )
   const hydrating = leadsHydrating(persistSync, all.length)
   const failed = leadsLoadFailed(persistSync, all.length, inboxSync === "error")
+  const clipped = leadCatalogClipped(persistSync, catalogComplete)
   const pending = hydrating || failed
   const funnelsUnread = funnelsWriteBlocked(crmSync)
 
@@ -174,6 +175,7 @@ export function ConversationsPage() {
           items={[
             { ok: inboxSync !== "error", message: "A inbox do Telegram não sincronizou. Conversas novas podem faltar." },
             { ok: persistSync !== "error", message: "Não consegui ler ou gravar conversas no Worker." },
+            { ok: !clipped, message: "A lista do Worker veio recortada. Os totais desta inbox não são o catálogo inteiro." },
             { ok: crmSync !== "error", message: "Não consegui ler os funis do Worker. Simular conversa fica bloqueado até confirmar os funis." },
           ]}
         />
@@ -204,6 +206,13 @@ export function ConversationsPage() {
             <p className="text-[14px] font-medium">Não li as conversas</p>
             <p className="mt-1 max-w-md text-[13px] text-muted-foreground">
               O Worker não respondeu. Isto não é uma inbox vazia — tenta outra vez no aviso acima.
+            </p>
+          </section>
+        ) : all.length === 0 && clipped ? (
+          <section className="surface grid place-items-center px-6 py-16 text-center" role="alert" data-inbox-catalog="clipped">
+            <p className="text-[14px] font-medium">Não confirmei o catálogo</p>
+            <p className="mt-1 max-w-md text-[13px] text-muted-foreground">
+              O Worker devolveu um recorte. Isto não é uma inbox vazia — o aviso acima pede a lista completa.
             </p>
           </section>
         ) : all.length === 0 ? (

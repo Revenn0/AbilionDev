@@ -137,6 +137,31 @@ export function leadWritesBlocked(
   return persistSync !== "ok" || funnelsUnread
 }
 
+/** GET 200 clipped: o recorte não confirma o catálogo. Gravar lead ainda pode. */
+export function leadCatalogClipped(
+  persistSync: "idle" | "ok" | "error",
+  complete: boolean
+) {
+  return persistSync === "ok" && !complete
+}
+
+/** CSV e “N na base”: idle, GET falho ou clipped não é universo. */
+export function leadsExportBlocked(
+  persistSync: "idle" | "ok" | "error",
+  complete: boolean
+) {
+  return persistSync !== "ok" || !complete
+}
+
+/** Zero só é vazio depois do GET completo. */
+export function leadCatalogEmpty(
+  persistSync: "idle" | "ok" | "error",
+  complete: boolean,
+  count: number
+) {
+  return persistSync === "ok" && complete && count === 0
+}
+
 export function barShare(value: number, total: number) {
   if (total <= 0) return 0
   return Math.round((value / total) * 100)

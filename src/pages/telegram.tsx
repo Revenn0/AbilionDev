@@ -12,11 +12,11 @@ import { fetchRuntime, type RuntimeStatus } from "@/lib/runtime-api"
 import { adsDeepLink } from "@/lib/telegram-start"
 import { adsLandingUrl } from "@/lib/page-script"
 import { burstFacebookLeads, burstStartsBlocked, burstStats } from "@/lib/burst"
-import { catalogMetricPending, funnelsWriteBlocked, metricPending } from "@/lib/ops"
+import { catalogMetricPending, funnelsWriteBlocked, leadCatalogClipped, metricPending } from "@/lib/ops"
 import { toast } from "sonner"
 
 export function TelegramPage() {
-  const { state, createLeads, crmSync, persistSync, settingsSync, inboxSync } = useStore()
+  const { state, createLeads, crmSync, persistSync, catalogComplete, settingsSync, inboxSync } = useStore()
   const { settings, leads } = state
   const funnelsUnread = funnelsWriteBlocked(crmSync)
   const burstBlocked = burstStartsBlocked(persistSync, funnelsUnread)
@@ -27,8 +27,9 @@ export function TelegramPage() {
     day.setHours(0, 0, 0, 0)
     return new Date(lead.createdAt).getTime() >= day.getTime()
   }).length
-  const groupPending = catalogMetricPending(persistSync, inGroup, inboxSync === "error")
-  const facebookPending = metricPending(persistSync, facebookToday)
+  const clipped = leadCatalogClipped(persistSync, catalogComplete)
+  const groupPending = catalogMetricPending(persistSync, inGroup, inboxSync === "error") || (clipped && inGroup === 0)
+  const facebookPending = metricPending(persistSync, facebookToday) || (clipped && facebookToday === 0)
   const hook = `${workerUrl()}/api/telegram`
   const [health, setHealth] = useState<Awaited<ReturnType<typeof fetchHealth>> | null>(null)
   const [runtime, setRuntime] = useState<RuntimeStatus | null>(null)
@@ -72,6 +73,10 @@ export function TelegramPage() {
             {
               ok: persistSync !== "error",
               message: "Não consegui ler os leads do Worker. Os números de joins e Facebook hoje podem estar vazios.",
+            },
+            {
+              ok: !clipped,
+              message: "A lista do Worker veio recortada. Joins e Facebook hoje não são o catálogo inteiro.",
             },
             {
               ok: crmSync !== "error",

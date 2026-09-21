@@ -20,7 +20,7 @@ import { useStore } from "@/lib/store"
 import { addLeadCategory, leadCategoriesWriteBlocked, leadFromImport, leadImportGroupBlocked, mergeLeadCategories, parseLeadImportText } from "@/lib/lead-category"
 import { captureAgainstFunnels } from "@/lib/templates"
 import { ORIGIN_LABEL, STAGE_LABEL, TEMP_LABEL } from "@/lib/labels"
-import { funnelsWriteBlocked, isImportedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadTimelinePending, leadWritesBlocked, leadsHydrating } from "@/lib/ops"
+import { funnelsWriteBlocked, isImportedLead, leadCatalogClipped, leadFilterCount, leadFilterPending, leadMatchesFilter, leadTimelinePending, leadWritesBlocked, leadsHydrating } from "@/lib/ops"
 import { pixelGeoEmpty } from "@/lib/analytics-view"
 import { applyEvent, nodeTitle, publishedSnapshot, type RuntimeEvent } from "@/lib/runtime"
 import { canTickSteLocally } from "@/lib/ste"
@@ -47,7 +47,7 @@ const FILTERS = [
 ] as const
 
 export function LeadsPage() {
-  const { state, createLead, createLeads, saveLead, saveSettings, flushLeadNow, deleteLead, crmSync, inboxSync, persistSync, settingsSync, eventsSync } = useStore()
+  const { state, createLead, createLeads, saveLead, saveSettings, flushLeadNow, deleteLead, crmSync, inboxSync, persistSync, catalogComplete, settingsSync, eventsSync } = useStore()
   const { summary, status: trackStatus, hasData: trackHasData } = useTrackSummary(8000)
   const geoEmpty = pixelGeoEmpty(trackStatus, trackHasData)
   const [filter, setFilter] = useState<string>("all")
@@ -56,6 +56,7 @@ export function LeadsPage() {
   const scoped = useMemo(() => leadFilterCount(state.leads, filter), [filter, state.leads])
   const hydrating = leadsHydrating(persistSync, scoped)
   const failed = leadFilterPending(persistSync, scoped, filter, inboxSync === "error") && !hydrating
+  const clipped = leadCatalogClipped(persistSync, catalogComplete)
   const [open, setOpen] = useState(false)
   const [importing, setImporting] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
@@ -99,6 +100,7 @@ export function LeadsPage() {
             { ok: crmSync !== "error", message: "Não consegui ler o CRM do Worker." },
             { ok: inboxSync !== "error", message: "A inbox do Telegram não sincronizou." },
             { ok: persistSync !== "error", message: "Não consegui ler ou gravar leads no Worker." },
+            { ok: !clipped, message: "A lista do Worker veio recortada. Isto não é o catálogo inteiro — o CSV e os totais esperam." },
             { ok: settingsSync !== "error", message: "Não confirmei as definições no Postgres. Importar para o grupo e as categorias podem estar desactualizados." },
             { ok: eventsSync !== "error", message: "Não li a timeline dos leads no Postgres. A ficha pode esconder passos que já existiam." },
           ]}
@@ -220,6 +222,13 @@ export function LeadsPage() {
               <p className="text-[14px] font-medium">Não consegui procurar</p>
               <p className="mt-1 max-w-md text-[13px] text-muted-foreground">
                 O Worker não respondeu a esta busca. Isto não é “nenhum lead” — tenta outra vez ou limpa a caixa.
+              </p>
+            </div>
+          ) : rows.length === 0 && clipped && !query.trim() ? (
+            <div className="grid place-items-center px-6 py-16 text-center" role="alert" data-lead-catalog="clipped">
+              <p className="text-[14px] font-medium">Não confirmei o catálogo</p>
+              <p className="mt-1 max-w-md text-[13px] text-muted-foreground">
+                O Worker devolveu um recorte. Isto não é “nenhum lead” — o aviso acima pede a lista completa.
               </p>
             </div>
           ) : rows.length === 0 ? (

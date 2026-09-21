@@ -145,6 +145,7 @@ type Store = {
   crmSync: SyncState
   inboxSync: SyncState
   persistSync: SyncState
+  catalogComplete: boolean
   sessionSync: SyncState
   settingsSync: SyncState
   eventsSync: SyncState
@@ -174,6 +175,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [crmSync, setCrmSync] = useState<SyncState>("idle")
   const [inboxSync, setInboxSync] = useState<SyncState>("idle")
   const [persistSync, setPersistSync] = useState<SyncState>("idle")
+  const [catalogComplete, setCatalogComplete] = useState(false)
   const [sessionSync, setSessionSync] = useState<SyncState>("idle")
   const [settingsSync, setSettingsSync] = useState<SyncState>("idle")
   const [eventsSync, setEventsSync] = useState<SyncState>("idle")
@@ -203,6 +205,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     lastLeadReadOk.current = false
     lastLeadWriteOk.current = true
     setPersistSync("idle")
+    setCatalogComplete(false)
   }
 
   const settleLeadPersist = () => {
@@ -216,9 +219,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     )
   }
 
-  const markLeadRead = (ok: boolean) => {
+  const markLeadRead = (ok: boolean, complete = true) => {
     leadReadKnown.current = true
     lastLeadReadOk.current = ok
+    setCatalogComplete(ok && complete)
   }
 
   const ingestRemoteRemoved = (ids: string[] | undefined) => {
@@ -379,7 +383,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       funnelsConfirmed.current = crm.ok && !crm.funnelsUnread
       setCrmSync(funnelsConfirmed.current ? "ok" : "error")
       setSettingsSync(crm.ok ? (crm.settingsUnread ? "error" : "ok") : "error")
-      markLeadRead(remoteLeads.ok)
+      markLeadRead(remoteLeads.ok, remoteLeads.complete !== false)
       if (remoteLeads.ok) ingestRemoteRemoved(remoteLeads.removed)
       if (inbox.ok) ingestRemoteRemoved(inbox.removed)
       setInboxSync(inbox.ok ? "ok" : "error")
@@ -558,7 +562,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const reconcile = async () => {
       const [remoteLeads, inbox] = await Promise.all([fetchLeads(), fetchInbox(INBOX_LIST_PAGES)])
       if (cancelled) return
-      markLeadRead(remoteLeads.ok)
+      markLeadRead(remoteLeads.ok, remoteLeads.complete !== false)
       if (remoteLeads.ok) ingestRemoteRemoved(remoteLeads.removed)
       if (inbox.ok) ingestRemoteRemoved(inbox.removed)
       setInboxSync(inbox.ok ? "ok" : "error")
@@ -678,6 +682,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       crmSync,
       inboxSync,
       persistSync,
+      catalogComplete,
       sessionSync,
       settingsSync,
       eventsSync,
@@ -857,7 +862,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         pushWorker()
       },
     }),
-    [ready, remote, crmSync, inboxSync, persistSync, sessionSync, settingsSync, eventsSync, state]
+    [ready, remote, crmSync, inboxSync, persistSync, catalogComplete, sessionSync, settingsSync, eventsSync, state]
   )
 
   return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>

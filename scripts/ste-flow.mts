@@ -107,7 +107,7 @@ import { leadCategoriesListBlocked, leadCategoriesMutationBlocked, leadCategorie
 import { burstFacebookLeads, burstStartsBlocked, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
-import { barShare, catalogMetricPending, crmSyncAfterFlush, eventsSyncAfterNarrowRead, funnelsWriteBlocked, hasConversation, isImportedLead, isOperatorLockedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadTimelinePending, leadWritesBlocked, leadsHydrating, leadsLoadFailed, metricPending } from "../src/lib/ops.ts"
+import { barShare, catalogMetricPending, crmSyncAfterFlush, eventsSyncAfterNarrowRead, funnelsWriteBlocked, hasConversation, isImportedLead, isOperatorLockedLead, leadCatalogClipped, leadCatalogEmpty, leadFilterCount, leadFilterPending, leadMatchesFilter, leadTimelinePending, leadWritesBlocked, leadsExportBlocked, leadsHydrating, leadsLoadFailed, metricPending } from "../src/lib/ops.ts"
 import { usersWriteBlocked } from "../src/lib/users-api.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
@@ -1152,6 +1152,18 @@ assert(
   leadPersistSync({ readKnown: true, readOk: true, pendingWrites: 0, writeOk: false }) === "error",
   "DELETE falhou continua erro"
 )
+assert(leadCatalogClipped("ok", false), "GET 200 clipped não confirma o catálogo")
+assert(!leadCatalogClipped("ok", true), "GET completo confirma o catálogo")
+assert(!leadCatalogClipped("error", false), "GET falho não é clipped")
+assert(!leadCatalogClipped("idle", false), "ainda sem GET não é clipped")
+assert(leadsExportBlocked("ok", false), "GET clipped não solta o CSV")
+assert(!leadsExportBlocked("ok", true), "GET completo solta o CSV")
+assert(leadsExportBlocked("error", true), "GET falho não solta o CSV")
+assert(leadsExportBlocked("idle", false), "ainda sem GET não solta o CSV")
+assert(leadCatalogEmpty("ok", true, 0), "GET completo vazio é vazio")
+assert(!leadCatalogEmpty("ok", false, 0), "GET clipped vazio não é catálogo vazio")
+assert(!leadCatalogEmpty("ok", true, 2), "GET completo com leads não é vazio")
+assert(!leadWritesBlocked("ok"), "GET clipped ainda deixa gravar lead")
 assert(remoteSearchBlank("ab", 0, "idle") === "local", "busca curta é filtro local")
 assert(remoteSearchBlank("ana", 0, "idle") === "loading", "debounce não é vazio")
 assert(remoteSearchBlank("ana", 0, "loading") === "loading", "pedido em voo")

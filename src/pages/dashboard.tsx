@@ -6,28 +6,30 @@ import { Button } from "@/components/ui/button"
 import { SparkBars, TrendLine } from "@/components/ui/spark"
 import { useStore } from "@/lib/store"
 import { pixelFigure } from "@/lib/analytics-view"
-import { barShare, catalogMetricPending, deriveOps, leadsHydrating, leadsLoadFailed, metricPending, seriesLast30 } from "@/lib/ops"
+import { barShare, catalogMetricPending, deriveOps, leadCatalogClipped, leadCatalogEmpty, leadsHydrating, leadsLoadFailed, metricPending, seriesLast30 } from "@/lib/ops"
 import { facebookOf } from "@/lib/track"
 import { useTrackSummary } from "@/lib/use-track-summary"
 
 export function DashboardPage() {
-  const { state, crmSync, inboxSync, persistSync } = useStore()
+  const { state, crmSync, inboxSync, persistSync, catalogComplete } = useStore()
   const { summary, status, hasData, retry } = useTrackSummary(8000)
   const facebook = facebookOf(summary)
   const ops = deriveOps(state.leads)
   const hydrating = leadsHydrating(persistSync, state.leads.length)
   const failed = leadsLoadFailed(persistSync, state.leads.length)
-  const empty = !hydrating && !failed && ops.leads === 0
+  const clipped = leadCatalogClipped(persistSync, catalogComplete)
+  const empty = leadCatalogEmpty(persistSync, catalogComplete, ops.leads)
   const pending = hydrating || failed
-  const chatsPending = metricPending(persistSync, ops.conversations, inboxSync === "error")
-  const telegramPending = catalogMetricPending(persistSync, ops.telegram, inboxSync === "error")
-  const facebookPending = metricPending(persistSync, ops.facebook)
-  const importedPending = metricPending(persistSync, ops.imported)
-  const waitPending = metricPending(persistSync, ops.waiting)
-  const offerPending = metricPending(persistSync, ops.offered)
-  const novoPending = metricPending(persistSync, ops.novo)
-  const mornoPending = metricPending(persistSync, ops.morno)
-  const quentePending = metricPending(persistSync, ops.quente)
+  const clippedZero = (count: number) => clipped && count === 0
+  const chatsPending = metricPending(persistSync, ops.conversations, inboxSync === "error") || clippedZero(ops.conversations)
+  const telegramPending = catalogMetricPending(persistSync, ops.telegram, inboxSync === "error") || clippedZero(ops.telegram)
+  const facebookPending = metricPending(persistSync, ops.facebook) || clippedZero(ops.facebook)
+  const importedPending = metricPending(persistSync, ops.imported) || clippedZero(ops.imported)
+  const waitPending = metricPending(persistSync, ops.waiting) || clippedZero(ops.waiting)
+  const offerPending = metricPending(persistSync, ops.offered) || clippedZero(ops.offered)
+  const novoPending = metricPending(persistSync, ops.novo) || clippedZero(ops.novo)
+  const mornoPending = metricPending(persistSync, ops.morno) || clippedZero(ops.morno)
+  const quentePending = metricPending(persistSync, ops.quente) || clippedZero(ops.quente)
   const facebookTotal = Math.max(facebook.adClicks, facebook.pageViews, facebook.buttonClicks)
   const line = seriesLast30(state.leads, () => true)
   const spark = line.slice(-12)
@@ -44,6 +46,7 @@ export function DashboardPage() {
             { ok: crmSync !== "error", message: "Não consegui ler os funis do Worker. O quadro local pode estar desactualizado." },
             { ok: inboxSync !== "error", message: "A inbox do Telegram não sincronizou. Leads novos podem faltar." },
             { ok: persistSync !== "error", message: "Não consegui ler ou gravar leads no Worker. A lista local pode divergir." },
+            { ok: !clipped, message: "A lista do Worker veio recortada. Os totais abaixo não são o catálogo inteiro." },
             { ok: status !== "error", message: "Não consegui ler o pixel. Os números de tráfego abaixo podem estar vazios." },
           ]}
           onRetry={retry}
@@ -59,7 +62,7 @@ export function DashboardPage() {
         </PageChrome>
 
         <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
-          <Kpi href="/leads" label="Leads" value={pending ? "…" : ops.leads} hint={hydrating ? "a carregar" : failed ? "sem leitura" : empty ? "à espera de captura" : "na base"} bars={spark} />
+          <Kpi href="/leads" label="Leads" value={pending || (clipped && ops.leads === 0) ? "…" : ops.leads} hint={hydrating ? "a carregar" : failed ? "sem leitura" : clipped ? "recorte" : empty ? "à espera de captura" : "na base"} bars={spark} />
           <Kpi
             href="/conversas"
             label="Conversas"

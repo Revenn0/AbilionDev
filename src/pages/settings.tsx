@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { downloadLeadsCsv } from "@/lib/leads-export"
+import { leadCatalogClipped, leadsExportBlocked } from "@/lib/ops"
 import { cleanBotUsername, cleanTelegramGroupUrl } from "@/lib/migrate"
 import { useStore } from "@/lib/store"
 import { changePasswordRequest } from "@/lib/auth-api"
@@ -71,7 +72,7 @@ function readTab(params: URLSearchParams): TabId {
 export function SettingsPage() {
   const [params, setParams] = useSearchParams()
   const { hash } = useLocation()
-  const { crmSync, persistSync, settingsSync } = useStore()
+  const { crmSync, persistSync, catalogComplete, settingsSync } = useStore()
   const tab = readTab(params)
   useHashScroll("pixel", tab === "bot")
 
@@ -98,6 +99,7 @@ export function SettingsPage() {
             items={[
               { ok: crmSync !== "error", message: "Não consegui ler os funis do Worker. O pixel e os scripts de página podem estar desactualizados." },
               { ok: persistSync !== "error", message: "Não consegui sincronizar leads com o Worker. O CSV e os contadores podem estar desactualizados." },
+              { ok: !leadCatalogClipped(persistSync, catalogComplete), message: "A lista do Worker veio recortada. O CSV e os totais não são o catálogo inteiro." },
               {
                 ok: settingsSync !== "error",
                 message: "Não confirmei as definições no Postgres. Username, scripts de página e categorias podem estar desactualizados.",
@@ -727,14 +729,17 @@ function AccountPane() {
 }
 
 function PluginsPane() {
-  const { state, persistSync } = useStore()
+  const { state, persistSync, catalogComplete } = useStore()
   const telegramOn = Boolean(state.settings.plugins.telegram)
+  const exportBlocked = leadsExportBlocked(persistSync, catalogComplete)
   const leadCount =
     persistSync === "idle" && state.leads.length === 0
       ? "…"
       : persistSync === "error" && state.leads.length === 0
         ? "—"
-        : state.leads.length
+        : leadCatalogClipped(persistSync, catalogComplete)
+          ? `${state.leads.length}+`
+          : state.leads.length
 
   return (
     <section>
@@ -775,10 +780,11 @@ function PluginsPane() {
                       size="sm"
                       variant="outline"
                       className="rounded-full"
-                      disabled={persistSync !== "ok" || !state.leads.length}
-                      title={persistSync !== "ok" ? "Não confirmei os leads no Worker." : undefined}
+                      data-lead-export={exportBlocked ? (persistSync === "idle" ? "loading" : "error") : "ok"}
+                      disabled={exportBlocked || !state.leads.length}
+                      title={exportBlocked ? "Não confirmei o catálogo no Worker." : undefined}
                       onClick={() => {
-                        if (persistSync !== "ok" || !state.leads.length) return
+                        if (exportBlocked || !state.leads.length) return
                         downloadLeadsCsv(state.leads)
                         toast.success(
                           state.leads.length >= LEAD_LIST_CAP
