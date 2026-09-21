@@ -478,9 +478,10 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
   if (name === "abilion_create_page_script") {
     if (!env.AUTH) throw new Error("Auth ainda sem KV.")
     const boards = await readWorkspaceFunnels(env)
+    if (boards.unread) throw new Error("Não confirmei os funis.")
     const funnel = boards.funnels.find((item) => item.id === str(args.funnelId).trim())
     if (!funnel?.production) {
-      throw new Error(boards.unread ? "Não confirmei os funis." : "Publica este funil antes de criar o script da página.")
+      throw new Error("Publica este funil antes de criar o script da página.")
     }
     const loaded = await readWorkspaceSettings(env)
     if (pageScriptsListBlocked(loaded.unread, loaded.settings.pageScripts)) {

@@ -98,6 +98,28 @@ export function pixelDropFigure(status: "loading" | "ok" | "error", hasData: boo
   return formatPercent(drop)
 }
 
+/** Globo: GET do pixel unread não é “ainda sem geo”. */
+export function pixelMapHint(
+  status: "loading" | "ok" | "error",
+  hasData: boolean,
+  live: boolean,
+  people = 0,
+  places = 0
+) {
+  if (!hasData && status === "loading") return "A carregar o pixel…"
+  if (!hasData && status === "error") return "Sem leitura do pixel."
+  if (live) {
+    return `${people} ${people === 1 ? "visitante" : "visitantes"} · ${places} ${places === 1 ? "lugar" : "lugares"}. Arrasta para girar.`
+  }
+  return "Sem geo ainda. Arrasta para girar."
+}
+
+export function pixelMapEmpty(status: "loading" | "ok" | "error", hasData: boolean) {
+  if (!hasData && status === "loading") return "A carregar o mapa do pixel…"
+  if (!hasData && status === "error") return "Sem leitura do pixel. Isto não é um mapa vazio — a API não respondeu."
+  return "O pixel ainda não gravou país ou UF. Quando a visita chegar, o ponto aparece no globo e o estado fica nesta lista."
+}
+
 export type GlobePulseMarker = {
   id: string
   location: [number, number]

@@ -1,7 +1,7 @@
 import { useMemo } from "react"
 import { GlobePulse } from "@/components/ui/cobe-globe-pulse"
 import { StudioPanel } from "@/components/layout/studio"
-import { markersFromGeos, mergeGlobeGeos } from "@/lib/analytics-view"
+import { markersFromGeos, mergeGlobeGeos, pixelMapEmpty, pixelMapHint } from "@/lib/analytics-view"
 import type { Lead } from "@/lib/types"
 import type { TrackGeo } from "@/lib/track"
 import { cn } from "@/lib/utils"
@@ -10,22 +10,27 @@ export function VisitorGlobe({
   geos,
   leads = [],
   className,
+  status = "ok",
+  hasData = true,
 }: {
   geos: Record<string, TrackGeo>
   leads?: Lead[]
   className?: string
+  status?: "loading" | "ok" | "error"
+  hasData?: boolean
 }) {
   const merged = useMemo(() => mergeGlobeGeos(geos, leads), [geos, leads])
   const markers = useMemo(() => markersFromGeos(merged), [merged])
   const live = markers.length > 0
   const people = markers.reduce((total, item) => total + item.count, 0)
+  const emptyCopy = pixelMapEmpty(status, hasData)
 
   return (
     <StudioPanel
       className={className}
       eyebrow="Onde estão"
       title="Visitantes no mapa"
-      hint={live ? `${people} ${people === 1 ? "visitante" : "visitantes"} · ${markers.length} ${markers.length === 1 ? "lugar" : "lugares"}. Arrasta para girar.` : "Sem geo ainda. Arrasta para girar."}
+      hint={pixelMapHint(status, hasData || live, live, people, markers.length)}
       bodyClassName="grid gap-0 p-0 pt-4 lg:grid-cols-[minmax(0,1fr)_minmax(220px,280px)]"
     >
       <div className="grid place-items-center bg-muted/50 px-2 py-3 sm:px-4 sm:py-4">
@@ -49,8 +54,12 @@ export function VisitorGlobe({
             ))}
           </ul>
         ) : (
-          <p className="text-[13px] leading-relaxed text-muted-foreground">
-            O pixel ainda não gravou país ou UF. Quando a visita chegar, o ponto aparece no globo e o estado fica nesta lista.
+          <p
+            className="text-[13px] leading-relaxed text-muted-foreground"
+            role={!hasData && status === "error" ? "alert" : status === "loading" && !hasData ? "status" : undefined}
+            data-pixel-map={!hasData && status === "error" ? "error" : status === "loading" && !hasData ? "loading" : live ? "ok" : "empty"}
+          >
+            {emptyCopy}
           </p>
         )}
       </div>

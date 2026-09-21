@@ -1,4 +1,4 @@
-import { chatStarted, funnelFrom, markersFromGeos, mergeGlobeGeos, periodDelta, pixelDropFigure, pixelFigure, stepDrop } from "../src/lib/analytics-view.ts"
+import { chatStarted, funnelFrom, markersFromGeos, mergeGlobeGeos, periodDelta, pixelDropFigure, pixelFigure, pixelMapEmpty, pixelMapHint, stepDrop } from "../src/lib/analytics-view.ts"
 import { coordsFromGeo } from "../src/lib/geo-coords.ts"
 import { flagEmoji, formatGeo, mergeGeo, normalizeRegionCode, stateLabel } from "../src/lib/geo.ts"
 import { emptySummary, isFacebookTraffic, summarizeTrack, type TrackEvent } from "../src/lib/track.ts"
@@ -5928,6 +5928,11 @@ assert(pixelFigure("loading", false, 0) === "…", "pixel a carregar nao finge z
 assert(pixelFigure("error", false, 0) === "—", "pixel falhou nao finge zero")
 assert(pixelFigure("error", true, 12) === 12, "pixel falhou depois guarda a ultima leitura")
 assert(pixelFigure("ok", true, 0) === 0, "pixel vazio de verdade continua zero")
+assert(pixelMapHint("loading", false, false) === "A carregar o pixel…", "globo a carregar nao finge sem geo")
+assert(pixelMapHint("error", false, false) === "Sem leitura do pixel.", "globo falhou nao finge sem geo")
+assert(pixelMapHint("ok", true, false) === "Sem geo ainda. Arrasta para girar.", "globo vazio de verdade continua sem geo")
+assert(pixelMapEmpty("error", false).includes("não é um mapa vazio"), "globo falhou explica que não é vazio")
+assert(pixelMapEmpty("loading", false).includes("A carregar"), "globo a carregar pede espera")
 assert(pixelDropFigure("loading", false, 0.4) === "…", "seta do funil a carregar nao finge conversao")
 assert(pixelDropFigure("error", false, 0.4) === "—", "seta do funil sem leitura nao finge conversao")
 assert(pixelDropFigure("ok", true, null) === "—", "seta sem taxa fica em dash")
@@ -7040,8 +7045,8 @@ const mcpCreateUnread = await handleRequest(
 )
 const mcpCreateUnreadBody = (await mcpCreateUnread.json()) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }
 const mcpCreateUnreadData = JSON.parse(mcpCreateUnreadBody.result?.content?.[0]?.text || "{}") as { error?: string }
-assert(mcpCreateUnread.status === 200 && mcpCreateUnreadBody.result?.isError, "MCP não cria script se a lista unread está oca")
-assert(mcpCreateUnreadData.error === "Não confirmei os scripts desta página.", "MCP create unread pede confirmação da lista")
+assert(mcpCreateUnread.status === 200 && mcpCreateUnreadBody.result?.isError, "MCP não cria script com funil leftover unread")
+assert(mcpCreateUnreadData.error === "Não confirmei os funis.", "MCP create unread pede confirmação dos funis mesmo com quadro no KV")
 
 const mcpPageScript = await handleRequest(
   new Request("http://local.test/mcp", {

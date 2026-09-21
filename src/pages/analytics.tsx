@@ -81,7 +81,7 @@ export function AnalyticsPage() {
 
         <FunnelFlow steps={funnel} status={status} hasData={hasData} leadsReady={leadsReady} />
 
-        <VisitorGlobe geos={summary.geos} leads={state.leads} />
+        <VisitorGlobe geos={summary.geos} leads={state.leads} status={status} hasData={hasData} />
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <KpiCard label="Ao vivo" value={pixelFigure(status, hasData, summary.online)} hint="ativos nos últimos 2 min" live spark={viewSpark.slice(-12)} />
