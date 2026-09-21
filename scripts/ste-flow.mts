@@ -5250,6 +5250,67 @@ assert(
 )
 assert((await loadLead(liveEnv.AUTH, "zombie")) === null, "lead apagado some do KV")
 assert((await loadRemovedLeadIds(liveEnv.AUTH)).includes("zombie"), "DELETE grava tombstone")
+const delUnreadKv = memoryKv()
+await upsertLeadKv(delUnreadKv, lead("del-keep", "@delkeep"))
+await upsertLeadKv(delUnreadKv, lead("del-pg", "@delpg"))
+const delUnreadEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: delUnreadKv,
+  ABILION_ENV: "development",
+} as Env
+const delUnreadLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  delUnreadEnv,
+  backgroundCtx()
+)
+assert(delUnreadLogin.status === 200, "login para o DELETE unread")
+const delUnreadCookie = delUnreadLogin.headers.get("set-cookie") || ""
+const delUnreadPrev = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("/rest/v1/")) throw new Error("postgres down")
+  return delUnreadPrev(input, init)
+}) as typeof fetch
+try {
+  const delUnread = await handleRequest(
+    new Request("http://local.test/api/leads?id=del-pg", { method: "DELETE", headers: { cookie: delUnreadCookie } }),
+    delUnreadEnv,
+    backgroundCtx()
+  )
+  const delUnreadBody = (await delUnread.json()) as { error?: string; ok?: boolean }
+  assert(delUnread.status === 503 && delUnreadBody.error?.includes("Postgres"), "DELETE com backup unread não mente ok")
+  assert(delUnreadBody.ok !== true, "503 do DELETE não devolve ok")
+  assert(await isLeadRemoved(delUnreadKv, "del-pg"), "DELETE falho ainda tombstoneia o KV")
+  assert((await loadLead(delUnreadKv, "del-pg")) === null, "DELETE falho tira o lead do KV")
+  const delUnreadList = (await (
+    await handleRequest(new Request("http://local.test/api/leads", { headers: { cookie: delUnreadCookie } }), delUnreadEnv, backgroundCtx())
+  ).json()) as { leads?: Array<{ id?: string }> }
+  assert(!delUnreadList.leads?.some((item) => item.id === "del-pg"), "GET não ressuscita o lead com tombstone")
+  assert(delUnreadList.leads?.some((item) => item.id === "del-keep"), "GET ainda vê o outro lead do KV")
+} finally {
+  globalThis.fetch = delUnreadPrev
+}
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("/rest/v1/")) return new Response("[]", { status: 200 })
+  return delUnreadPrev(input, init)
+}) as typeof fetch
+try {
+  await upsertLeadKv(delUnreadKv, lead("del-ok", "@delok"))
+  const delOk = await handleRequest(
+    new Request("http://local.test/api/leads?id=del-ok", { method: "DELETE", headers: { cookie: delUnreadCookie } }),
+    delUnreadEnv,
+    backgroundCtx()
+  )
+  assert(delOk.status === 200, "DELETE confirma quando o Postgres apaga")
+  assert(await isLeadRemoved(delUnreadKv, "del-ok"), "DELETE ok tombstoneia")
+} finally {
+  globalThis.fetch = delUnreadPrev
+}
 const inboxRemoved = (await (
   await handleRequest(new Request("http://local.test/api/inbox", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
 ).json()) as { removed?: string[] }

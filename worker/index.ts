@@ -654,7 +654,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     }
     const id = (url.searchParams.get("id") || "").trim()
     if (!id || id.length > 80) return json({ error: "Falta o id do lead." }, 400)
-    await removeLead(env, id)
+    if (!(await removeLead(env, id))) return json({ error: "Não apaguei o lead do Postgres." }, 503)
     return json({ ok: true })
   }
 
@@ -1093,14 +1093,15 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
 
 async function removeLead(env: Env, id: string) {
   if (env.AUTH) await deleteLeadKv(env.AUTH, id)
-  if (!env.SUPABASE_SERVICE_ROLE) return
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return true
   for (let attempt = 0; attempt < 4; attempt++) {
     const leadGone = await rest(env, `leads?id=eq.${encodeURIComponent(id)}&workspace_id=eq.${WORKSPACE}`, { method: "DELETE" })
     const eventsGone = await rest(env, `lead_events?lead_id=eq.${encodeURIComponent(id)}`, { method: "DELETE" })
-    if (leadGone !== null && eventsGone !== null) return
+    if (leadGone !== null && eventsGone !== null) return true
     if (attempt < 3) await sleep(40 * (attempt + 1))
   }
   console.error("supabase delete incompleto")
+  return false
 }
 
 async function persistLeadAfterSend(env: Env, lead: Lead) {
