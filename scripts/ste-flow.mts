@@ -103,7 +103,7 @@ import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, mig
 import { adsDeepLink, campaignFromStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument, wantsAuthHtml } from "../src/lib/auth-pages.ts"
 import { addPageScript, adsLandingDocument, adsLandingUrl, adsStartToken, installSettingsBlocked, pageInstallManual, pageScriptsListBlocked, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
-import { leadCategoriesListBlocked, leadFromImport, leadImportGroupBlocked, parseLeadImportLine, parseLeadImportText } from "../src/lib/lead-category.ts"
+import { leadCategoriesListBlocked, leadCategoriesWriteBlocked, leadFromImport, leadImportGroupBlocked, parseLeadImportLine, parseLeadImportText } from "../src/lib/lead-category.ts"
 import { burstFacebookLeads, burstStartsBlocked, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
@@ -1557,8 +1557,10 @@ assert(!leadImportGroupBlocked("ok", ""), "import toGroup sem URL confirmado con
 assert(!leadImportGroupBlocked("error", "https://t.me/+abc"), "import toGroup unread com URL no KV segue")
 assert(leadCategoriesListBlocked(true, []), "categorias unread e ocas bloqueiam criar")
 assert(leadCategoriesListBlocked(true, undefined), "categorias unread sem lista bloqueiam criar")
-assert(!leadCategoriesListBlocked(true, ["VIP"]), "categorias unread com lista no KV seguem")
+assert(!leadCategoriesListBlocked(true, ["VIP"]), "categorias unread com lista no KV seguem no select")
 assert(!leadCategoriesListBlocked(false, []), "categorias lidas vazias não bloqueiam criar")
+assert(leadCategoriesWriteBlocked(true), "categorias unread bloqueiam criar mesmo com leftover")
+assert(!leadCategoriesWriteBlocked(false), "categorias confirmadas deixam criar")
 assert(leadsToCsv([importedGroup]).includes("category"), "CSV exporta categoria")
 assert(!canFlushCrm(false), "sem hydrate o painel não grava CRM")
 assert(canFlushCrm(true), "depois do GET o painel pode gravar")
@@ -6976,6 +6978,29 @@ const mcpImportCategoryUnreadData = JSON.parse(mcpImportCategoryUnreadBody.resul
 }
 assert(mcpImportCategoryUnread.status === 200 && mcpImportCategoryUnreadBody.result?.isError, "MCP não cria categoria se a lista unread está oca")
 assert(mcpImportCategoryUnreadData.error === "Não confirmei as categorias.", "MCP import unread pede confirmação das categorias")
+await saveSettingsKv(mcpInstallDownEnv.AUTH, migrateSettings({ leadCategories: ["VIP"] }))
+const mcpImportCategoryLeftover = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 197,
+      method: "tools/call",
+      params: { name: "abilion_import_leads", arguments: { text: "Rita, 11911112222", category: "Gold" } },
+    }),
+  }),
+  mcpInstallDownEnv,
+  backgroundCtx()
+)
+const mcpImportCategoryLeftoverBody = (await mcpImportCategoryLeftover.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const mcpImportCategoryLeftoverData = JSON.parse(mcpImportCategoryLeftoverBody.result?.content?.[0]?.text || "{}") as {
+  error?: string
+}
+assert(mcpImportCategoryLeftover.status === 200 && mcpImportCategoryLeftoverBody.result?.isError, "MCP não cria categoria nova com leftover unread")
+assert(mcpImportCategoryLeftoverData.error === "Não confirmei as categorias.", "MCP leftover VIP não solta criar Gold")
 const mcpImportCatalogUnread = await handleRequest(
   new Request("http://local.test/mcp", {
     method: "POST",

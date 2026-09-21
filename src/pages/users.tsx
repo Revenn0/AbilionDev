@@ -28,7 +28,8 @@ export function UsersPage() {
   const owner = me?.role === "owner"
   const [users, setUsers] = useState<ManagedUser[] | null>(null)
   const [tokens, setTokens] = useState<ApiTokenItem[] | null>(null)
-  const [error, setError] = useState("")
+  const [usersError, setUsersError] = useState("")
+  const [tokensError, setTokensError] = useState("")
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -43,14 +44,21 @@ export function UsersPage() {
   const patchLock = useRef(false)
 
   const reload = () => {
-    void Promise.all([listUsersRequest(), listTokensRequest()])
-      .then(([nextUsers, nextTokens]) => {
-        setUsers(nextUsers.users)
-        setTokens(nextTokens.tokens)
-        setError("")
+    void listUsersRequest()
+      .then((next) => {
+        setUsers(next.users)
+        setUsersError("")
       })
       .catch((err: Error) => {
-        setError(err.message)
+        setUsersError(err.message)
+      })
+    void listTokensRequest()
+      .then((next) => {
+        setTokens(next.tokens)
+        setTokensError("")
+      })
+      .catch((err: Error) => {
+        setTokensError(err.message)
       })
   }
 
@@ -96,11 +104,18 @@ export function UsersPage() {
         <p className="max-w-2xl text-[13.5px] leading-relaxed text-muted-foreground">
           Contas do estúdio e tokens para o Claude Code ou outros agentes. Um e-mail novo só entra depois de o criares aqui — o login não inventa contas.
         </p>
-        {error ? (
-          <div className="flex flex-wrap items-center gap-3" data-users-error>
-            <p role="alert" className="text-[13px] text-destructive">
-              {error}
-            </p>
+        {usersError || tokensError ? (
+          <div className="flex flex-wrap items-center gap-3" data-users-error={usersError ? "1" : undefined} data-tokens-error={tokensError ? "1" : undefined}>
+            {usersError ? (
+              <p role="alert" className="text-[13px] text-destructive">
+                {usersError}
+              </p>
+            ) : null}
+            {tokensError ? (
+              <p role="alert" className="text-[13px] text-destructive">
+                {tokensError}
+              </p>
+            ) : null}
             <Button type="button" variant="ghost" size="sm" className="rounded-full" onClick={reload}>
               Tentar outra vez
             </Button>
@@ -112,9 +127,9 @@ export function UsersPage() {
             <p className="text-[14px] font-medium">Equipa</p>
             <p className="mt-1 text-[12.5px] text-muted-foreground">Victor e Gabriel são donos iniciais e não desligam.</p>
           </div>
-          {!users && !error ? (
+          {!users && !usersError ? (
             <p className="px-5 py-8 text-[13px] text-muted-foreground">A carregar as contas…</p>
-          ) : error && !users ? (
+          ) : usersError && !users ? (
             <p className="px-5 py-8 text-[13px] text-muted-foreground" role="status">
               Não li as contas.
             </p>
@@ -346,9 +361,9 @@ export function UsersPage() {
               </div>
             </div>
           ) : null}
-          {!tokens && !error ? (
+          {!tokens && !tokensError ? (
             <p className="mt-4 text-[13px] text-muted-foreground">A carregar tokens…</p>
-          ) : error && !tokens ? (
+          ) : tokensError && !tokens ? (
             <p className="mt-4 text-[13px] text-muted-foreground" role="status">
               Não li os tokens.
             </p>

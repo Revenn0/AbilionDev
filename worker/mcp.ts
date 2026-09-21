@@ -1,5 +1,5 @@
 import { clipNewestIds, FUNNEL_CAP, publicSettings } from "../src/lib/crm.ts"
-import { addLeadCategory, leadCategoriesListBlocked, leadFromImport, migrateLeadCategories, parseLeadImportText } from "../src/lib/lead-category.ts"
+import { addLeadCategory, leadCategoriesWriteBlocked, leadFromImport, migrateLeadCategories, parseLeadImportText } from "../src/lib/lead-category.ts"
 import { addPageScript, installSettingsBlocked, pageInstallManual, pageScriptById, pageScriptsListBlocked, PAGE_SCRIPT_REMOVED_CAP, removePageScript } from "../src/lib/page-script.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
 import { emptySalesFunnel, publishSnapshot } from "../src/lib/templates.ts"
@@ -533,7 +533,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     const named = addLeadCategory(settings.leadCategories, str(args.category) || (toGroup ? "Grupo" : ""))
     const category = named.ok ? named.category : ""
     if (named.ok && named.categories.length > migrateLeadCategories(settings.leadCategories).length) {
-      if (leadCategoriesListBlocked(loaded.unread, settings.leadCategories)) {
+      if (leadCategoriesWriteBlocked(loaded.unread)) {
         throw new Error("Não confirmei as categorias.")
       }
       await persistWorkspaceSettings(env, { ...settings, leadCategories: named.categories })

@@ -117,9 +117,14 @@ export function leadImportGroupBlocked(settingsSync: "idle" | "ok" | "error", gr
   return !String(groupUrl || "").trim() && settingsSync !== "ok"
 }
 
-/** Lista unread e oca: não fingir que ainda não há categorias. Se o KV já tem alguma, criar segue. */
+/** Lista unread e oca: não fingir que ainda não há categorias. Se o KV já tem alguma, o select segue — criar é `leadCategoriesWriteBlocked`. */
 export function leadCategoriesListBlocked(unread: boolean, categories?: string[]) {
   return unread && !migrateLeadCategories(categories).length
+}
+
+/** Criar categoria: leftover no cache não confirma o catálogo. */
+export function leadCategoriesWriteBlocked(unread: boolean) {
+  return unread
 }
 
 export function leadFromImport(
