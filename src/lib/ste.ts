@@ -434,6 +434,20 @@ function push(lead: Lead, role: ChatMessage["role"], text: string, now = Date.no
   }
 }
 
+function lastLeadTalk(lead: Lead) {
+  const last = lead.messages?.at(-1)
+  return last?.role === "lead" ? last.text : undefined
+}
+
+/** Webhook: se o envio da Sté falhar, a fala do lead fica no CRM sem avançar a fase. */
+export function rememberLeadTalk(lead: Lead, incoming?: string | null, now = Date.now()): Lead {
+  const text = (incoming ?? "").trim()
+  if (!text || lastLeadTalk(lead) === text) return lead
+  const next = isolateLead(lead)
+  push(next, "lead", text, now)
+  return next
+}
+
 function pushAll(lead: Lead, texts: readonly string[], now = Date.now()) {
   for (const text of texts) push(lead, "ste", text, now)
 }
@@ -737,7 +751,7 @@ export function replySte(lead: Lead, incoming?: string | null, now = Date.now(),
   if (next.steBlocked || next.steQuiet || next.stePhase === "closed") return pack(next, [])
 
   const text = (incoming ?? "").trim()
-  if (text) push(next, "lead", text, now)
+  if (text && lastLeadTalk(next) !== text) push(next, "lead", text, now)
 
   const copy = resolveCopy(runtime)
   if (!text) {

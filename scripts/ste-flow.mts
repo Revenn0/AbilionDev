@@ -4,6 +4,7 @@ import { flagEmoji, formatGeo, mergeGeo, normalizeRegionCode, stateLabel } from 
 import { emptySummary, isFacebookTraffic, summarizeTrack, type TrackEvent } from "../src/lib/track.ts"
 import {
   isolateLead,
+  rememberLeadTalk,
   canTickSteLocally,
   canSimulateSte,
   replySte,
@@ -2466,6 +2467,38 @@ await failCtx.flush()
 const blocked = (await listLeads(failEnv.AUTH, 20, "all")).find((item) => item.contact === "@blocked")
 assert(blocked?.telegramChatId === "8001", "lead recusado fica com o chat")
 assert(!(blocked?.messages ?? []).some((item) => item.role === "ste"), "Telegram recusado não grava boas-vindas")
+const heard = rememberLeadTalk({ ...blocked!, messages: [] }, "quero o app")
+assert(heard.messages.some((item) => item.role === "lead" && item.text === "quero o app"), "rememberLeadTalk guarda a fala")
+assert(rememberLeadTalk(heard, "quero o app").messages.filter((item) => item.role === "lead").length === 1, "rememberLeadTalk não duplica a mesma fala")
+assert(rememberLeadTalk(heard, "").messages.length === heard.messages.length, "rememberLeadTalk ignora texto vazio")
+const retryTalk = replySte(heard, "quero o app")
+assert(retryTalk.lead.messages.filter((item) => item.role === "lead" && item.text === "quero o app").length === 1, "replySte não duplica inbound já gravado")
+const talkFailCtx = backgroundCtx()
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/telegram", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+        body: JSON.stringify({
+          update_id: 78,
+          message: {
+            chat: { id: 8002 },
+            text: "quero o app",
+            from: { id: 8002, username: "blockedtalk", first_name: "Bia" },
+          },
+        }),
+      }),
+      failEnv,
+      talkFailCtx
+    )
+  ).status === 200,
+  "webhook de fala recusada ainda é 200"
+)
+await talkFailCtx.flush()
+const blockedTalk = (await listLeads(failEnv.AUTH, 20, "all")).find((item) => item.contact === "@blockedtalk")
+assert((blockedTalk?.messages ?? []).some((item) => item.role === "lead" && item.text === "quero o app"), "Telegram recusado guarda a fala do lead")
+assert(!(blockedTalk?.messages ?? []).some((item) => item.role === "ste"), "Telegram recusado não grava a resposta da Sté")
 globalThis.fetch = denyFetch
 let partialCalls = 0
 const partialPrev = globalThis.fetch

@@ -2,7 +2,7 @@ import { clientIp, consumeKvThrottle, consumeMemoryThrottle, handleAuth, isOwner
 import { handleMcp, handleFunnelImport } from "./mcp.ts"
 import { handleTokens, handleUsers } from "./users.ts"
 import { campaignFor } from "../src/lib/labels.ts"
-import { advanceSteIfDue, isSteWait, replySte, replySteSmart, safeHttpUrl, steRuntimeFromFunnels, toTelegramHtml, type SteBeat } from "../src/lib/ste.ts"
+import { advanceSteIfDue, isSteWait, rememberLeadTalk, replySte, replySteSmart, safeHttpUrl, steRuntimeFromFunnels, toTelegramHtml, type SteBeat } from "../src/lib/ste.ts"
 import { linkFollowUp, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { campaignFromStart, originFromStart, parseTelegramStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
@@ -676,7 +676,7 @@ async function deliverTelegram(env: Env, update: TelegramUpdate, token: string):
       lead = talked.lead
       delivered = true
     } else {
-      lead = pending
+      lead = rememberLeadTalk(pending, incoming)
     }
   }
 
