@@ -7617,17 +7617,17 @@ assert(trackKvDownRemote.status === 200 && trackKvDownRemoteBody.ok, "GET summar
 assert((trackKvDownRemoteBody.summary?.views ?? 0) >= 1, "GET summary KV throw não esconde o pixel do Postgres")
 assert(trackKvDownRemoteBody.trackUnread === true, "GET summary KV throw marca trackUnread")
 assert((await kvTrackStore(runtimeHoleKv).load()).some((item) => item.visitorId === "aabbcc99"), "GET summary KV throw não pisa o leftover")
-const holeLead = { ...lead("hole-lead", "@holelead"), memory: "leftover-ficha" }
-await upsertLeadKv(runtimeHoleKv, holeLead)
+const writeHoleLead = { ...lead("hole-lead", "@holelead"), memory: "leftover-ficha" }
+await upsertLeadKv(runtimeHoleKv, writeHoleLead)
 assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === "leftover-ficha", "KV do runtime hole ainda tem a ficha leftover")
 const leadKeyDownEnv = { ...runtimeHoleBase, AUTH: kvThrowsOn(runtimeHoleKv, leadKey("hole-lead")) } as Env
-const leadKeyDownResolved = await resolveWorkspaceLeadWrite(leadKeyDownEnv, { ...holeLead, memory: "unread-write" })
+const leadKeyDownResolved = await resolveWorkspaceLeadWrite(leadKeyDownEnv, { ...writeHoleLead, memory: "unread-write" })
 assert(!leadKeyDownResolved.ok && leadKeyDownResolved.unread, "resolve com ficha KV throw é unread")
 const leadKeyDownPost = await handleRequest(
   new Request("http://local.test/api/leads", {
     method: "POST",
     headers: { "content-type": "application/json", cookie: runtimeHoleCookie },
-    body: JSON.stringify({ lead: { ...holeLead, memory: "unread-write" } }),
+    body: JSON.stringify({ lead: { ...writeHoleLead, memory: "unread-write" } }),
   }),
   leadKeyDownEnv,
   backgroundCtx()
