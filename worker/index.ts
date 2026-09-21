@@ -24,6 +24,7 @@ import {
   applyRemovedLeads,
   clipRemovedIds,
   enforceSinglePublished,
+  emptySettings,
   linkRuntimeSettings,
   publicSettings,
   FUNNEL_CAP,
@@ -727,13 +728,17 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   if (url.pathname === "/api/cron") {
     const secret = url.searchParams.get("secret") ?? request.headers.get("x-cron-secret")
     if (!env.CRON_SECRET || secret !== env.CRON_SECRET) return json({ ok: false }, 401)
-    const result = await processWaits(env)
-    return json({
-      ok: true,
-      advanced: result.advanced,
-      remoteUnread: result.remoteUnread,
-      funnelsUnread: result.funnelsUnread || undefined,
-    })
+    try {
+      const result = await processWaits(env)
+      return json({
+        ok: true,
+        advanced: result.advanced,
+        remoteUnread: result.remoteUnread || undefined,
+        funnelsUnread: result.funnelsUnread || undefined,
+      })
+    } catch {
+      return json({ ok: true, advanced: 0, remoteUnread: true })
+    }
   }
 
   return json({ ok: false, error: "not_found" }, 404)
@@ -898,24 +903,68 @@ async function deliverTelegram(env: Env, update: TelegramUpdate, token: string):
 
 async function processWaits(env: Env): Promise<{ advanced: number; remoteUnread: boolean; funnelsUnread: boolean }> {
   const empty = { advanced: 0, remoteUnread: false, funnelsUnread: false }
-  const lockOwner = env.AUTH ? await claimCronLock(env.AUTH) : "local"
+  let lockOwner: string | null = "local"
+  try {
+    lockOwner = env.AUTH ? await claimCronLock(env.AUTH) : "local"
+  } catch {
+    return { ...empty, remoteUnread: true }
+  }
   if (!lockOwner) return empty
-  if (env.AUTH && lockOwner !== "local" && !(await renewCronLock(env.AUTH, lockOwner))) return empty
+  try {
+    if (env.AUTH && lockOwner !== "local" && !(await renewCronLock(env.AUTH, lockOwner))) return empty
+  } catch {
+    return { ...empty, remoteUnread: true }
+  }
   try {
     const now = new Date().toISOString()
     const remoteDue = await fetchRemoteDueLeads(env, now)
-    const kvPage = env.AUTH ? await dueLeadsKv(env.AUTH, now) : { leads: [] as Lead[], missingIds: [] as string[] }
+    let kvPage = { leads: [] as Lead[], missingIds: [] as string[] }
+    let kvDueUnread = false
+    if (env.AUTH) {
+      try {
+        kvPage = await dueLeadsKv(env.AUTH, now)
+      } catch {
+        kvDueUnread = true
+      }
+    }
     const filled = await fillLeadHoles(env, kvPage.leads, kvPage.missingIds)
-    const removed = env.AUTH ? await loadRemovedLeadIds(env.AUTH) : []
+    let removed: string[] = []
+    if (env.AUTH) {
+      try {
+        removed = await loadRemovedLeadIds(env.AUTH)
+      } catch {
+        kvDueUnread = true
+      }
+    }
     const adopted = adoptDueLeads(filled.leads, remoteDue ?? [], removed)
-    const liveDue = env.AUTH ? await filterLiveLeads(env.AUTH, adopted) : adopted
-    const remoteUnread = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE && remoteDue === null)
+    let liveDue = applyRemovedLeads(adopted, removed)
+    if (env.AUTH && !kvDueUnread) {
+      try {
+        liveDue = await filterLiveLeads(env.AUTH, liveDue)
+      } catch {
+        kvDueUnread = true
+      }
+    }
+    const remoteUnread = Boolean((env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE && remoteDue === null) || kvDueUnread)
     const byId = new Map(liveDue.map((lead) => [lead.id, lead]))
     if (!byId.size) return { advanced: 0, remoteUnread, funnelsUnread: false }
-    const boards = await readWorkspaceFunnels(env)
+    let boards: { funnels: SalesFunnel[]; unread: boolean }
+    try {
+      boards = await readWorkspaceFunnels(env)
+    } catch {
+      boards = { funnels: [], unread: true }
+    }
     const funnels = boards.funnels
-    const settings = await loadSettings(env)
-    const { resolved } = await runtimeOf(env)
+    const settings = await loadSettings(env).then(
+      (item) => item,
+      () => emptySettings()
+    )
+    let resolved
+    try {
+      resolved = (await runtimeOf(env)).resolved
+    } catch {
+      resolved = resolveRuntime(env, emptySecrets())
+    }
     const token = resolved.telegramBotToken
     const due = dueWaits([...byId.values()])
     let advanced = 0
@@ -923,7 +972,14 @@ async function processWaits(env: Env): Promise<{ advanced: number; remoteUnread:
     for (const queued of due) {
       try {
         if (env.AUTH && lockOwner !== "local" && !(await renewCronLock(env.AUTH, lockOwner))) break
-        const live = env.AUTH ? await loadLead(env.AUTH, queued.id) : queued
+        let live: Lead | null = queued
+        if (env.AUTH) {
+          try {
+            live = await loadLead(env.AUTH, queued.id)
+          } catch {
+            live = null
+          }
+        }
         const picked = pickLiveDueLead(queued, live)
         if (!picked) continue
         const extras = await fetchRemoteLeadsByIds(env, [picked.id])
@@ -974,7 +1030,13 @@ async function processWaits(env: Env): Promise<{ advanced: number; remoteUnread:
     }
     return { advanced, remoteUnread, funnelsUnread }
   } finally {
-    if (env.AUTH) await releaseCronLock(env.AUTH, lockOwner)
+    if (env.AUTH && lockOwner) {
+      try {
+        await releaseCronLock(env.AUTH, lockOwner)
+      } catch {
+        /* o lock expira sozinho */
+      }
+    }
   }
 }
 
@@ -1143,13 +1205,17 @@ async function saveLead(env: Env, lead: Lead) {
   let bounded = sanitizeIncomingLead(lead)
   if (!bounded) return false
   if (env.AUTH) {
-    if (await isLeadRemoved(env.AUTH, bounded.id)) return false
-    const prev = await loadLead(env.AUTH, bounded.id)
-    bounded = commitStoredLead(prev, bounded)
-    const latest = await loadLead(env.AUTH, bounded.id)
-    bounded = commitStoredLead(prev, bounded, latest)
-    if (!(await upsertLeadKv(env.AUTH, bounded))) return false
-    if (await isLeadRemoved(env.AUTH, bounded.id)) return false
+    try {
+      if (await isLeadRemoved(env.AUTH, bounded.id)) return false
+      const prev = await loadLead(env.AUTH, bounded.id)
+      bounded = commitStoredLead(prev, bounded)
+      const latest = await loadLead(env.AUTH, bounded.id)
+      bounded = commitStoredLead(prev, bounded, latest)
+      if (!(await upsertLeadKv(env.AUTH, bounded))) return false
+      if (await isLeadRemoved(env.AUTH, bounded.id)) return false
+    } catch {
+      if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return false
+    }
   }
   await persistRemoteLead(env, bounded)
   return true

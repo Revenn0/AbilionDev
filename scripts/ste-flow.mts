@@ -8241,6 +8241,80 @@ try {
   globalThis.fetch = funnelMissFetch
 }
 
+const cronKvDown = memoryKv()
+const cronKvDownWait = new Date(Date.now() - 2000).toISOString()
+const cronKvDownRow = {
+  id: "due-pg-only",
+  name: "Pg Due",
+  contact: "@duepg",
+  channel: "telegram" as const,
+  campaign: "facebook",
+  origin: "facebook" as const,
+  temperature: "novo" as const,
+  stage: "welcome" as const,
+  memory: "ste:remarketing",
+  facts: {},
+  messages: [],
+  ste_phase: "offer",
+  wait_until: cronKvDownWait,
+  updated_at: cronKvDownWait,
+  created_at: cronKvDownWait,
+}
+const cronKvDownAuth = {
+  async get(key: string, type: "json") {
+    if (key === CRM_INDEX || String(key).startsWith("crm:lead:")) throw new Error("kv down")
+    return cronKvDown.get(key, type)
+  },
+  async put(key: string, value: string) {
+    return cronKvDown.put(key, value)
+  },
+}
+const cronKvDownEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: cronKvDownAuth,
+  CRON_SECRET: "cron",
+  ABILION_ENV: "development",
+} as Env
+const cronKvDownFetch = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL) => {
+  const url = String(input)
+  if (url.includes("/rest/v1/leads") && (url.includes("wait_until") || url.includes("due-pg-only"))) {
+    return new Response(JSON.stringify([cronKvDownRow]), { status: 200, headers: { "content-type": "application/json" } })
+  }
+  return new Response("[]", { status: 200, headers: { "content-type": "application/json" } })
+}) as typeof fetch
+try {
+  const cronKvDownRes = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), cronKvDownEnv, backgroundCtx())
+  const cronKvDownBody = (await cronKvDownRes.json()) as { ok?: boolean; advanced?: number; remoteUnread?: boolean; error?: string }
+  assert(cronKvDownRes.status === 200 && cronKvDownBody.ok, "cron com índice KV throw não é Falha interna")
+  assert((cronKvDownBody.advanced ?? 0) >= 1, "cron avança a espera que só está no Postgres")
+  assert(cronKvDownBody.remoteUnread, "índice KV throw marca o due como unread")
+  assert(cronKvDownBody.error !== "Falha interna.", "cron KV throw não vaza 500")
+} finally {
+  globalThis.fetch = cronKvDownFetch
+}
+
+const cronLockDownEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: {
+    async get() {
+      throw new Error("kv down")
+    },
+    async put() {},
+  },
+  CRON_SECRET: "cron",
+  ABILION_ENV: "development",
+} as Env
+const cronLockDown = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), cronLockDownEnv, backgroundCtx())
+const cronLockDownBody = (await cronLockDown.json()) as { ok?: boolean; advanced?: number; remoteUnread?: boolean; error?: string }
+assert(cronLockDown.status === 200 && cronLockDownBody.ok, "cron com lock KV throw não é 500")
+assert(cronLockDownBody.advanced === 0 && cronLockDownBody.remoteUnread, "sem lock o cron não inventa tick vazio confirmado")
+assert(cronLockDownBody.error !== "Falha interna.", "lock KV throw não vaza Falha interna")
+
 const goneRemote = lead("gone-remote", "@goneremote")
 goneRemote.telegramChatId = "9901"
 const goneRemoteKv = memoryKv()
