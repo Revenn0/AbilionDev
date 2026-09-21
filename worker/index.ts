@@ -63,7 +63,7 @@ import {
 } from "./runtime-secrets.ts"
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
 import { readJsonObject, readJsonStrict, type JsonFail } from "./json-body.ts"
-import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall } from "./telegram.ts"
+import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall, telegramJoinActor, telegramUpdateActor } from "./telegram.ts"
 import { fetchRemoteDueLeads, fetchRemoteLeadPage, fillLeadHoles, findWorkspaceLead, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, readWorkspaceSettings, rowToLead, searchWorkspaceLeads, type LeadRow } from "./workspace-settings.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -671,6 +671,7 @@ async function handleTelegram(env: Env, update: TelegramUpdate) {
 async function runTelegram(env: Env, update: TelegramUpdate) {
   const { resolved } = await runtimeOf(env)
   if (!resolved.telegramBotToken) return
+  if (!telegramUpdateActor(update)) return
   const updateId = typeof update.update_id === "number" && update.update_id > 0 ? update.update_id : 0
   const kv = kvOf(env)
   if (updateId && kv && !(await claimTelegramUpdate(kv, updateId))) return
@@ -681,13 +682,14 @@ async function runTelegram(env: Env, update: TelegramUpdate) {
     if (updateId && kv && !sent) await forgetTelegramUpdate(kv, updateId)
     throw error
   }
+  if (updateId && kv && !sent) await forgetTelegramUpdate(kv, updateId)
 }
 
 async function deliverTelegram(env: Env, update: TelegramUpdate, token: string): Promise<{ sent: boolean }> {
   const { resolved } = await runtimeOf(env)
-  const joinUser = update.message?.new_chat_members?.[0] ?? (update.chat_member?.new_chat_member?.status === "member" ? update.chat_member.new_chat_member.user : undefined)
+  const joinUser = telegramJoinActor(update)
   const message = update.message
-  const from = joinUser ?? message?.from
+  const from = telegramUpdateActor(update)
   if (!from) return { sent: false }
 
   const contact = from.username ? `@${from.username}` : `tg:${from.id}`

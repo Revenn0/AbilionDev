@@ -113,6 +113,39 @@ export async function forgetTelegramUpdate(kv: KvLike, id: number) {
   await kv.put(TG_UPDATES, JSON.stringify(forgetTelegramId(mergeTelegramClaims(latest, next), id)))
 }
 
+export type TelegramActor = {
+  id: number
+  username?: string
+  first_name?: string
+  last_name?: string
+}
+
+export type TelegramActorUpdate = {
+  message?: {
+    from?: TelegramActor
+    new_chat_members?: TelegramActor[]
+  }
+  chat_member?: {
+    new_chat_member?: { status?: string; user?: TelegramActor }
+  }
+}
+
+function isTelegramActor(value: TelegramActor | undefined): value is TelegramActor {
+  return Boolean(value && Number.isFinite(value.id) && value.id > 0)
+}
+
+export function telegramJoinActor(update: TelegramActorUpdate): TelegramActor | undefined {
+  const added = update.message?.new_chat_members?.[0]
+  if (isTelegramActor(added)) return added
+  const member = update.chat_member?.new_chat_member
+  if (member?.status === "member" && isTelegramActor(member.user)) return member.user
+  return undefined
+}
+
+export function telegramUpdateActor(update: TelegramActorUpdate): TelegramActor | undefined {
+  return telegramJoinActor(update) ?? (isTelegramActor(update.message?.from) ? update.message.from : undefined)
+}
+
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
 
 function sleep(ms: number): Promise<void> {

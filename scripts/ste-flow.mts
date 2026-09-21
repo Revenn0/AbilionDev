@@ -113,7 +113,7 @@ import { memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track
 import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, handleAuth, hashApiToken, hashPassword, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
-import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTelegramClaims, telegramCall } from "../worker/telegram.ts"
+import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTelegramClaims, telegramCall, telegramJoinActor, telegramUpdateActor } from "../worker/telegram.ts"
 import { backgroundCtx, handleRequest, type Env } from "../worker/index.ts"
 import { clearSessionExpired, noteUnauthorized, subscribeSessionExpired } from "../src/lib/session.ts"
 
@@ -3249,7 +3249,84 @@ const forgetRace = memoryKv()
 assert(await claimTelegramUpdate(forgetRace, 10), "claim 10")
 await Promise.all([forgetTelegramUpdate(forgetRace, 10), claimTelegramUpdate(forgetRace, 11)])
 assert(await claimTelegramUpdate(forgetRace, 11) === false, "forget concorrente não apaga outro update_id")
+assert(telegramUpdateActor({ message: { from: { id: 9, username: "a" } } })?.id === 9, "actor da mensagem")
+assert(telegramJoinActor({ message: { new_chat_members: [{ id: 3, username: "j" }] } })?.id === 3, "actor do join")
+assert(
+  telegramUpdateActor({ chat_member: { new_chat_member: { status: "member", user: { id: 4 } } } })?.id === 4,
+  "actor do chat_member member"
+)
+assert(
+  !telegramUpdateActor({ chat_member: { new_chat_member: { status: "left", user: { id: 4, username: "gone" } } } }),
+  "saída do grupo não é actor"
+)
+assert(!telegramUpdateActor({ message: { from: { id: 0 } } }), "id 0 não é actor")
+assert(!telegramUpdateActor({ message: {} }), "mensagem sem from não é actor")
+assert(!telegramUpdateActor({}), "update vazio não é actor")
 globalThis.fetch = okFetch
+const noFromPrev = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("api.telegram.org")) {
+    return new Response(JSON.stringify({ ok: true }), { status: 200 })
+  }
+  return noFromPrev(input, init)
+}) as typeof fetch
+const noFromKv = memoryKv()
+const noFromEnv = { ...apiEnv, AUTH: noFromKv, TELEGRAM_WEBHOOK_SECRET: "hook-secret", TELEGRAM_BOT_TOKEN: "000:nofrom" } as Env
+const postTelegramUpdate = async (body: Record<string, unknown>, label: string) => {
+  const ctx = backgroundCtx()
+  assert(
+    (
+      await handleRequest(
+        new Request("http://local.test/api/telegram", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+          body: JSON.stringify(body),
+        }),
+        noFromEnv,
+        ctx
+      )
+    ).status === 200,
+    label
+  )
+  await ctx.flush()
+}
+const memberUpdate = {
+  update_id: 8811,
+  my_chat_member: {
+    chat: { id: -100 },
+    from: { id: 1, username: "admin" },
+    new_chat_member: { status: "member", user: { id: 99 } },
+  },
+}
+await postTelegramUpdate(memberUpdate, "my_chat_member é 200")
+await postTelegramUpdate(memberUpdate, "retry do my_chat_member é 200")
+assert((await listLeads(noFromKv, 20, "all")).length === 0, "my_chat_member não mint lead")
+assert(await claimTelegramUpdate(noFromKv, 8811), "my_chat_member não ocupa o anel")
+await postTelegramUpdate({ update_id: 8812, message: { chat: { id: 99 }, text: "oi" } }, "mensagem sem from é 200")
+assert(await claimTelegramUpdate(noFromKv, 8812), "mensagem sem from não ocupa o anel")
+await postTelegramUpdate(
+  {
+    update_id: 8813,
+    chat_member: { chat: { id: -100 }, new_chat_member: { status: "left", user: { id: 5, username: "gone" } } },
+  },
+  "saída do grupo é 200"
+)
+assert(await claimTelegramUpdate(noFromKv, 8813), "saída do grupo não ocupa o anel")
+assert(!(await listLeads(noFromKv, 20, "all")).some((item) => item.contact === "@gone"), "saída não mint lead")
+await postTelegramUpdate(
+  {
+    update_id: 8814,
+    message: {
+      chat: { id: 8814 },
+      text: "/start fb_nofromok",
+      from: { id: 8814, username: "nofromok", first_name: "Nia" },
+    },
+  },
+  "mensagem com from continua a entrar"
+)
+assert((await listLeads(noFromKv, 20, "all")).some((item) => item.contact === "@nofromok"), "mensagem com from mint lead")
+assert((await claimTelegramUpdate(noFromKv, 8814)) === false, "mensagem com from continua reclamada")
+globalThis.fetch = noFromPrev
 const startLogin = await handleRequest(
   new Request("http://local.test/api/auth/login", {
     method: "POST",
