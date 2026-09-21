@@ -423,7 +423,7 @@ export async function loadLead(kv: KvLike, id: string, removedIds?: ReadonlySet<
   return adoptLeadKvStores(stored, sent)
 }
 
-async function removedIdsForRead(kv: KvLike): Promise<Set<string>> {
+export async function removedIdsForRead(kv: KvLike): Promise<Set<string>> {
   try {
     return new Set(await loadRemovedLeadIds(kv))
   } catch {

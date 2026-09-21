@@ -6,7 +6,7 @@ import { migrateSettings, sanitizeIncomingFunnel } from "../src/lib/migrate.ts"
 import { sanitizeVisitorId, summarizeTrack, type TrackEvent, type TrackKind, type TrackSummary } from "../src/lib/track.ts"
 import type { Lead, LeadEvent, SalesFunnel, Settings } from "../src/lib/types.ts"
 import { mergeTrackEvents } from "./track-store.ts"
-import { filterLiveLeads, findLeadInKv, isLeadPageCursor, isLeadRemoved, listLeadPage, loadAdoptedSettings, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge, resolveLeadWrite } from "./crm-store.ts"
+import { filterLiveLeads, findLeadInKv, isLeadPageCursor, isLeadRemoved, listLeadPage, loadAdoptedSettings, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge, removedIdsForRead, resolveLeadWrite } from "./crm-store.ts"
 import type { KvLike } from "./kv.ts"
 
 const WORKSPACE = "local"
@@ -247,20 +247,35 @@ export async function findWorkspaceLead(
   telegramId: number,
   chatId: string
 ): Promise<Lead | null> {
-  const kvLead = env.AUTH ? await findLeadInKv(env.AUTH, contact, telegramId, chatId) : null
+  let kvLead: Lead | null = null
+  let kvUnread = false
+  if (env.AUTH) {
+    try {
+      const removed = await removedIdsForRead(env.AUTH)
+      kvLead = await findLeadInKv(env.AUTH, contact, telegramId, chatId, removed)
+    } catch {
+      kvUnread = true
+    }
+  }
   if (kvLead) {
-    if (await isLeadRemoved(env.AUTH!, kvLead.id)) return null
     const extras = await fetchRemoteLeadsByIds(env, [kvLead.id])
     if (extras === null) return kvLead
     return hydrateWorkspaceLead(kvLead, extras[0])
   }
+  if (kvUnread) throw new Error("Não li o lead do Postgres.")
   const remote = await fetchRemoteLeadByIdentity(env, contact, telegramId, chatId)
   if (remote === null) throw new Error("Não li o lead do Postgres.")
   const hydrated = remote[0]
   if (!hydrated) return null
-  if (env.AUTH && (await isLeadRemoved(env.AUTH, hydrated.id))) return null
-  const removed = env.AUTH ? await loadRemovedLeadIds(env.AUTH) : []
-  return resolveLeadLookup(null, hydrated, removed)
+  if (env.AUTH) {
+    try {
+      if (await isLeadRemoved(env.AUTH, hydrated.id)) return null
+      return resolveLeadLookup(null, hydrated, await loadRemovedLeadIds(env.AUTH))
+    } catch {
+      throw new Error("Não li o lead do Postgres.")
+    }
+  }
+  return resolveLeadLookup(null, hydrated, [])
 }
 
 /**

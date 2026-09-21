@@ -7874,6 +7874,47 @@ assert(indexDownMcpSearch.status === 200, "MCP busca índice unread não cai em 
 assert(!indexDownMcpSearchData.error, "MCP busca índice unread com alias não pede 503")
 assert(indexDownMcpSearchData.leads?.some((item) => item.id === "hole-lead"), "MCP busca índice unread ainda manda o leftover")
 assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === "leftover-ficha", "índice KV throw não pisa a ficha leftover")
+const removedDownFound = await findWorkspaceLead(removedDownEnv, "@holelead", 0, "")
+assert(removedDownFound?.id === "hole-lead", "lookup webhook com tombstone unread ainda devolve o leftover")
+assert(removedDownFound?.memory === "leftover-ficha", "lookup webhook com tombstone unread não esconde a ficha leftover")
+const hookRemovedDownCtx = backgroundCtx()
+const hookRemovedPrevFetch = globalThis.fetch
+const holeLeadIdsBefore = (await listLeads(runtimeHoleKv, 40, "all")).filter((item) => item.contact === "@holelead").map((item) => item.id)
+try {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("api.telegram.org")) {
+      return new Response(JSON.stringify({ ok: true }), { status: 200 })
+    }
+    return hookRemovedPrevFetch(input, init)
+  }) as typeof fetch
+  const hookRemovedDown = await handleRequest(
+    new Request("http://local.test/api/telegram", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-kv" },
+      body: JSON.stringify({
+        update_id: 88002,
+        message: {
+          chat: { id: 88002 },
+          text: "oi leftover",
+          from: { id: 88002, username: "holelead", first_name: "Hole" },
+        },
+      }),
+    }),
+    removedDownEnv,
+    hookRemovedDownCtx
+  )
+  const hookRemovedDownBody = (await hookRemovedDown.json()) as { ok?: boolean; error?: string }
+  assert(hookRemovedDown.status === 200, "webhook tombstone unread ainda acks o Telegram")
+  assert(hookRemovedDown.status !== 500, "webhook tombstone unread não é Falha interna")
+  assert(hookRemovedDownBody.ok === true, "webhook tombstone unread não mente falha no ack")
+  await hookRemovedDownCtx.flush()
+} finally {
+  globalThis.fetch = hookRemovedPrevFetch
+}
+const holeLeadIdsAfter = (await listLeads(runtimeHoleKv, 40, "all")).filter((item) => item.contact === "@holelead").map((item) => item.id)
+assert(holeLeadIdsAfter.join() === holeLeadIdsBefore.join(), "webhook tombstone unread não mint o segundo UUID")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.id === "hole-lead", "webhook tombstone unread não apaga o leftover")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === "leftover-ficha", "webhook tombstone unread não pisa a ficha leftover")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()
