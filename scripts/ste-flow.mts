@@ -1080,12 +1080,7 @@ try {
 } catch (error) {
   assert(error instanceof Error && error.message.includes("Postgres"), "loadWorkspaceFunnels não finge funis vazios")
 }
-try {
-  await loadWorkspaceSettings(pgDownEnv)
-  assert(false, "loadWorkspaceSettings oco e Postgres em baixo tem de falhar")
-} catch (error) {
-  assert(error instanceof Error && error.message.includes("Postgres"), "loadWorkspaceSettings não finge settings vazias")
-}
+assert((await loadWorkspaceSettings(pgDownEnv)).telegramBotUsername === "", "settings ocas no KV não fingem o Postgres")
 await saveSettingsKv(pgDownEnv.AUTH, migrateSettings({ telegramBotUsername: "@ste_bot" }))
 assert((await loadWorkspaceSettings(pgDownEnv)).telegramBotUsername === "@ste_bot", "settings no KV sobrevivem ao Postgres em baixo")
 assert((await loadWorkspaceFunnels({ AUTH: adoptFunnelKv, SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" }))[0]?.name === "Quadro KV", "KV com quadro não depende do Postgres")

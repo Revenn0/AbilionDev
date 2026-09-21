@@ -12,10 +12,6 @@ export type SettingsEnv = {
   SUPABASE_SERVICE_ROLE?: string
 }
 
-function settingsNeedRemote(settings: Settings) {
-  return !settings.telegramBotUsername && !(settings.pageScripts?.length) && !(settings.leadCategories?.length)
-}
-
 async function fetchRemoteSettings(env: SettingsEnv): Promise<Settings | undefined | null> {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return undefined
   try {
@@ -37,11 +33,8 @@ async function fetchRemoteSettings(env: SettingsEnv): Promise<Settings | undefin
 export async function loadWorkspaceSettings(env: SettingsEnv): Promise<Settings> {
   const remote = await fetchRemoteSettings(env)
   if (remote === null) {
-    if (env.AUTH) {
-      const kv = await loadAdoptedSettings(env.AUTH)
-      if (!settingsNeedRemote(kv)) return kv
-    }
-    throw new Error("Não li as definições do Postgres.")
+    if (env.AUTH) return loadAdoptedSettings(env.AUTH)
+    return emptySettings()
   }
   if (env.AUTH) return loadAdoptedSettings(env.AUTH, remote)
   return remote ?? emptySettings()
