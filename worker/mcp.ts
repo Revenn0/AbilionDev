@@ -16,7 +16,7 @@ import {
 import { handleTokens, handleUsers } from "./users.ts"
 import { filterLiveLeads, importOrAdoptLead, leadPageFromRemote, listLeadPage } from "./crm-store.ts"
 import { emptySecrets, loadSecrets, resolveRuntime } from "./runtime-secrets.ts"
-import { fetchRemoteLeadPage, fillLeadHoles, leadCatalogUnread, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceFunnels, readWorkspaceSettings, searchWorkspaceLeads } from "./workspace-settings.ts"
+import { fetchRemoteLeadPage, fillLeadHoles, leadCatalogUnread, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceFunnels, readWorkspaceSettings, resolveWorkspaceLeadWrite, searchWorkspaceLeads } from "./workspace-settings.ts"
 import { readJsonStrict } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -541,7 +541,9 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     const imported = []
     for (const row of parsed.rows.slice(0, 50)) {
       const lead = leadFromImport(row, { category, toGroup, groupUrl: settings.telegramGroupUrl })
-      const saved = await importOrAdoptLead(env.AUTH, lead)
+      const resolved = await resolveWorkspaceLeadWrite(env, lead)
+      if (!resolved.ok) throw new Error("Não li o lead do Postgres.")
+      const saved = await importOrAdoptLead(env.AUTH, resolved.incoming)
       if (!saved) continue
       await persistRemoteLead(env, saved)
       imported.push({ id: saved.id, name: saved.name, contact: saved.contact, category: saved.category, stage: saved.stage })

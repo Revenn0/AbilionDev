@@ -89,7 +89,7 @@ import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.t
 import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_INDEX, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, leadPageCursor, leadPageFromRemote, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
-import { fetchRemoteDueLeads, fetchRemoteLeadByIdentity, fetchRemoteLeadsByIds, findWorkspaceLead, leadCatalogUnread, leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceFunnels, readWorkspaceSettings, remoteLeadDuePath, remoteLeadIdentityPath, remoteLeadListPath, remoteLeadSearchPath, rowToLead, sanitizeRemoteSearchNeedle, searchWorkspaceLeads } from "../worker/workspace-settings.ts"
+import { fetchRemoteDueLeads, fetchRemoteLeadByIdentity, fetchRemoteLeadsByIds, findWorkspaceLead, leadCatalogUnread, leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceFunnels, readWorkspaceSettings, remoteLeadDuePath, remoteLeadIdentityPath, remoteLeadListPath, remoteLeadSearchPath, resolveWorkspaceLeadWrite, rowToLead, sanitizeRemoteSearchNeedle, searchWorkspaceLeads, telegramIdFromLead } from "../worker/workspace-settings.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
@@ -3743,6 +3743,14 @@ assert(
     "pg-ana",
   "lookup reusa o id do backup"
 )
+assert(telegramIdFromLead({ contact: "tg:8802" }) === 8802, "tg:id vira número")
+assert(telegramIdFromLead({ contact: "@pgana" }) === 0, "@user não inventa id")
+const writeHit = await resolveWorkspaceLeadWrite(
+  { SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role", AUTH: memoryKv() } as Env,
+  { ...lead("local-ana", "@pgana"), telegramChatId: "8802" }
+)
+assert(writeHit.ok && writeHit.incoming.id === "pg-ana", "POST/MCP reusa o id do backup")
+assert(writeHit.ok && writeHit.prev?.id === "pg-ana", "POST/MCP adopta a ficha do Postgres")
 assert((await fetchRemoteDueLeads({ SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env, "2026-06-02T00:00:00.000Z"))?.length === 0, "due remoto vazio é array, não null")
 const hookDownKv = memoryKv()
 const hookDownEnv = {
@@ -3787,6 +3795,82 @@ assert(
 await hookDownCtx.flush()
 assert(!(await listLeads(hookDownKv, 20, "all")).some((item) => item.contact === "@dupmiss"), "webhook não mint com Postgres em baixo")
 assert((await findLeadInKv(hookDownKv, "@dupmiss", 8801, "8801")) === null, "falha do backup não grava alias de um lead novo")
+const writeUnreadKv = memoryKv()
+await upsertLeadKv(writeUnreadKv, lead("already-there", "@other"))
+const writeUnreadEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: writeUnreadKv,
+  ABILION_ENV: "development",
+} as Env
+const writeUnreadResolved = await resolveWorkspaceLeadWrite(writeUnreadEnv, lead("new-dup", "@dupwrite"))
+assert(!writeUnreadResolved.ok && writeUnreadResolved.unread, "índice com outros + Postgres em baixo não mint")
+const writeKnown = await resolveWorkspaceLeadWrite(writeUnreadEnv, lead("already-there", "@other"))
+assert(writeKnown.ok && writeKnown.incoming.id === "already-there", "ficha já no KV ainda grava com Postgres unread")
+const writeUnreadLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  writeUnreadEnv,
+  backgroundCtx()
+)
+assert(writeUnreadLogin.status === 200, "login no KV com índice para o POST unread")
+const writeUnreadCookie = writeUnreadLogin.headers.get("set-cookie") || ""
+const writeUnreadPost = await handleRequest(
+  new Request("http://local.test/api/leads", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: writeUnreadCookie },
+    body: JSON.stringify({ lead: lead("new-dup", "@dupwrite") }),
+  }),
+  writeUnreadEnv,
+  backgroundCtx()
+)
+const writeUnreadPostBody = (await writeUnreadPost.json()) as { error?: string }
+assert(writeUnreadPost.status === 503 && writeUnreadPostBody.error?.includes("Postgres"), "POST com índice leftover não mint contacto unread")
+assert(!(await listLeads(writeUnreadKv, 20, "all")).some((item) => item.contact === "@dupwrite"), "POST recusado não mint o segundo UUID")
+const writeKnownPost = await handleRequest(
+  new Request("http://local.test/api/leads", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: writeUnreadCookie },
+    body: JSON.stringify({ lead: { ...lead("already-there", "@other"), memory: "keepalive" } }),
+  }),
+  writeUnreadEnv,
+  backgroundCtx()
+)
+assert(writeKnownPost.status === 200, "POST da ficha do KV sobrevive ao Postgres unread")
+assert((await loadLead(writeUnreadKv, "already-there"))?.memory === "keepalive", "POST conhecido actualiza o KV")
+const writeUnreadMint = await handleRequest(
+  new Request("http://local.test/api/tokens", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: writeUnreadCookie, "x-forwarded-for": "198.51.100.91" },
+    body: JSON.stringify({ name: "Import unread" }),
+  }),
+  writeUnreadEnv,
+  backgroundCtx()
+)
+const writeUnreadMinted = (await writeUnreadMint.json()) as { token?: string }
+assert(writeUnreadMint.status === 201 && writeUnreadMinted.token?.startsWith("abn_"), "token para o import unread")
+const writeUnreadMcp = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${writeUnreadMinted.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 210,
+      method: "tools/call",
+      params: { name: "abilion_import_leads", arguments: { text: "Dup, @dupwrite" } },
+    }),
+  }),
+  writeUnreadEnv,
+  backgroundCtx()
+)
+const writeUnreadMcpBody = (await writeUnreadMcp.json()) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }
+const writeUnreadMcpData = JSON.parse(writeUnreadMcpBody.result?.content?.[0]?.text || "{}") as { error?: string }
+assert(writeUnreadMcpBody.result?.isError && writeUnreadMcpData.error?.includes("Postgres"), "MCP import com índice leftover não mint contacto unread")
+assert(!(await listLeads(writeUnreadKv, 20, "all")).some((item) => item.contact === "@dupwrite"), "MCP recusado não mint o segundo UUID")
 const hookReuseKv = memoryKv()
 const hookReuseEnv = { ...hookDownEnv, AUTH: hookReuseKv }
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {

@@ -50,7 +50,6 @@ import {
   isLeadRemoved,
   rememberSentLead,
   reserveLeadIdentity,
-  resolveLeadWrite,
   upsertLeadKv,
 } from "./crm-store.ts"
 import {
@@ -65,7 +64,7 @@ import {
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
 import { readJsonObject, readJsonStrict, type JsonFail } from "./json-body.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall, telegramJoinActor, telegramUpdateActor } from "./telegram.ts"
-import { fetchRemoteDueLeads, fetchRemoteLeadPage, fillLeadHoles, findWorkspaceLead, leadCatalogUnread, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, readWorkspaceFunnels, readWorkspaceSettings, rowToLead, searchWorkspaceLeads, type LeadRow } from "./workspace-settings.ts"
+import { fetchRemoteDueLeads, fetchRemoteLeadPage, fillLeadHoles, findWorkspaceLead, leadCatalogUnread, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, readWorkspaceFunnels, readWorkspaceSettings, resolveWorkspaceLeadWrite, rowToLead, searchWorkspaceLeads, type LeadRow } from "./workspace-settings.ts"
 import type { KvLike } from "./kv.ts"
 
 type Fetcher = { fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> }
@@ -632,7 +631,9 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     for (const row of rows) {
       const lead = sanitizeIncomingLead(row)
       if (!lead) continue
-      const { incoming, prev } = await resolveLeadWrite(env.AUTH, lead)
+      const resolved = await resolveWorkspaceLeadWrite(env, lead)
+      if (!resolved.ok) return json({ error: "Não li o lead do Postgres." }, 503)
+      const { incoming, prev } = resolved
       if ((await isLeadRemoved(env.AUTH, incoming.id)) || (await isLeadRemoved(env.AUTH, lead.id))) continue
       const next = adoptOperatorLead(prev, incoming)
       if (!(await saveLead(env, next))) continue

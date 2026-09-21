@@ -3,7 +3,7 @@ import { sanitizeLeadCategory } from "../src/lib/lead-category.ts"
 import { leadMatchesQuery } from "../src/lib/lead-name.ts"
 import { migrateSettings, sanitizeIncomingFunnel } from "../src/lib/migrate.ts"
 import type { Lead, LeadEvent, SalesFunnel, Settings } from "../src/lib/types.ts"
-import { filterLiveLeads, findLeadInKv, isLeadPageCursor, isLeadRemoved, listLeadPage, loadAdoptedSettings, loadFunnelsKv, loadRemovedFunnelIds, loadRemovedLeadIds, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge } from "./crm-store.ts"
+import { filterLiveLeads, findLeadInKv, isLeadPageCursor, isLeadRemoved, listLeadPage, loadAdoptedSettings, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge, resolveLeadWrite } from "./crm-store.ts"
 import type { KvLike } from "./kv.ts"
 
 const WORKSPACE = "local"
@@ -236,6 +236,41 @@ export async function findWorkspaceLead(
   if (env.AUTH && (await isLeadRemoved(env.AUTH, hydrated.id))) return null
   const removed = env.AUTH ? await loadRemovedLeadIds(env.AUTH) : []
   return resolveLeadLookup(null, hydrated, removed)
+}
+
+export function telegramIdFromLead(lead: Pick<Lead, "contact">) {
+  const match = /^tg:(\d+)$/.exec((lead.contact || "").trim())
+  return match ? Number(match[1]) : 0
+}
+
+/**
+ * POST/MCP: KV primeiro. Miss cai no Postgres.
+ * Falha do backup (credenciais + `null`) recusa — o operador não mint um segundo UUID.
+ */
+export async function resolveWorkspaceLeadWrite(
+  env: SettingsEnv,
+  lead: Lead
+): Promise<{ ok: true; incoming: Lead; prev: Lead | null } | { ok: false; unread: true }> {
+  if (!env.AUTH) return { ok: false, unread: true }
+  const existing = lead.id ? await loadLead(env.AUTH, lead.id) : null
+  if (existing) {
+    const resolved = await resolveLeadWrite(env.AUTH, lead)
+    return { ok: true, incoming: resolved.incoming, prev: resolved.prev }
+  }
+  try {
+    const found = await findWorkspaceLead(env, lead.contact, telegramIdFromLead(lead), lead.telegramChatId ?? "")
+    if (found) {
+      return {
+        ok: true,
+        incoming: { ...lead, id: found.id, createdAt: found.createdAt },
+        prev: found,
+      }
+    }
+  } catch {
+    return { ok: false, unread: true }
+  }
+  const resolved = await resolveLeadWrite(env.AUTH, lead)
+  return { ok: true, incoming: resolved.incoming, prev: resolved.prev }
 }
 
 /** Página mista: lê no backup os ids do índice que o KV não carregou. `null` é falha. */
