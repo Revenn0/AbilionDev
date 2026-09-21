@@ -48,6 +48,7 @@ import {
   persistFunnelsMerge,
   persistSettingsMerge,
   isLeadRemoved,
+  leadRemovedForRead,
   rememberSentLead,
   reserveLeadIdentity,
   upsertLeadKv,
@@ -1351,7 +1352,7 @@ async function persistLeadAfterSend(env: Env, lead: Lead) {
 
 async function restoreQueuedLead(env: Env, lead: Lead) {
   if (!env.AUTH) return false
-  if (await isLeadRemoved(env.AUTH, lead.id)) return false
+  if (await leadRemovedForRead(env.AUTH, lead.id)) return false
   for (let attempt = 0; attempt < 4; attempt++) {
     const live = await loadLead(env.AUTH, lead.id)
     const restored = sanitizeIncomingLead(restoreLeadAfterFailedSend(lead, live))
@@ -1375,13 +1376,13 @@ async function saveLead(env: Env, lead: Lead) {
   if (!bounded) return false
   if (env.AUTH) {
     try {
-      if (await isLeadRemoved(env.AUTH, bounded.id)) return false
+      if (await leadRemovedForRead(env.AUTH, bounded.id)) return false
       const prev = await loadLead(env.AUTH, bounded.id)
       bounded = commitStoredLead(prev, bounded)
       const latest = await loadLead(env.AUTH, bounded.id)
       bounded = commitStoredLead(prev, bounded, latest)
       if (!(await upsertLeadKv(env.AUTH, bounded))) return false
-      if (await isLeadRemoved(env.AUTH, bounded.id)) return false
+      if (await leadRemovedForRead(env.AUTH, bounded.id)) return false
     } catch {
       if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return false
     }

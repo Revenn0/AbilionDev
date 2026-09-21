@@ -383,9 +383,9 @@ function indexEntryFromLead(lead: Lead): CrmIndexEntry {
 
 export async function rememberSentLead(kv: KvLike, lead: Lead) {
   const key = sentLeadKey(lead.id)
-  if (!key || (await isLeadRemoved(kv, lead.id))) return
+  if (!key || (await leadRemovedForRead(kv, lead.id))) return
   await kv.put(key, JSON.stringify(lead))
-  if (await isLeadRemoved(kv, lead.id)) {
+  if (await leadRemovedForRead(kv, lead.id)) {
     await forgetSentLead(kv, lead.id)
     return
   }
@@ -429,6 +429,11 @@ export async function removedIdsForRead(kv: KvLike): Promise<Set<string>> {
   } catch {
     return new Set()
   }
+}
+
+/** Leitura/gravação: lista unread não é tombstone. A chave gone continua a valer. */
+export async function leadRemovedForRead(kv: KvLike, id: string): Promise<boolean> {
+  return leadIsGone(kv, id, await removedIdsForRead(kv))
 }
 
 export async function filterLiveLeads(kv: KvLike, leads: Lead[]): Promise<Lead[]> {
@@ -581,9 +586,9 @@ export async function forgetRemovedLead(kv: KvLike, id: string) {
 }
 
 export async function upsertLeadKv(kv: KvLike, lead: Lead) {
-  if (await isLeadRemoved(kv, lead.id)) return false
+  if (await leadRemovedForRead(kv, lead.id)) return false
   await kv.put(leadKey(lead.id), JSON.stringify(lead))
-  if (await isLeadRemoved(kv, lead.id)) {
+  if (await leadRemovedForRead(kv, lead.id)) {
     await kv.delete?.(leadKey(lead.id))
     await forgetSentLead(kv, lead.id)
     return false

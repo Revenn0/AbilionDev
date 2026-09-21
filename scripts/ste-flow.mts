@@ -7914,7 +7914,19 @@ try {
 const holeLeadIdsAfter = (await listLeads(runtimeHoleKv, 40, "all")).filter((item) => item.contact === "@holelead").map((item) => item.id)
 assert(holeLeadIdsAfter.join() === holeLeadIdsBefore.join(), "webhook tombstone unread não mint o segundo UUID")
 assert((await loadLead(runtimeHoleKv, "hole-lead"))?.id === "hole-lead", "webhook tombstone unread não apaga o leftover")
-assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === "leftover-ficha", "webhook tombstone unread não pisa a ficha leftover")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.contact === "@holelead", "webhook tombstone unread não troca o contacto leftover")
+const holeAfterHook = await loadLead(runtimeHoleKv, "hole-lead")
+assert(
+  (holeAfterHook?.messages ?? []).some((item) => item.role === "lead" && item.text === "oi leftover") ||
+    (holeAfterHook?.messages ?? []).some((item) => item.role === "ste"),
+  "webhook tombstone unread grava a fala no leftover"
+)
+assert(
+  await upsertLeadKv(kvThrowsOn(runtimeHoleKv, CRM_REMOVED), { ...holeAfterHook!, memory: "leftover-ficha" }),
+  "upsert tombstone unread ainda grava o leftover"
+)
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === "leftover-ficha", "upsert tombstone unread não apaga a ficha leftover")
+assert(!(await upsertLeadKv(kvThrowsOn(durableGone, CRM_REMOVED), lead("old-id", "@oldgone"))), "upsert não ressuscita id com chave gone")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()
