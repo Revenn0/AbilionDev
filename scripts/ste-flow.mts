@@ -7469,6 +7469,86 @@ try {
 assert(!(await listLeads(runtimeHoleKv, 20, "all")).some((item) => item.contact === "@hookkv"), "webhook KV throw não cria lead")
 assert((await loadSecrets(runtimeHoleKv)).telegramWebhookSecret === "hook-kv", "webhook KV throw não apaga o secret leftover")
 assert((await loadSecrets(runtimeHoleKv)).telegramBotToken === "000:kv-token", "webhook KV throw não apaga o token leftover")
+const leftoverAuth = (await runtimeHoleKv.get("snapshot", "json")) as {
+  users?: Array<{ email?: string; passwordHash?: string }>
+  sessions?: unknown[]
+  resets?: Record<string, unknown>
+}
+const leftoverAuthUsers = leftoverAuth?.users?.length ?? 0
+const leftoverAuthSessions = leftoverAuth?.sessions?.length ?? 0
+const leftoverAuthResets = Object.keys(leftoverAuth?.resets ?? {}).length
+const leftoverAuthHash = leftoverAuth?.users?.find((item) => item.email === "victor@abilion.com")?.passwordHash
+assert(leftoverAuthUsers > 0 && leftoverAuthHash, "KV do runtime hole ainda tem a conta leftover")
+const authPutDownEnv = { ...runtimeHoleBase, AUTH: kvThrowsOnPut(runtimeHoleKv, "snapshot") } as Env
+const authPutDownLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  authPutDownEnv,
+  backgroundCtx()
+)
+const authPutDownLoginBody = (await authPutDownLogin.json()) as { error?: string; user?: { email?: string } }
+assert(authPutDownLogin.status === 503, "login persist KV throw é 503")
+assert(authPutDownLogin.status !== 500, "login persist KV throw não é Falha interna")
+assert(authPutDownLoginBody.error === "Não confirmei as contas.", "login persist KV throw pede confirmação")
+assert(!authPutDownLoginBody.user, "login persist KV throw não finge sessão")
+assert(!(authPutDownLogin.headers.get("set-cookie") || "").includes("abilion_session="), "login persist KV throw não manda cookie")
+const authAfterLoginPut = (await runtimeHoleKv.get("snapshot", "json")) as {
+  users?: Array<{ email?: string }>
+  sessions?: unknown[]
+}
+assert((authAfterLoginPut?.users?.length ?? 0) === leftoverAuthUsers, "login persist KV throw não cria conta no leftover")
+assert((authAfterLoginPut?.sessions?.length ?? 0) === leftoverAuthSessions, "login persist KV throw não grava sessão no leftover")
+const authPutDownForgot = await handleRequest(
+  new Request("http://local.test/api/auth/forgot", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com" }),
+  }),
+  { ...authPutDownEnv, ABILION_ENV: "development" } as Env,
+  backgroundCtx()
+)
+const authPutDownForgotBody = (await authPutDownForgot.json()) as { error?: string; ok?: boolean; resetPath?: string }
+assert(authPutDownForgot.status === 503, "forgot persist KV throw é 503")
+assert(authPutDownForgotBody.ok !== true, "forgot persist KV throw não finge ok")
+assert(!authPutDownForgotBody.resetPath, "forgot persist KV throw não inventa link")
+assert(authPutDownForgotBody.error === "Não confirmei as contas.", "forgot persist KV throw pede confirmação")
+assert(Object.keys(((await runtimeHoleKv.get("snapshot", "json")) as { resets?: Record<string, unknown> })?.resets ?? {}).length === leftoverAuthResets, "forgot persist KV throw não grava reset no leftover")
+const authPutDownLogout = await handleRequest(
+  new Request("http://local.test/api/auth/logout", {
+    method: "POST",
+    headers: { cookie: runtimeHoleCookie },
+  }),
+  authPutDownEnv,
+  backgroundCtx()
+)
+const authPutDownLogoutBody = (await authPutDownLogout.json()) as { error?: string; ok?: boolean }
+assert(authPutDownLogout.status === 503, "logout persist KV throw é 503")
+assert(authPutDownLogoutBody.ok !== true, "logout persist KV throw não finge ok")
+assert(authPutDownLogoutBody.error === "Não confirmei as contas.", "logout persist KV throw pede confirmação")
+assert(!(authPutDownLogout.headers.get("set-cookie") || "").toLowerCase().includes("max-age=0"), "logout persist KV throw não apaga o cookie sem confirmar")
+assert(((await runtimeHoleKv.get("snapshot", "json")) as { sessions?: unknown[] })?.sessions?.length === leftoverAuthSessions, "logout persist KV throw não revoga a sessão leftover")
+const authPutDownPassword = await handleRequest(
+  new Request("http://local.test/api/auth/password", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie },
+    body: JSON.stringify({ currentPassword: "senhaok", password: "senha-nova" }),
+  }),
+  authPutDownEnv,
+  backgroundCtx()
+)
+const authPutDownPasswordBody = (await authPutDownPassword.json()) as { error?: string; ok?: boolean }
+assert(authPutDownPassword.status === 503, "password persist KV throw é 503")
+assert(authPutDownPasswordBody.ok !== true, "password persist KV throw não finge ok")
+assert(authPutDownPasswordBody.error === "Não confirmei as contas.", "password persist KV throw pede confirmação")
+assert(
+  ((await runtimeHoleKv.get("snapshot", "json")) as { users?: Array<{ email?: string; passwordHash?: string }> })?.users?.find(
+    (item) => item.email === "victor@abilion.com"
+  )?.passwordHash === leftoverAuthHash,
+  "password persist KV throw não pisa o hash leftover"
+)
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()

@@ -522,13 +522,38 @@ export function clientIp(request: Request) {
 
 const ACCOUNTS_UNREAD = "Não confirmei as contas."
 
+class AuthPersistUnread extends Error {
+  override name = "AuthPersistUnread"
+  constructor() {
+    super(ACCOUNTS_UNREAD)
+  }
+}
+
 /** KV throw não é snapshot vazio: forgot/login não fingem primeiro acesso. */
 async function readAuthSnapshot(store: AuthStore): Promise<{ snapshot: AuthSnapshot; unread: boolean }> {
   try {
-    return { snapshot: prune(await store.load()), unread: false }
+    return { snapshot: structuredClone(prune(await store.load())), unread: false }
   } catch {
     return { snapshot: emptySnapshot(), unread: true }
   }
+}
+
+async function persistAuthSnapshot(store: AuthStore, snapshot: AuthSnapshot) {
+  try {
+    await store.save(snapshot)
+  } catch {
+    throw new AuthPersistUnread()
+  }
+}
+
+function authPersistUnreadResponse(request: Request) {
+  const path = new URL(request.url).pathname
+  if (wantsAuthHtml(request)) {
+    if (path.endsWith("/forgot")) return authHtml(authForgotDocument({ error: ACCOUNTS_UNREAD }), 503)
+    if (path.endsWith("/reset")) return authHtml(authResetDocument({ error: ACCOUNTS_UNREAD }), 503)
+    return authHtml(authLoginDocument({ error: ACCOUNTS_UNREAD }), 503)
+  }
+  return json({ error: ACCOUNTS_UNREAD }, 503)
 }
 
 function prune(snapshot: AuthSnapshot, now = Date.now()): AuthSnapshot {
@@ -585,7 +610,7 @@ export async function ensureOperatorUsers(store: AuthStore, password: string) {
       changed = true
     }
   }
-  if (changed) await store.save(snapshot)
+  if (changed) await persistAuthSnapshot(store, snapshot)
 }
 
 function readCookie(request: Request) {
@@ -780,6 +805,15 @@ export async function gateActor(
 }
 
 export async function handleAuth(request: Request, store: AuthStore, env?: { ABILION_OPERATOR_PASSWORD?: string; ABILION_ENV?: string }) {
+  try {
+    return await routeAuth(request, store, env)
+  } catch (error) {
+    if (error instanceof AuthPersistUnread) return authPersistUnreadResponse(request)
+    throw error
+  }
+}
+
+async function routeAuth(request: Request, store: AuthStore, env?: { ABILION_OPERATOR_PASSWORD?: string; ABILION_ENV?: string }) {
   const url = new URL(request.url)
   const path = url.pathname
   const secure = url.protocol === "https:"
@@ -802,13 +836,13 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     const guard = consumeThrottle(snapshot, `login:${clientIp(request)}:${email}`, 8, 15 * 60 * 1000)
     snapshot = guard.snapshot
     if (!guard.ok) {
-      await store.save(snapshot)
+      await persistAuthSnapshot(store, snapshot)
       return loginFail(request, "Muitas tentativas. Espera uns minutos e tenta de novo.", 429, body)
     }
     let user = snapshot.users.find((item) => item.email === email)
     if (!user) {
       if (!isOperatorEmail(email)) {
-        await store.save(snapshot)
+        await persistAuthSnapshot(store, snapshot)
         return loginFail(request, "E-mail ou senha inválidos.", 401, body)
       }
       user = {
@@ -823,10 +857,10 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
       }
       snapshot.users.push(user)
     } else if (user.disabled) {
-      await store.save(snapshot)
+      await persistAuthSnapshot(store, snapshot)
       return loginFail(request, "E-mail ou senha inválidos.", 401, body)
     } else if (!(await verifyPassword(password, user.passwordHash))) {
-      await store.save(snapshot)
+      await persistAuthSnapshot(store, snapshot)
       return loginFail(request, "E-mail ou senha inválidos.", 401, body)
     }
     const now = Date.now()
@@ -838,7 +872,7 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
       expiresAt: now + SESSION_TTL_MS,
       issuedAt: now,
     })
-    await store.save(snapshot)
+    await persistAuthSnapshot(store, snapshot)
     if (wantsAuthHtml(request)) {
       return new Response(null, {
         status: 303,
@@ -859,7 +893,7 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
       const snapshot = loaded.snapshot
       if (token) snapshot.revoked = clipAuthTokens([token, ...(snapshot.revoked ?? [])], AUTH_REVOKED_CAP)
       snapshot.sessions = snapshot.sessions.filter((item) => item.token !== token)
-      await store.save(snapshot)
+      await persistAuthSnapshot(store, snapshot)
     }
     return json({ ok: true }, 200, { "set-cookie": cookieHeader(null, secure) })
   }
@@ -900,7 +934,7 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     const guard = consumeThrottle(snapshot, `forgot:${clientIp(request)}`, 5, 15 * 60 * 1000)
     snapshot = guard.snapshot
     if (!guard.ok) {
-      await store.save(snapshot)
+      await persistAuthSnapshot(store, snapshot)
       return html
         ? authHtml(authForgotDocument({ next: parsed.body.next, error: "Muitas tentativas. Espera uns minutos e tenta de novo." }), 429)
         : json({ error: "Muitas tentativas. Espera uns minutos e tenta de novo." }, 429)
@@ -914,7 +948,7 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
       resetToken = randomToken()
       snapshot.resets[resetToken] = { userId: user.id, expiresAt: Date.now() + RESET_TTL_MS }
     }
-    await store.save(snapshot)
+    await persistAuthSnapshot(store, snapshot)
     if (user && resetToken && env?.ABILION_ENV !== "production") {
       const resetPath = `/reset?token=${resetToken}`
       return html
@@ -943,7 +977,7 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     const guard = consumeThrottle(snapshot, `password:${clientIp(request)}:${user.id}`, 5, 15 * 60 * 1000)
     snapshot = guard.snapshot
     if (!guard.ok) {
-      await store.save(snapshot)
+      await persistAuthSnapshot(store, snapshot)
       return json({ error: "Muitas tentativas. Espera uns minutos e tenta de novo." }, 429)
     }
     const parsed = await readBody(request)
@@ -952,11 +986,11 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     const currentPassword = body.currentPassword || ""
     const password = body.password || ""
     if (!(await verifyPassword(currentPassword, user.passwordHash))) {
-      await store.save(snapshot)
+      await persistAuthSnapshot(store, snapshot)
       return json({ error: "Senha atual inválida." }, 400)
     }
     if (password.length < 6) {
-      await store.save(snapshot)
+      await persistAuthSnapshot(store, snapshot)
       return json({ error: "A nova senha precisa de 6+ caracteres." }, 400)
     }
     user.passwordHash = await hashPassword(password)
@@ -966,7 +1000,7 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     snapshot.revoked = clipAuthTokens([...dropped.map((item) => item.token), ...(snapshot.revoked ?? [])], AUTH_REVOKED_CAP)
     snapshot.sessions = snapshot.sessions.filter((item) => item.userId !== user.id || item.token === token)
     dropUserApiTokens(snapshot, user)
-    await store.save(snapshot)
+    await persistAuthSnapshot(store, snapshot)
     return json({ ok: true })
   }
 
@@ -983,19 +1017,19 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     const guard = consumeThrottle(snapshot, `reset:${clientIp(request)}`, 5, 15 * 60 * 1000)
     snapshot = guard.snapshot
     if (!guard.ok) {
-      await store.save(snapshot)
+      await persistAuthSnapshot(store, snapshot)
       return resetFail(request, "Muitas tentativas. Espera uns minutos e tenta de novo.", 429, body)
     }
     const rec = snapshot.resets[token]
     if (!rec) {
-      await store.save(snapshot)
+      await persistAuthSnapshot(store, snapshot)
       return resetFail(request, "Link expirado ou inválido.", 400, body)
     }
     const user = snapshot.users.find((item) => item.id === rec.userId)
     if (!user || user.disabled) {
       snapshot.spentResets = clipAuthTokens([token, ...(snapshot.spentResets ?? [])], AUTH_SPENT_RESET_CAP)
       delete snapshot.resets[token]
-      await store.save(snapshot)
+      await persistAuthSnapshot(store, snapshot)
       return resetFail(request, "Link expirado ou inválido.", 400, body)
     }
     user.passwordHash = await hashPassword(password)
@@ -1006,7 +1040,7 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     snapshot.sessions = snapshot.sessions.filter((item) => item.userId !== user.id)
     dropUserApiTokens(snapshot, user)
     delete snapshot.resets[token]
-    await store.save(snapshot)
+    await persistAuthSnapshot(store, snapshot)
     if (wantsAuthHtml(request)) {
       return new Response(null, {
         status: 303,
@@ -1028,7 +1062,7 @@ export function kvAuthStore(kv: { get(key: string, type: "json"): Promise<unknow
       const raw = await kv.get("snapshot", "json")
       if (!raw || typeof raw !== "object") return emptySnapshot()
       const value = raw as Partial<AuthSnapshot>
-      return {
+      return structuredClone({
         users: Array.isArray(value.users) ? value.users : [],
         sessions: Array.isArray(value.sessions) ? value.sessions : [],
         resets: value.resets && typeof value.resets === "object" ? value.resets : {},
@@ -1036,7 +1070,7 @@ export function kvAuthStore(kv: { get(key: string, type: "json"): Promise<unknow
         revoked: clipAuthTokens(value.revoked, AUTH_REVOKED_CAP),
         revokedApi: clipAuthTokens(value.revokedApi, AUTH_REVOKED_API_CAP),
         spentResets: clipAuthTokens(value.spentResets, AUTH_SPENT_RESET_CAP),
-      }
+      })
     },
     async save(next) {
       const current = await this.load()
