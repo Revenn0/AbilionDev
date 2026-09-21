@@ -132,6 +132,27 @@ async function runtimeOf(env: Env, webhookFallback = "") {
   return { secrets, resolved: resolveRuntime(env, secrets, webhookFallback) }
 }
 
+/** Público: secrets unread não apagam username/scripts leftover das settings. */
+async function publicWorkspaceBot(env: Env, webhookFallback = "") {
+  let resolved = resolveRuntime(env, emptySecrets(), webhookFallback)
+  try {
+    resolved = (await runtimeOf(env, webhookFallback)).resolved
+  } catch {
+    /* secrets unread — leftover settings ainda contam */
+  }
+  let settings = emptySettings()
+  let settingsUnread = true
+  try {
+    const loaded = await readWorkspaceSettings(env)
+    settings = loaded.settings
+    settingsUnread = loaded.unread
+  } catch {
+    /* settings unread */
+  }
+  const telegramBotUsername = cleanBotUsername(resolved.telegramBotUsername || settings.telegramBotUsername)
+  return { resolved, settings, telegramBotUsername, settingsUnread }
+}
+
 async function publishedRuntime(env: Env, resolved: ReturnType<typeof resolveRuntime>) {
   const store = kvOf(env) ? await loadVoiceStore(kvOf(env)!) : {}
   return publicRuntime(resolved, voiceClipStatus(store, resolved.elevenVoiceId))
@@ -182,13 +203,11 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext) {
     const scriptId = url.searchParams.get("s") || ""
     let html = adsLandingDocument({ scriptId })
     try {
-      const { resolved } = await runtimeOf(env, webhookUrl(request, env))
-      const loaded = await readWorkspaceSettings(env)
-      const botUsername = cleanBotUsername(resolved.telegramBotUsername || loaded.settings.telegramBotUsername)
+      const { telegramBotUsername, settingsUnread } = await publicWorkspaceBot(env, webhookUrl(request, env))
       html = adsLandingDocument({
-        botUsername,
+        botUsername: telegramBotUsername,
         scriptId,
-        unread: loaded.unread && !botUsername,
+        unread: settingsUnread && !telegramBotUsername,
       })
     } catch {
       html = adsLandingDocument({ scriptId, unread: true })
@@ -310,13 +329,11 @@ async function handleMcpRoute(request: Request, env: Env) {
 async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionContext) {
   if (url.pathname === "/api/health") {
     try {
-      const { resolved } = await runtimeOf(env, webhookUrl(request, env))
-      const loaded = await readWorkspaceSettings(env)
-      const telegramBotUsername = cleanBotUsername(resolved.telegramBotUsername || loaded.settings.telegramBotUsername)
+      const { telegramBotUsername, settingsUnread } = await publicWorkspaceBot(env, webhookUrl(request, env))
       return json({
         ok: true,
         telegramBotUsername,
-        telegramBotUnread: loaded.unread && !telegramBotUsername ? true : undefined,
+        telegramBotUnread: settingsUnread && !telegramBotUsername ? true : undefined,
       })
     } catch {
       return json({ ok: true, telegramBotUsername: "", telegramBotUnread: true })
@@ -326,10 +343,9 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   if (url.pathname === "/api/install" && request.method === "GET") {
     const scriptId = (url.searchParams.get("s") || "").trim().toLowerCase()
     try {
-      const { resolved } = await runtimeOf(env, webhookUrl(request, env))
-      const loaded = await readWorkspaceSettings(env)
-      const script = pageScriptById(loaded.settings.pageScripts, scriptId)
-      if (installSettingsBlocked(loaded.unread, scriptId, script)) {
+      const { settings, telegramBotUsername, settingsUnread } = await publicWorkspaceBot(env, webhookUrl(request, env))
+      const script = pageScriptById(settings.pageScripts, scriptId)
+      if (installSettingsBlocked(settingsUnread, scriptId, script)) {
         return json({ error: "Não confirmei o script desta página." }, 503)
       }
       let funnelName: string | undefined
@@ -345,7 +361,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       }
       return json(
         pageInstallManual({
-          botUsername: cleanBotUsername(resolved.telegramBotUsername || loaded.settings.telegramBotUsername),
+          botUsername: telegramBotUsername,
           script,
           funnelName,
         })
@@ -482,18 +498,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!gate.ok) return gate.response
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const hook = webhookUrl(request, env)
-    let resolved
-    try {
-      resolved = (await runtimeOf(env, hook)).resolved
-    } catch {
-      resolved = resolveRuntime(env, emptySecrets(), hook)
-    }
-    let loaded: { settings: { telegramBotUsername?: string; telegramGroupUrl?: string }; unread: boolean }
-    try {
-      loaded = await readWorkspaceSettings(env)
-    } catch {
-      loaded = { settings: { telegramBotUsername: "", telegramGroupUrl: "" }, unread: true }
-    }
+    const { resolved, settings, telegramBotUsername, settingsUnread } = await publicWorkspaceBot(env, hook)
     const wired = { ...resolved, webhookUrl: resolved.webhookUrl || hook }
     let published
     try {
@@ -503,9 +508,9 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     }
     return json({
       ...published,
-      telegramBotUsername: cleanBotUsername(resolved.telegramBotUsername || loaded.settings.telegramBotUsername),
-      telegramGroupUrl: resolved.telegramGroupUrl || loaded.settings.telegramGroupUrl,
-      settingsUnread: loaded.unread || undefined,
+      telegramBotUsername,
+      telegramGroupUrl: resolved.telegramGroupUrl || settings.telegramGroupUrl,
+      settingsUnread: settingsUnread || undefined,
     })
   }
 

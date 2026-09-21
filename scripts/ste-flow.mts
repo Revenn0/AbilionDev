@@ -6735,6 +6735,85 @@ assert(secretsOnlyRuntime.status === 200 && secretsOnlyRuntimeBody.ok, "GET runt
 assert(secretsOnlyRuntimeBody.telegramBotUsername === "@steaviator", "runtime secrets throw não apaga o username leftover")
 assert(!secretsOnlyRuntimeBody.settingsUnread, "settings leftover confirmadas não ficam unread por causa dos secrets")
 assert(secretsOnlyRuntimeBody.telegram !== true, "sem token no env o runtime não finge bot ligado")
+const secretsOnlyLanding = await handleRequest(new Request("http://local.test/l"), secretsOnlyDownEnv, backgroundCtx())
+const secretsOnlyLandingHtml = await secretsOnlyLanding.text()
+assert(secretsOnlyLanding.status === 200 && secretsOnlyLandingHtml.includes("/t.js"), "GET /l secrets throw ainda serve o pixel")
+assert(
+  secretsOnlyLandingHtml.includes("data-abilion-cta") && secretsOnlyLandingHtml.includes("t.me/steaviator"),
+  "GET /l secrets throw não apaga o CTA leftover"
+)
+assert(!secretsOnlyLandingHtml.includes("Não confirmei o Telegram"), "GET /l leftover username não fica unread por causa dos secrets")
+assert(!secretsOnlyLandingHtml.includes("ainda não está ligado"), "GET /l leftover não usa a cópia de bot desligado")
+const secretsOnlyHealth = await handleRequest(new Request("http://local.test/api/health"), secretsOnlyDownEnv, backgroundCtx())
+const secretsOnlyHealthBody = (await secretsOnlyHealth.json()) as {
+  ok?: boolean
+  telegramBotUsername?: string
+  telegramBotUnread?: boolean
+}
+assert(secretsOnlyHealth.status === 200 && secretsOnlyHealthBody.ok, "GET health secrets throw continua de pé")
+assert(secretsOnlyHealthBody.telegramBotUsername === "@steaviator", "health secrets throw não apaga o username leftover")
+assert(!secretsOnlyHealthBody.telegramBotUnread, "health leftover confirmado não fica unread por causa dos secrets")
+const secretsOnlyInstall = await handleRequest(new Request("http://local.test/api/install"), secretsOnlyDownEnv, backgroundCtx())
+const secretsOnlyInstallBody = (await secretsOnlyInstall.json()) as { ok?: boolean; snippet?: string }
+assert(secretsOnlyInstall.status === 200 && secretsOnlyInstallBody.ok, "GET install secrets throw continua o manual")
+assert(secretsOnlyInstallBody.snippet?.includes("t.me/steaviator"), "install secrets throw não apaga o username leftover")
+const settingsBeforeSecretsInstall = await loadSettingsKv(runtimeHoleKv)
+const funnelsBeforeSecretsInstall = await loadFunnelsKv(runtimeHoleKv)
+await saveSettingsKv(
+  runtimeHoleKv,
+  migrateSettings({
+    ...settingsBeforeSecretsInstall,
+    pageScripts: [
+      {
+        id: "deadbeef",
+        name: "Landing leftover",
+        funnelId: "funil-secrets",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+  })
+)
+await saveFunnelsKv(runtimeHoleKv, [{ ...emptySalesFunnel("Quadro leftover"), id: "funil-secrets" }])
+const secretsOnlyInstallScript = await handleRequest(
+  new Request("http://local.test/api/install?s=deadbeef"),
+  secretsOnlyDownEnv,
+  backgroundCtx()
+)
+const secretsOnlyInstallScriptBody = (await secretsOnlyInstallScript.json()) as {
+  ok?: boolean
+  script?: { id?: string; funnelName?: string }
+}
+assert(secretsOnlyInstallScript.status === 200 && secretsOnlyInstallScriptBody.ok, "GET install?s= secrets throw continua de pé")
+assert(secretsOnlyInstallScriptBody.script?.id === "deadbeef", "install secrets throw não esconde o script leftover")
+assert(secretsOnlyInstallScriptBody.script?.funnelName === "Quadro leftover", "install secrets throw ainda lê o funil leftover")
+await saveSettingsKv(runtimeHoleKv, settingsBeforeSecretsInstall)
+await saveFunnelsKv(runtimeHoleKv, funnelsBeforeSecretsInstall)
+const secretsOnlyMcpHealth = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 241,
+      method: "tools/call",
+      params: { name: "abilion_health", arguments: {} },
+    }),
+  }),
+  secretsOnlyDownEnv,
+  backgroundCtx()
+)
+const secretsOnlyMcpHealthBody = (await secretsOnlyMcpHealth.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const secretsOnlyMcpHealthData = JSON.parse(secretsOnlyMcpHealthBody.result?.content?.[0]?.text || "{}") as {
+  ok?: boolean
+  telegramBotUsername?: string
+  unread?: boolean
+}
+assert(secretsOnlyMcpHealth.status === 200 && !secretsOnlyMcpHealthBody.result?.isError && secretsOnlyMcpHealthData.ok, "MCP health secrets throw continua de pé")
+assert(secretsOnlyMcpHealthData.telegramBotUsername === "@steaviator", "MCP health secrets throw não apaga o username leftover")
+assert(!secretsOnlyMcpHealthData.unread, "MCP health leftover confirmado não fica unread por causa dos secrets")
 const kvDownRuntimePost = await handleRequest(
   new Request("http://local.test/api/runtime", {
     method: "POST",
