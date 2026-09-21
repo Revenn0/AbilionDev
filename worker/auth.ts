@@ -709,32 +709,51 @@ export async function findUserByApiToken(snapshot: AuthSnapshot, token: string) 
   return null
 }
 
-export async function requestActor(request: Request, store: AuthStore): Promise<PublicUser | null> {
+/** Cookie/bearer com snapshot sem contas: unread, não logout. */
+export async function readActor(
+  request: Request,
+  store: AuthStore
+): Promise<{ user: PublicUser | null; unread: boolean }> {
   const cookie = readCookie(request)
   const bearer = readBearer(request)
-  if (!cookie && !bearer) return null
+  if (!cookie && !bearer) return { user: null, unread: false }
   const snapshot = prune(await store.load())
+  if (!snapshot.users.length) return { user: null, unread: true }
   if (cookie) {
     const session = snapshot.sessions.find((item) => item.token === cookie)
     const user = session ? snapshot.users.find((item) => item.id === session.userId) : null
-    if (user && !user.disabled) return publicUser(user)
+    if (user && !user.disabled) return { user: publicUser(user), unread: false }
   }
   if (bearer) {
     const found = await findUserByApiToken(snapshot, bearer)
-    if (found) return publicUser(found.user)
+    if (found) return { user: publicUser(found.user), unread: false }
   }
-  return null
+  return { user: null, unread: false }
+}
+
+export async function requestActor(request: Request, store: AuthStore): Promise<PublicUser | null> {
+  return (await readActor(request, store)).user
 }
 
 export async function sessionUser(request: Request, store: AuthStore) {
   return requestActor(request, store)
 }
 
+export async function gateActor(
+  request: Request,
+  store: AuthStore
+): Promise<{ ok: true; user: PublicUser } | { ok: false; response: Response }> {
+  const read = await readActor(request, store)
+  if (read.unread) return { ok: false, response: json({ error: "Não confirmei as contas." }, 503) }
+  if (!read.user) return { ok: false, response: json({ error: "Sessão expirada." }, 401) }
+  return { ok: true, user: read.user }
+}
+
 export async function handleAuth(request: Request, store: AuthStore, env?: { ABILION_OPERATOR_PASSWORD?: string; ABILION_ENV?: string }) {
   const url = new URL(request.url)
   const path = url.pathname
   const secure = url.protocol === "https:"
-  if (env?.ABILION_OPERATOR_PASSWORD) {
+  if (path === "/api/auth/login" && request.method === "POST" && env?.ABILION_OPERATOR_PASSWORD) {
     await ensureOperatorUsers(store, env.ABILION_OPERATOR_PASSWORD.trim())
   }
 
@@ -804,14 +823,18 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
   if (path === "/api/auth/logout" && request.method === "POST") {
     const token = readCookie(request)
     const snapshot = prune(await store.load())
-    if (token) snapshot.revoked = clipAuthTokens([token, ...(snapshot.revoked ?? [])], AUTH_REVOKED_CAP)
-    snapshot.sessions = snapshot.sessions.filter((item) => item.token !== token)
-    await store.save(snapshot)
+    if (snapshot.users.length) {
+      if (token) snapshot.revoked = clipAuthTokens([token, ...(snapshot.revoked ?? [])], AUTH_REVOKED_CAP)
+      snapshot.sessions = snapshot.sessions.filter((item) => item.token !== token)
+      await store.save(snapshot)
+    }
     return json({ ok: true }, 200, { "set-cookie": cookieHeader(null, secure) })
   }
 
   if (path === "/api/auth/me" && request.method === "GET") {
-    return json({ user: await sessionUser(request, store) })
+    const read = await readActor(request, store)
+    if (read.unread) return json({ error: "Não confirmei as contas." }, 503)
+    return json({ user: read.user })
   }
 
   if (path === "/api/auth/forgot" && request.method === "POST") {
@@ -825,6 +848,16 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
         : json({ error: "Informe o e-mail." }, 400)
     }
     let snapshot = prune(await store.load())
+    if (!snapshot.users.length) {
+      return html
+        ? authHtml(
+            authForgotDocument({
+              next: parsed.body.next,
+              done: "Em produção não enviamos e-mail. Entra e troca a senha em Configurações → Conta.",
+            })
+          )
+        : json({ ok: true })
+    }
     const guard = consumeThrottle(snapshot, `forgot:${clientIp(request)}`, 5, 15 * 60 * 1000)
     snapshot = guard.snapshot
     if (!guard.ok) {
@@ -862,6 +895,7 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
   if (path === "/api/auth/password" && request.method === "POST") {
     const token = readCookie(request)
     let snapshot = prune(await store.load())
+    if (token && !snapshot.users.length) return json({ error: "Não confirmei as contas." }, 503)
     const session = snapshot.sessions.find((item) => item.token === token)
     const user = session ? snapshot.users.find((item) => item.id === session.userId) : null
     if (!user) return json({ error: "Sessão expirada." }, 401)

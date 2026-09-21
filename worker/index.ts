@@ -1,4 +1,4 @@
-import { clientIp, consumeKvThrottle, consumeMemoryThrottle, handleAuth, isOwner, kvAuthStore, randomToken, requestHasAuth, sessionUser } from "./auth.ts"
+import { clientIp, consumeKvThrottle, consumeMemoryThrottle, gateActor, handleAuth, isOwner, kvAuthStore, randomToken, requestHasAuth, sessionUser } from "./auth.ts"
 import { handleMcp, handleFunnelImport } from "./mcp.ts"
 import { handleTokens, handleUsers } from "./users.ts"
 import { campaignFor } from "../src/lib/labels.ts"
@@ -276,13 +276,14 @@ async function handleMcpRoute(request: Request, env: Env) {
       return handleMcp(request, env, null)
     }
   }
-  const actor = await sessionUser(request, kvAuthStore(env.AUTH))
-  if (request.method === "POST" && actor) {
-    if (!(await consumeKvThrottle(env.AUTH, `mcp:${actor.id}:${ip}`, 60, 60_000))) {
+  const gate = await gateActor(request, kvAuthStore(env.AUTH))
+  if (!gate.ok) return gate.response
+  if (request.method === "POST") {
+    if (!(await consumeKvThrottle(env.AUTH, `mcp:${gate.user.id}:${ip}`, 60, 60_000))) {
       return json({ error: "Demasiados pedidos MCP. Espera um pouco." }, 429)
     }
   }
-  return handleMcp(request, env, actor)
+  return handleMcp(request, env, gate.user)
 }
 
 async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionContext) {
@@ -331,9 +332,10 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   }
 
   if (url.pathname === "/api/users" || url.pathname === "/api/tokens") {
+    const gated = await requireStudioUser(request, env)
+    if (!gated.ok) return gated.response
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
-    const actor = await sessionUser(request, kvAuthStore(env.AUTH))
-    if (!actor) return json({ error: "Sessão expirada." }, 401)
+    const actor = gated.user
     if (
       request.method !== "GET" &&
       !(await consumeKvThrottle(env.AUTH, `users:${actor.id}:${clientIp(request)}`, 30, 60_000))
@@ -345,9 +347,10 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   }
 
   if (url.pathname === "/api/funnels/import" && request.method === "POST") {
+    const gate = await requireStudioUser(request, env)
+    if (!gate.ok) return gate.response
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
-    const user = await sessionUser(request, kvAuthStore(env.AUTH))
-    if (!user) return json({ error: "Sessão expirada." }, 401)
+    const user = gate.user
     if (!(await consumeKvThrottle(env.AUTH, `funnels:${user.id}:${clientIp(request)}`, 20, 60_000))) {
       return json({ error: "Demasiados pedidos de importação. Espera um pouco." }, 429)
     }
@@ -411,18 +414,18 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   }
 
   if (url.pathname === "/api/track/summary" && request.method === "GET") {
+    const gate = await requireStudioUser(request, env)
+    if (!gate.ok) return gate.response
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
-    const user = await sessionUser(request, kvAuthStore(env.AUTH))
-    if (!user) return json({ error: "Sessão expirada." }, 401)
     const result = await summarizeWorkspaceTrack(env, await trackStore(env).load())
     if (!result.ok) return json({ error: "Não li os eventos do Postgres." }, 503)
     return json({ ok: true, summary: result.summary, trackUnread: result.unread || undefined })
   }
 
   if (url.pathname === "/api/runtime" && request.method === "GET") {
+    const gate = await requireStudioUser(request, env)
+    if (!gate.ok) return gate.response
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
-    const user = await sessionUser(request, kvAuthStore(env.AUTH))
-    if (!user) return json({ error: "Sessão expirada." }, 401)
     const hook = webhookUrl(request, env)
     const { resolved } = await runtimeOf(env, hook)
     const loaded = await readWorkspaceSettings(env)
@@ -436,9 +439,10 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   }
 
   if (url.pathname === "/api/runtime/voice" && request.method === "POST") {
+    const gate = await requireStudioUser(request, env)
+    if (!gate.ok) return gate.response
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
-    const user = await sessionUser(request, kvAuthStore(env.AUTH))
-    if (!user) return json({ error: "Sessão expirada." }, 401)
+    const user = gate.user
     if (!isOwner(user)) return json({ error: "Só o dono gera a voz da Sté." }, 403)
     if (!(await consumeKvThrottle(env.AUTH, `voice:${user.id}:${clientIp(request)}`, 5, 15 * 60_000))) {
       return json({ error: "Demasiados pedidos de voz. Espera um pouco." }, 429)
@@ -455,9 +459,10 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   }
 
   if (url.pathname === "/api/runtime" && request.method === "POST") {
+    const gate = await requireStudioUser(request, env)
+    if (!gate.ok) return gate.response
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
-    const user = await sessionUser(request, kvAuthStore(env.AUTH))
-    if (!user) return json({ error: "Sessão expirada." }, 401)
+    const user = gate.user
     if (!isOwner(user)) return json({ error: "Só o dono liga o bot e as chaves." }, 403)
     if (!(await consumeKvThrottle(env.AUTH, `runtime:${user.id}:${clientIp(request)}`, 10, 15 * 60_000))) {
       return json({ error: "Demasiados pedidos ao runtime. Espera um pouco." }, 429)
@@ -497,9 +502,9 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   }
 
   if (url.pathname === "/api/crm" && request.method === "GET") {
+    const gate = await requireStudioUser(request, env)
+    if (!gate.ok) return gate.response
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
-    const user = await sessionUser(request, kvAuthStore(env.AUTH))
-    if (!user) return json({ error: "Sessão expirada." }, 401)
     try {
       const boards = await readWorkspaceFunnels(env)
       const loaded = await readWorkspaceSettings(env)
@@ -516,9 +521,10 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   }
 
   if (url.pathname === "/api/crm" && request.method === "POST") {
+    const gate = await requireStudioUser(request, env)
+    if (!gate.ok) return gate.response
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
-    const user = await sessionUser(request, kvAuthStore(env.AUTH))
-    if (!user) return json({ error: "Sessão expirada." }, 401)
+    const user = gate.user
     if (!(await consumeKvThrottle(env.AUTH, `crm:${user.id}:${clientIp(request)}`, 80, 60_000))) {
       return json({ error: "Demasiados pedidos ao CRM. Espera um pouco." }, 429)
     }
@@ -590,9 +596,9 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   }
 
   if (url.pathname === "/api/leads" && request.method === "GET") {
+    const gate = await requireStudioUser(request, env)
+    if (!gate.ok) return gate.response
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
-    const user = await sessionUser(request, kvAuthStore(env.AUTH))
-    if (!user) return json({ error: "Sessão expirada." }, 401)
     const query = (url.searchParams.get("q") || "").trim()
     if (query) {
       if (query.length > 80) return json({ error: "Busca inválida." }, 400)
@@ -617,9 +623,10 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   }
 
   if (url.pathname === "/api/leads" && request.method === "POST") {
+    const gate = await requireStudioUser(request, env)
+    if (!gate.ok) return gate.response
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
-    const user = await sessionUser(request, kvAuthStore(env.AUTH))
-    if (!user) return json({ error: "Sessão expirada." }, 401)
+    const user = gate.user
     if (!(await consumeKvThrottle(env.AUTH, `leads:${user.id}:${clientIp(request)}`, 40, 60_000))) {
       return json({ error: "Demasiados pedidos de leads. Espera um pouco." }, 429)
     }
@@ -646,9 +653,10 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   }
 
   if (url.pathname === "/api/leads" && request.method === "DELETE") {
+    const gate = await requireStudioUser(request, env)
+    if (!gate.ok) return gate.response
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
-    const user = await sessionUser(request, kvAuthStore(env.AUTH))
-    if (!user) return json({ error: "Sessão expirada." }, 401)
+    const user = gate.user
     if (!(await consumeKvThrottle(env.AUTH, `leads-del:${user.id}:${clientIp(request)}`, 30, 60_000))) {
       return json({ error: "Demasiados pedidos de exclusão. Espera um pouco." }, 429)
     }
@@ -659,9 +667,9 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
   }
 
   if (url.pathname === "/api/inbox" && request.method === "GET") {
+    const gate = await requireStudioUser(request, env)
+    if (!gate.ok) return gate.response
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
-    const user = await sessionUser(request, kvAuthStore(env.AUTH))
-    if (!user) return json({ error: "Sessão expirada." }, 401)
     const cursor = (url.searchParams.get("cursor") || "").trim()
     if (cursor && !isLeadPageCursor(cursor)) return json({ error: "Cursor inválido." }, 400)
     const page = await loadMergedLeads(env, 400, "telegram", cursor)
@@ -1266,6 +1274,11 @@ function withSecurityHeaders(response: Response) {
     if (!next.has(key)) next.set(key, value)
   }
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers: next })
+}
+
+async function requireStudioUser(request: Request, env: Env) {
+  if (!env.AUTH) return { ok: false as const, response: json({ error: "Auth ainda sem KV." }, 503) }
+  return gateActor(request, kvAuthStore(env.AUTH))
 }
 
 function json(data: unknown, status = 200, extra?: Record<string, string>) {

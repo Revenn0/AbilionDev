@@ -113,7 +113,7 @@ import { barShare, catalogMetricPending, crmSyncAfterFlush, eventsSyncAfterNarro
 import { usersWriteBlocked } from "../src/lib/users-api.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { kvTrackStore, memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
-import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, handleAuth, hashApiToken, hashPassword, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
+import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, gateActor, handleAuth, hashApiToken, hashPassword, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, readActor, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTelegramClaims, telegramCall, telegramJoinActor, telegramUpdateActor } from "../worker/telegram.ts"
@@ -2315,6 +2315,39 @@ const meAnon = await handleAuth(new Request("http://local.test/api/auth/me"), me
 })
 const meAnonBody = (await meAnon.json()) as { user: unknown }
 assert(meAnon.status === 200 && meAnonBody.user === null, "me sem cookie devolve user null")
+const hollowMeStore = memoryAuthStore()
+const meCookieHollow = await handleAuth(
+  new Request("http://local.test/api/auth/me", { headers: { cookie: "abilion_session=oco" } }),
+  hollowMeStore,
+  { ABILION_ENV: "development", ABILION_OPERATOR_PASSWORD: "seedpass" }
+)
+assert(meCookieHollow.status === 503, "me com cookie e snapshot oco não é logout")
+assert((await hollowMeStore.load()).users.length === 0, "me não persiste seed em cima do snapshot oco")
+const meBearerHollow = await handleAuth(
+  new Request("http://local.test/api/auth/me", { headers: { authorization: "Bearer abn_oco" } }),
+  memoryAuthStore(),
+  { ABILION_ENV: "development" }
+)
+assert(meBearerHollow.status === 503, "me com bearer e snapshot oco não é logout")
+const hollowLogout = memoryAuthStore()
+const logoutHollow = await handleAuth(
+  new Request("http://local.test/api/auth/logout", { method: "POST", headers: { cookie: "abilion_session=oco" } }),
+  hollowLogout,
+  { ABILION_ENV: "development", ABILION_OPERATOR_PASSWORD: "seedpass" }
+)
+assert(logoutHollow.status === 200, "logout oco ainda limpa o cookie")
+assert((await hollowLogout.load()).users.length === 0, "logout oco não persiste seed")
+const hollowActor = await readActor(
+  new Request("http://local.test/api/auth/me", { headers: { cookie: "abilion_session=oco" } }),
+  memoryAuthStore()
+)
+assert(hollowActor.unread && !hollowActor.user, "readActor marca snapshot oco como unread")
+const hollowGate = await gateActor(
+  new Request("http://local.test/api/leads", { headers: { cookie: "abilion_session=oco" } }),
+  memoryAuthStore()
+)
+assert(!hollowGate.ok && hollowGate.response.status === 503, "gateActor recusa snapshot oco com 503")
+assert(!noteUnauthorized({ status: 503 }), "503 de contas unread não é sessão expirada")
 const passwordWrong = await handleAuth(
   new Request("http://local.test/api/auth/password", {
     method: "POST",
@@ -2830,6 +2863,18 @@ const deniedLeads = await handleRequest(
 assert(deniedLeads.status === 401, "leads sem sessão é 401")
 const deniedLeadList = await handleRequest(new Request("http://local.test/api/leads"), apiEnv, backgroundCtx())
 assert(deniedLeadList.status === 401, "lista de leads sem sessão é 401")
+const hollowLeads = await handleRequest(
+  new Request("http://local.test/api/leads", { headers: { cookie: "abilion_session=oco" } }),
+  { ...apiEnv, AUTH: memoryKv() } as Env,
+  backgroundCtx()
+)
+assert(hollowLeads.status === 503, "lista com cookie e snapshot oco não é logout")
+const hollowCrm = await handleRequest(
+  new Request("http://local.test/api/crm", { headers: { cookie: "abilion_session=oco" } }),
+  { ...apiEnv, AUTH: memoryKv() } as Env,
+  backgroundCtx()
+)
+assert(hollowCrm.status === 503, "CRM com cookie e snapshot oco não é logout")
 const deniedSummary = await handleRequest(new Request("http://local.test/api/track/summary"), apiEnv, backgroundCtx())
 assert(deniedSummary.status === 401, "analytics sem sessão é 401")
 assert(rowToTrackEvent({ id: "ev-1", visitor_id: "aabbcc11", kind: "view", at: "2026-01-01T00:00:00.000Z" })?.visitorId === "aabbcc11", "page_events vira evento do pixel")
