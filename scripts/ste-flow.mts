@@ -93,7 +93,7 @@ import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS
 import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
 import { LEAD_WRITE_BATCH, leadWriteAdopted, leadWriteChunks, leadWriteIds } from "../src/lib/runtime-api.ts"
 import { remoteSearchBlank } from "../src/lib/lead-search.ts"
-import { foldPublicPath, safeAppPath, withSafeNext } from "../src/lib/safe-path.ts"
+import { foldPublicPath, foldStudioPath, safeAppPath, withSafeNext } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { contactLookups, normalizeTelegramContact, sameLeadContact, validateCapture } from "../src/lib/capture.ts"
 import { displayContact, draftLeadField, formatPhoneContact, isPhoneLikeName, isResolvedPersonName, leadMatchesQuery, nameFromMessages, preferLeadName, resolveLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
@@ -1948,6 +1948,8 @@ assert(csvCell("-2+3") === '"\'-2+3"', "csv não executa menos")
 assert(leadsToCsv([lead()]).includes("lead-1"), "csv inclui o id")
 
 assert(safeAppPath("/leads") === "/leads", "rota interna passa")
+assert(safeAppPath("/Leads") === "/leads", "next /Leads não cai no dashboard")
+assert(safeAppPath("/FLUXO/funil/AbC") === "/fluxo/funil/AbC", "next do editor maiúsculo conserva o id")
 assert(safeAppPath("/configuracoes?tab=conta") === "/configuracoes?tab=conta", "query da conta passa")
 assert(safeAppPath("//evil.com") === "/", "protocol-relative nao redireciona")
 assert(safeAppPath("/\\evil") === "/", "backslash nao redireciona")
@@ -1962,6 +1964,11 @@ assert(foldPublicPath("/L/") === "/l", "L/ é a landing")
 assert(foldPublicPath("/RESET") === "/reset", "RESET é o HTML do reset")
 assert(foldPublicPath("/T.js") === "/t.js", "T.js é o pixel")
 assert(foldPublicPath("/leads") === "/leads", "painel não muda de path")
+assert(foldStudioPath("/Leads") === "/leads", "Leads maiúsculo vai ao painel")
+assert(foldStudioPath("/leads") === null, "leads canónico não redirecciona")
+assert(foldStudioPath("/FLUXO/funil/AbC") === "/fluxo/funil/AbC", "editor maiúsculo conserva o id")
+assert(foldStudioPath("/fluxo/funil/AbC") === null, "editor canónico não redirecciona")
+assert(foldStudioPath("/Configuracoes/") === "/configuracoes", "barra extra no studio dobra")
 assert(safeAppPath("/utilizadores") === "/utilizadores", "gestor de contas passa no next")
 assert(withSafeNext("/forgot", "/leads") === "/forgot?next=%2Fleads", "forgot conserva o next")
 assert(withSafeNext("/login", "//evil.com") === "/login", "next perigoso não entra no forgot")
@@ -4987,6 +4994,19 @@ const apiCase = await handleRequest(
 )
 const apiCaseBody = (await apiCase.json()) as { ok?: boolean }
 assert(apiCase.status === 200 && apiCaseBody.ok, "GET /Api/health é a API do Worker")
+const leadsCase = await handleRequest(
+  new Request("http://local.test/Leads?q=ana"),
+  {
+    ...liveEnv,
+    ASSETS: {
+      fetch: async () => {
+        throw new Error("assets down")
+      },
+    },
+  } as Env,
+  backgroundCtx()
+)
+assert(leadsCase.status === 303 && leadsCase.headers.get("location") === "/leads?q=ana", "GET /Leads não cai no 404 do SPA")
 const forgotHtml = await handleRequest(new Request("http://local.test/forgot"), liveEnv, backgroundCtx())
 assert(forgotHtml.status === 200 && (await forgotHtml.text()).includes('action="/api/auth/forgot"'), "GET /forgot é HTML do Worker")
 const resetEmptyHtml = await handleRequest(

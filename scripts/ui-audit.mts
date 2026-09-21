@@ -224,6 +224,11 @@ try {
     assert(await page.$("main#conteudo"), `${route} tem o alvo do skip-link no main`)
   }
 
+  await open(page, "/Leads")
+  assert(page.url().includes("/leads"), "/Leads redirecciona para o CRM")
+  await page.waitForSelector("h1", { timeout: 10_000 })
+  assert(!(await page.$eval("h1", (el) => (el.textContent || "").includes("não encontrada"))), "/Leads não cai no 404")
+
   await open(page, "/")
   assert(
     Boolean(await page.$('a[href="/telegram#pixel"]')),

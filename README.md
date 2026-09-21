@@ -195,7 +195,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `GET /api/cron` | `CRON_SECRET` obrigatório; cada espera corre isolada |
 | `GET /t.js` | pixel. `/T.js` também |
 | `GET /l` | público: HTML da landing do anúncio (`t.js` + CTA). `?s=` escolhe o script. `/L` e `/L/` também |
-| `GET /login` | público: HTML do formulário. Com sessão, 303 para o `next` seguro. `/Login` também |
+| `GET /login` | público: HTML do formulário. Com sessão, 303 para o `next` seguro. `/Login` também. `/Leads`, `/FLUXO` e o resto do painel em maiúsculas fazem 303 para a rota canónica — o React não mostra 404. O `next` do login também dobra `/Leads` → `/leads` |
 | `GET /forgot` | público: HTML do pedido de reset. `/Forgot` também |
 | `GET /reset` | público: HTML da nova senha (`?token=`). Sem token mostra o empty state. `/Reset` também |
 | `GET /privacidade` | público: HTML da política. `/Privacidade` também |

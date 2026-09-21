@@ -9,7 +9,7 @@ import { campaignFromStart, originFromStart, parseTelegramStart, scriptIdFromSta
 import { applyEvent, canAdvanceRemoteWait, dueWaits, pickLiveDueLead, snapshotForLead } from "../src/lib/runtime.ts"
 import { adsLandingDocument, pageInstallManual, pageScriptById } from "../src/lib/page-script.ts"
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument } from "../src/lib/auth-pages.ts"
-import { foldPublicPath, safeAppPath } from "../src/lib/safe-path.ts"
+import { foldPublicPath, foldStudioPath, safeAppPath } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { BANCA_FIXED, type Lead, type LeadEvent, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types.ts"
 import { compactGeo, factsFromGeo } from "../src/lib/geo.ts"
@@ -246,6 +246,17 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext) {
     const apiUrl = new URL(request.url)
     apiUrl.pathname = path
     return withSecurityHeaders(await handleApi(request, env, apiUrl, ctx))
+  }
+  if (request.method === "GET" || request.method === "HEAD") {
+    const dest = foldStudioPath(url.pathname)
+    if (dest) {
+      return withSecurityHeaders(
+        new Response(null, {
+          status: 303,
+          headers: { location: `${dest}${url.search}`, "cache-control": "no-store" },
+        })
+      )
+    }
   }
   return withSecurityHeaders(await env.ASSETS.fetch(request))
 }

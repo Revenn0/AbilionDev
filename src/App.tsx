@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react"
-import { BrowserRouter, Navigate, Route, Routes, useSearchParams } from "react-router-dom"
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useSearchParams } from "react-router-dom"
 import { AppShell } from "@/components/layout/app-shell"
 import { OfflineBanner } from "@/components/layout/offline-banner"
 import { RouteError } from "@/components/layout/route-error"
@@ -10,7 +10,7 @@ import { LandingPage } from "@/pages/landing"
 import { NotFoundPage } from "@/pages/not-found"
 import { PrivacyPage } from "@/pages/privacy"
 import { ResetPage } from "@/pages/reset"
-import { safeAppPath } from "@/lib/safe-path"
+import { foldStudioPath, safeAppPath } from "@/lib/safe-path"
 import { useStore } from "@/lib/store"
 
 const FluxoPage = lazy(() => import("@/pages/fluxo").then((m) => ({ default: m.FluxoPage })))
@@ -28,6 +28,13 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   if (!ready) return <PageFallback />
   if (state.user) return <Navigate to={safeAppPath(params.get("next"))} replace />
   return children
+}
+
+function StudioCaseRedirect() {
+  const location = useLocation()
+  const dest = foldStudioPath(location.pathname)
+  if (dest) return <Navigate to={`${dest}${location.search}`} replace />
+  return <NotFoundPage />
 }
 
 function PageFallback() {
@@ -76,7 +83,7 @@ function AppRoutes() {
                   <Route path="/telegram" element={<TelegramPage />} />
                   <Route path="/utilizadores" element={<UsersPage />} />
                   <Route path="/configuracoes" element={<SettingsPage />} />
-                  <Route path="*" element={<NotFoundPage />} />
+                  <Route path="*" element={<StudioCaseRedirect />} />
                 </Routes>
               </Suspense>
             </RouteError>
