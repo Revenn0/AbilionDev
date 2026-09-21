@@ -17,10 +17,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useStore } from "@/lib/store"
+import { funnelsListBlocked } from "@/lib/crm"
 import { addLeadCategory, leadCategoriesListBlocked, leadFromImport, leadImportGroupBlocked, mergeLeadCategories, parseLeadImportText } from "@/lib/lead-category"
 import { captureAgainstFunnels } from "@/lib/templates"
 import { ORIGIN_LABEL, STAGE_LABEL, TEMP_LABEL } from "@/lib/labels"
-import { isImportedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadsHydrating } from "@/lib/ops"
+import { isImportedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadWritesBlocked, leadsHydrating } from "@/lib/ops"
 import { applyEvent, nodeTitle, publishedSnapshot, type RuntimeEvent } from "@/lib/runtime"
 import { canTickSteLocally } from "@/lib/ste"
 import { timeAgo } from "@/lib/format"
@@ -64,6 +65,9 @@ export function LeadsPage() {
     [state.leads, state.settings.leadCategories]
   )
   const categoriesUnread = leadCategoriesListBlocked(settingsSync !== "ok", state.settings.leadCategories)
+  const funnelsUnread = funnelsListBlocked(crmSync !== "ok", state.funnels)
+  const captureBlocked = leadWritesBlocked(persistSync, funnelsUnread)
+  const importBlocked = leadWritesBlocked(persistSync)
   const createCategory = (name: string) => {
     if (categoriesUnread) return { ok: false as const, error: "Não confirmei as categorias." }
     const made = addLeadCategory(state.settings.leadCategories, name)
@@ -98,10 +102,35 @@ export function LeadsPage() {
           ]}
         />
         <PageChrome icon={Users} title="Leads">
-          <Button variant="outline" className="h-8 rounded-full px-3.5" onClick={() => setImporting(true)}>
+          <Button
+            variant="outline"
+            className="h-8 rounded-full px-3.5"
+            data-lead-import={importBlocked ? (persistSync === "idle" ? "loading" : "error") : "ok"}
+            disabled={importBlocked}
+            title={importBlocked ? "Não confirmei os leads no Worker." : undefined}
+            onClick={() => {
+              if (importBlocked) return
+              setImporting(true)
+            }}
+          >
             <Upload /> Importar lista
           </Button>
-          <Button className="h-8 rounded-full px-3.5" onClick={() => setOpen(true)}>
+          <Button
+            className="h-8 rounded-full px-3.5"
+            data-lead-capture={captureBlocked ? (persistSync === "idle" || crmSync === "idle" ? "loading" : "error") : "ok"}
+            disabled={captureBlocked}
+            title={
+              captureBlocked
+                ? persistSync !== "ok"
+                  ? "Não confirmei os leads no Worker."
+                  : "Não confirmei os funis no Worker."
+                : undefined
+            }
+            onClick={() => {
+              if (captureBlocked) return
+              setOpen(true)
+            }}
+          >
             <Plus /> Nova captura
           </Button>
         </PageChrome>
@@ -243,6 +272,14 @@ export function LeadsPage() {
         funnels={state.funnels}
         categories={categories}
         categoriesUnread={categoriesUnread}
+        blocked={captureBlocked}
+        blockedReason={
+          captureBlocked
+            ? persistSync !== "ok"
+              ? "Não confirmei os leads no Worker."
+              : "Não confirmei os funis no Worker."
+            : undefined
+        }
         onCategory={createCategory}
       />
       <ImportLeadsDialog
@@ -252,6 +289,7 @@ export function LeadsPage() {
         categoriesUnread={categoriesUnread}
         groupUrl={state.settings.telegramGroupUrl}
         settingsSync={settingsSync}
+        blocked={importBlocked}
         onCategory={createCategory}
         onImport={async (leads) => createLeads(leads)}
       />
@@ -282,6 +320,8 @@ function CaptureDialog({
   funnels,
   categories,
   categoriesUnread,
+  blocked,
+  blockedReason,
   onCategory,
 }: {
   open: boolean
@@ -290,6 +330,8 @@ function CaptureDialog({
   funnels: SalesFunnel[]
   categories: string[]
   categoriesUnread?: boolean
+  blocked?: boolean
+  blockedReason?: string
   onCategory: (name: string) => { ok: true; category: string } | { ok: false; error: string }
 }) {
   const [name, setName] = useState("")
@@ -301,7 +343,7 @@ function CaptureDialog({
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
-    if (creating.current) return
+    if (creating.current || blocked) return
     const check = validateCapture(name, contact)
     if (!check.ok) {
       setErrors(check.errors)
@@ -337,6 +379,12 @@ function CaptureDialog({
           <DialogDescription>O lead entra no funil publicado — não numa planilha.</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-3">
+          {blocked ? (
+            <p role="alert" className="text-[12.5px] text-destructive">
+              {blockedReason || "Não confirmei os leads no Worker."}
+            </p>
+          ) : null}
+          <fieldset disabled={blocked} className="min-w-0 space-y-3 border-0 p-0">
           <Field
             id="lead-name"
             label="Nome"
@@ -381,11 +429,14 @@ function CaptureDialog({
             onChange={setCategory}
             onCreate={onCategory}
           />
+          </fieldset>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
-            <Button type="submit">Guardar no CRM</Button>
+            <Button type="submit" disabled={blocked}>
+              Guardar no CRM
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -470,6 +521,7 @@ function ImportLeadsDialog({
   categoriesUnread,
   groupUrl,
   settingsSync,
+  blocked,
   onCategory,
   onImport,
 }: {
@@ -479,6 +531,7 @@ function ImportLeadsDialog({
   categoriesUnread?: boolean
   groupUrl?: string
   settingsSync: "idle" | "ok" | "error"
+  blocked?: boolean
   onCategory: (name: string) => { ok: true; category: string } | { ok: false; error: string }
   onImport: (leads: Lead[]) => Promise<boolean>
 }) {
@@ -492,6 +545,10 @@ function ImportLeadsDialog({
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
     if (busy.current) return
+    if (blocked) {
+      setError("Não confirmei os leads no Worker.")
+      return
+    }
     const parsed = parseLeadImportText(text)
     if (parsed.error) {
       setError(parsed.error)
@@ -536,6 +593,12 @@ function ImportLeadsDialog({
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-3">
+          {blocked ? (
+            <p role="alert" className="text-[12.5px] text-destructive">
+              Não confirmei os leads no Worker.
+            </p>
+          ) : null}
+          <fieldset disabled={blocked} className="min-w-0 space-y-3 border-0 p-0">
           <div className="space-y-1.5">
             <Label htmlFor="lead-import-text">Lista</Label>
             <Textarea
@@ -593,11 +656,14 @@ function ImportLeadsDialog({
               . Os contactos ficam no passo grupo, sem a Sté a falar.
             </span>
           </label>
+          </fieldset>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
-            <Button type="submit">Importar</Button>
+            <Button type="submit" disabled={blocked}>
+              Importar
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

@@ -356,6 +356,18 @@ try {
   await page.waitForFunction(() => document.body.innerText.includes("Funil não encontrado"), { timeout: 10_000 })
 
   await open(page, "/leads")
+  await page.waitForFunction(
+    () => document.querySelector("[data-lead-import]")?.getAttribute("data-lead-import") === "ok",
+    { timeout: 10_000 }
+  )
+  assert(
+    (await page.$eval("[data-lead-import]", (el) => (el as HTMLButtonElement).disabled)) === false,
+    "leads com persistência ok deixa importar"
+  )
+  assert(
+    (await page.$eval("[data-lead-capture]", (el) => el.getAttribute("data-lead-capture"))) === "ok",
+    "leads com CRM confirmado deixa capturar"
+  )
   await clickNamed(page, "Importar lista")
   await page.waitForSelector("#lead-import-text", { timeout: 5_000 })
   assert(Boolean(await page.$("#lead-import-group")), "import deixa mandar a lista para o grupo")

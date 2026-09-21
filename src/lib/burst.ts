@@ -1,4 +1,5 @@
 import { factsFromGeo } from "./geo"
+import { leadWritesBlocked } from "./ops"
 import { replySte } from "./ste"
 import { campaignFromStart } from "./telegram-start"
 import { captureAgainstFunnels } from "./templates"
@@ -60,5 +61,5 @@ export function burstStartsBlocked(
   persistSync: "idle" | "ok" | "error",
   funnelsUnread: boolean
 ) {
-  return persistSync !== "ok" || funnelsUnread
+  return leadWritesBlocked(persistSync, funnelsUnread)
 }

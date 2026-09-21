@@ -107,7 +107,7 @@ import { leadCategoriesListBlocked, leadFromImport, leadImportGroupBlocked, pars
 import { burstFacebookLeads, burstStartsBlocked, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
-import { barShare, hasConversation, isImportedLead, isOperatorLockedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadsHydrating, leadsLoadFailed, metricPending } from "../src/lib/ops.ts"
+import { barShare, hasConversation, isImportedLead, isOperatorLockedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadWritesBlocked, leadsHydrating, leadsLoadFailed, metricPending } from "../src/lib/ops.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
 import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, handleAuth, hashApiToken, hashPassword, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
@@ -733,6 +733,10 @@ assert(burstStartsBlocked("idle", false), "hydrate ainda não solta o lote de 10
 assert(burstStartsBlocked("error", false), "GET falhou não solta o lote de 100")
 assert(burstStartsBlocked("ok", true), "funis unread ocas bloqueiam o lote de 100")
 assert(!burstStartsBlocked("ok", false), "CRM confirmado deixa simular 100 /start")
+assert(leadWritesBlocked("idle"), "hydrate ainda não solta captura nem import")
+assert(leadWritesBlocked("error"), "GET falhou não solta captura nem import")
+assert(leadWritesBlocked("ok", true), "funis unread ocas bloqueiam a captura")
+assert(!leadWritesBlocked("ok", false), "CRM confirmado deixa capturar e importar")
 const twentyOne = Array.from({ length: 21 }, (_, index) => ({ ...emptySalesFunnel(`n${index}`), id: `funil-${index}` }))
 assert(reconcileFunnels([], twentyOne).length === 21, "reconcile não corta o 21.º quadro à calada")
 assert(commitCrmFunnels([], twentyOne, [], []).length === 21, "commit do CRM não corta o 21.º à calada")

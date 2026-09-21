@@ -96,6 +96,14 @@ export function leadFilterPending(
   return metricPending(persistSync, count, extra)
 }
 
+/** Captura, import e lote: GET unread não é catálogo vazio. `funnelsUnread` bloqueia o que precisa do quadro. */
+export function leadWritesBlocked(
+  persistSync: "idle" | "ok" | "error",
+  funnelsUnread = false
+) {
+  return persistSync !== "ok" || funnelsUnread
+}
+
 export function barShare(value: number, total: number) {
   if (total <= 0) return 0
   return Math.round((value / total) * 100)
