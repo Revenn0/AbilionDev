@@ -7141,6 +7141,27 @@ assert(kvDownCrmSettingsBody.error !== "Falha interna.", "POST CRM settings KV t
 assert(kvDownCrmSettingsBody.ok !== true, "POST CRM settings KV throw não finge gravado")
 assert((await loadSettingsKv(runtimeHoleKv)).telegramBotUsername === settingsBeforeThrow.telegramBotUsername, "POST CRM settings KV throw não pisa o username leftover")
 assert((await loadSettingsKv(runtimeHoleKv)).telegramBotUsername !== "@ste_defs", "POST CRM settings KV throw não grava username unread")
+const settingsDownCrmGet = await handleRequest(
+  new Request("http://local.test/api/crm", { headers: { cookie: runtimeHoleCookie } }),
+  settingsThrowEnv,
+  backgroundCtx()
+)
+const settingsDownCrmGetBody = (await settingsDownCrmGet.json()) as {
+  ok?: boolean
+  error?: string
+  funnels?: Array<{ id?: string }>
+  settings?: { telegramBotUsername?: string }
+  settingsUnread?: boolean
+  funnelsUnread?: boolean
+}
+assert(settingsDownCrmGet.status === 200 && settingsDownCrmGetBody.ok, "GET CRM settings KV throw ainda manda os funis leftover")
+assert(settingsDownCrmGet.status !== 500, "GET CRM settings KV throw não é Falha interna")
+assert(settingsDownCrmGet.status !== 503, "GET CRM settings KV throw não esconde os funis leftover")
+assert(settingsDownCrmGetBody.funnels?.some((item) => item.id === "funil-throw"), "GET CRM settings KV throw não esconde o funil leftover")
+assert(settingsDownCrmGetBody.settingsUnread === true, "GET CRM settings KV throw marca definições unread")
+assert(!settingsDownCrmGetBody.settings, "GET CRM settings KV throw não manda definições ocas que limpam o painel")
+assert((await loadSettingsKv(runtimeHoleKv)).telegramBotUsername === settingsBeforeThrow.telegramBotUsername, "GET CRM settings KV throw não pisa o username leftover")
+assert((await loadFunnelsKv(runtimeHoleKv)).some((item) => item.id === "funil-throw"), "GET CRM settings KV throw não pisa o funil leftover")
 const funnelsThrowEnv = { ...runtimeHoleBase, AUTH: kvThrowsOn(runtimeHoleKv, CRM_FUNNELS) } as Env
 const funnelsThrowMcp = async (id: number, name: string, args: Record<string, unknown> = {}) =>
   handleRequest(
@@ -7154,6 +7175,23 @@ const funnelsThrowMcp = async (id: number, name: string, args: Record<string, un
   )
 const funnelsBeforeThrow = await loadFunnelsKv(runtimeHoleKv)
 assert(funnelsBeforeThrow.some((item) => item.id === "funil-throw"), "leftover do funil throw está no KV")
+const funnelsDownCrmGet = await handleRequest(
+  new Request("http://local.test/api/crm", { headers: { cookie: runtimeHoleCookie } }),
+  funnelsThrowEnv,
+  backgroundCtx()
+)
+const funnelsDownCrmGetBody = (await funnelsDownCrmGet.json()) as {
+  ok?: boolean
+  error?: string
+  funnels?: Array<{ id?: string }>
+  settings?: { telegramBotUsername?: string }
+}
+assert(funnelsDownCrmGet.status === 503, "GET CRM funnels KV throw é 503")
+assert(funnelsDownCrmGet.status !== 500, "GET CRM funnels KV throw não é Falha interna")
+assert(funnelsDownCrmGetBody.error === "Não li o CRM do Worker.", "GET CRM funnels KV throw pede confirmação")
+assert(!Array.isArray(funnelsDownCrmGetBody.funnels), "GET CRM funnels KV throw não manda lista vazia de funis")
+assert(funnelsDownCrmGetBody.ok !== true, "GET CRM funnels KV throw não mente ok")
+assert((await loadFunnelsKv(runtimeHoleKv)).some((item) => item.id === "funil-throw"), "GET CRM funnels KV throw não pisa o funil leftover")
 const kvDownMcpFunnels = await funnelsThrowMcp(230, "abilion_list_funnels")
 const kvDownMcpFunnelsBody = (await kvDownMcpFunnels.json()) as {
   result?: { isError?: boolean; content?: Array<{ text?: string }> }

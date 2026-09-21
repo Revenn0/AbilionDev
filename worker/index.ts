@@ -617,19 +617,26 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     const gate = await requireStudioUser(request, env)
     if (!gate.ok) return gate.response
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
+    let boards: { funnels: SalesFunnel[]; unread: boolean } | null = null
+    let loaded: { settings: Settings; unread: boolean } | null = null
     try {
-      const boards = await readWorkspaceFunnels(env)
-      const loaded = await readWorkspaceSettings(env)
-      return json({
-        ok: true,
-        funnels: boards.funnels,
-        settings: publicSettings(loaded.settings),
-        settingsUnread: loaded.unread || undefined,
-        funnelsUnread: boards.unread || undefined,
-      })
+      boards = await readWorkspaceFunnels(env)
     } catch {
-      return json({ error: "Não li o CRM do Worker." }, 503)
+      boards = null
     }
+    try {
+      loaded = await readWorkspaceSettings(env)
+    } catch {
+      loaded = null
+    }
+    if (!boards) return json({ error: "Não li o CRM do Worker." }, 503)
+    return json({
+      ok: true,
+      funnels: boards.funnels,
+      ...(loaded ? { settings: publicSettings(loaded.settings) } : {}),
+      settingsUnread: !loaded || loaded.unread || undefined,
+      funnelsUnread: boards.unread || undefined,
+    })
   }
 
   if (url.pathname === "/api/crm" && request.method === "POST") {
