@@ -16,7 +16,7 @@ import {
 import { handleTokens, handleUsers } from "./users.ts"
 import { filterLiveLeads, importOrAdoptLead, leadPageFromRemote, listLeadPage } from "./crm-store.ts"
 import { emptySecrets, loadSecrets, resolveRuntime } from "./runtime-secrets.ts"
-import { fetchRemoteLeadPage, fillLeadHoles, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceSettings, searchWorkspaceLeads } from "./workspace-settings.ts"
+import { fetchRemoteLeadPage, fillLeadHoles, loadWorkspaceFunnels, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceSettings, searchWorkspaceLeads } from "./workspace-settings.ts"
 import { readJsonStrict } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -473,7 +473,11 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     const funnels = await funnelsOf(env)
     const funnel = funnels.find((item) => item.id === str(args.funnelId).trim())
     if (!funnel?.production) throw new Error("Publica este funil antes de criar o script da página.")
-    const settings = await loadWorkspaceSettings(env)
+    const loaded = await readWorkspaceSettings(env)
+    if (pageScriptsListBlocked(loaded.unread, loaded.settings.pageScripts)) {
+      throw new Error("Não confirmei os scripts desta página.")
+    }
+    const settings = loaded.settings
     const made = addPageScript(
       settings.pageScripts,
       {
@@ -510,8 +514,12 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     if (!env.AUTH) throw new Error("Auth ainda sem KV.")
     const parsed = parseLeadImportText(str(args.text))
     if (parsed.error) throw new Error(parsed.error)
-    const settings = await loadWorkspaceSettings(env)
+    const loaded = await readWorkspaceSettings(env)
+    const settings = loaded.settings
     const toGroup = args.toGroup === true
+    if (toGroup && loaded.unread && !settings.telegramGroupUrl) {
+      throw new Error("Não confirmei o grupo do Telegram.")
+    }
     const named = addLeadCategory(settings.leadCategories, str(args.category) || (toGroup ? "Grupo" : ""))
     const category = named.ok ? named.category : ""
     if (named.ok && named.categories !== settings.leadCategories) {

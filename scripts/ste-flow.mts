@@ -6465,6 +6465,26 @@ const mcpHealthBoundData = JSON.parse(
   ((await mcpHealthBound.json()) as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
 ) as { telegramBound?: boolean }
 assert(mcpHealthBoundData.telegramBound === true, "MCP health lê o token gravado no KV")
+const mcpImportGroupUnread = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 98,
+      method: "tools/call",
+      params: { name: "abilion_import_leads", arguments: { text: "Rita, 11911112222", toGroup: true } },
+    }),
+  }),
+  mcpInstallDownEnv,
+  backgroundCtx()
+)
+const mcpImportGroupUnreadBody = (await mcpImportGroupUnread.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const mcpImportGroupUnreadData = JSON.parse(mcpImportGroupUnreadBody.result?.content?.[0]?.text || "{}") as { error?: string }
+assert(mcpImportGroupUnread.status === 200 && mcpImportGroupUnreadBody.result?.isError, "MCP não importa para o grupo se o URL unread")
+assert(mcpImportGroupUnreadData.error === "Não confirmei o grupo do Telegram.", "MCP import toGroup unread pede o grupo")
 
 const mcpImport = await handleRequest(
   new Request("http://local.test/mcp", {
@@ -6501,6 +6521,24 @@ const mcpPublish = await handleRequest(
 const mcpPublishBody = (await mcpPublish.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
 const mcpPublished = JSON.parse(mcpPublishBody.result?.content?.[0]?.text || "{}") as { ok?: boolean; funnel?: { published?: boolean } }
 assert(mcpPublish.status === 200 && mcpPublished.ok && mcpPublished.funnel?.published, "MCP publica funil")
+const mcpCreateUnread = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 99,
+      method: "tools/call",
+      params: { name: "abilion_create_page_script", arguments: { name: "Landing unread", funnelId: mcpCreated.id } },
+    }),
+  }),
+  mcpInstallDownEnv,
+  backgroundCtx()
+)
+const mcpCreateUnreadBody = (await mcpCreateUnread.json()) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }
+const mcpCreateUnreadData = JSON.parse(mcpCreateUnreadBody.result?.content?.[0]?.text || "{}") as { error?: string }
+assert(mcpCreateUnread.status === 200 && mcpCreateUnreadBody.result?.isError, "MCP não cria script se a lista unread está oca")
+assert(mcpCreateUnreadData.error === "Não confirmei os scripts desta página.", "MCP create unread pede confirmação da lista")
 
 const mcpPageScript = await handleRequest(
   new Request("http://local.test/mcp", {

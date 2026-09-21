@@ -152,7 +152,7 @@ export function PixelSnippet({ origin, botUsername }: { origin: string; botUsern
           />
         </div>
         <div className="sm:col-span-2">
-          <Button type="submit" className="rounded-full" disabled={busy || !boards.length || boardsUnread}>
+          <Button type="submit" className="rounded-full" disabled={busy || !boards.length || boardsUnread || scriptsUnread}>
             Criar script desta página
           </Button>
         </div>
