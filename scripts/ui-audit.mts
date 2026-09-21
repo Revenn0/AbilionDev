@@ -225,6 +225,7 @@ try {
   }
 
   await open(page, "/Leads")
+  await page.waitForFunction(() => location.pathname === "/leads", { timeout: 10_000 })
   assert(page.url().includes("/leads"), "/Leads redirecciona para o CRM")
   await page.waitForSelector("h1", { timeout: 10_000 })
   assert(!(await page.$eval("h1", (el) => (el.textContent || "").includes("não encontrada"))), "/Leads não cai no 404")
