@@ -3,6 +3,12 @@ import { cn } from "@/lib/utils"
 
 type ChartKey = "facebookAds" | "facebookViews" | "facebookClicks"
 
+const MARKS: { key: ChartKey; color: string }[] = [
+  { key: "facebookAds", color: "#38bdf8" },
+  { key: "facebookClicks", color: "#f9a8d4" },
+  { key: "facebookViews", color: "#2f6bff" },
+]
+
 function seriesValue(item: TrackPoint, key: ChartKey) {
   return item[key] ?? 0
 }
@@ -42,9 +48,16 @@ export function AreaChart({ series, className }: { series: TrackPoint[]; classNa
           />
         ))}
         <path d={area} fill="url(#views-fill)" />
-        <path d={toPath("facebookViews")} fill="none" stroke="#2f6bff" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
         <path d={toPath("facebookAds")} fill="none" stroke="#38bdf8" strokeWidth="1.8" strokeLinejoin="round" />
         <path d={toPath("facebookClicks")} fill="none" stroke="#f9a8d4" strokeWidth="1.8" strokeLinejoin="round" />
+        <path d={toPath("facebookViews")} fill="none" stroke="#2f6bff" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        {series.flatMap((item, index) =>
+          MARKS.flatMap((mark) => {
+            const value = seriesValue(item, mark.key)
+            if (value <= 0) return []
+            return [<circle key={`${item.day}-${mark.key}`} cx={x(index)} cy={y(value)} r="5" fill={mark.color} />]
+          })
+        )}
         {ticks.map((item) => {
           const index = series.indexOf(item)
           return (
