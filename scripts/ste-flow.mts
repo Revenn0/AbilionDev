@@ -7037,7 +7037,7 @@ const unreadDueEnv = {
 const unreadDueFetch = globalThis.fetch
 globalThis.fetch = (async (input: RequestInfo | URL) => {
   const url = String(input)
-  if (url.includes("wait_until")) throw new Error("postgres down")
+  if (url.includes("/rest/v1/leads")) throw new Error("postgres down")
   return new Response("[]", { status: 200, headers: { "content-type": "application/json" } })
 }) as typeof fetch
 try {
@@ -7048,6 +7048,59 @@ try {
   assert((await loadLead(unreadDueKv, "due-kv"))?.waitUntil !== unreadWait, "espera do KV avançou mesmo unread")
 } finally {
   globalThis.fetch = unreadDueFetch
+}
+
+const talkWait = new Date(Date.now() - 2000).toISOString()
+const talkKv = memoryKv()
+await upsertLeadKv(talkKv, {
+  ...lead("due-talk", "@duetalk"),
+  waitUntil: talkWait,
+  updatedAt: "2026-06-02T00:00:00.000Z",
+  memory: "ste:remarketing",
+  stePhase: "offer",
+  messages: [{ id: "m-kv", at: "2026-06-02T00:00:00.000Z", role: "user" as const, text: "agora" }],
+})
+const talkEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: talkKv,
+  CRON_SECRET: "cron",
+  ABILION_ENV: "development",
+} as Env
+const talkRow = {
+  id: "due-talk",
+  name: "Talk",
+  contact: "@duetalk",
+  channel: "telegram" as const,
+  campaign: "facebook",
+  origin: "facebook" as const,
+  temperature: "novo" as const,
+  stage: "welcome" as const,
+  memory: "ficha no backup",
+  facts: {},
+  messages: [{ id: "m-pg", at: "2026-06-01T00:00:00.000Z", role: "ste" as const, text: "já falámos" }],
+  wait_until: talkWait,
+  updated_at: "2026-06-01T00:00:00.000Z",
+  created_at: "2026-06-01T00:00:00.000Z",
+}
+const talkFetch = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL) => {
+  const url = String(input)
+  if (url.includes("/rest/v1/leads") && url.includes("id=in.") && url.includes("due-talk")) {
+    return new Response(JSON.stringify([talkRow]), { status: 200, headers: { "content-type": "application/json" } })
+  }
+  return new Response("[]", { status: 200, headers: { "content-type": "application/json" } })
+}) as typeof fetch
+try {
+  const talkCron = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), talkEnv, backgroundCtx())
+  const talkBody = (await talkCron.json()) as { ok?: boolean; advanced?: number }
+  assert(talkCron.status === 200 && talkBody.ok && (talkBody.advanced ?? 0) >= 1, "cron avança a espera hidratada")
+  const talked = await loadLead(talkKv, "due-talk")
+  assert(talked?.messages.some((item) => item.id === "m-pg"), "cron não responde sem as falas do backup")
+  assert(talked?.messages.some((item) => item.id === "m-kv"), "cron conserva as falas do KV")
+} finally {
+  globalThis.fetch = talkFetch
 }
 
 const funnelMissWait = new Date(Date.now() - 2000).toISOString()
