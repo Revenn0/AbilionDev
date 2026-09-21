@@ -37,6 +37,7 @@ import {
   adoptStoredLead,
   adoptOperatorLead,
   commitStoredLead,
+  restoreLeadAfterFailedSend,
   adoptRemoteFunnels,
   clipFunnelsKeepBoards,
   mergeLeadMessages,
@@ -1421,6 +1422,34 @@ assert(committed.memory === "nova", "POST velho do lead não apaga a nota mais n
 assert(committed.messages?.some((item) => item.id === "m-live"), "POST velho do lead não apaga a fala do tick")
 assert(commitStoredLead(null, staleWrite, liveWrite).memory === "nova", "upsert sem prev ainda une o KV mais novo")
 assert(commitStoredLead(olderLead, liveWrite).memory === "nova", "sem latest extra o commit cai no adopt")
+const queuedWait = {
+  ...olderLead,
+  waitUntil: "2026-09-21T00:00:00.000Z",
+  memory: "ste:remarketing",
+  stePhase: "offer" as const,
+  messages: [{ id: "m-old", role: "ste" as const, text: "boas", at: "2026-09-20T11:00:00.000Z" }],
+}
+const liveAfterSend = {
+  ...queuedWait,
+  waitUntil: undefined,
+  memory: "ste:welcome,ste:remarketing",
+  stePhase: "close" as const,
+  updatedAt: "2026-09-20T12:05:00.000Z",
+  messages: [
+    { id: "m-old", role: "ste" as const, text: "boas", at: "2026-09-20T11:00:00.000Z" },
+    { id: "m-ste-new", role: "ste" as const, text: "oferta", at: "2026-09-20T12:05:00.000Z" },
+    { id: "m-talk", role: "lead" as const, text: "quero o app", at: "2026-09-20T12:05:01.000Z" },
+  ],
+  lastMessage: "quero o app",
+}
+const restoredWait = restoreLeadAfterFailedSend(queuedWait, liveAfterSend)
+assert(restoredWait.waitUntil === queuedWait.waitUntil, "restore do cron devolve a espera")
+assert(restoredWait.memory === "ste:remarketing", "restore do cron devolve a memória de antes")
+assert(restoredWait.stePhase === "offer", "restore do cron devolve a fase")
+assert(restoredWait.messages?.some((item) => item.id === "m-talk"), "restore do cron conserva a fala do lead")
+assert(!restoredWait.messages?.some((item) => item.id === "m-ste-new"), "restore do cron não fica com a fala da Sté que não saiu")
+assert(restoredWait.messages?.some((item) => item.id === "m-old"), "restore do cron mantém o chat antigo")
+assert(restoreLeadAfterFailedSend(queuedWait, null).waitUntil === queuedWait.waitUntil, "restore sem KV vivo usa a fila")
 const telegramWait = {
   ...olderLead,
   id: "tg-flow",
@@ -4361,6 +4390,18 @@ const cronFailPrev = globalThis.fetch
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   if (String(input).includes("api.telegram.org")) {
     cronFailCalls += 1
+    const live = await loadLead(cronFailKv, "cron-403")
+    if (live) {
+      await upsertLeadKv(cronFailKv, {
+        ...live,
+        messages: [
+          ...(live.messages ?? []),
+          { id: "talk-mid", at: new Date().toISOString(), role: "lead", text: "quero o app" },
+        ],
+        lastMessage: "quero o app",
+        updatedAt: new Date().toISOString(),
+      })
+    }
     return new Response(JSON.stringify({ ok: false, description: "Forbidden" }), { status: 403 })
   }
   return cronFailPrev(input, init)
@@ -4372,6 +4413,7 @@ assert((cronFailBody.advanced ?? 1) === 0, "cron não conta avanço se o Telegra
 const cronFailLead = await loadLead(cronFailKv, "cron-403")
 assert(cronFailLead?.waitUntil === cronFailWait, "Telegram 403 devolve a espera")
 assert(!(cronFailLead?.messages ?? []).some((item) => item.role === "ste"), "Telegram 403 não grava remarketing")
+assert((cronFailLead?.messages ?? []).some((item) => item.text === "quero o app"), "Telegram 403 não apaga fala que chegou a meio")
 assert(cronFailCalls > 0, "cron tentou mandar")
 const cronFailAgain = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), cronFailEnv, backgroundCtx())
 assert(cronFailAgain.status === 200, "segundo cron com 403 corre")

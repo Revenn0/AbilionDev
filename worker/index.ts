@@ -19,6 +19,7 @@ import {
   adoptLeadStores,
   adoptOperatorLead,
   commitStoredLead,
+  restoreLeadAfterFailedSend,
   applyRemovedLeads,
   clipRemovedIds,
   enforceSinglePublished,
@@ -995,20 +996,35 @@ async function persistLeadAfterSend(env: Env, lead: Lead) {
 }
 
 async function restoreQueuedLead(env: Env, lead: Lead) {
-  return saveLead(env, { ...lead, updatedAt: new Date().toISOString() }, { replace: true })
+  if (!env.AUTH) return false
+  if (await isLeadRemoved(env.AUTH, lead.id)) return false
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const live = await loadLead(env.AUTH, lead.id)
+    const restored = sanitizeIncomingLead(restoreLeadAfterFailedSend(lead, live))
+    if (!restored) return false
+    if (!(await upsertLeadKv(env.AUTH, restored))) return false
+    const latest = await loadLead(env.AUTH, lead.id)
+    if (!latest) return false
+    const extras = (latest.messages ?? []).filter(
+      (item) => item.id && item.role !== "ste" && !(restored.messages ?? []).some((msg) => msg.id === item.id)
+    )
+    if (!extras.length && latest.waitUntil === restored.waitUntil && latest.memory === restored.memory) {
+      await persistRemoteLead(env, latest)
+      return true
+    }
+  }
+  return false
 }
 
-async function saveLead(env: Env, lead: Lead, opts?: { replace?: boolean }) {
+async function saveLead(env: Env, lead: Lead) {
   let bounded = sanitizeIncomingLead(lead)
   if (!bounded) return false
   if (env.AUTH) {
     if (await isLeadRemoved(env.AUTH, bounded.id)) return false
-    if (!opts?.replace) {
-      const prev = await loadLead(env.AUTH, bounded.id)
-      bounded = commitStoredLead(prev, bounded)
-      const latest = await loadLead(env.AUTH, bounded.id)
-      bounded = commitStoredLead(prev, bounded, latest)
-    }
+    const prev = await loadLead(env.AUTH, bounded.id)
+    bounded = commitStoredLead(prev, bounded)
+    const latest = await loadLead(env.AUTH, bounded.id)
+    bounded = commitStoredLead(prev, bounded, latest)
     if (!(await upsertLeadKv(env.AUTH, bounded))) return false
   }
   await persistRemoteLead(env, bounded)

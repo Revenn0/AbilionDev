@@ -166,6 +166,34 @@ export function commitStoredLead(prev: Lead | null, incoming: Lead, latest: Lead
   return adoptStoredLead(latest, first)
 }
 
+/**
+ * Cron: o Telegram recusou o envio. Volta a espera/fase de antes do avanço
+ * e conserva falas que chegaram a meio (webhook), sem as bolhas da Sté que não saíram.
+ */
+export function restoreLeadAfterFailedSend(queued: Lead, live: Lead | null): Lead {
+  const now = new Date().toISOString()
+  if (!live) return { ...queued, updatedAt: now }
+  const queuedIds = new Set((queued.messages ?? []).map((item) => item.id).filter(Boolean))
+  const extras = (live.messages ?? []).filter((item) => item.id && !queuedIds.has(item.id) && item.role !== "ste")
+  const messages = mergeLeadMessages(queued.messages ?? [], extras)
+  const last = messages.at(-1)
+  return {
+    ...live,
+    waitUntil: queued.waitUntil,
+    nodeId: queued.nodeId,
+    stage: queued.stage,
+    stePhase: queued.stePhase,
+    steBlocked: queued.steBlocked,
+    steQuiet: queued.steQuiet,
+    memory: queued.memory,
+    funnelId: queued.funnelId,
+    paused: queued.paused,
+    messages,
+    lastMessage: last?.text || queued.lastMessage,
+    updatedAt: now,
+  }
+}
+
 /** POST adoptou um id local noutro lead canónico — a ficha fantasma some. */
 export function remapAdoptedLeads(leads: Lead[], adopted: Record<string, string>): Lead[] {
   const pairs = Object.entries(adopted).filter(([from, to]) => from && to && from !== to)
