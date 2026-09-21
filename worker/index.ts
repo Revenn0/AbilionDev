@@ -62,7 +62,7 @@ import {
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
 import { readJsonObject, readJsonStrict, type JsonFail } from "./json-body.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall } from "./telegram.ts"
-import { loadWorkspaceFunnels, loadWorkspaceSettings } from "./workspace-settings.ts"
+import { loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings } from "./workspace-settings.ts"
 import type { KvLike } from "./kv.ts"
 
 type Fetcher = { fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> }
@@ -774,31 +774,7 @@ async function persistFunnels(env: Env, incoming: SalesFunnel[], incomingRemoved
         incoming.map(sanitizeIncomingFunnel).filter((item): item is SalesFunnel => Boolean(item))
       )
   if (!env.AUTH && clean.length > FUNNEL_CAP) throw new Error(`O estúdio aceita no máximo ${FUNNEL_CAP} funis.`)
-  if (!env.SUPABASE_SERVICE_ROLE) return
-  if (clean.length) {
-    await rest(env, "funnels", {
-      method: "POST",
-      headers: { Prefer: "resolution=merge-duplicates" },
-      body: JSON.stringify(
-        clean.map((funnel) => ({
-          id: funnel.id,
-          workspace_id: WORKSPACE,
-          name: funnel.name,
-          mode: funnel.mode,
-          status: funnel.status,
-          nodes: funnel.nodes,
-          edges: funnel.edges,
-          production: funnel.production ?? null,
-          updated_at: funnel.updatedAt,
-        }))
-      ),
-    })
-  }
-  const rows = (await rest<{ id: string }[]>(env, `funnels?workspace_id=eq.${WORKSPACE}&select=id`)) ?? []
-  const keep = new Set(clean.map((item) => item.id))
-  for (const row of rows.filter((item) => item.id && !keep.has(item.id)).slice(0, 40)) {
-    await rest(env, `funnels?id=eq.${encodeURIComponent(row.id)}&workspace_id=eq.${WORKSPACE}`, { method: "DELETE" })
-  }
+  await persistRemoteFunnels(env, clean)
 }
 
 async function persistSettings(env: Env, settings: Settings) {
@@ -807,12 +783,7 @@ async function persistSettings(env: Env, settings: Settings) {
   if (env.AUTH) {
     clean = await persistSettingsMerge(env.AUTH, incoming)
   }
-  if (!env.SUPABASE_SERVICE_ROLE) return
-  await rest(env, "settings", {
-    method: "POST",
-    headers: { Prefer: "resolution=merge-duplicates" },
-    body: JSON.stringify({ workspace_id: WORKSPACE, data: publicSettings(clean) }),
-  })
+  await persistRemoteSettings(env, clean)
 }
 
 async function loadFunnels(env: Env): Promise<SalesFunnel[]> {
@@ -984,58 +955,7 @@ async function saveLead(env: Env, lead: Lead, opts?: { replace?: boolean }) {
     }
     if (!(await upsertLeadKv(env.AUTH, bounded))) return false
   }
-  if (!env.SUPABASE_SERVICE_ROLE) return true
-  await rest(env, "leads", {
-    method: "POST",
-    headers: { Prefer: "resolution=merge-duplicates" },
-    body: JSON.stringify({
-      id: bounded.id,
-      workspace_id: WORKSPACE,
-      name: bounded.name,
-      contact: bounded.contact,
-      channel: bounded.channel,
-      campaign: bounded.campaign,
-      origin: bounded.origin,
-      start_payload: bounded.startPayload ?? null,
-      visitor_id: bounded.visitorId ?? null,
-      temperature: bounded.temperature,
-      stage: bounded.stage,
-      print_at: bounded.printAt ?? null,
-      banca_at: bounded.bancaAt ?? null,
-      memory: bounded.memory,
-      facts: bounded.facts ?? {},
-      last_message: bounded.lastMessage ?? null,
-      funnel_id: bounded.funnelId ?? null,
-      node_id: bounded.nodeId ?? null,
-      wait_until: bounded.waitUntil ?? null,
-      paused: bounded.paused ?? false,
-      messages: bounded.messages ?? [],
-      ste_phase: bounded.stePhase ?? null,
-      ste_blocked: bounded.steBlocked ?? false,
-      ste_quiet: bounded.steQuiet ?? false,
-      telegram_chat_id: bounded.telegramChatId ?? null,
-      updated_at: bounded.updatedAt,
-      created_at: bounded.createdAt,
-    }),
-  })
-  if (bounded.events.length) {
-    await rest(env, "lead_events", {
-      method: "POST",
-      headers: { Prefer: "resolution=merge-duplicates" },
-      body: JSON.stringify(
-        bounded.events.map((event: LeadEvent) => ({
-          id: event.id,
-          lead_id: bounded.id,
-          at: event.at,
-          kind: event.kind,
-          node_id: event.nodeId ?? null,
-          title: event.title ?? null,
-          body: event.body ?? null,
-          effect: event.effect ?? null,
-        }))
-      ),
-    })
-  }
+  await persistRemoteLead(env, bounded)
   return true
 }
 

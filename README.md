@@ -188,7 +188,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `GET/POST/PATCH /api/users` | sessão — lista; POST/PATCH só dono (máx. 40 contas) |
 | `GET/POST/DELETE /api/tokens` | sessão — token `abn_…` (o valor completo só no POST) |
 | `POST /api/funnels/import` | sessão — ManyChat / n8n / Typebot / Abilion / mensagens |
-| `POST /mcp` ou `/api/mcp` | Bearer ou cookie — JSON-RPC para agentes (60 / min por conta e IP). Settings, scripts e funis usam o mesmo merge KV+Postgres do painel |
+| `POST /mcp` ou `/api/mcp` | Bearer ou cookie — JSON-RPC para agentes (60 / min por conta e IP). Settings, scripts, funis e import de leads usam o mesmo merge e a mesma cópia Postgres do painel |
 | `GET /mcp` | público: `{ ok, name, version, install }` |
 | `GET /api/install` | público: manual do pixel + snippet (`?s=` para um script) |
 | `POST /api/telegram` | Telegram; `secret_token` do webhook |
@@ -222,7 +222,7 @@ No Claude Code / Claude Desktop, um exemplo está em [`mcp/claude.example.json`]
 }
 ```
 
-Ferramentas: saúde, listar/criar/desligar contas, listar/criar/importar/publicar funis, listar leads, importar lista (`abilion_import_leads`, `toGroup` mete no grupo), definições (sem segredos), criar e revogar token (`abilion_revoke_token`), manual e scripts de página (`abilion_page_install_manual`, `abilion_create_page_script`, recurso `abilion://install`). O dono é que cria ou altera contas (`abilion_patch_user`). Importar um funil deixa-o em rascunho até `abilion_publish_funnel`. POST autenticado em `/mcp` tem limite de 60 pedidos / minuto por conta e IP. POST sem cookie nem Bearer não lê o snapshot de contas: 20 / minuto por IP, e o tecto do IP é 120 / minuto.
+Ferramentas: saúde, listar/criar/desligar contas, listar/criar/importar/publicar funis, listar leads, importar lista (`abilion_import_leads`, `toGroup` mete no grupo), definições (sem segredos), criar e revogar token (`abilion_revoke_token`), manual e scripts de página (`abilion_page_install_manual`, `abilion_create_page_script`, recurso `abilion://install`). Criar funil, script ou import de leads grava o KV e a mesma cópia no Postgres (sem `category` na linha do lead). O dono é que cria ou altera contas (`abilion_patch_user`). Importar um funil deixa-o em rascunho até `abilion_publish_funnel`. POST autenticado em `/mcp` tem limite de 60 pedidos / minuto por conta e IP. POST sem cookie nem Bearer não lê o snapshot de contas: 20 / minuto por IP, e o tecto do IP é 120 / minuto.
 
 ## Limitações e bloqueios
 

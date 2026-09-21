@@ -85,7 +85,7 @@ import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.t
 import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
-import { loadWorkspaceFunnels } from "../worker/workspace-settings.ts"
+import { loadWorkspaceFunnels, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings } from "../worker/workspace-settings.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
@@ -1072,6 +1072,54 @@ const adoptGoneKv = memoryKv()
 await rememberRemovedFunnels(adoptGoneKv, [kvBoard.id])
 await saveFunnelsKv(adoptGoneKv, [kvBoard])
 assert((await loadWorkspaceFunnels({ AUTH: adoptGoneKv })).length === 0, "loadWorkspaceFunnels aplica tombstone do funil")
+const remotePosts: string[] = []
+const remotePrev = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  const method = (init?.method || "GET").toUpperCase()
+  if (url.includes("/rest/v1/funnels") && method === "POST") {
+    remotePosts.push(String(init?.body || ""))
+    return new Response("", { status: 201 })
+  }
+  if (url.includes("/rest/v1/funnels") && method === "GET") {
+    return new Response(JSON.stringify([{ id: "gone-remote" }]), { status: 200 })
+  }
+  if (url.includes("/rest/v1/funnels") && method === "DELETE") {
+    remotePosts.push(`DELETE ${url}`)
+    return new Response("", { status: 204 })
+  }
+  if (url.includes("/rest/v1/settings") && method === "POST") {
+    remotePosts.push(String(init?.body || ""))
+    return new Response("", { status: 201 })
+  }
+  if (url.includes("/rest/v1/leads") && method === "POST") {
+    remotePosts.push(String(init?.body || ""))
+    return new Response("", { status: 201 })
+  }
+  return remotePrev(input, init)
+}) as typeof fetch
+const remoteEnv = { SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" }
+const remoteBoard = emptySalesFunnel("Quadro remoto")
+await persistRemoteFunnels(remoteEnv, [remoteBoard])
+assert(remotePosts.some((item) => item.includes(remoteBoard.id) && item.includes("Quadro remoto")), "persistRemoteFunnels grava o funil no Postgres")
+assert(remotePosts.some((item) => item.includes("DELETE") && item.includes("gone-remote")), "persistRemoteFunnels apaga funil que já não está no KV")
+await persistRemoteSettings(remoteEnv, migrateSettings({ telegramBotUsername: "@ste_bot" }))
+assert(remotePosts.some((item) => item.includes("@ste_bot")), "persistRemoteSettings grava settings no Postgres")
+const remoteLead = leadFromImport({ name: "Rita", contact: "@rita" })
+await persistRemoteLead(remoteEnv, remoteLead)
+assert(remotePosts.some((item) => item.includes(remoteLead.id) && item.includes("@rita")), "persistRemoteLead grava o lead no Postgres")
+assert(!remotePosts.some((item) => item.includes("\"category\"")), "persistRemoteLead não manda category ao Postgres")
+const wsPersistKv = memoryKv()
+const wsBoard = emptySalesFunnel("Quadro workspace")
+await persistWorkspaceFunnels({ AUTH: wsPersistKv, ...remoteEnv }, [wsBoard])
+assert((await loadFunnelsKv(wsPersistKv))[0]?.id === wsBoard.id, "persistWorkspaceFunnels grava o KV")
+assert(remotePosts.some((item) => item.includes(wsBoard.id)), "persistWorkspaceFunnels também grava o Postgres")
+await persistWorkspaceSettings({ AUTH: wsPersistKv, ...remoteEnv }, migrateSettings({ telegramBotUsername: "@ws_bot" }))
+assert(remotePosts.some((item) => item.includes("@ws_bot")), "persistWorkspaceSettings grava settings no Postgres")
+const postsBeforeSkip = remotePosts.length
+await persistRemoteFunnels({ AUTH: memoryKv() }, [remoteBoard])
+assert(remotePosts.length === postsBeforeSkip, "sem service role o persist remoto não fala com o Postgres")
+globalThis.fetch = remotePrev
 assert(
   !settingsPersistSettled(
     migrateSettings({ telegramBotUsername: "@a", leadCategories: ["VIP"] }),

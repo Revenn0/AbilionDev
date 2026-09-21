@@ -14,8 +14,8 @@ import {
   type PublicUser,
 } from "./auth.ts"
 import { handleTokens, handleUsers } from "./users.ts"
-import { filterLiveLeads, importOrAdoptLead, listLeadPage, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge } from "./crm-store.ts"
-import { loadWorkspaceFunnels, loadWorkspaceSettings } from "./workspace-settings.ts"
+import { filterLiveLeads, importOrAdoptLead, listLeadPage, lookupLeadsByQuery } from "./crm-store.ts"
+import { loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings } from "./workspace-settings.ts"
 import { readJsonStrict } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -267,8 +267,7 @@ async function funnelsOf(env: McpEnv): Promise<SalesFunnel[]> {
 }
 
 async function saveFunnels(env: McpEnv, funnels: SalesFunnel[]) {
-  if (!env.AUTH) throw new Error("Auth ainda sem KV.")
-  await persistFunnelsMerge(env.AUTH, funnels)
+  await persistWorkspaceFunnels(env, funnels)
 }
 
 async function publishFunnel(env: McpEnv, id: string) {
@@ -455,7 +454,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
       settings.removedPageScripts
     )
     if (!made.ok) throw new Error(made.error)
-    await persistSettingsMerge(env.AUTH, { ...settings, pageScripts: made.scripts })
+    await persistWorkspaceSettings(env, { ...settings, pageScripts: made.scripts })
     return { ...pageInstallManual({ botUsername: settings.telegramBotUsername, script: made.script, funnelName: funnel.name }), script: made.script }
   }
   if (name === "abilion_delete_page_script") {
@@ -465,7 +464,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     const settings = await loadWorkspaceSettings(env)
     const next = removePageScript(settings.pageScripts, id)
     if (next.length === settings.pageScripts.length) throw new Error("Este script já não está no estúdio.")
-    await persistSettingsMerge(env.AUTH, {
+    await persistWorkspaceSettings(env, {
       ...settings,
       pageScripts: next,
       removedPageScripts: clipNewestIds([...(settings.removedPageScripts ?? []), id], PAGE_SCRIPT_REMOVED_CAP),
@@ -481,13 +480,14 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     const named = addLeadCategory(settings.leadCategories, str(args.category) || (toGroup ? "Grupo" : ""))
     const category = named.ok ? named.category : ""
     if (named.ok && named.categories !== settings.leadCategories) {
-      await persistSettingsMerge(env.AUTH, { ...settings, leadCategories: named.categories })
+      await persistWorkspaceSettings(env, { ...settings, leadCategories: named.categories })
     }
     const imported = []
     for (const row of parsed.rows.slice(0, 50)) {
       const lead = leadFromImport(row, { category, toGroup, groupUrl: settings.telegramGroupUrl })
       const saved = await importOrAdoptLead(env.AUTH, lead)
       if (!saved) continue
+      await persistRemoteLead(env, saved)
       imported.push({ id: saved.id, name: saved.name, contact: saved.contact, category: saved.category, stage: saved.stage })
     }
     return { ok: true, imported: imported.length, leads: imported }
