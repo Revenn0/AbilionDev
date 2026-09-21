@@ -9,10 +9,13 @@ import {
   applyRemovedFunnels,
   applyRemovedLeads,
   crmDeleteAck,
+  crmStateAfterActorChange,
   leadDeleteAck,
   rememberLocalTombstone,
   restoreAfterFailedDelete,
   leadsStillOnRemote,
+  LEGACY_QUEUE_KEYS,
+  sessionQueueKeys,
   canCreateFunnel,
   canDeleteFunnel,
   cacheLeadsForStorage,
@@ -44,11 +47,6 @@ import { defaultSettings, type AppState, type Lead, type SalesFunnel, type Setti
 const KEY = "abilion.dev.v2"
 const LEGACY = "abilion.dev.v1"
 const SESSION = "abilion.dev.session"
-const REMOVED_LEADS = "abilion.dev.removed-leads"
-const REMOVED_FUNNELS = "abilion.dev.removed-funnels"
-const PENDING_LEADS = "abilion.dev.pending-leads"
-const PENDING_FUNNELS = "abilion.dev.pending-funnels"
-const PENDING_SETTINGS = "abilion.dev.pending-settings"
 
 const empty: AppState = {
   user: null,
@@ -120,25 +118,45 @@ function persistFlag(key: string, on: boolean) {
   }
 }
 
+function dropLegacyQueueKeys() {
+  for (const key of LEGACY_QUEUE_KEYS) {
+    try {
+      localStorage.removeItem(key)
+    } catch {
+      /* quota */
+    }
+  }
+}
+
+function clearQueueKeys(keys: ReturnType<typeof sessionQueueKeys>) {
+  persistIdSet(keys.pendingLeads, new Set())
+  persistIdSet(keys.pendingFunnels, new Set())
+  persistIdSet(keys.removedLeads, new Set(), LEAD_REMOVED_CAP)
+  persistIdSet(keys.removedFunnels, new Set())
+  persistFlag(keys.pendingSettings, false)
+}
+
 function bootState(): AppState {
   const firstVisit = !localStorage.getItem(KEY) && !localStorage.getItem(LEGACY)
   const saved = withSeed(readState(), firstVisit)
   saved.user = readUser()
+  const keys = sessionQueueKeys(saved.user?.id)
   return {
     ...saved,
-    leads: applyRemovedLeads(saved.leads, loadIdSet(REMOVED_LEADS, LEAD_REMOVED_CAP)),
-    funnels: applyRemovedFunnels(saved.funnels, [...loadIdSet(REMOVED_FUNNELS)]),
+    leads: applyRemovedLeads(saved.leads, loadIdSet(keys.removedLeads, LEAD_REMOVED_CAP)),
+    funnels: applyRemovedFunnels(saved.funnels, [...loadIdSet(keys.removedFunnels)]),
   }
 }
 
 function bootSession() {
   const state = bootState()
-  const pendingLeadIds = loadIdSet(PENDING_LEADS)
+  const keys = sessionQueueKeys(state.user?.id)
+  const pendingLeadIds = loadIdSet(keys.pendingLeads)
   const pendingLeads = new Map<string, Lead>()
   for (const lead of state.leads) {
     if (pendingLeadIds.has(lead.id)) pendingLeads.set(lead.id, lead)
   }
-  return { state, pendingLeads, pendingFunnels: loadIdSet(PENDING_FUNNELS) }
+  return { state, pendingLeads, pendingFunnels: loadIdSet(keys.pendingFunnels) }
 }
 
 type SyncState = "idle" | "ok" | "error"
@@ -190,19 +208,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const leadWriteTimer = useRef(0)
   const pendingLeadWrites = useRef(session.pendingLeads)
   const pendingFunnelIds = useRef(session.pendingFunnels)
-  const removedFunnelIds = useRef(loadIdSet(REMOVED_FUNNELS))
-  const removedLeadIds = useRef(loadIdSet(REMOVED_LEADS, LEAD_REMOVED_CAP))
+  const queueKeys = useRef(sessionQueueKeys(session.state.user?.id))
+  const removedFunnelIds = useRef(loadIdSet(queueKeys.current.removedFunnels))
+  const removedLeadIds = useRef(loadIdSet(queueKeys.current.removedLeads, LEAD_REMOVED_CAP))
   const crmHydrated = useRef(false)
   const funnelsConfirmed = useRef(false)
   const leadReadKnown = useRef(false)
   const lastLeadReadOk = useRef(false)
   const lastLeadWriteOk = useRef(true)
-  const settingsDirty = useRef(loadFlag(PENDING_SETTINGS))
+  const settingsDirty = useRef(loadFlag(queueKeys.current.pendingSettings))
   const lastGoodFunnels = useRef<SalesFunnel[]>([])
   const stateRef = useRef(state)
   const leadFlushRef = useRef(Promise.resolve(true))
   const crmFlushRef = useRef(Promise.resolve<{ ok: boolean; error?: string; queued?: boolean }>({ ok: true }))
   const hydrateLock = useRef<Promise<void> | null>(null)
+
+  const resetOptimisticState = (nextUserId?: string | null) => {
+    pendingLeadWrites.current = new Map()
+    pendingFunnelIds.current = new Set()
+    removedLeadIds.current = new Set()
+    removedFunnelIds.current = new Set()
+    settingsDirty.current = false
+    clearQueueKeys(queueKeys.current)
+    dropLegacyQueueKeys()
+    queueKeys.current = sessionQueueKeys(nextUserId)
+    clearQueueKeys(queueKeys.current)
+  }
 
   const resetLeadPersist = () => {
     leadReadKnown.current = false
@@ -238,7 +269,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       removedLeadIds.current.add(next)
       changed = true
     }
-    if (changed) persistIdSet(REMOVED_LEADS, removedLeadIds.current, LEAD_REMOVED_CAP)
+    if (changed) persistIdSet(queueKeys.current.removedLeads, removedLeadIds.current, LEAD_REMOVED_CAP)
   }
 
   const flushLeadWrites = (opts?: { keepalive?: boolean }): Promise<boolean> => {
@@ -247,7 +278,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       for (const id of [...pendingLeadWrites.current.keys()]) {
         if (removedLeadIds.current.has(id)) pendingLeadWrites.current.delete(id)
       }
-      persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
+      persistIdSet(queueKeys.current.pendingLeads, new Set(pendingLeadWrites.current.keys()))
       const batch = [...pendingLeadWrites.current.values()]
       if (!batch.length) {
         lastLeadWriteOk.current = true
@@ -278,8 +309,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           leads: remapAdoptedLeads(stateRef.current.leads, adopted),
         })
       }
-      persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
-      persistIdSet(REMOVED_LEADS, removedLeadIds.current, LEAD_REMOVED_CAP)
+      persistIdSet(queueKeys.current.pendingLeads, new Set(pendingLeadWrites.current.keys()))
+      persistIdSet(queueKeys.current.removedLeads, removedLeadIds.current, LEAD_REMOVED_CAP)
       const complete = batch.every((lead) => savedIds.has(lead.id) || removedLeadIds.current.has(lead.id))
       lastLeadWriteOk.current = result.ok && complete
       settleLeadPersist()
@@ -307,7 +338,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const queueLeadWrite = (lead: Lead) => {
     if (removedLeadIds.current.has(lead.id)) return
     pendingLeadWrites.current.set(lead.id, lead)
-    persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
+    persistIdSet(queueKeys.current.pendingLeads, new Set(pendingLeadWrites.current.keys()))
     window.clearTimeout(leadWriteTimer.current)
     leadWriteTimer.current = window.setTimeout(flushLeadWrites, 400)
   }
@@ -341,15 +372,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         for (const id of sentRemoved) {
           if (!stateRef.current.funnels.some((item) => item.id === id)) removedFunnelIds.current.delete(id)
         }
-        persistIdSet(REMOVED_FUNNELS, removedFunnelIds.current)
+        persistIdSet(queueKeys.current.removedFunnels, removedFunnelIds.current)
         const leftover = leftoverPendingFunnelIds(pendingFunnelIds.current, current.funnels, stateRef.current.funnels)
         pendingFunnelIds.current.clear()
         for (const id of leftover) pendingFunnelIds.current.add(id)
-        persistIdSet(PENDING_FUNNELS, pendingFunnelIds.current)
+        persistIdSet(queueKeys.current.pendingFunnels, pendingFunnelIds.current)
         lastGoodFunnels.current = applyRemovedFunnels(current.funnels, sentRemoved)
         if (settingsWriteFingerprint(stateRef.current.settings) === sentSettings) {
           settingsDirty.current = false
-          persistFlag(PENDING_SETTINGS, false)
+          persistFlag(queueKeys.current.pendingSettings, false)
         }
         if (pendingFunnelIds.current.size || removedFunnelIds.current.size || settingsDirty.current) pushWorker()
       } else {
@@ -438,7 +469,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return next
       })
       if (crm.ok) {
-        persistIdSet(PENDING_FUNNELS, pendingFunnelIds.current)
+        persistIdSet(queueKeys.current.pendingFunnels, pendingFunnelIds.current)
         crmHydrated.current = true
         if (pendingFunnelIds.current.size || removedFunnelIds.current.size || settingsDirty.current) pushWorker()
       }
@@ -477,6 +508,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const expire = () => {
+      resetOptimisticState(null)
       crmHydrated.current = false
       funnelsConfirmed.current = false
       lastGoodFunnels.current = []
@@ -620,29 +652,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
-      if (event.key === REMOVED_LEADS) {
-        const ids = loadIdSet(REMOVED_LEADS, LEAD_REMOVED_CAP)
+      if (event.key === queueKeys.current.removedLeads) {
+        const ids = loadIdSet(queueKeys.current.removedLeads, LEAD_REMOVED_CAP)
         let changed = false
         for (const id of ids) {
           if (removedLeadIds.current.has(id)) continue
           removedLeadIds.current.add(id)
           changed = true
         }
-        if (changed) persistIdSet(REMOVED_LEADS, removedLeadIds.current, LEAD_REMOVED_CAP)
+        if (changed) persistIdSet(queueKeys.current.removedLeads, removedLeadIds.current, LEAD_REMOVED_CAP)
         setState((prev) => {
           const leads = applyRemovedLeads(prev.leads, removedLeadIds.current)
           return leads === prev.leads ? prev : { ...prev, leads }
         })
       }
-      if (event.key === REMOVED_FUNNELS) {
-        const ids = loadIdSet(REMOVED_FUNNELS)
+      if (event.key === queueKeys.current.removedFunnels) {
+        const ids = loadIdSet(queueKeys.current.removedFunnels)
         let changed = false
         for (const id of ids) {
           if (removedFunnelIds.current.has(id)) continue
           removedFunnelIds.current.add(id)
           changed = true
         }
-        if (changed) persistIdSet(REMOVED_FUNNELS, removedFunnelIds.current)
+        if (changed) persistIdSet(queueKeys.current.removedFunnels, removedFunnelIds.current)
         setState((prev) => {
           const funnels = applyRemovedFunnels(prev.funnels, [...removedFunnelIds.current])
           return funnels === prev.funnels ? prev : { ...prev, funnels }
@@ -693,13 +725,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       state,
       login: async (email, password) => {
         const data = await loginRequest(email, password)
+        resetOptimisticState(data.user.id)
+        crmHydrated.current = false
+        funnelsConfirmed.current = false
+        lastGoodFunnels.current = []
+        resetLeadPersist()
         clearSessionExpired()
         setSessionSync("ok")
-        commitState({ ...stateRef.current, user: data.user })
+        setCrmSync("idle")
+        setInboxSync("idle")
+        setSettingsSync("idle")
+        setEventsSync("idle")
+        commitState(crmStateAfterActorChange(stateRef.current, data.user))
       },
       logout: async () => {
         await flushLeadWrites()
         await flushCrm()
+        resetOptimisticState(null)
         crmHydrated.current = false
         funnelsConfirmed.current = false
         lastGoodFunnels.current = []
@@ -719,9 +761,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           return
         }
         pendingFunnelIds.current.add(funnel.id)
-        persistIdSet(PENDING_FUNNELS, pendingFunnelIds.current)
+        persistIdSet(queueKeys.current.pendingFunnels, pendingFunnelIds.current)
         removedFunnelIds.current.delete(funnel.id)
-        persistIdSet(REMOVED_FUNNELS, removedFunnelIds.current)
+        persistIdSet(queueKeys.current.removedFunnels, removedFunnelIds.current)
         const prev = stateRef.current
         commitState({
           ...prev,
@@ -743,7 +785,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           }
         }
         pendingFunnelIds.current.add(funnel.id)
-        persistIdSet(PENDING_FUNNELS, pendingFunnelIds.current)
+        persistIdSet(queueKeys.current.pendingFunnels, pendingFunnelIds.current)
         const prev = stateRef.current
         const nextFunnels = exists
           ? prev.funnels.map((item) => (item.id === funnel.id ? funnel : item))
@@ -773,7 +815,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           return Promise.resolve(false)
         }
         pendingFunnelIds.current.delete(id)
-        persistIdSet(PENDING_FUNNELS, pendingFunnelIds.current)
+        persistIdSet(queueKeys.current.pendingFunnels, pendingFunnelIds.current)
         const prev = stateRef.current
         const doomed = prev.funnels.find((item) => item.id === id)
         removedFunnelIds.current.add(id)
@@ -783,7 +825,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (!ack.keepTombstone) {
             const nextRemoved = rememberLocalTombstone(removedFunnelIds.current, id, false)
             removedFunnelIds.current = new Set(nextRemoved)
-            persistIdSet(REMOVED_FUNNELS, removedFunnelIds.current)
+            persistIdSet(queueKeys.current.removedFunnels, removedFunnelIds.current)
             const funnels = restoreAfterFailedDelete(stateRef.current.funnels, doomed)
             if (funnels !== stateRef.current.funnels) commitState({ ...stateRef.current, funnels })
           }
@@ -795,9 +837,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const existing = prev.leads.find((item) => sameLeadContact(item.contact, lead.contact))
         const next = existing ? adoptOperatorLead(existing, { ...lead, id: existing.id }) : lead
         removedLeadIds.current.delete(next.id)
-        persistIdSet(REMOVED_LEADS, removedLeadIds.current, LEAD_REMOVED_CAP)
+        persistIdSet(queueKeys.current.removedLeads, removedLeadIds.current, LEAD_REMOVED_CAP)
         pendingLeadWrites.current.set(next.id, next)
-        persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
+        persistIdSet(queueKeys.current.pendingLeads, new Set(pendingLeadWrites.current.keys()))
         commitState({
           ...prev,
           leads: existing ? prev.leads.map((item) => (item.id === next.id ? next : item)) : [next, ...prev.leads],
@@ -816,8 +858,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           removedLeadIds.current.delete(next.id)
           pendingLeadWrites.current.set(next.id, next)
         }
-        persistIdSet(REMOVED_LEADS, removedLeadIds.current, LEAD_REMOVED_CAP)
-        persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
+        persistIdSet(queueKeys.current.removedLeads, removedLeadIds.current, LEAD_REMOVED_CAP)
+        persistIdSet(queueKeys.current.pendingLeads, new Set(pendingLeadWrites.current.keys()))
         const created = adopted.filter((lead) => !prev.leads.some((item) => item.id === lead.id))
         commitState({
           ...prev,
@@ -854,7 +896,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       deleteLead: (id) => {
         pendingLeadWrites.current.delete(id)
-        persistIdSet(PENDING_LEADS, new Set(pendingLeadWrites.current.keys()))
+        persistIdSet(queueKeys.current.pendingLeads, new Set(pendingLeadWrites.current.keys()))
         const prev = stateRef.current
         const doomed = prev.leads.find((item) => item.id === id)
         commitState({ ...prev, leads: prev.leads.filter((item) => item.id !== id) })
@@ -862,7 +904,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const ack = leadDeleteAck(result.status)
           const nextRemoved = rememberLocalTombstone(removedLeadIds.current, id, ack.keepTombstone)
           removedLeadIds.current = new Set(nextRemoved)
-          persistIdSet(REMOVED_LEADS, removedLeadIds.current, LEAD_REMOVED_CAP)
+          persistIdSet(queueKeys.current.removedLeads, removedLeadIds.current, LEAD_REMOVED_CAP)
           if (ack.keepTombstone) {
             const leads = applyRemovedLeads(stateRef.current.leads, removedLeadIds.current)
             if (leads !== stateRef.current.leads) commitState({ ...stateRef.current, leads })
@@ -877,7 +919,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       saveSettings: (patch) => {
         settingsDirty.current = true
-        persistFlag(PENDING_SETTINGS, true)
+        persistFlag(queueKeys.current.pendingSettings, true)
         const prev = stateRef.current
         commitState({
           ...prev,

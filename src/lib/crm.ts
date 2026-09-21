@@ -4,7 +4,7 @@ import { mergeLeadCategories } from "./lead-category.ts"
 import { isOperatorLockedLead } from "./ops.ts"
 import { preferLeadName } from "./lead-name.ts"
 import { applyRemovedPageScripts, mergePageScripts, PAGE_SCRIPT_REMOVED_CAP } from "./page-script.ts"
-import { defaultSettings, type ChatMessage, type Lead, type LeadEvent, type LeadFacts, type SalesFunnel, type Settings } from "./types.ts"
+import { defaultSettings, type AppState, type ChatMessage, type Lead, type LeadEvent, type LeadFacts, type SalesFunnel, type Settings, type User } from "./types.ts"
 
 const CAP = 400
 export const LEAD_LIST_CAP = 16_000
@@ -529,6 +529,58 @@ export function emptySettings(): Settings {
     pageScripts: [...defaultSettings.pageScripts],
     removedPageScripts: [...defaultSettings.removedPageScripts],
     leadCategories: [...defaultSettings.leadCategories],
+  }
+}
+
+export const QUEUE_PENDING_LEADS = "abilion.dev.pending-leads"
+export const QUEUE_PENDING_FUNNELS = "abilion.dev.pending-funnels"
+export const QUEUE_PENDING_SETTINGS = "abilion.dev.pending-settings"
+export const QUEUE_REMOVED_LEADS = "abilion.dev.removed-leads"
+export const QUEUE_REMOVED_FUNNELS = "abilion.dev.removed-funnels"
+
+export const LEGACY_QUEUE_KEYS = [
+  QUEUE_PENDING_LEADS,
+  QUEUE_PENDING_FUNNELS,
+  QUEUE_PENDING_SETTINGS,
+  QUEUE_REMOVED_LEADS,
+  QUEUE_REMOVED_FUNNELS,
+] as const
+
+/** Filas do painel: o id da conta entra na chave. Sem actor fica a chave antiga (login). */
+export function persistScopeKey(base: string, userId?: string | null) {
+  const id = (userId || "").trim()
+  if (!id || id.length > 80) return base
+  return `${base}:${id}`
+}
+
+export function sessionQueueKeys(userId?: string | null) {
+  return {
+    pendingLeads: persistScopeKey(QUEUE_PENDING_LEADS, userId),
+    pendingFunnels: persistScopeKey(QUEUE_PENDING_FUNNELS, userId),
+    pendingSettings: persistScopeKey(QUEUE_PENDING_SETTINGS, userId),
+    removedLeads: persistScopeKey(QUEUE_REMOVED_LEADS, userId),
+    removedFunnels: persistScopeKey(QUEUE_REMOVED_FUNNELS, userId),
+  }
+}
+
+export function sessionQueuesCleared() {
+  return {
+    pendingLeadIds: [] as string[],
+    pendingFunnelIds: [] as string[],
+    removedLeadIds: [] as string[],
+    removedFunnelIds: [] as string[],
+    settingsDirty: false,
+  }
+}
+
+/** Login/401: o cache local do operador A não entra na sessão do B. */
+export function crmStateAfterActorChange(prev: AppState, user: User | null): AppState {
+  return {
+    ...prev,
+    user,
+    leads: [],
+    funnels: [],
+    settings: emptySettings(),
   }
 }
 

@@ -46,6 +46,12 @@ import {
   applyRemovedFunnels,
   applyRemovedLeads,
   crmDeleteAck,
+  crmStateAfterActorChange,
+  persistScopeKey,
+  sessionQueueKeys,
+  sessionQueuesCleared,
+  QUEUE_PENDING_LEADS,
+  QUEUE_REMOVED_LEADS,
   leadDeleteAck,
   rememberLocalTombstone,
   restoreAfterFailedDelete,
@@ -1715,6 +1721,38 @@ const keptDirty = adoptHydrateSettings(dirtyLocal, staleRemote, true, {
 })
 assert(keptDirty.telegramBotUsername === "@novo", "settings sujo não pisa o username local")
 assert(keptDirty.telegramGroupUrl === "https://t.me/grupo", "settings sujo não pisa o grupo local")
+assert(persistScopeKey(QUEUE_PENDING_LEADS, "") === QUEUE_PENDING_LEADS, "sem actor a chave de fila fica a antiga")
+assert(persistScopeKey(QUEUE_PENDING_LEADS, "   ") === QUEUE_PENDING_LEADS, "actor vazio não inventa sufixo")
+assert(
+  persistScopeKey(QUEUE_REMOVED_LEADS, "op-a") === `${QUEUE_REMOVED_LEADS}:op-a`,
+  "tombstone do operador A não partilha a chave do B"
+)
+assert(
+  sessionQueueKeys("op-a").pendingLeads !== sessionQueueKeys("op-b").pendingLeads,
+  "fila de leads do A não é a do B"
+)
+assert(
+  sessionQueueKeys("op-a").removedLeads !== sessionQueueKeys("op-b").removedLeads,
+  "hide local do A não é o do B"
+)
+assert(!sessionQueuesCleared().pendingLeadIds.length && !sessionQueuesCleared().settingsDirty, "401 limpa a fila e o dirty")
+const actorA = { id: "op-a", name: "A", email: "a@abilion.com", role: "owner" as const }
+const actorB = { id: "op-b", name: "B", email: "b@abilion.com", role: "operator" as const }
+const leftoverCrm = {
+  user: actorA,
+  leads: [{ id: "lead-a" } as Lead],
+  funnels: [emptySalesFunnel()],
+  settings: { ...defaultSettings, telegramGroupUrl: "https://t.me/grupo-a" },
+}
+const afterLoginB = crmStateAfterActorChange(leftoverCrm, actorB)
+assert(afterLoginB.user?.id === "op-b", "login fica com o actor novo")
+assert(afterLoginB.leads.length === 0, "login não herda leads do operador anterior")
+assert(afterLoginB.funnels.length === 0, "login não herda funis do operador anterior")
+assert(!afterLoginB.settings.telegramGroupUrl, "login não herda o grupo local do A")
+assert(
+  crmStateAfterActorChange(leftoverCrm, null).user === null && crmStateAfterActorChange(leftoverCrm, null).leads.length === 0,
+  "logout não deixa o cache do A para o próximo login"
+)
 assert(keptDirty.plugins.telegram === true && keptDirty.plugins.forms === true, "settings sujo não pisa os plugins locais")
 assert(!keptDirty.plugins.reports, "settings sujo não adopta plugin remoto")
 const adoptedClean = adoptHydrateSettings(dirtyLocal, staleRemote, false, {
