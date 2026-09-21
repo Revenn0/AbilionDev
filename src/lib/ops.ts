@@ -92,7 +92,7 @@ export function leadFilterPending(
   filter: string,
   inboxFailed = false
 ) {
-  const extra = inboxFailed && (filter === "all" || filter === "telegram" || filter === "facebook")
+  const extra = inboxFailed && (filter === "all" || filter === "telegram")
   return metricPending(persistSync, count, extra)
 }
 

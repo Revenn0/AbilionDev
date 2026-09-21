@@ -6049,6 +6049,8 @@ assert(leadFilterPending("idle", 0, "telegram"), "filtro Telegram hidrata sem ca
 assert(!leadFilterPending("idle", 8, "whatsapp"), "filtro WhatsApp com cache já conta")
 assert(leadFilterPending("ok", 0, "telegram", true), "filtro Telegram com inbox falhada não finge vazio")
 assert(!leadFilterPending("ok", 0, "whatsapp", true), "filtro WhatsApp vazio depois do GET é vazio")
+assert(!leadFilterPending("ok", 0, "facebook", true), "filtro Facebook vazio depois do GET é vazio")
+assert(!leadFilterPending("ok", 0, "import", true), "filtro Importados vazio depois do GET é vazio")
 assert(linkRuntimeSettings(null, { telegramBotUsername: "ste" }) === null, "Vincular sem settings não inventa um objecto oco")
 assert(
   linkRuntimeSettings(emptySettings(), { telegramBotUsername: "ste_bot", telegramBotToken: "tok" })?.telegramBotUsername ===
