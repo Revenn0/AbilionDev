@@ -47,15 +47,17 @@ export function DashboardPage() {
             { ok: inboxSync !== "error", message: "A inbox do Telegram não sincronizou. Leads novos podem faltar." },
             { ok: persistSync !== "error", message: "Não consegui ler ou gravar leads no Worker. A lista local pode divergir." },
             { ok: !clipped, message: "A lista do Worker veio recortada. Os totais abaixo não são o catálogo inteiro." },
-            { ok: status !== "error", message: "Não consegui ler o pixel. Os números de tráfego abaixo podem estar vazios." },
+            { ok: status !== "error", message: "Não confirmei o pixel no Postgres. Os números de tráfego abaixo podem estar desactualizados." },
           ]}
           onRetry={retry}
         />
         <PageChrome icon={LayoutDashboard} title="Dashboard">
           <StatusPill>Últimos 30 dias</StatusPill>
-          <StatusPill tone={status === "error" ? "danger" : status === "ok" ? "success" : "muted"}>
-            {status === "ok" ? "Pixel ao vivo" : status === "error" ? "Pixel falhou" : "A carregar pixel"}
-          </StatusPill>
+          <span data-track-sync={status}>
+            <StatusPill tone={status === "error" ? "danger" : status === "ok" ? "success" : "muted"}>
+              {status === "ok" ? "Pixel ao vivo" : status === "error" ? "Sem leitura" : "A carregar pixel"}
+            </StatusPill>
+          </span>
           <Button asChild variant="outline" className="h-8 rounded-full px-3.5">
             <Link to="/telegram#pixel">Pixel Ads</Link>
           </Button>

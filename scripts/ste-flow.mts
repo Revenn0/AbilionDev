@@ -2,6 +2,7 @@ import { chatStarted, funnelFrom, markersFromGeos, mergeGlobeGeos, periodDelta, 
 import { coordsFromGeo } from "../src/lib/geo-coords.ts"
 import { flagEmoji, formatGeo, mergeGeo, normalizeRegionCode, stateLabel } from "../src/lib/geo.ts"
 import { emptySummary, isFacebookTraffic, summarizeTrack, type TrackEvent } from "../src/lib/track.ts"
+import { parseTrackSummary } from "../src/lib/track-api.ts"
 import {
   isolateLead,
   rememberLeadTalk,
@@ -107,7 +108,7 @@ import { leadCategoriesListBlocked, leadCategoriesMutationBlocked, leadCategorie
 import { burstFacebookLeads, burstStartsBlocked, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
-import { barShare, catalogMetricPending, crmSyncAfterFlush, eventsSyncAfterNarrowRead, funnelsWriteBlocked, hasConversation, isImportedLead, isOperatorLockedLead, leadCatalogClipped, leadCatalogEmpty, leadFilterCount, leadFilterPending, leadMatchesFilter, leadTimelinePending, leadWritesBlocked, leadsExportBlocked, leadsHydrating, leadsLoadFailed, metricPending } from "../src/lib/ops.ts"
+import { barShare, catalogMetricPending, crmSyncAfterFlush, eventsSyncAfterNarrowRead, funnelsWriteBlocked, hasConversation, isImportedLead, isOperatorLockedLead, leadCatalogClipped, leadCatalogEmpty, leadFilterCount, leadFilterPending, leadMatchesFilter, leadTimelinePending, leadWritesBlocked, leadsExportBlocked, leadsHydrating, leadsLoadFailed, metricPending, trackSyncAfterRead } from "../src/lib/ops.ts"
 import { usersWriteBlocked } from "../src/lib/users-api.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { kvTrackStore, memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
@@ -6451,6 +6452,13 @@ assert(eventsSyncAfterNarrowRead("ok", true) === "error", "inbox/busca unread ma
 assert(eventsSyncAfterNarrowRead("error", false) === "error", "inbox/busca sem unread não confirma a timeline")
 assert(eventsSyncAfterNarrowRead("idle", false) === "idle", "inbox/busca cedo não confirma a timeline")
 assert(eventsSyncAfterNarrowRead("ok", false) === "ok", "inbox/busca sem unread conserva o GET confirmado")
+assert(trackSyncAfterRead(true) === "error", "trackUnread leftover não é Pixel ao vivo")
+assert(trackSyncAfterRead(false) === "ok", "summary confirmado é ao vivo")
+assert(parseTrackSummary({ summary: { views: 4 }, trackUnread: true })?.unread === true, "cliente não larga o trackUnread")
+assert(parseTrackSummary({ summary: { views: 4 }, trackUnread: true })?.summary.views === 4, "leftover do pixel continua no cliente")
+assert(parseTrackSummary({ summary: emptySummary() })?.unread === false, "200 sem trackUnread confirma o pixel")
+assert(parseTrackSummary({ ok: true }) === null, "summary em falta não inventa zeros")
+assert(pixelFigure(trackSyncAfterRead(true), true, 12) === 12, "trackUnread ainda mostra o leftover")
 assert(linkRuntimeSettings(null, { telegramBotUsername: "ste" }) === null, "Vincular sem settings não inventa um objecto oco")
 assert(
   linkRuntimeSettings(emptySettings(), { telegramBotUsername: "ste_bot", telegramBotToken: "tok" })?.telegramBotUsername ===

@@ -129,6 +129,11 @@ export function eventsSyncAfterNarrowRead(current: "idle" | "ok" | "error", unre
   return unread ? "error" : current
 }
 
+/** GET /api/track/summary: leftover do KV continua visível; trackUnread não é “ao vivo”. */
+export function trackSyncAfterRead(unread: boolean): "ok" | "error" {
+  return unread ? "error" : "ok"
+}
+
 /** Captura, import e lote: GET unread não é catálogo vazio. `funnelsUnread` bloqueia o que precisa do quadro. */
 export function leadWritesBlocked(
   persistSync: "idle" | "ok" | "error",

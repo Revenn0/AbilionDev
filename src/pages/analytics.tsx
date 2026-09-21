@@ -59,7 +59,7 @@ export function AnalyticsPage() {
             },
             {
               ok: status !== "error",
-              message: "Não consegui ler o pixel. Recarrega ou confere a sessão — os números abaixo podem estar vazios.",
+              message: "Não confirmei o pixel no Postgres. Recarrega ou confere a sessão — os números abaixo podem estar desactualizados.",
             },
           ]}
           onRetry={retry}
@@ -68,9 +68,11 @@ export function AnalyticsPage() {
           <span className="inline-flex h-8 items-center rounded-full border border-border bg-card px-3 text-[12px] font-medium shadow-sm">
             Visual
           </span>
-          <StatusPill tone={status === "ok" ? "success" : status === "error" ? "danger" : "muted"}>
-            {status === "ok" ? "Ao vivo · 30 dias" : status === "error" ? "Sem leitura" : "A carregar"}
-          </StatusPill>
+          <span data-track-sync={status}>
+            <StatusPill tone={status === "ok" ? "success" : status === "error" ? "danger" : "muted"}>
+              {status === "ok" ? "Ao vivo · 30 dias" : status === "error" ? "Sem leitura" : "A carregar"}
+            </StatusPill>
+          </span>
         </PageChrome>
 
         <FacebookSplit
