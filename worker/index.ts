@@ -1,4 +1,4 @@
-import { clientIp, consumeKvThrottle, consumeMemoryThrottle, gateActor, handleAuth, isOwner, kvAuthStore, randomToken, requestHasAuth, sessionUser } from "./auth.ts"
+import { clientIp, confirmKvThrottle, consumeKvThrottle, consumeMemoryThrottle, gateActor, handleAuth, isOwner, kvAuthStore, randomToken, requestHasAuth, sessionUser } from "./auth.ts"
 import { handleMcp, handleFunnelImport } from "./mcp.ts"
 import { handleTokens, handleUsers } from "./users.ts"
 import { campaignFor } from "../src/lib/labels.ts"
@@ -262,27 +262,45 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext) {
   return withSecurityHeaders(await env.ASSETS.fetch(request))
 }
 
+const THROTTLE_UNREAD = "Não confirmei o limite de pedidos."
+
+async function gateKvThrottle(
+  kv: NonNullable<Env["AUTH"]>,
+  key: string,
+  limit: number,
+  windowMs: number,
+  denied: string
+) {
+  const hit = await confirmKvThrottle(kv, key, limit, windowMs)
+  if (hit.unread) return json({ error: THROTTLE_UNREAD }, 503)
+  if (!hit.allowed) return json({ error: denied }, 429)
+  return null
+}
+
 async function handleMcpRoute(request: Request, env: Env) {
   if (request.method === "GET") return handleMcp(request, env, null)
   if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
   const ip = clientIp(request)
   if (request.method === "POST") {
-    if (!(await consumeKvThrottle(env.AUTH, `mcp:ip:${ip}`, 120, 60_000))) {
-      return json({ error: "Demasiados pedidos MCP. Espera um pouco." }, 429)
-    }
+    const ipLimit = await gateKvThrottle(env.AUTH, `mcp:ip:${ip}`, 120, 60_000, "Demasiados pedidos MCP. Espera um pouco.")
+    if (ipLimit) return ipLimit
     if (!requestHasAuth(request)) {
-      if (!(await consumeKvThrottle(env.AUTH, `mcp:anon:${ip}`, 20, 60_000))) {
-        return json({ error: "Demasiados pedidos MCP. Espera um pouco." }, 429)
-      }
+      const anonLimit = await gateKvThrottle(env.AUTH, `mcp:anon:${ip}`, 20, 60_000, "Demasiados pedidos MCP. Espera um pouco.")
+      if (anonLimit) return anonLimit
       return handleMcp(request, env, null)
     }
   }
   const gate = await gateActor(request, kvAuthStore(env.AUTH))
   if (!gate.ok) return gate.response
   if (request.method === "POST") {
-    if (!(await consumeKvThrottle(env.AUTH, `mcp:${gate.user.id}:${ip}`, 60, 60_000))) {
-      return json({ error: "Demasiados pedidos MCP. Espera um pouco." }, 429)
-    }
+    const userLimit = await gateKvThrottle(
+      env.AUTH,
+      `mcp:${gate.user.id}:${ip}`,
+      60,
+      60_000,
+      "Demasiados pedidos MCP. Espera um pouco."
+    )
+    if (userLimit) return userLimit
   }
   return handleMcp(request, env, gate.user)
 }
@@ -348,11 +366,15 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!gated.ok) return gated.response
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const actor = gated.user
-    if (
-      request.method !== "GET" &&
-      !(await consumeKvThrottle(env.AUTH, `users:${actor.id}:${clientIp(request)}`, 30, 60_000))
-    ) {
-      return json({ error: "Demasiados pedidos às contas. Espera um pouco." }, 429)
+    if (request.method !== "GET") {
+      const limited = await gateKvThrottle(
+        env.AUTH,
+        `users:${actor.id}:${clientIp(request)}`,
+        30,
+        60_000,
+        "Demasiados pedidos às contas. Espera um pouco."
+      )
+      if (limited) return limited
     }
     if (url.pathname === "/api/users") return handleUsers(request, kvAuthStore(env.AUTH), actor)
     return handleTokens(request, kvAuthStore(env.AUTH), actor)
@@ -363,9 +385,14 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!gate.ok) return gate.response
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = gate.user
-    if (!(await consumeKvThrottle(env.AUTH, `funnels:${user.id}:${clientIp(request)}`, 20, 60_000))) {
-      return json({ error: "Demasiados pedidos de importação. Espera um pouco." }, 429)
-    }
+    const limited = await gateKvThrottle(
+      env.AUTH,
+      `funnels:${user.id}:${clientIp(request)}`,
+      20,
+      60_000,
+      "Demasiados pedidos de importação. Espera um pouco."
+    )
+    if (limited) return limited
     return handleFunnelImport(request, env)
   }
 
@@ -375,10 +402,11 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
 
   if (url.pathname === "/api/track" && request.method === "POST") {
     const trackKey = `track:${clientIp(request)}`
-    const allowed = env.AUTH
-      ? await consumeKvThrottle(env.AUTH, trackKey, 60, 60_000)
-      : consumeMemoryThrottle(trackKey, 60, 60_000)
-    if (!allowed) {
+    if (env.AUTH) {
+      const hit = await confirmKvThrottle(env.AUTH, trackKey, 60, 60_000)
+      if (hit.unread) return new Response(null, { status: 503, headers: corsHeaders() })
+      if (!hit.allowed) return new Response(null, { status: 429, headers: corsHeaders() })
+    } else if (!consumeMemoryThrottle(trackKey, 60, 60_000)) {
       return new Response(null, { status: 429, headers: corsHeaders() })
     }
     const parsedTrack = await readTrackBody(request)
@@ -596,9 +624,14 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!gate.ok) return gate.response
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = gate.user
-    if (!(await consumeKvThrottle(env.AUTH, `crm:${user.id}:${clientIp(request)}`, 80, 60_000))) {
-      return json({ error: "Demasiados pedidos ao CRM. Espera um pouco." }, 429)
-    }
+    const limited = await gateKvThrottle(
+      env.AUTH,
+      `crm:${user.id}:${clientIp(request)}`,
+      80,
+      60_000,
+      "Demasiados pedidos ao CRM. Espera um pouco."
+    )
+    if (limited) return limited
     const parsed = await readJsonObject<{ funnels?: SalesFunnel[]; settings?: Settings; removedFunnelIds?: string[] }>(request, 256_000)
     if (!parsed.ok) return jsonReadError(parsed)
     const body = parsed.value
@@ -698,9 +731,14 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!gate.ok) return gate.response
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = gate.user
-    if (!(await consumeKvThrottle(env.AUTH, `leads:${user.id}:${clientIp(request)}`, 40, 60_000))) {
-      return json({ error: "Demasiados pedidos de leads. Espera um pouco." }, 429)
-    }
+    const limited = await gateKvThrottle(
+      env.AUTH,
+      `leads:${user.id}:${clientIp(request)}`,
+      40,
+      60_000,
+      "Demasiados pedidos de leads. Espera um pouco."
+    )
+    if (limited) return limited
     const parsed = await readJsonObject<{ lead?: Lead; leads?: Lead[] }>(request, 256_000)
     if (!parsed.ok) return jsonReadError(parsed)
     if (await leadCatalogUnread(env)) return json({ error: "Não li os leads do Postgres." }, 503)
@@ -728,9 +766,14 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!gate.ok) return gate.response
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = gate.user
-    if (!(await consumeKvThrottle(env.AUTH, `leads-del:${user.id}:${clientIp(request)}`, 30, 60_000))) {
-      return json({ error: "Demasiados pedidos de exclusão. Espera um pouco." }, 429)
-    }
+    const limited = await gateKvThrottle(
+      env.AUTH,
+      `leads-del:${user.id}:${clientIp(request)}`,
+      30,
+      60_000,
+      "Demasiados pedidos de exclusão. Espera um pouco."
+    )
+    if (limited) return limited
     const id = (url.searchParams.get("id") || "").trim()
     if (!id || id.length > 80) return json({ error: "Falta o id do lead." }, 400)
     if (!(await removeLead(env, id))) return json({ error: "Não apaguei o lead do Postgres." }, 503)

@@ -500,6 +500,21 @@ export async function consumeKvThrottle(
   return false
 }
 
+export async function confirmKvThrottle(
+  kv: { get(key: string, type: "json"): Promise<unknown>; put(key: string, value: string): Promise<void> },
+  key: string,
+  limit: number,
+  windowMs: number,
+  now = Date.now(),
+  bucket = "track:throttles"
+) {
+  try {
+    return { unread: false as const, allowed: await consumeKvThrottle(kv, key, limit, windowMs, now, bucket) }
+  } catch {
+    return { unread: true as const, allowed: false }
+  }
+}
+
 export function clientIp(request: Request) {
   const forwarded = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for") || ""
   return forwarded.split(",")[0]?.trim() || "local"

@@ -126,7 +126,7 @@ import { barShare, catalogMetricPending, crmSyncAfterFlush, eventsSyncAfterNarro
 import { usersWriteBlocked } from "../src/lib/users-api.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, RUNTIME_KEY, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
 import { kvTrackStore, memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
-import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, gateActor, handleAuth, hashApiToken, hashPassword, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, readActor, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
+import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, confirmKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, gateActor, handleAuth, hashApiToken, hashPassword, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, readActor, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
 import { ensureVoiceClip, VOICE_STORE_KEY, voiceClipStatus } from "../worker/ste-voice.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTelegramClaims, telegramCall, telegramJoinActor, telegramUpdateActor } from "../worker/telegram.ts"
@@ -2317,6 +2317,20 @@ const sameKeyHits = await Promise.all([
   consumeKvThrottle(sameKeyKv, "same", 1, 60_000, 5000),
 ])
 assert(sameKeyHits.filter(Boolean).length === 1, "throttle da mesma chave só deixa passar o limite")
+const throttleUnreadHit = await confirmKvThrottle(
+  {
+    async get() {
+      throw new Error("kv down")
+    },
+    async put() {},
+  },
+  "unread",
+  2,
+  60_000
+)
+assert(throttleUnreadHit.unread && !throttleUnreadHit.allowed, "confirmKvThrottle marca unread sem fingir limite")
+const throttleOkHit = await confirmKvThrottle(memoryKv(), "ok", 2, 60_000, 6000)
+assert(!throttleOkHit.unread && throttleOkHit.allowed, "confirmKvThrottle passa quando o KV responde")
 const retained = retainUserSessions(
   [
     { token: "old", userId: "u1", expiresAt: 9, issuedAt: 1 },
@@ -6837,6 +6851,119 @@ assert(
 assert(elevenHits === 0, "POST voice store throw não gasta ElevenLabs")
 assert((await loadSecrets(runtimeHoleKv)).elevenApiKey === "sk_leftover", "POST voice store throw não pisa a chave leftover")
 globalThis.fetch = elevenLabsFetch
+const throttleDownEnv = { ...runtimeHoleBase, AUTH: kvThrowsOn(runtimeHoleKv, "track:throttles") } as Env
+const throttleDownMcp = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.97" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 214,
+      method: "tools/call",
+      params: { name: "abilion_health", arguments: {} },
+    }),
+  }),
+  throttleDownEnv,
+  backgroundCtx()
+)
+const throttleDownMcpBody = (await throttleDownMcp.json()) as { error?: string; result?: { isError?: boolean } }
+assert(throttleDownMcp.status === 503, "MCP throttle throw não cai em 500")
+assert(throttleDownMcpBody.error === "Não confirmei o limite de pedidos.", "MCP throttle throw pede confirmação")
+assert(throttleDownMcpBody.error !== "Demasiados pedidos MCP. Espera um pouco.", "MCP throttle throw não finge 429")
+assert(throttleDownMcpBody.error !== "Falha interna.", "MCP throttle throw não vira Falha interna")
+assert(!throttleDownMcpBody.result, "MCP throttle throw não entra na ferramenta")
+const throttleDownCrm = await handleRequest(
+  new Request("http://local.test/api/crm", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: runtimeHoleCookie,
+      "x-forwarded-for": "203.0.113.98",
+    },
+    body: JSON.stringify({ settings: { telegramBotUsername: "@ste_limite" } }),
+  }),
+  throttleDownEnv,
+  backgroundCtx()
+)
+const throttleDownCrmBody = (await throttleDownCrm.json()) as { error?: string }
+assert(throttleDownCrm.status === 503, "POST CRM throttle throw não cai em 500")
+assert(throttleDownCrmBody.error === "Não confirmei o limite de pedidos.", "POST CRM throttle throw pede confirmação")
+assert((await loadSettingsKv(runtimeHoleKv)).telegramBotUsername === "@steaviator", "POST CRM throttle throw não pisa o username leftover")
+const throttleDownUsers = await handleRequest(
+  new Request("http://local.test/api/users", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: runtimeHoleCookie,
+      "x-forwarded-for": "203.0.113.99",
+    },
+    body: JSON.stringify({ email: "novo@abilion.com", name: "Novo", password: "senhaok" }),
+  }),
+  throttleDownEnv,
+  backgroundCtx()
+)
+const throttleDownUsersBody = (await throttleDownUsers.json()) as { error?: string }
+assert(throttleDownUsers.status === 503, "POST users throttle throw não cai em 500")
+assert(throttleDownUsersBody.error === "Não confirmei o limite de pedidos.", "POST users throttle throw pede confirmação")
+const usersAfterThrottle = (await (
+  await handleRequest(new Request("http://local.test/api/users", { headers: { cookie: runtimeHoleCookie } }), runtimeHoleBase, backgroundCtx())
+).json()) as { users?: Array<{ email?: string }> }
+assert(!usersAfterThrottle.users?.some((item) => item.email === "novo@abilion.com"), "POST users throttle throw não cria conta")
+const throttleDownLeads = await handleRequest(
+  new Request("http://local.test/api/leads", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: runtimeHoleCookie,
+      "x-forwarded-for": "203.0.113.100",
+    },
+    body: JSON.stringify({
+      lead: { id: "lead-throttle", name: "Throttle", contact: "@throttle", origin: "telegram", status: "new" },
+    }),
+  }),
+  throttleDownEnv,
+  backgroundCtx()
+)
+const throttleDownLeadsBody = (await throttleDownLeads.json()) as { error?: string; saved?: number }
+assert(throttleDownLeads.status === 503, "POST leads throttle throw não cai em 500")
+assert(throttleDownLeadsBody.error === "Não confirmei o limite de pedidos.", "POST leads throttle throw pede confirmação")
+assert(throttleDownLeadsBody.saved !== 1, "POST leads throttle throw não grava")
+const throttleDownDelete = await handleRequest(
+  new Request("http://local.test/api/leads?id=lead-throttle", {
+    method: "DELETE",
+    headers: { cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.101" },
+  }),
+  throttleDownEnv,
+  backgroundCtx()
+)
+assert(throttleDownDelete.status === 503, "DELETE leads throttle throw não cai em 500")
+assert(((await throttleDownDelete.json()) as { error?: string }).error === "Não confirmei o limite de pedidos.", "DELETE leads throttle throw pede confirmação")
+const throttleDownImport = await handleRequest(
+  new Request("http://local.test/api/funnels/import", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: runtimeHoleCookie,
+      "x-forwarded-for": "203.0.113.102",
+    },
+    body: JSON.stringify({ name: "Import throttle", payload: { messages: ["Passo A", "Passo B"] } }),
+  }),
+  throttleDownEnv,
+  backgroundCtx()
+)
+assert(throttleDownImport.status === 503, "POST import throttle throw não cai em 500")
+assert(((await throttleDownImport.json()) as { error?: string }).error === "Não confirmei o limite de pedidos.", "POST import throttle throw pede confirmação")
+const throttleDownTrack = await handleRequest(
+  new Request("http://local.test/api/track", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.103" },
+    body: JSON.stringify({ kind: "view", visitorId: "throttlevid" }),
+  }),
+  throttleDownEnv,
+  backgroundCtx()
+)
+assert(throttleDownTrack.status === 503, "POST pixel throttle throw não cai em 500")
+assert(!(await throttleDownTrack.text()).includes("Falha interna."), "POST pixel throttle throw não vaza Falha interna")
 const kvDownMcpHealth = await handleRequest(
   new Request("http://local.test/mcp", {
     method: "POST",
