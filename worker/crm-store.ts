@@ -303,10 +303,11 @@ export async function reserveLeadIdentity(
 }
 
 export async function resolveLeadWrite(kv: KvLike, lead: Lead): Promise<{ incoming: Lead; prev: Lead | null }> {
-  const existing = await loadLead(kv, lead.id)
+  const removed = await removedIdsForRead(kv)
+  const existing = await loadLead(kv, lead.id, removed)
   if (existing) return { incoming: lead, prev: existing }
   const reserved = await reserveLeadIdentity(kv, lead.contact, lead.telegramChatId ?? "", lead.id)
-  const prev = reserved === lead.id ? null : await loadLead(kv, reserved)
+  const prev = reserved === lead.id ? null : await loadLead(kv, reserved, removed)
   return {
     incoming: { ...lead, id: reserved, createdAt: prev?.createdAt ?? lead.createdAt },
     prev,
