@@ -492,6 +492,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
       if (extras === null && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE) {
         throw new Error("Não li os leads do Postgres.")
       }
+      if (!(extras ?? []).length && page.unread) throw new Error("Não li os leads do Postgres.")
       const live = await filterLiveLeads(env.AUTH, extras ?? [])
       return {
         ok: true,

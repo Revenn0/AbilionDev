@@ -9042,6 +9042,118 @@ try {
 assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === leadBeforePg?.memory, "get_lead KV throw + backup não pisa a ficha leftover")
 assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory !== "leftover-pg", "get_lead KV throw + backup não grava a ficha do Postgres em cima do KV unread")
 assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory !== "unread-write-pg", "POST lead KV throw + backup não pisa a ficha leftover")
+const keepLead = { ...lead("keep-lead", "@keeplead"), memory: "leftover-keep" }
+const keepDue = { ...lead("keep-due", "@keepdue"), memory: "leftover-due", waitUntil: "2020-01-01T00:00:00.000Z" }
+const holeDue = { ...lead("hole-due", "@holedue"), memory: "leftover-hole-due", waitUntil: "2020-01-01T00:00:00.000Z" }
+await upsertLeadKv(runtimeHoleKv, keepLead)
+await upsertLeadKv(runtimeHoleKv, keepDue)
+await upsertLeadKv(runtimeHoleKv, holeDue)
+const listKeyDownKv = kvThrowsOn(runtimeHoleKv, leadKey("hole-lead"), leadKey("hole-due"))
+const listKeyDownEnv = { ...runtimeHoleBase, AUTH: listKeyDownKv } as Env
+const listKeyDownPage = await listLeadPage(listKeyDownKv, 400, "all")
+assert(listKeyDownPage.unread, "página com chave unread marca unread")
+assert(listKeyDownPage.leads.some((item) => item.id === "keep-lead"), "página com chave unread ainda lê o leftover irmão")
+assert(listKeyDownPage.missingIds.includes("hole-lead"), "página com chave unread trata a ficha falha como buraco")
+assert(!listKeyDownPage.leads.some((item) => item.id === "hole-lead"), "página com chave unread não finge que leu a ficha falha")
+const dueKeyDown = await dueLeadsKv(listKeyDownKv, "2020-01-02T00:00:00.000Z")
+assert(dueKeyDown.unread, "due com chave unread marca unread")
+assert(dueKeyDown.leads.some((item) => item.id === "keep-due"), "due com chave unread ainda lê a espera leftover")
+assert(dueKeyDown.missingIds.includes("hole-due"), "due com chave unread trata a espera falha como buraco")
+assert(!dueKeyDown.leads.some((item) => item.id === "hole-due"), "due com chave unread não finge que leu a espera falha")
+assert(
+  (await lookupLeadsByQuery(listKeyDownKv, "@keeplead")).some((item) => item.id === "keep-lead"),
+  "busca com chave unread ainda acha o leftover irmão"
+)
+const listKeyDownGet = await handleRequest(
+  new Request("http://local.test/api/leads", { headers: { cookie: runtimeHoleCookie } }),
+  listKeyDownEnv,
+  backgroundCtx()
+)
+const listKeyDownGetBody = (await listKeyDownGet.json()) as { ok?: boolean; leads?: Array<{ id?: string }>; error?: string }
+assert(listKeyDownGet.status === 200 && listKeyDownGetBody.ok, "GET leads chave unread ainda manda o leftover irmão")
+assert(listKeyDownGet.status !== 503, "GET leads chave unread não esconde o catálogo leftover")
+assert(listKeyDownGet.status !== 500, "GET leads chave unread não é Falha interna")
+assert(listKeyDownGetBody.leads?.some((item) => item.id === "keep-lead"), "GET leads chave unread não esconde o leftover irmão")
+assert(Array.isArray(listKeyDownGetBody.leads) && listKeyDownGetBody.leads.length > 0, "GET leads chave unread não manda lista vazia")
+const listKeyDownInbox = await handleRequest(
+  new Request("http://local.test/api/inbox", { headers: { cookie: runtimeHoleCookie } }),
+  listKeyDownEnv,
+  backgroundCtx()
+)
+const listKeyDownInboxBody = (await listKeyDownInbox.json()) as { ok?: boolean; leads?: Array<{ id?: string }>; error?: string }
+assert(listKeyDownInbox.status === 200 && listKeyDownInboxBody.ok, "GET inbox chave unread ainda manda o leftover irmão")
+assert(listKeyDownInboxBody.leads?.some((item) => item.id === "keep-lead"), "GET inbox chave unread não esconde o leftover irmão")
+const listKeyDownMcp = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.251" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 272,
+      method: "tools/call",
+      params: { name: "abilion_list_leads", arguments: { limit: 50 } },
+    }),
+  }),
+  listKeyDownEnv,
+  backgroundCtx()
+)
+const listKeyDownMcpData = JSON.parse(
+  ((await listKeyDownMcp.json()) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string; leads?: Array<{ id?: string }> }
+assert(listKeyDownMcp.status === 200, "MCP list chave unread não cai em 500")
+assert(!listKeyDownMcpData.error, "MCP list chave unread não pede 503")
+assert(listKeyDownMcpData.leads?.some((item) => item.id === "keep-lead"), "MCP list chave unread ainda manda o leftover irmão")
+const listPgPrev = globalThis.fetch
+const listPgEnv = {
+  ...runtimeHoleBase,
+  AUTH: listKeyDownKv,
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+} as Env
+try {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url.includes("/rest/v1/leads")) {
+      return new Response(
+        JSON.stringify([
+          {
+            id: "hole-lead",
+            name: "Hole leftover",
+            contact: "@holelead",
+            channel: "telegram",
+            campaign: "facebook",
+            origin: "facebook",
+            temperature: "novo",
+            stage: "welcome",
+            memory: "leftover-pg-list",
+            facts: {},
+            messages: [],
+            telegram_chat_id: "88001",
+            updated_at: "2026-01-01T00:00:00.000Z",
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+        ]),
+        { status: 200 }
+      )
+    }
+    if (url.includes("/rest/v1/lead_events")) return new Response("[]", { status: 200 })
+    return listPgPrev(input, init)
+  }) as typeof fetch
+  const listPgGet = await handleRequest(
+    new Request("http://local.test/api/leads", { headers: { cookie: runtimeHoleCookie } }),
+    listPgEnv,
+    backgroundCtx()
+  )
+  const listPgGetBody = (await listPgGet.json()) as { ok?: boolean; leads?: Array<{ id?: string; memory?: string }> }
+  assert(listPgGet.status === 200 && listPgGetBody.ok, "GET leads chave unread + backup ainda manda o catálogo leftover")
+  assert(listPgGetBody.leads?.some((item) => item.id === "keep-lead"), "GET leads chave unread + backup não esconde o leftover irmão")
+  assert(listPgGetBody.leads?.some((item) => item.id === "hole-lead" && item.memory === "leftover-pg-list"), "GET leads chave unread ainda lê a ficha leftover do Postgres")
+} finally {
+  globalThis.fetch = listPgPrev
+}
+assert((await loadLead(runtimeHoleKv, "keep-lead"))?.memory === "leftover-keep", "lista chave unread não pisa o leftover irmão")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === leadBeforePg?.memory, "lista chave unread não pisa a ficha leftover")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory !== "leftover-pg-list", "lista chave unread não grava a ficha do Postgres em cima do KV unread")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()

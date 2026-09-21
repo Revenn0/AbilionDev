@@ -162,7 +162,7 @@ export async function listLeadPage(
   limit = 80,
   channel: Lead["channel"] | "all" = "telegram",
   cursor = ""
-): Promise<{ leads: Lead[]; nextCursor?: string; stale?: boolean; clipped?: boolean; empty: boolean; missingIds: string[] }> {
+): Promise<{ leads: Lead[]; nextCursor?: string; stale?: boolean; clipped?: boolean; empty: boolean; missingIds: string[]; unread?: boolean }> {
   const index = await loadIndex(kv)
   const empty = index.entries.length === 0
   const clipped = crmIndexClipped(index.entries)
@@ -176,11 +176,25 @@ export async function listLeadPage(
   }
   const slice = rows.slice(start, start + Math.max(1, limit))
   const removed = await removedIdsForRead(kv)
-  const loaded = await Promise.all(slice.map(async (item) => ({ id: item.id, lead: await loadLead(kv, item.id, removed) })))
+  const loaded = await Promise.all(
+    slice.map(async (item) => {
+      try {
+        return { id: item.id, lead: await loadLead(kv, item.id, removed), unread: false }
+      } catch {
+        return { id: item.id, lead: null, unread: true }
+      }
+    })
+  )
   const leads = loaded.map((row) => row.lead).filter((lead): lead is Lead => Boolean(lead))
   await rememberLeadNames(kv, leads)
   const missingIds: string[] = []
+  let unread = false
   for (const row of loaded) {
+    if (row.unread) {
+      unread = true
+      missingIds.push(row.id)
+      continue
+    }
     if (row.lead) continue
     if (await leadIsGone(kv, row.id, removed)) continue
     missingIds.push(row.id)
@@ -192,6 +206,7 @@ export async function listLeadPage(
     clipped,
     empty,
     missingIds,
+    unread,
   }
 }
 
@@ -572,7 +587,11 @@ export async function lookupLeadsByQuery(kv: KvLike, query: string): Promise<Lea
     hits.push(lead)
   }
   const removed = await removedIdsForRead(kv)
-  push(await loadLead(kv, needle, removed))
+  try {
+    push(await loadLead(kv, needle, removed))
+  } catch {
+    /* chave unread — o índice/alias ainda pode achar outro leftover */
+  }
   try {
     push(await findLeadInKv(kv, needle, 0, needle, removed))
   } catch {
@@ -600,7 +619,13 @@ export async function lookupLeadsByQuery(kv: KvLike, query: string): Promise<Lea
       if (matchIds.length >= 20) break
     }
   }
-  for (const id of matchIds) push(await loadLead(kv, id, removed))
+  for (const id of matchIds) {
+    try {
+      push(await loadLead(kv, id, removed))
+    } catch {
+      /* chave unread — os outros hits leftover ficam */
+    }
+  }
   return hits
 }
 
@@ -788,14 +813,28 @@ export async function releaseCronLock(kv: KvLike, owner?: string) {
 }
 
 /** Esperas do índice. `missingIds` são waits sem ficha, sem espera na ficha, ou sem tombstone. */
-export async function dueLeadsKv(kv: KvLike, nowIso: string): Promise<{ leads: Lead[]; missingIds: string[] }> {
+export async function dueLeadsKv(kv: KvLike, nowIso: string): Promise<{ leads: Lead[]; missingIds: string[]; unread: boolean }> {
   const index = await loadIndex(kv)
   const ids = index.entries.filter((item) => item.waitUntil && item.waitUntil <= nowIso).map((item) => item.id)
   const removed = await removedIdsForRead(kv)
-  const loaded = await Promise.all(ids.map(async (id) => ({ id, lead: await loadLead(kv, id, removed) })))
+  const loaded = await Promise.all(
+    ids.map(async (id) => {
+      try {
+        return { id, lead: await loadLead(kv, id, removed), unread: false }
+      } catch {
+        return { id, lead: null, unread: true }
+      }
+    })
+  )
   const leads: Lead[] = []
   const missingIds: string[] = []
+  let unread = false
   for (const row of loaded) {
+    if (row.unread) {
+      unread = true
+      missingIds.push(row.id)
+      continue
+    }
     if (row.lead) {
       if (row.lead.waitUntil && row.lead.waitUntil <= nowIso) {
         leads.push(row.lead)
@@ -809,7 +848,7 @@ export async function dueLeadsKv(kv: KvLike, nowIso: string): Promise<{ leads: L
     if (await leadIsGone(kv, row.id, removed)) continue
     missingIds.push(row.id)
   }
-  return { leads, missingIds }
+  return { leads, missingIds, unread }
 }
 
 export async function loadFunnelsKv(kv: KvLike): Promise<SalesFunnel[]> {

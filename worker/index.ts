@@ -1098,11 +1098,12 @@ async function processWaits(env: Env): Promise<{ advanced: number; remoteUnread:
   try {
     const now = new Date().toISOString()
     const remoteDue = await fetchRemoteDueLeads(env, now)
-    let kvPage = { leads: [] as Lead[], missingIds: [] as string[] }
+    let kvPage = { leads: [] as Lead[], missingIds: [] as string[], unread: false }
     let kvDueUnread = false
     if (env.AUTH) {
       try {
         kvPage = await dueLeadsKv(env.AUTH, now)
+        if (kvPage.unread) kvDueUnread = true
       } catch {
         kvDueUnread = true
       }
@@ -1296,6 +1297,7 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
   if (!kv.length && missing.length) {
     const extras = await fetchRemoteLeadsByIds(env, missing)
     if (extras === null) return { leads: [], clipped: true, failed: !cursor, stale: Boolean(cursor) }
+    if (!extras.length && page.unread) return { leads: [], clipped: true, failed: !cursor, stale: Boolean(cursor) }
     const live = env.AUTH ? await filterLiveLeads(env.AUTH, extras) : extras
     const attached = await attachLeadEvents(env, live)
     return {
