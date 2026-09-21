@@ -38,7 +38,7 @@ function ownerCount(users: StoredUser[]) {
 
 async function loadAccounts(store: AuthStore) {
   try {
-    return { snapshot: await store.load(), unread: false as const }
+    return { snapshot: structuredClone(await store.load()), unread: false as const }
   } catch {
     return { snapshot: null, unread: true as const }
   }
