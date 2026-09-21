@@ -492,13 +492,24 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = gate.user
     if (!isOwner(user)) return json({ error: "Só o dono liga o bot e as chaves." }, 403)
-    if (!(await consumeKvThrottle(env.AUTH, `runtime:${user.id}:${clientIp(request)}`, 10, 15 * 60_000))) {
+    let allowed: boolean
+    try {
+      allowed = await consumeKvThrottle(env.AUTH, `runtime:${user.id}:${clientIp(request)}`, 10, 15 * 60_000)
+    } catch {
+      return json({ error: "Não confirmei as chaves do Worker." }, 503)
+    }
+    if (!allowed) {
       return json({ error: "Demasiados pedidos ao runtime. Espera um pouco." }, 429)
     }
     const parsed = await readJsonObject<RuntimeSecrets>(request, 16_384)
     if (!parsed.ok) return jsonReadError(parsed)
     const body = parsed.value
-    const current = await loadSecrets(env.AUTH)
+    let current: RuntimeSecrets
+    try {
+      current = await loadSecrets(env.AUTH)
+    } catch {
+      return json({ error: "Não confirmei as chaves do Worker." }, 503)
+    }
     const next = mergeSecrets(current, body)
     const hook = webhookUrl(request, env)
     const webhookSecret = (env.TELEGRAM_WEBHOOK_SECRET || next.telegramWebhookSecret || randomToken()).trim()
@@ -518,14 +529,30 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       next.webhookOk = hooked.ok
       if (!hooked.ok) warning = "O token ficou gravado. O webhook ainda não apontou — tenta Vincular outra vez."
     }
-    await saveSecrets(env.AUTH, next)
+    try {
+      await saveSecrets(env.AUTH, next)
+    } catch {
+      return json({ error: "Não confirmei as chaves do Worker." }, 503)
+    }
     const settings = await loadSettings(env).then(
       (item) => item,
       () => null
     )
     const linked = linkRuntimeSettings(settings, next)
-    if (linked) await persistSettings(env, linked)
-    const published = await publishedRuntime(env, resolveRuntime(env, next, hook))
+    if (linked) {
+      try {
+        await persistSettings(env, linked)
+      } catch {
+        /* chaves já gravadas — settings unread não vira 500 */
+      }
+    }
+    const resolved = resolveRuntime(env, next, hook)
+    let published
+    try {
+      published = await publishedRuntime(env, resolved)
+    } catch {
+      published = publicRuntime(resolved)
+    }
     return json(warning ? { ...published, warning } : published)
   }
 

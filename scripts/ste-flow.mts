@@ -128,7 +128,7 @@ import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, RUNTIME_KEY, 
 import { kvTrackStore, memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
 import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, gateActor, handleAuth, hashApiToken, hashPassword, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, readActor, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
-import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
+import { ensureVoiceClip, VOICE_STORE_KEY, voiceClipStatus } from "../worker/ste-voice.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTelegramClaims, telegramCall, telegramJoinActor, telegramUpdateActor } from "../worker/telegram.ts"
 import { backgroundCtx, handleRequest, type Env } from "../worker/index.ts"
 import { clearSessionExpired, noteUnauthorized, subscribeSessionExpired } from "../src/lib/session.ts"
@@ -164,6 +164,18 @@ function kvThrowsOn(base: ReturnType<typeof memoryKv>, ...blocked: string[]) {
       return base.get(key, type)
     },
     async put(key: string, value: string) {
+      return base.put(key, value)
+    },
+  }
+}
+
+function kvThrowsOnPut(base: ReturnType<typeof memoryKv>, ...blocked: string[]) {
+  return {
+    async get(key: string, type: "json") {
+      return base.get(key, type)
+    },
+    async put(key: string, value: string) {
+      if (blocked.includes(key)) throw new Error("kv put down")
       return base.put(key, value)
     },
   }
@@ -6692,6 +6704,86 @@ assert(secretsOnlyRuntime.status === 200 && secretsOnlyRuntimeBody.ok, "GET runt
 assert(secretsOnlyRuntimeBody.telegramBotUsername === "@steaviator", "runtime secrets throw não apaga o username leftover")
 assert(!secretsOnlyRuntimeBody.settingsUnread, "settings leftover confirmadas não ficam unread por causa dos secrets")
 assert(secretsOnlyRuntimeBody.telegram !== true, "sem token no env o runtime não finge bot ligado")
+const kvDownRuntimePost = await handleRequest(
+  new Request("http://local.test/api/runtime", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: runtimeHoleCookie,
+      "x-forwarded-for": "203.0.113.90",
+    },
+    body: JSON.stringify({ telegramBotUsername: "@ste_novo", telegramBotToken: "111:should-not-save" }),
+  }),
+  secretsOnlyDownEnv,
+  backgroundCtx()
+)
+const kvDownRuntimePostBody = (await kvDownRuntimePost.json()) as { error?: string; ok?: boolean }
+assert(kvDownRuntimePost.status === 503, "POST /api/runtime KV throw não cai em 500")
+assert(kvDownRuntimePostBody.error === "Não confirmei as chaves do Worker.", "POST runtime KV throw pede confirmação")
+assert(kvDownRuntimePostBody.error !== "Falha interna.", "POST runtime KV throw não vira Falha interna")
+assert(kvDownRuntimePostBody.ok !== true, "POST runtime KV throw não finge gravado")
+assert((await loadSecrets(runtimeHoleKv)).telegramBotToken === "000:kv-token", "POST runtime KV throw não apaga o token leftover")
+assert((await loadSecrets(runtimeHoleKv)).telegramBotUsername !== "@ste_novo", "POST runtime KV throw não grava username em cima do unread")
+const putDownRuntimePost = await handleRequest(
+  new Request("http://local.test/api/runtime", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: runtimeHoleCookie,
+      "x-forwarded-for": "203.0.113.91",
+    },
+    body: JSON.stringify({ telegramBotUsername: "@ste_put" }),
+  }),
+  { ...runtimeHoleBase, AUTH: kvThrowsOnPut(runtimeHoleKv, RUNTIME_KEY) } as Env,
+  backgroundCtx()
+)
+const putDownRuntimePostBody = (await putDownRuntimePost.json()) as { error?: string; ok?: boolean }
+assert(putDownRuntimePost.status === 503, "POST runtime put throw não cai em 500")
+assert(putDownRuntimePostBody.error === "Não confirmei as chaves do Worker.", "POST runtime put throw pede confirmação")
+assert((await loadSecrets(runtimeHoleKv)).telegramBotToken === "000:kv-token", "POST runtime put throw não pisa o token leftover")
+assert((await loadSecrets(runtimeHoleKv)).telegramBotUsername !== "@ste_put", "POST runtime put throw não grava username")
+const throttleDownRuntimePost = await handleRequest(
+  new Request("http://local.test/api/runtime", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: runtimeHoleCookie,
+      "x-forwarded-for": "203.0.113.92",
+    },
+    body: JSON.stringify({ telegramBotUsername: "@ste_limite" }),
+  }),
+  { ...runtimeHoleBase, AUTH: kvThrowsOn(runtimeHoleKv, "track:throttles") } as Env,
+  backgroundCtx()
+)
+const throttleDownRuntimePostBody = (await throttleDownRuntimePost.json()) as { error?: string }
+assert(throttleDownRuntimePost.status === 503, "POST runtime throttle throw não cai em 500")
+assert(throttleDownRuntimePostBody.error === "Não confirmei as chaves do Worker.", "POST runtime throttle throw pede confirmação")
+assert((await loadSecrets(runtimeHoleKv)).telegramBotUsername !== "@ste_limite", "POST runtime throttle throw não grava")
+const voiceDownRuntimePost = await handleRequest(
+  new Request("http://local.test/api/runtime", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: runtimeHoleCookie,
+      "x-forwarded-for": "203.0.113.93",
+    },
+    body: JSON.stringify({ telegramBotUsername: "@ste_voz" }),
+  }),
+  { ...runtimeHoleBase, AUTH: kvThrowsOn(runtimeHoleKv, VOICE_STORE_KEY) } as Env,
+  backgroundCtx()
+)
+const voiceDownRuntimePostBody = (await voiceDownRuntimePost.json()) as {
+  ok?: boolean
+  telegram?: boolean
+  telegramBotUsername?: string
+  error?: string
+}
+assert(voiceDownRuntimePost.status === 200 && voiceDownRuntimePostBody.ok, "POST runtime com voz unread continua de pé")
+assert(voiceDownRuntimePostBody.telegram === true, "POST runtime voz unread ainda lê o token leftover")
+assert(voiceDownRuntimePostBody.telegramBotUsername === "@ste_voz", "POST runtime voz unread devolve o username gravado")
+assert(voiceDownRuntimePostBody.error !== "Falha interna.", "POST runtime voz unread não vira Falha interna")
+assert((await loadSecrets(runtimeHoleKv)).telegramBotToken === "000:kv-token", "POST runtime voz unread não apaga o token leftover")
+assert((await loadSecrets(runtimeHoleKv)).telegramBotUsername === "@ste_voz", "POST runtime voz unread grava o username")
 const kvDownMcpHealth = await handleRequest(
   new Request("http://local.test/mcp", {
     method: "POST",
