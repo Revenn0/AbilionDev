@@ -750,7 +750,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       stale: page.stale || undefined,
       clipped: page.clipped || undefined,
       eventsUnread: page.eventsUnread || undefined,
-      removed: cursor ? undefined : await loadRemovedLeadIds(env.AUTH),
+      removed: cursor ? undefined : await removedLeadIdsOf(env.AUTH),
     })
   }
 
@@ -780,7 +780,13 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       const resolved = await resolveWorkspaceLeadWrite(env, lead)
       if (!resolved.ok) return json({ error: "Não li o lead do Postgres." }, 503)
       const { incoming, prev } = resolved
-      if ((await isLeadRemoved(env.AUTH, incoming.id)) || (await isLeadRemoved(env.AUTH, lead.id))) continue
+      let gone
+      try {
+        gone = (await isLeadRemoved(env.AUTH, incoming.id)) || (await isLeadRemoved(env.AUTH, lead.id))
+      } catch {
+        return json({ error: "Não li o lead do Postgres." }, 503)
+      }
+      if (gone) continue
       const next = adoptOperatorLead(prev, incoming)
       if (!(await saveLead(env, next))) continue
       ids.push(next.id)
@@ -823,7 +829,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       stale: page.stale || undefined,
       clipped: page.clipped || undefined,
       eventsUnread: page.eventsUnread || undefined,
-      removed: cursor ? undefined : await loadRemovedLeadIds(env.AUTH),
+      removed: cursor ? undefined : await removedLeadIdsOf(env.AUTH),
     })
   }
 
@@ -1186,6 +1192,14 @@ async function persistSettings(env: Env, settings: Settings) {
 
 async function loadSettings(env: Env): Promise<Settings> {
   return loadWorkspaceSettings(env)
+}
+
+async function removedLeadIdsOf(kv: NonNullable<Env["AUTH"]>) {
+  try {
+    return await loadRemovedLeadIds(kv)
+  } catch {
+    return undefined
+  }
 }
 
 async function findLead(env: Env, contact: string, telegramId: number, chatId: string): Promise<Lead | null> {

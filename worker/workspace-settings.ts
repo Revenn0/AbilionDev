@@ -262,12 +262,17 @@ export async function findWorkspaceLead(
 export async function findWorkspaceLeadById(env: SettingsEnv, id: string): Promise<Lead | null> {
   const needle = id.trim()
   if (!needle || needle.length > 80) return null
-  if (env.AUTH && (await isLeadRemoved(env.AUTH, needle))) return null
-  const kvLead = env.AUTH ? await loadLead(env.AUTH, needle) : null
-  if (kvLead) {
-    const extras = await fetchRemoteLeadsByIds(env, [kvLead.id])
-    if (extras === null) return kvLead
-    return hydrateWorkspaceLead(kvLead, extras[0])
+  try {
+    if (env.AUTH && (await isLeadRemoved(env.AUTH, needle))) return null
+    const kvLead = env.AUTH ? await loadLead(env.AUTH, needle) : null
+    if (kvLead) {
+      const extras = await fetchRemoteLeadsByIds(env, [kvLead.id])
+      if (extras === null) return kvLead
+      return hydrateWorkspaceLead(kvLead, extras[0])
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message === "Não li o lead do Postgres.") throw error
+    throw new Error("Não li o lead do Postgres.")
   }
   const extras = await fetchRemoteLeadsByIds(env, [needle])
   if (extras === null) throw new Error("Não li o lead do Postgres.")
@@ -291,25 +296,29 @@ export async function resolveWorkspaceLeadWrite(
   lead: Lead
 ): Promise<{ ok: true; incoming: Lead; prev: Lead | null } | { ok: false; unread: true }> {
   if (!env.AUTH) return { ok: false, unread: true }
-  const existing = lead.id ? await loadLead(env.AUTH, lead.id) : null
-  if (existing) {
+  try {
+    const existing = lead.id ? await loadLead(env.AUTH, lead.id) : null
+    if (existing) {
+      const resolved = await resolveLeadWrite(env.AUTH, lead)
+      return { ok: true, incoming: resolved.incoming, prev: resolved.prev }
+    }
+    try {
+      const found = await findWorkspaceLead(env, lead.contact, telegramIdFromLead(lead), lead.telegramChatId ?? "")
+      if (found) {
+        return {
+          ok: true,
+          incoming: { ...lead, id: found.id, createdAt: found.createdAt },
+          prev: found,
+        }
+      }
+    } catch {
+      return { ok: false, unread: true }
+    }
     const resolved = await resolveLeadWrite(env.AUTH, lead)
     return { ok: true, incoming: resolved.incoming, prev: resolved.prev }
-  }
-  try {
-    const found = await findWorkspaceLead(env, lead.contact, telegramIdFromLead(lead), lead.telegramChatId ?? "")
-    if (found) {
-      return {
-        ok: true,
-        incoming: { ...lead, id: found.id, createdAt: found.createdAt },
-        prev: found,
-      }
-    }
   } catch {
     return { ok: false, unread: true }
   }
-  const resolved = await resolveLeadWrite(env.AUTH, lead)
-  return { ok: true, incoming: resolved.incoming, prev: resolved.prev }
 }
 
 /** Página mista: lê no backup os ids do índice que o KV não carregou. `null` é falha. */

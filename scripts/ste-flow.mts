@@ -7617,6 +7617,78 @@ assert(trackKvDownRemote.status === 200 && trackKvDownRemoteBody.ok, "GET summar
 assert((trackKvDownRemoteBody.summary?.views ?? 0) >= 1, "GET summary KV throw não esconde o pixel do Postgres")
 assert(trackKvDownRemoteBody.trackUnread === true, "GET summary KV throw marca trackUnread")
 assert((await kvTrackStore(runtimeHoleKv).load()).some((item) => item.visitorId === "aabbcc99"), "GET summary KV throw não pisa o leftover")
+const holeLead = { ...lead("hole-lead", "@holelead"), memory: "leftover-ficha" }
+await upsertLeadKv(runtimeHoleKv, holeLead)
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === "leftover-ficha", "KV do runtime hole ainda tem a ficha leftover")
+const leadKeyDownEnv = { ...runtimeHoleBase, AUTH: kvThrowsOn(runtimeHoleKv, leadKey("hole-lead")) } as Env
+const leadKeyDownResolved = await resolveWorkspaceLeadWrite(leadKeyDownEnv, { ...holeLead, memory: "unread-write" })
+assert(!leadKeyDownResolved.ok && leadKeyDownResolved.unread, "resolve com ficha KV throw é unread")
+const leadKeyDownPost = await handleRequest(
+  new Request("http://local.test/api/leads", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie },
+    body: JSON.stringify({ lead: { ...holeLead, memory: "unread-write" } }),
+  }),
+  leadKeyDownEnv,
+  backgroundCtx()
+)
+const leadKeyDownPostBody = (await leadKeyDownPost.json()) as { error?: string; ok?: boolean; saved?: number }
+assert(leadKeyDownPost.status === 503, "POST lead KV throw é 503")
+assert(leadKeyDownPost.status !== 500, "POST lead KV throw não é Falha interna")
+assert(leadKeyDownPostBody.error === "Não li o lead do Postgres.", "POST lead KV throw pede confirmação")
+assert(leadKeyDownPostBody.ok !== true && leadKeyDownPostBody.saved !== 1, "POST lead KV throw não finge gravar")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === "leftover-ficha", "POST lead KV throw não pisa a ficha leftover")
+const mintKeyDownPost = await handleRequest(
+  new Request("http://local.test/api/leads", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie },
+    body: JSON.stringify({ lead: lead("mint-hole", "@minthole") }),
+  }),
+  { ...runtimeHoleBase, AUTH: kvThrowsOn(runtimeHoleKv, leadKey("mint-hole")) } as Env,
+  backgroundCtx()
+)
+assert(mintKeyDownPost.status === 503, "POST mint KV throw é 503")
+assert(!(await listLeads(runtimeHoleKv, 20, "all")).some((item) => item.contact === "@minthole"), "POST mint KV throw não mint o segundo UUID")
+const removedDownEnv = { ...runtimeHoleBase, AUTH: kvThrowsOn(runtimeHoleKv, CRM_REMOVED) } as Env
+const removedDownList = await handleRequest(
+  new Request("http://local.test/api/leads", { headers: { cookie: runtimeHoleCookie } }),
+  removedDownEnv,
+  backgroundCtx()
+)
+const removedDownListBody = (await removedDownList.json()) as { ok?: boolean; leads?: Array<{ id?: string }>; removed?: unknown; error?: string }
+assert(removedDownList.status === 200 && removedDownListBody.ok, "GET leads tombstone KV throw ainda manda o leftover")
+assert(removedDownList.status !== 500, "GET leads tombstone KV throw não é Falha interna")
+assert(removedDownListBody.leads?.some((item) => item.id === "hole-lead"), "GET leads tombstone KV throw não esconde a ficha leftover")
+assert(!Array.isArray(removedDownListBody.removed), "GET leads tombstone KV throw não inventa lista vazia de removidos")
+const removedDownInbox = await handleRequest(
+  new Request("http://local.test/api/inbox", { headers: { cookie: runtimeHoleCookie } }),
+  removedDownEnv,
+  backgroundCtx()
+)
+const removedDownInboxBody = (await removedDownInbox.json()) as { ok?: boolean; error?: string }
+assert(removedDownInbox.status === 200 && removedDownInboxBody.ok, "GET inbox tombstone KV throw ainda responde")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.contact === "@holelead", "GET tombstone KV throw não pisa a ficha leftover")
+const leadKeyDownMcp = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: runtimeHoleCookie, "x-forwarded-for": "203.0.113.170" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 260,
+      method: "tools/call",
+      params: { name: "abilion_get_lead", arguments: { id: "hole-lead" } },
+    }),
+  }),
+  leadKeyDownEnv,
+  backgroundCtx()
+)
+const leadKeyDownMcpData = JSON.parse(
+  ((await leadKeyDownMcp.json()) as { result?: { isError?: boolean; content?: Array<{ text?: string }> } }).result?.content?.[0]?.text || "{}"
+) as { error?: string; lead?: { memory?: string } }
+assert(leadKeyDownMcp.status === 200, "MCP get_lead KV throw não cai em 500")
+assert(leadKeyDownMcpData.error === "Não li o lead do Postgres.", "MCP get_lead KV throw pede confirmação")
+assert(!leadKeyDownMcpData.lead, "MCP get_lead KV throw não finge que a ficha já não está")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.memory === "leftover-ficha", "MCP get_lead KV throw não pisa a ficha leftover")
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()
