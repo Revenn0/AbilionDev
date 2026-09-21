@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import { Copy, Terminal } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { StatusPill } from "@/components/layout/chrome"
+import { PageAnchors } from "@/components/layout/manual"
 import { workerUrl } from "@/lib/channel"
 import {
   MCP_LIMITS,
@@ -28,8 +29,17 @@ export function McpPane() {
   }
 
   return (
-    <div id="mcp" data-settings-mcp className="grid max-w-3xl gap-3">
-      <section className="surface p-6">
+    <div id="mcp" data-settings-mcp className="grid gap-3">
+      <PageAnchors
+        items={[
+          { href: "#mcp-entrada", label: "Onde entra" },
+          { href: "#mcp-faz", label: "O que faz" },
+          { href: "#mcp-limite", label: "O que não faz" },
+          { href: "#mcp-claude", label: "Claude Code" },
+        ]}
+      />
+      <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
+      <section id="mcp-entrada" className="surface scroll-mt-6 p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-[14px] font-medium">Onde o agente entra</p>
@@ -69,13 +79,23 @@ export function McpPane() {
         </div>
       </section>
 
-      <section className="surface p-6">
+      <section id="mcp-limite" className="surface scroll-mt-6 p-6">
+        <p className="text-[14px] font-medium">O que o agente não faz</p>
+        <ul className="mt-3 space-y-2 text-[12.5px] leading-relaxed text-muted-foreground">
+          {MCP_LIMITS.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      </section>
+      </div>
+
+      <section id="mcp-faz" className="surface scroll-mt-6 p-6">
         <p className="text-[14px] font-medium">O que o agente pode fazer</p>
         <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
           Isto é o catálogo que o Worker já expõe em <code className="text-foreground">tools/list</code>. Não há ferramenta
           inventada aqui — o que não aparece, o agente não faz.
         </p>
-        <div className="mt-5 space-y-5">
+        <div className="mt-5 grid items-start gap-4 lg:grid-cols-2">
           {groups.map((group) => (
             <div key={group.id} data-mcp-group={group.id}>
               <p className="text-[13px] font-medium">{group.label}</p>
@@ -90,31 +110,22 @@ export function McpPane() {
               </ul>
             </div>
           ))}
-        </div>
-        <div className="mt-5">
-          <p className="text-[13px] font-medium">Recurso</p>
-          <p className="mt-0.5 text-[12px] text-muted-foreground">Leitura à parte das ferramentas, no mesmo servidor.</p>
-          <ul className="mt-2 divide-y divide-border overflow-hidden rounded-xl border border-border">
-            {MCP_RESOURCES.map((item) => (
-              <li key={item.uri} className="px-3.5 py-2.5">
-                <code className="text-[12.5px] font-medium">{item.uri}</code>
-                <p className="mt-1 text-[12.5px] text-muted-foreground">{item.hint}</p>
-              </li>
-            ))}
-          </ul>
+          <div className="lg:col-span-2">
+            <p className="text-[13px] font-medium">Recurso</p>
+            <p className="mt-0.5 text-[12px] text-muted-foreground">Leitura à parte das ferramentas, no mesmo servidor.</p>
+            <ul className="mt-2 divide-y divide-border overflow-hidden rounded-xl border border-border">
+              {MCP_RESOURCES.map((item) => (
+                <li key={item.uri} className="px-3.5 py-2.5">
+                  <code className="text-[12.5px] font-medium">{item.uri}</code>
+                  <p className="mt-1 text-[12.5px] text-muted-foreground">{item.hint}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       </section>
 
-      <section className="surface p-6">
-        <p className="text-[14px] font-medium">O que o agente não faz</p>
-        <ul className="mt-3 space-y-2 text-[12.5px] leading-relaxed text-muted-foreground">
-          {MCP_LIMITS.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="surface p-6">
+      <section id="mcp-claude" className="surface scroll-mt-6 max-w-3xl p-6">
         <div className="flex items-center gap-2">
           <Terminal className="size-4 text-muted-foreground" />
           <p className="text-[14px] font-medium">Claude Code</p>

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import { useHashScroll } from "@/lib/use-hash-scroll"
 import { Send } from "lucide-react"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
+import { PageAnchors } from "@/components/layout/manual"
 import { PixelSnippet } from "@/components/layout/pixel-snippet"
 import { SyncBanner } from "@/components/layout/sync-banner"
 import { Button } from "@/components/ui/button"
@@ -145,9 +146,15 @@ export function TelegramPage() {
           </Button>
         </PageChrome>
 
-        <PixelSnippet origin={workerUrl()} botUsername={botName} />
+        <PageAnchors
+          items={[
+            { href: "#telegram-estado", label: "Estado" },
+            { href: "#telegram-canal", label: "Canal" },
+            { href: "#pixel", label: "Manual do pixel" },
+          ]}
+        />
 
-        <section className="grid gap-3 md:grid-cols-4">
+        <section id="telegram-estado" className="grid scroll-mt-6 gap-3 md:grid-cols-4">
           <article className="surface p-5">
             <p className="text-[12.5px] text-muted-foreground">Bot</p>
             <p className="mt-2 text-[18px] font-medium">{botUnread || runtimeFailed ? "…" : botName || "Por configurar"}</p>
@@ -177,8 +184,8 @@ export function TelegramPage() {
           </article>
         </section>
 
-        <section className="surface p-6">
-          <p className="text-[14px] font-medium">Canal no mesmo grafo</p>
+        <section id="telegram-canal" className="surface scroll-mt-6 p-6">
+          <p className="text-[14px] font-medium">Canal</p>
           <p className="mt-2 max-w-2xl text-[13.5px] leading-relaxed text-muted-foreground">
             /start no privado: a Sté manda 3 boas-vindas e espera. Join no grupo só cria o lead da campanha Telegram. O token
             grava-se em Configurações e fica no Worker, nunca no git.
@@ -200,6 +207,8 @@ export function TelegramPage() {
             </p>
           )}
         </section>
+
+        <PixelSnippet origin={workerUrl()} botUsername={botName} />
       </div>
     </div>
   )

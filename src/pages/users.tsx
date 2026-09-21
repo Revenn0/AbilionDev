@@ -217,8 +217,9 @@ export function UsersPage() {
           )}
         </section>
 
+        <div className="grid items-start gap-3 xl:grid-cols-2">
         {owner ? (
-          <section className="surface max-w-xl p-5">
+          <section className="surface min-w-0 p-5">
             <p className="text-[14px] font-medium">Nova conta</p>
             <p className="mt-1 text-[12.5px] text-muted-foreground">A pessoa entra com o e-mail e a senha que definires.</p>
             <form className="mt-4 space-y-3" onSubmit={create}>
@@ -295,7 +296,7 @@ export function UsersPage() {
           <p className="text-[13px] text-muted-foreground">Só o dono cria ou desliga contas.</p>
         )}
 
-        <section className="surface max-w-2xl p-5">
+        <section className="surface min-w-0 p-5">
           <div className="flex items-center gap-2">
             <KeyRound className="size-4 text-muted-foreground" />
             <p className="text-[14px] font-medium">Tokens MCP</p>
@@ -426,6 +427,7 @@ export function UsersPage() {
 }`}
           </pre>
         </section>
+        </div>
       </div>
     </div>
   )

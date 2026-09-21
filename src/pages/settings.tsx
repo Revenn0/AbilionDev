@@ -18,6 +18,7 @@ import {
   Webhook,
 } from "lucide-react"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
+import { PageAnchors } from "@/components/layout/manual"
 import { SyncBanner } from "@/components/layout/sync-banner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -104,7 +105,7 @@ export function SettingsPage() {
       <div className="page-shell">
         <PageChrome icon={SettingsIcon} title="Configurações" />
         <p className="max-w-3xl text-[13px] leading-relaxed text-muted-foreground">
-          Telegram e pixel nesta primeira aba. O agente MCP — URL, token e o que ele pode fazer no estúdio — fica em{" "}
+          Bot, modelo e voz ficam em Telegram. O manual do pixel está no fim dessa aba. O que o agente faz — URL e catálogo — fica em{" "}
           <button type="button" className="font-medium text-foreground underline-offset-2 hover:underline" onClick={() => go("mcp")}>
             MCP
           </button>
@@ -124,7 +125,7 @@ export function SettingsPage() {
           />
         </div>
 
-        <div role="tablist" aria-label="Secções de configurações" className="flex w-fit flex-wrap gap-1 rounded-full bg-card p-1">
+        <div role="tablist" aria-label="Secções de configurações" className="flex w-full gap-1 overflow-x-auto rounded-full bg-card p-1">
           {TABS.map((item, index) => (
             <button
               key={item.id}
@@ -147,7 +148,7 @@ export function SettingsPage() {
                 window.requestAnimationFrame(() => document.getElementById(`settings-tab-${next.id}`)?.focus())
               }}
               className={cn(
-                "h-8 rounded-full px-3.5 text-[12.5px] font-medium",
+                "h-8 shrink-0 whitespace-nowrap rounded-full px-3.5 text-[12.5px] font-medium",
                 tab === item.id ? "bg-background text-foreground" : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -228,7 +229,15 @@ function BotPane() {
   }, [])
 
   return (
-    <div className="grid max-w-3xl gap-3">
+    <div className="grid gap-3">
+      <PageAnchors
+        items={[
+          { href: "#bot-ligar", label: "Bot" },
+          { href: "#ste-modelo", label: "Modelo" },
+          { href: "#ste-voz", label: "Voz" },
+          { href: "#pixel", label: "Manual do pixel" },
+        ]}
+      />
       {runtimeLoaded && !runtime.ok && (
         <p role="alert" className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-[12.5px] text-destructive">
           Não consegui ler o runtime do Worker.{" "}
@@ -246,11 +255,8 @@ function BotPane() {
           Não confirmei as definições no Postgres. Username, grupo e scripts de página podem estar desactualizados.
         </p>
       ) : null}
-      <PixelSnippet
-        origin={origin}
-        botUsername={cleanBotUsername(username) || runtime.telegramBotUsername || state.settings.telegramBotUsername}
-      />
-      <section className="surface p-6">
+      <div className="grid max-w-3xl gap-3">
+      <section id="bot-ligar" className="surface scroll-mt-6 p-6">
         <p className="text-[14px] font-medium">Bot Telegram</p>
         <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
           Username, token e convite do grupo. Vincular grava no Worker e aponta o webhook. O token não fica no browser
@@ -428,7 +434,7 @@ function BotPane() {
           ) : null}
         </form>
       </section>
-      <section className="surface p-6">
+      <section id="ste-modelo" className="surface scroll-mt-6 p-6">
         <p className="text-[14px] font-medium">Sté · modelo</p>
         <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
           A Sté fala primeiro com DeepSeek V4.1 Flash no OpenCode. Se cair, usa o modelo do OpenRouter e depois o
@@ -509,7 +515,7 @@ function BotPane() {
           </fieldset>
         </form>
       </section>
-      <section className="surface p-6">
+      <section id="ste-voz" className="surface scroll-mt-6 p-6">
         <p className="text-[14px] font-medium">Voz da Sté · ElevenLabs</p>
         <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
           Mensagem grande vira áudio. A ElevenLabs gera cada clip uma vez; o Telegram reenvia o mesmo arquivo. Respostas
@@ -637,6 +643,11 @@ function BotPane() {
           })}
         </div>
       </section>
+      </div>
+      <PixelSnippet
+        origin={origin}
+        botUsername={cleanBotUsername(username) || runtime.telegramBotUsername || state.settings.telegramBotUsername}
+      />
     </div>
   )
 }

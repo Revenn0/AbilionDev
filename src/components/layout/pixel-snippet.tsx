@@ -7,6 +7,7 @@ import { ADS_ORIGIN, pixelPageHtml } from "@/lib/tracker-script"
 import { clipNewestIds } from "@/lib/crm"
 import { addPageScript, adsStartToken, funnelHasInstallableBoard, PAGE_INSTALL_STEPS, PAGE_SCRIPT_REMOVED_CAP, pageInstallManual, pageScriptFunnelLabel, pageScriptFunnelPending, pageScriptsListBlocked, pageScriptsWriteBlocked, removePageScript } from "@/lib/page-script"
 import { useStore } from "@/lib/store"
+import { ManualSteps } from "@/components/layout/manual"
 import { toast } from "sonner"
 
 export function PixelSnippet({ origin, botUsername }: { origin: string; botUsername?: string }) {
@@ -42,61 +43,57 @@ export function PixelSnippet({ origin, botUsername }: { origin: string; botUsern
 
   return (
     <section id="pixel" className="surface scroll-mt-6 p-6">
-      <p className="text-[14px] font-medium">Pixel e scripts de página</p>
-      <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
-        Cada landing pode ter o seu script e o seu funil. O manual é o mesmo no painel, em{" "}
-        <a className="font-medium text-foreground underline-offset-2 hover:underline" href="/api/install">
-          /api/install
-        </a>{" "}
-        e no MCP <code className="text-foreground">abilion_page_install_manual</code>.
-      </p>
-
-      <ol className="mt-4 space-y-3">
-        {PAGE_INSTALL_STEPS.map((step, index) => (
-          <li key={step.title} className="text-[13px] leading-relaxed">
-            <p className="font-medium">
-              {index + 1}. {step.title}
-            </p>
-            <p className="mt-0.5 text-[12.5px] text-muted-foreground">{step.body}</p>
-          </li>
-        ))}
-      </ol>
-
-      <p className="mt-4 text-[12.5px] text-muted-foreground">
-        Sem página própria, aponta o anúncio para{" "}
-        <a className="font-medium text-foreground underline-offset-2 hover:underline" href={landing}>
-          {landing}
-        </a>
-        {localIsAds ? null : (
-          <>
-            {" "}
-            · teste local:{" "}
-            <a className="font-medium text-foreground underline-offset-2 hover:underline" href={`${local}/l`}>
-              {local}/l
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(280px,0.95fr)]">
+        <div>
+          <p className="text-[14px] font-medium">Manual do pixel</p>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+            Cinco passos para a landing. O mesmo texto está em{" "}
+            <a className="font-medium text-foreground underline-offset-2 hover:underline" href="/api/install">
+              /api/install
+            </a>{" "}
+            e no MCP <code className="text-foreground">abilion_page_install_manual</code>.
+          </p>
+          <ManualSteps steps={PAGE_INSTALL_STEPS} />
+          <p className="mt-4 text-[12.5px] text-muted-foreground">
+            Sem página própria, aponta o anúncio para{" "}
+            <a className="font-medium text-foreground underline-offset-2 hover:underline" href={landing}>
+              {landing}
             </a>
-          </>
-        )}
-      </p>
+            {localIsAds ? null : (
+              <>
+                {" "}
+                · teste local:{" "}
+                <a className="font-medium text-foreground underline-offset-2 hover:underline" href={`${local}/l`}>
+                  {local}/l
+                </a>
+              </>
+            )}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-border bg-muted/30 p-4 lg:sticky lg:top-4">
+          <p className="text-[13.5px] font-medium">Script geral</p>
+          <p className="mt-1 text-[12.5px] text-muted-foreground">Funil publicado. Cola no head da landing.</p>
+          <pre className="mt-3 overflow-x-auto rounded-xl bg-muted px-4 py-3 text-[12px] leading-relaxed">
+            {defaultSnippet.replaceAll("<", "\u003c")}
+          </pre>
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-3 rounded-full"
+            onClick={() => {
+              void navigator.clipboard
+                .writeText(defaultSnippet)
+                .then(() => toast.success("Snippet geral copiado."))
+                .catch(() => toast.error("Não consegui copiar. Selecciona o snippet."))
+            }}
+          >
+            Copiar snippet geral
+          </Button>
+        </div>
+      </div>
 
-      <p className="mt-5 text-[13.5px] font-medium">Script geral (funil publicado)</p>
-      <pre className="mt-2 overflow-x-auto rounded-xl bg-muted px-4 py-3 text-[12px] leading-relaxed">
-        {defaultSnippet.replaceAll("<", "\u003c")}
-      </pre>
-      <Button
-        type="button"
-        variant="outline"
-        className="mt-3 rounded-full"
-        onClick={() => {
-          void navigator.clipboard
-            .writeText(defaultSnippet)
-            .then(() => toast.success("Snippet geral copiado."))
-            .catch(() => toast.error("Não consegui copiar. Selecciona o snippet."))
-        }}
-      >
-        Copiar snippet geral
-      </Button>
-
-      <p className="mt-6 text-[13.5px] font-medium">Outras páginas · outros funis</p>
+      <div className="mt-6 border-t border-border pt-6">
+      <p className="text-[13.5px] font-medium">Scripts por landing</p>
       <p className="mt-1 text-[12.5px] text-muted-foreground">
         Cria um script por landing. O <code className="text-foreground">?s=ID</code> manda o /start para aquele quadro.
       </p>
@@ -261,6 +258,7 @@ export function PixelSnippet({ origin, botUsername }: { origin: string; botUsern
       )}
 
       <p className="mt-4 text-[12px] text-muted-foreground">{manual.notes.join(" ")}</p>
+      </div>
     </section>
   )
 }

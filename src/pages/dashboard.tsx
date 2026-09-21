@@ -64,7 +64,7 @@ export function DashboardPage() {
           </Button>
         </PageChrome>
 
-        <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <Kpi href="/leads" label="Leads" value={pending || (clipped && ops.leads === 0) ? "…" : ops.leads} hint={hydrating ? "a carregar" : failed ? "sem leitura" : clipped ? "recorte" : empty ? "à espera de captura" : "na base"} bars={spark} />
           <Kpi
             href="/conversas"
