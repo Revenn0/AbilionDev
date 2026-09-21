@@ -1,8 +1,11 @@
 import { adoptFunnelStores, applyRemovedFunnels, commitStoredLead, commitStoredSettings, emptySettings, publicSettings, resolveLeadLookup } from "../src/lib/crm.ts"
 import { sanitizeLeadCategory } from "../src/lib/lead-category.ts"
 import { leadMatchesQuery } from "../src/lib/lead-name.ts"
+import { countryName, normalizeCountryCode, normalizeRegionCode } from "../src/lib/geo.ts"
 import { migrateSettings, sanitizeIncomingFunnel } from "../src/lib/migrate.ts"
+import { sanitizeVisitorId, summarizeTrack, type TrackEvent, type TrackKind, type TrackSummary } from "../src/lib/track.ts"
 import type { Lead, LeadEvent, SalesFunnel, Settings } from "../src/lib/types.ts"
+import { mergeTrackEvents } from "./track-store.ts"
 import { filterLiveLeads, findLeadInKv, isLeadPageCursor, isLeadRemoved, listLeadPage, loadAdoptedSettings, loadFunnelsKv, loadLead, loadRemovedFunnelIds, loadRemovedLeadIds, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge, resolveLeadWrite } from "./crm-store.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -329,6 +332,76 @@ export async function leadCatalogUnread(env: SettingsEnv): Promise<boolean> {
   if (!page.empty) return false
   const remote = await fetchRemoteLeadPage(env, 1, "all")
   return remote === null
+}
+
+type PageEventRow = {
+  id?: string
+  visitor_id?: string
+  kind?: string
+  path?: string
+  referrer?: string
+  campaign?: string
+  country?: string
+  city?: string
+  region?: string
+  device?: string
+  language?: string
+  at?: string
+}
+
+export function rowToTrackEvent(row: PageEventRow): TrackEvent | null {
+  const id = typeof row.id === "string" ? row.id.trim() : ""
+  const visitorId = sanitizeVisitorId(row.visitor_id)
+  const kind = (["view", "click", "telegram", "beat"].includes(String(row.kind)) ? row.kind : "") as TrackKind | ""
+  if (!id || !visitorId || !kind) return null
+  const countryCode = normalizeCountryCode(row.country)
+  const regionCode = normalizeRegionCode(row.region, countryCode)
+  return {
+    id,
+    visitorId,
+    kind,
+    path: String(row.path || "/").slice(0, 180),
+    referrer: String(row.referrer || "").slice(0, 240),
+    campaign: String(row.campaign || "").slice(0, 120),
+    country: countryName(countryCode, row.country),
+    countryCode,
+    city: String(row.city || "").slice(0, 64),
+    region: String(row.region || "").slice(0, 64),
+    regionCode,
+    device: String(row.device || "Outro").slice(0, 40),
+    language: String(row.language || "").slice(0, 16),
+    at: typeof row.at === "string" && row.at ? row.at : new Date().toISOString(),
+  }
+}
+
+/** Pixel no backup. `null` é falha; `[]` é vazio ou sem credenciais. */
+export async function fetchRemotePageEvents(env: SettingsEnv, limit = 4000): Promise<TrackEvent[] | null> {
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return []
+  const cap = Math.min(4000, Math.max(1, Math.floor(limit) || 4000))
+  const rows = await restWorkspace<PageEventRow[]>(
+    env,
+    `page_events?workspace_id=eq.${WORKSPACE}&select=*&order=at.desc&limit=${cap}`
+  )
+  if (rows === null || !Array.isArray(rows)) return null
+  return rows.map(rowToTrackEvent).filter((item): item is TrackEvent => Boolean(item))
+}
+
+/**
+ * Painel: KV e Postgres juntam-se.
+ * KV oco + backup em baixo é erro — zeros do pixel não são “ninguém veio”.
+ */
+export async function summarizeWorkspaceTrack(
+  env: SettingsEnv,
+  kvEvents: TrackEvent[],
+  now = Date.now()
+): Promise<{ ok: true; summary: TrackSummary; unread?: boolean } | { ok: false }> {
+  const remote = await fetchRemotePageEvents(env)
+  const canReach = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE)
+  if (canReach && remote === null) {
+    if (!kvEvents.length) return { ok: false }
+    return { ok: true, summary: summarizeTrack(kvEvents, now), unread: true }
+  }
+  return { ok: true, summary: summarizeTrack(mergeTrackEvents(kvEvents, remote ?? []), now) }
 }
 
 export type SettingsEnv = {

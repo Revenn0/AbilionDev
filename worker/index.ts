@@ -32,7 +32,7 @@ import {
 import { cleanBotUsername, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { isResolvedPersonName, preferLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
 import { resolveClientGeo } from "./geo-lookup.ts"
-import { kvTrackStore, memoryTrackStore, readTrackBody, recordTrack, summaryFromStore, type TrackStore } from "./track-store.ts"
+import { kvTrackStore, memoryTrackStore, readTrackBody, recordTrack, type TrackStore } from "./track-store.ts"
 import {
   deleteLeadKv,
   dueLeadsKv,
@@ -64,7 +64,7 @@ import {
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
 import { readJsonObject, readJsonStrict, type JsonFail } from "./json-body.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall, telegramJoinActor, telegramUpdateActor } from "./telegram.ts"
-import { fetchRemoteDueLeads, fetchRemoteLeadPage, fillLeadHoles, findWorkspaceLead, leadCatalogUnread, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, readWorkspaceFunnels, readWorkspaceSettings, resolveWorkspaceLeadWrite, rowToLead, searchWorkspaceLeads, type LeadRow } from "./workspace-settings.ts"
+import { fetchRemoteDueLeads, fetchRemoteLeadPage, fillLeadHoles, findWorkspaceLead, leadCatalogUnread, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, readWorkspaceFunnels, readWorkspaceSettings, resolveWorkspaceLeadWrite, rowToLead, searchWorkspaceLeads, summarizeWorkspaceTrack, type LeadRow } from "./workspace-settings.ts"
 import type { KvLike } from "./kv.ts"
 
 type Fetcher = { fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> }
@@ -414,7 +414,9 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!env.AUTH) return json({ error: "Auth ainda sem KV." }, 503)
     const user = await sessionUser(request, kvAuthStore(env.AUTH))
     if (!user) return json({ error: "Sessão expirada." }, 401)
-    return json({ ok: true, summary: await summaryFromStore(trackStore(env)) })
+    const result = await summarizeWorkspaceTrack(env, await trackStore(env).load())
+    if (!result.ok) return json({ error: "Não li os eventos do Postgres." }, 503)
+    return json({ ok: true, summary: result.summary, trackUnread: result.unread || undefined })
   }
 
   if (url.pathname === "/api/runtime" && request.method === "GET") {

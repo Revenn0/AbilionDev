@@ -89,7 +89,7 @@ import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.t
 import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_INDEX, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, leadPageCursor, leadPageFromRemote, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
-import { fetchRemoteDueLeads, fetchRemoteLeadByIdentity, fetchRemoteLeadsByIds, findWorkspaceLead, leadCatalogUnread, leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceFunnels, readWorkspaceSettings, remoteLeadDuePath, remoteLeadIdentityPath, remoteLeadListPath, remoteLeadSearchPath, resolveWorkspaceLeadWrite, rowToLead, sanitizeRemoteSearchNeedle, searchWorkspaceLeads, telegramIdFromLead } from "../worker/workspace-settings.ts"
+import { fetchRemoteDueLeads, fetchRemoteLeadByIdentity, fetchRemoteLeadsByIds, fetchRemotePageEvents, findWorkspaceLead, leadCatalogUnread, leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceFunnels, readWorkspaceSettings, remoteLeadDuePath, remoteLeadIdentityPath, remoteLeadListPath, remoteLeadSearchPath, resolveWorkspaceLeadWrite, rowToLead, rowToTrackEvent, sanitizeRemoteSearchNeedle, searchWorkspaceLeads, summarizeWorkspaceTrack, telegramIdFromLead } from "../worker/workspace-settings.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
@@ -110,7 +110,7 @@ import { campaignFor } from "../src/lib/labels.ts"
 import { barShare, catalogMetricPending, crmSyncAfterFlush, eventsSyncAfterNarrowRead, funnelsWriteBlocked, hasConversation, isImportedLead, isOperatorLockedLead, leadCatalogClipped, leadCatalogEmpty, leadFilterCount, leadFilterPending, leadMatchesFilter, leadTimelinePending, leadWritesBlocked, leadsExportBlocked, leadsHydrating, leadsLoadFailed, metricPending } from "../src/lib/ops.ts"
 import { usersWriteBlocked } from "../src/lib/users-api.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, saveSecrets, tokenHint } from "../worker/runtime-secrets.ts"
-import { memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
+import { kvTrackStore, memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
 import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, handleAuth, hashApiToken, hashPassword, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
 import { ensureVoiceClip, voiceClipStatus } from "../worker/ste-voice.ts"
@@ -2830,6 +2830,119 @@ const deniedLeadList = await handleRequest(new Request("http://local.test/api/le
 assert(deniedLeadList.status === 401, "lista de leads sem sessão é 401")
 const deniedSummary = await handleRequest(new Request("http://local.test/api/track/summary"), apiEnv, backgroundCtx())
 assert(deniedSummary.status === 401, "analytics sem sessão é 401")
+assert(rowToTrackEvent({ id: "ev-1", visitor_id: "aabbcc11", kind: "view", at: "2026-01-01T00:00:00.000Z" })?.visitorId === "aabbcc11", "page_events vira evento do pixel")
+assert(rowToTrackEvent({ id: "ev-1", visitor_id: "aabbcc11", kind: "nope" }) === null, "kind inválido não entra no summary")
+assert((await fetchRemotePageEvents({} as Env)).length === 0, "sem credenciais o pixel remoto não finge falha")
+assert(
+  (await fetchRemotePageEvents({ SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env)) === null,
+  "page_events com Postgres em baixo é null"
+)
+const trackEmptyUnread = await summarizeWorkspaceTrack(
+  { SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env,
+  []
+)
+assert(!trackEmptyUnread.ok, "KV oco + page_events unread não é zero")
+const trackLeftover = await recordTrack(memoryTrackStore(), { kind: "view", visitorId: "aabbcc11" }, Date.now())
+const trackLeftoverSummary = await summarizeWorkspaceTrack(
+  { SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env,
+  trackLeftover ? [trackLeftover] : []
+)
+assert(trackLeftoverSummary.ok && trackLeftoverSummary.unread && trackLeftoverSummary.summary.views >= 1, "KV leftover do pixel sobrevive unread")
+const trackDownKv = memoryKv()
+const trackDownEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: trackDownKv,
+  ABILION_ENV: "development",
+} as Env
+const trackDownLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  trackDownEnv,
+  backgroundCtx()
+)
+assert(trackDownLogin.status === 200, "login para o summary unread")
+const trackDownCookie = trackDownLogin.headers.get("set-cookie") || ""
+const trackDownPrev = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("/rest/v1/page_events")) throw new Error("page_events down")
+  return trackDownPrev(input, init)
+}) as typeof fetch
+try {
+  const trackDownSummary = await handleRequest(
+    new Request("http://local.test/api/track/summary", { headers: { cookie: trackDownCookie } }),
+    trackDownEnv,
+    backgroundCtx()
+  )
+  const trackDownBody = (await trackDownSummary.json()) as { error?: string; summary?: { views?: number } }
+  assert(trackDownSummary.status === 503 && trackDownBody.error?.includes("Postgres"), "GET summary oco + Postgres unread é 503")
+  assert(!trackDownBody.summary, "503 do pixel não devolve zeros")
+  await recordTrack(kvTrackStore(trackDownKv), { kind: "view", visitorId: "aabbcc11" }, Date.now())
+  const trackKeepSummary = await handleRequest(
+    new Request("http://local.test/api/track/summary", { headers: { cookie: trackDownCookie } }),
+    trackDownEnv,
+    backgroundCtx()
+  )
+  const trackKeepBody = (await trackKeepSummary.json()) as { ok?: boolean; summary?: { views?: number }; trackUnread?: boolean }
+  assert(trackKeepSummary.status === 200 && trackKeepBody.ok && (trackKeepBody.summary?.views ?? 0) >= 1, "GET summary leftover não esconde o pixel do KV")
+  assert(trackKeepBody.trackUnread, "GET summary leftover marca trackUnread")
+} finally {
+  globalThis.fetch = trackDownPrev
+}
+const trackRemoteKv = memoryKv()
+const trackRemoteEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: trackRemoteKv,
+  ABILION_ENV: "development",
+} as Env
+const trackRemoteLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  trackRemoteEnv,
+  backgroundCtx()
+)
+assert(trackRemoteLogin.status === 200, "login para o summary do backup")
+const trackRemoteCookie = trackRemoteLogin.headers.get("set-cookie") || ""
+const trackRemotePrev = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("/rest/v1/page_events")) {
+    return new Response(
+      JSON.stringify([
+        {
+          id: "pg-view",
+          visitor_id: "aabbcc22",
+          kind: "view",
+          path: "/l",
+          campaign: "Facebook · ads",
+          at: new Date().toISOString(),
+        },
+      ]),
+      { status: 200, headers: { "content-type": "application/json" } }
+    )
+  }
+  return trackRemotePrev(input, init)
+}) as typeof fetch
+try {
+  const trackRemoteSummary = await handleRequest(
+    new Request("http://local.test/api/track/summary", { headers: { cookie: trackRemoteCookie } }),
+    trackRemoteEnv,
+    backgroundCtx()
+  )
+  const trackRemoteBody = (await trackRemoteSummary.json()) as { ok?: boolean; summary?: { views?: number; visitors?: number } }
+  assert(trackRemoteSummary.status === 200 && trackRemoteBody.ok && (trackRemoteBody.summary?.views ?? 0) >= 1, "GET summary lê page_events quando o KV está oco")
+  assert((trackRemoteBody.summary?.visitors ?? 0) >= 1, "page_events oco no KV não finge zero visitantes")
+} finally {
+  globalThis.fetch = trackRemotePrev
+}
 const health = await handleRequest(new Request("http://local.test/api/health"), apiEnv, backgroundCtx())
 const healthBody = (await health.json()) as { ok?: boolean; telegramBotUsername?: string }
 assert(health.status === 200 && healthBody.ok && healthBody.telegramBotUsername === "", "health público expõe username vazio")
