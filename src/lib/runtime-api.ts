@@ -21,6 +21,7 @@ export type RuntimeStatus = {
   voiceClips?: Array<{ id: string; label: string; ready: boolean }>
   error?: string
   warning?: string
+  settingsUnread?: boolean
 }
 
 async function parse<T>(res: Response): Promise<T> {

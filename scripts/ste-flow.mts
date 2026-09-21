@@ -102,7 +102,7 @@ import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, mig
 import { adsDeepLink, campaignFromStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument, wantsAuthHtml } from "../src/lib/auth-pages.ts"
 import { addPageScript, adsLandingDocument, adsLandingUrl, adsStartToken, installSettingsBlocked, pageInstallManual, pageScriptsListBlocked, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
-import { leadFromImport, parseLeadImportLine, parseLeadImportText } from "../src/lib/lead-category.ts"
+import { leadFromImport, leadImportGroupBlocked, parseLeadImportLine, parseLeadImportText } from "../src/lib/lead-category.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
 import { campaignFor } from "../src/lib/labels.ts"
@@ -1531,6 +1531,10 @@ const importedGroup = leadFromImport({ name: "Ana", contact: "11987654321" }, { 
 assert(importedGroup.origin === "import" && importedGroup.stage === "group" && importedGroup.category === "Grupo", "import para o grupo")
 assert(importedGroup.channel === "whatsapp", "telefone importado fica WhatsApp")
 assert(importedGroup.memory.includes("t.me"), "import para o grupo guarda o convite")
+assert(leadImportGroupBlocked("error", ""), "import toGroup bloqueia se settings unread sem URL")
+assert(leadImportGroupBlocked("idle", ""), "import toGroup bloqueia enquanto as settings carregam sem URL")
+assert(!leadImportGroupBlocked("ok", ""), "import toGroup sem URL confirmado continua")
+assert(!leadImportGroupBlocked("error", "https://t.me/+abc"), "import toGroup unread com URL no KV segue")
 assert(leadsToCsv([importedGroup]).includes("category"), "CSV exporta categoria")
 assert(!canFlushCrm(false), "sem hydrate o painel não grava CRM")
 assert(canFlushCrm(true), "depois do GET o painel pode gravar")
@@ -5306,6 +5310,15 @@ assert(downCrm.status === 200, "CRM lê o KV se o Supabase cair")
 const downCrmBody = (await downCrm.json()) as { settingsUnread?: boolean; funnels?: unknown[] }
 assert(Array.isArray(downCrmBody.funnels), "CRM com Postgres em baixo ainda manda os funis do KV")
 assert(downCrmBody.settingsUnread === true, "CRM marca definições por confirmar se o Postgres cair")
+const downRuntime = await handleRequest(new Request("http://local.test/api/runtime", { headers: { cookie: liveCookie } }), downEnv, backgroundCtx())
+const downRuntimeBody = (await downRuntime.json()) as {
+  ok?: boolean
+  telegramBotUsername?: string
+  settingsUnread?: boolean
+}
+assert(downRuntime.status === 200 && downRuntimeBody.ok, "GET runtime unread continua de pé")
+assert(downRuntimeBody.telegramBotUsername === "@steaviator", "GET runtime lê o username das settings do KV")
+assert(downRuntimeBody.settingsUnread === true, "GET runtime marca settings unread")
 const downInstallMiss = await handleRequest(new Request("http://local.test/api/install?s=deadbeef"), downEnv, backgroundCtx())
 assert(downInstallMiss.status === 503, "GET /api/install?s= com settings unread não finge script em falta")
 assert(

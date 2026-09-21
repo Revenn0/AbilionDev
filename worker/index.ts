@@ -420,7 +420,14 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     if (!user) return json({ error: "Sessão expirada." }, 401)
     const hook = webhookUrl(request, env)
     const { resolved } = await runtimeOf(env, hook)
-    return json(await publishedRuntime(env, { ...resolved, webhookUrl: resolved.webhookUrl || hook }))
+    const loaded = await readWorkspaceSettings(env)
+    const published = await publishedRuntime(env, { ...resolved, webhookUrl: resolved.webhookUrl || hook })
+    return json({
+      ...published,
+      telegramBotUsername: cleanBotUsername(resolved.telegramBotUsername || loaded.settings.telegramBotUsername),
+      telegramGroupUrl: resolved.telegramGroupUrl || loaded.settings.telegramGroupUrl,
+      settingsUnread: loaded.unread || undefined,
+    })
   }
 
   if (url.pathname === "/api/runtime/voice" && request.method === "POST") {

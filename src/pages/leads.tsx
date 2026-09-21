@@ -17,7 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useStore } from "@/lib/store"
-import { addLeadCategory, leadFromImport, mergeLeadCategories, parseLeadImportText } from "@/lib/lead-category"
+import { addLeadCategory, leadFromImport, leadImportGroupBlocked, mergeLeadCategories, parseLeadImportText } from "@/lib/lead-category"
 import { captureAgainstFunnels } from "@/lib/templates"
 import { ORIGIN_LABEL, STAGE_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { isImportedLead, leadFilterCount, leadFilterPending, leadMatchesFilter, leadsHydrating } from "@/lib/ops"
@@ -46,7 +46,7 @@ const FILTERS = [
 ] as const
 
 export function LeadsPage() {
-  const { state, createLead, createLeads, saveLead, saveSettings, flushLeadNow, deleteLead, crmSync, inboxSync, persistSync } = useStore()
+  const { state, createLead, createLeads, saveLead, saveSettings, flushLeadNow, deleteLead, crmSync, inboxSync, persistSync, settingsSync } = useStore()
   const { summary } = useTrackSummary(8000)
   const [filter, setFilter] = useState<string>("all")
   const [query, setQuery] = useState("")
@@ -87,6 +87,7 @@ export function LeadsPage() {
             { ok: crmSync !== "error", message: "Não consegui ler o CRM do Worker." },
             { ok: inboxSync !== "error", message: "A inbox do Telegram não sincronizou." },
             { ok: persistSync !== "error", message: "Não consegui ler ou gravar leads no Worker." },
+            { ok: settingsSync !== "error", message: "Não confirmei as definições no Postgres. Importar para o grupo e as categorias podem estar desactualizados." },
           ]}
         />
         <PageChrome icon={Users} title="Leads">
@@ -245,6 +246,7 @@ export function LeadsPage() {
         onOpenChange={setImporting}
         categories={categories}
         groupUrl={state.settings.telegramGroupUrl}
+        settingsSync={settingsSync}
         onCategory={(name) => {
           const made = addLeadCategory(state.settings.leadCategories, name)
           if (made.ok) saveSettings({ leadCategories: made.categories })
@@ -450,6 +452,7 @@ function ImportLeadsDialog({
   onOpenChange,
   categories,
   groupUrl,
+  settingsSync,
   onCategory,
   onImport,
 }: {
@@ -457,9 +460,11 @@ function ImportLeadsDialog({
   onOpenChange: (open: boolean) => void
   categories: string[]
   groupUrl?: string
+  settingsSync: "idle" | "ok" | "error"
   onCategory: (name: string) => { ok: true; category: string } | { ok: false; error: string }
   onImport: (leads: Lead[]) => Promise<boolean>
 }) {
+  const groupBlocked = leadImportGroupBlocked(settingsSync, groupUrl)
   const [text, setText] = useState("")
   const [category, setCategory] = useState("")
   const [toGroup, setToGroup] = useState(false)
@@ -472,6 +477,10 @@ function ImportLeadsDialog({
     const parsed = parseLeadImportText(text)
     if (parsed.error) {
       setError(parsed.error)
+      return
+    }
+    if (toGroup && groupBlocked) {
+      setError("Não confirmei o grupo do Telegram.")
       return
     }
     busy.current = true
@@ -534,6 +543,7 @@ function ImportLeadsDialog({
               type="checkbox"
               className="mt-1"
               checked={toGroup}
+              disabled={groupBlocked}
               onChange={(event) => {
                 setToGroup(event.target.checked)
                 if (event.target.checked && !category) setCategory("Grupo")
@@ -550,6 +560,8 @@ function ImportLeadsDialog({
                   </a>
                   )
                 </>
+              ) : groupBlocked ? (
+                " — não confirmei o link do grupo no Worker"
               ) : (
                 " — o link do grupo está em Configurações → Bot"
               )}

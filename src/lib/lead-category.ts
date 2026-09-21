@@ -112,6 +112,11 @@ export function parseLeadImportText(raw: string): { rows: Array<{ name: string; 
   return { rows }
 }
 
+/** Sem URL e definições por confirmar: não marcar grupo. Settings ok sem URL continua a importar o passo grupo. */
+export function leadImportGroupBlocked(settingsSync: "idle" | "ok" | "error", groupUrl?: string) {
+  return !String(groupUrl || "").trim() && settingsSync !== "ok"
+}
+
 export function leadFromImport(
   row: { name: string; contact: string },
   input: { category?: string; toGroup?: boolean; groupUrl?: string } = {}
