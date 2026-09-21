@@ -1054,14 +1054,14 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
   }
   const kv = page.leads
   const missing = page.missingIds ?? []
-  const filter = channel === "telegram" ? "&channel=eq.telegram" : ""
-  const rows = await rest<LeadRow[]>(
-    env,
-    `leads?workspace_id=eq.${WORKSPACE}${filter}&select=*&order=updated_at.desc&limit=${limit}`
-  )
-  const remoteFailed = canReachRemote && rows === null
-  const remote = applyRemovedLeads((rows ?? []).map(rowToLead), env.AUTH ? await loadRemovedLeadIds(env.AUTH) : [])
   if (!kv.length) {
+    const filter = channel === "telegram" ? "&channel=eq.telegram" : ""
+    const rows = await rest<LeadRow[]>(
+      env,
+      `leads?workspace_id=eq.${WORKSPACE}${filter}&select=*&order=updated_at.desc&limit=${limit}`
+    )
+    const remoteFailed = canReachRemote && rows === null
+    const remote = applyRemovedLeads((rows ?? []).map(rowToLead), env.AUTH ? await loadRemovedLeadIds(env.AUTH) : [])
     if (page.nextCursor) {
       const filled = await fillLeadHoles(env, [], missing)
       const attached = await attachLeadEvents(env, filled.leads)
@@ -1088,9 +1088,8 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
     return { leads: [], nextCursor: page.nextCursor, stale: page.stale, clipped: true }
   }
   const filled = await fillLeadHoles(env, kv, missing)
-  const keep = new Set(filled.leads.map((lead) => lead.id))
-  const scoped = remote.filter((lead) => keep.has(lead.id))
-  const live = env.AUTH ? await filterLiveLeads(env.AUTH, scoped) : scoped
+  const extras = await fetchRemoteLeadsByIds(env, kv.map((lead) => lead.id))
+  const live = extras ? (env.AUTH ? await filterLiveLeads(env.AUTH, extras) : extras) : []
   const attached = await attachLeadEvents(env, adoptLeadStores(filled.leads, live))
   return {
     leads: attached.leads.slice(0, Math.max(limit, filled.leads.length)),

@@ -4454,6 +4454,97 @@ assert(mixedMcpFail.status === 200 && !mixedMcpFailBody.result?.isError && mixed
 assert(mixedMcpFailText.clipped === true, "MCP mista + Postgres em baixo marca clipped")
 assert(mixedMcpFailText.leads?.some((item) => item.id === "mix-live"), "MCP mista conserva o vivo se o backup cair")
 globalThis.fetch = mixedPrev
+const pageTalkEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: memoryKv(),
+  ABILION_ENV: "development",
+} as Env
+const pageTalk = {
+  ...lead("page-talk", "@pagetalk"),
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  messages: [{ id: "m-kv", at: "2026-01-01T00:00:00.000Z", role: "user" as const, text: "agora" }],
+}
+await upsertLeadKv(pageTalkEnv.AUTH, pageTalk)
+const pageTalkLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  pageTalkEnv,
+  backgroundCtx()
+)
+assert(pageTalkLogin.status === 200, "login na página hidratada")
+const pageTalkCookie = pageTalkLogin.headers.get("set-cookie") || ""
+const pageTalkRow = {
+  id: "page-talk",
+  name: "Talk",
+  contact: "@pagetalk",
+  channel: "telegram" as const,
+  campaign: "facebook",
+  origin: "facebook" as const,
+  temperature: "novo" as const,
+  stage: "welcome" as const,
+  memory: "ficha no backup",
+  facts: {},
+  messages: [{ id: "m-pg", at: "2025-12-01T00:00:00.000Z", role: "ste" as const, text: "já falámos" }],
+  updated_at: "2025-12-01T00:00:00.000Z",
+  created_at: "2025-12-01T00:00:00.000Z",
+}
+const pageNewRow = {
+  id: "page-new",
+  name: "Novo",
+  contact: "@pagenew",
+  channel: "telegram" as const,
+  campaign: "facebook",
+  origin: "facebook" as const,
+  temperature: "novo" as const,
+  stage: "welcome" as const,
+  memory: "",
+  facts: {},
+  messages: [],
+  updated_at: "2026-08-01T00:00:00.000Z",
+  created_at: "2026-08-01T00:00:00.000Z",
+}
+const pageTalkPrev = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  if (url.includes("/rest/v1/leads") && url.includes("order=updated_at") && (init?.method || "GET").toUpperCase() === "GET") {
+    return new Response(JSON.stringify([pageNewRow]), { status: 200 })
+  }
+  if (url.includes("/rest/v1/leads") && url.includes("id=in.") && url.includes("page-talk") && (init?.method || "GET").toUpperCase() === "GET") {
+    return new Response(JSON.stringify([pageTalkRow]), { status: 200 })
+  }
+  if (url.includes("/rest/v1/")) return new Response("[]", { status: 200 })
+  return pageTalkPrev(input, init)
+}) as typeof fetch
+try {
+  const pageTalkGet = await handleRequest(
+    new Request("http://local.test/api/leads", { headers: { cookie: pageTalkCookie } }),
+    pageTalkEnv,
+    backgroundCtx()
+  )
+  const pageTalkBody = (await pageTalkGet.json()) as { ok?: boolean; leads?: Array<{ id?: string; messages?: Array<{ id?: string }> }> }
+  const pageTalkHit = pageTalkBody.leads?.find((item) => item.id === "page-talk")
+  assert(pageTalkGet.status === 200 && pageTalkBody.ok, "GET leads hidrata a página do KV")
+  assert(pageTalkHit?.messages?.some((item) => item.id === "m-pg"), "GET leads lê as falas pelo id, não pelas últimas N")
+  assert(pageTalkHit?.messages?.some((item) => item.id === "m-kv"), "GET leads conserva as falas do KV")
+  assert(!pageTalkBody.leads?.some((item) => item.id === "page-new"), "GET leads não troca a página do KV pelas últimas N")
+  const pageTalkInbox = await handleRequest(
+    new Request("http://local.test/api/inbox", { headers: { cookie: pageTalkCookie } }),
+    pageTalkEnv,
+    backgroundCtx()
+  )
+  const pageTalkInboxBody = (await pageTalkInbox.json()) as { leads?: Array<{ id?: string; messages?: Array<{ id?: string }> }> }
+  assert(
+    pageTalkInboxBody.leads?.some((item) => item.id === "page-talk" && item.messages?.some((msg) => msg.id === "m-pg")),
+    "GET inbox hidrata as falas pelo id"
+  )
+} finally {
+  globalThis.fetch = pageTalkPrev
+}
 const pagedOrphanKv = memoryKv()
 await upsertLeadKv(pagedOrphanKv, lead("page-live", "@pagelive"))
 await pagedOrphanKv.put(
