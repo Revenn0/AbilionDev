@@ -58,6 +58,17 @@ export function snapshotForLead(funnels: SalesFunnel[], lead?: Pick<Lead, "funne
   return publishedSnapshot(funnels)
 }
 
+/** Funil do /start ou do lead só no Postgres unread: o webhook/cron não caem no publicado leftover. */
+export function leadFunnelUnread(
+  funnelsUnread: boolean,
+  funnelId: string | undefined,
+  funnels: Array<{ id: string }>
+) {
+  const id = (funnelId || "").trim()
+  if (!funnelsUnread || !id) return false
+  return !funnels.some((item) => item.id === id)
+}
+
 export function snapshotOf(funnel: SalesFunnel): SalesSnapshot {
   return {
     name: funnel.name,

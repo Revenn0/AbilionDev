@@ -6,7 +6,7 @@ import { advanceSteIfDue, isSteWait, rememberLeadTalk, replySte, replySteSmart, 
 import { linkFollowUp, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { campaignFromStart, originFromStart, parseTelegramStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
-import { applyEvent, canAdvanceRemoteWait, dueWaits, pickLiveDueLead, snapshotForLead } from "../src/lib/runtime.ts"
+import { applyEvent, canAdvanceRemoteWait, dueWaits, leadFunnelUnread, pickLiveDueLead, snapshotForLead } from "../src/lib/runtime.ts"
 import { leadCategoriesMutationBlocked } from "../src/lib/lead-category.ts"
 import { adsLandingDocument, installSettingsBlocked, pageInstallManual, pageScriptById, pageScriptsMutationBlocked } from "../src/lib/page-script.ts"
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument } from "../src/lib/auth-pages.ts"
@@ -65,7 +65,7 @@ import {
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
 import { readJsonObject, readJsonStrict, type JsonFail } from "./json-body.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall, telegramJoinActor, telegramUpdateActor } from "./telegram.ts"
-import { fetchRemoteDueLeads, fetchRemoteLeadPage, fillLeadHoles, findWorkspaceLead, leadCatalogUnread, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, readWorkspaceFunnels, readWorkspaceSettings, rowToLead, searchWorkspaceLeads, type LeadRow } from "./workspace-settings.ts"
+import { fetchRemoteDueLeads, fetchRemoteLeadPage, fillLeadHoles, findWorkspaceLead, leadCatalogUnread, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, readWorkspaceFunnels, readWorkspaceSettings, rowToLead, searchWorkspaceLeads, type LeadRow } from "./workspace-settings.ts"
 import type { KvLike } from "./kv.ts"
 
 type Fetcher = { fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> }
@@ -690,7 +690,12 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     const secret = url.searchParams.get("secret") ?? request.headers.get("x-cron-secret")
     if (!env.CRON_SECRET || secret !== env.CRON_SECRET) return json({ ok: false }, 401)
     const result = await processWaits(env)
-    return json({ ok: true, advanced: result.advanced, remoteUnread: result.remoteUnread })
+    return json({
+      ok: true,
+      advanced: result.advanced,
+      remoteUnread: result.remoteUnread,
+      funnelsUnread: result.funnelsUnread || undefined,
+    })
   }
 
   return json({ ok: false, error: "not_found" }, 404)
@@ -802,7 +807,8 @@ async function deliverTelegram(env: Env, update: TelegramUpdate, token: string):
   }
 
   const incoming = joinUser || start.isStart ? null : (message?.text ?? null)
-  const funnels = await loadFunnels(env)
+  const boards = await readWorkspaceFunnels(env)
+  const funnels = boards.funnels
   const loaded = await readWorkspaceSettings(env)
   const settings = loaded.settings
   const startPayload = start.isStart && start.payload ? start.payload : lead.startPayload
@@ -814,6 +820,9 @@ async function deliverTelegram(env: Env, update: TelegramUpdate, token: string):
   if (start.isStart && start.payload && script) {
     lead.funnelId = script.funnelId
     lead.campaign = `Facebook · ${script.name}`.slice(0, 120)
+  }
+  if (!joinUser && leadFunnelUnread(boards.unread, lead.funnelId, funnels)) {
+    throw new Error("Não confirmei o funil deste script.")
   }
   const ste = steRuntimeFromFunnels(funnels, settings, lead.funnelId)
   const shouldTalk = ste.talking !== false && !joinUser
@@ -849,8 +858,8 @@ async function deliverTelegram(env: Env, update: TelegramUpdate, token: string):
   return { sent: delivered }
 }
 
-async function processWaits(env: Env): Promise<{ advanced: number; remoteUnread: boolean }> {
-  const empty = { advanced: 0, remoteUnread: false }
+async function processWaits(env: Env): Promise<{ advanced: number; remoteUnread: boolean; funnelsUnread: boolean }> {
+  const empty = { advanced: 0, remoteUnread: false, funnelsUnread: false }
   const lockOwner = env.AUTH ? await claimCronLock(env.AUTH) : "local"
   if (!lockOwner) return empty
   if (env.AUTH && lockOwner !== "local" && !(await renewCronLock(env.AUTH, lockOwner))) return empty
@@ -864,13 +873,15 @@ async function processWaits(env: Env): Promise<{ advanced: number; remoteUnread:
     const liveDue = env.AUTH ? await filterLiveLeads(env.AUTH, adopted) : adopted
     const remoteUnread = Boolean(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE && remoteDue === null)
     const byId = new Map(liveDue.map((lead) => [lead.id, lead]))
-    if (!byId.size) return { advanced: 0, remoteUnread }
-    const funnels = await loadFunnels(env)
+    if (!byId.size) return { advanced: 0, remoteUnread, funnelsUnread: false }
+    const boards = await readWorkspaceFunnels(env)
+    const funnels = boards.funnels
     const settings = await loadSettings(env)
     const { resolved } = await runtimeOf(env)
     const token = resolved.telegramBotToken
     const due = dueWaits([...byId.values()])
     let advanced = 0
+    let funnelsUnread = false
     for (const queued of due) {
       try {
         if (env.AUTH && lockOwner !== "local" && !(await renewCronLock(env.AUTH, lockOwner))) break
@@ -878,6 +889,10 @@ async function processWaits(env: Env): Promise<{ advanced: number; remoteUnread:
         const lead = pickLiveDueLead(queued, live)
         if (!lead) continue
         if (!canAdvanceRemoteWait(lead, Boolean(token))) continue
+        if (leadFunnelUnread(boards.unread, lead.funnelId, funnels)) {
+          funnelsUnread = true
+          continue
+        }
         const snapshot = snapshotForLead(funnels, lead)
         const ste = steRuntimeFromFunnels(funnels, settings, lead.funnelId)
         if (isSteWait(lead)) {
@@ -917,7 +932,7 @@ async function processWaits(env: Env): Promise<{ advanced: number; remoteUnread:
         continue
       }
     }
-    return { advanced, remoteUnread }
+    return { advanced, remoteUnread, funnelsUnread }
   } finally {
     if (env.AUTH) await releaseCronLock(env.AUTH, lockOwner)
   }
@@ -946,10 +961,6 @@ async function persistSettings(env: Env, settings: Settings) {
     clean = await persistSettingsMerge(env.AUTH, incoming)
   }
   await persistRemoteSettings(env, clean)
-}
-
-async function loadFunnels(env: Env): Promise<SalesFunnel[]> {
-  return loadWorkspaceFunnels(env)
 }
 
 async function loadSettings(env: Env): Promise<Settings> {

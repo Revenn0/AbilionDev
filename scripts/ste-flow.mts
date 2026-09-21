@@ -82,7 +82,7 @@ import {
   settingsWriteFingerprint,
   leadPersistSync,
 } from "../src/lib/crm.ts"
-import { applyEvent, canAdvanceRemoteWait, eventFromOrigin, pickLiveDueLead, publishedFunnel, publishedSnapshot, snapshotForLead, waitHours } from "../src/lib/runtime.ts"
+import { applyEvent, canAdvanceRemoteWait, eventFromOrigin, leadFunnelUnread, pickLiveDueLead, publishedFunnel, publishedSnapshot, snapshotForLead, waitHours } from "../src/lib/runtime.ts"
 import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
@@ -789,6 +789,10 @@ const clippedBoards = clipFunnelsKeepBoards(
 )
 assert(clippedBoards.some((item) => item.id === "publicado-vivo"), "hydrate recorta rascunho, não o quadro publicado")
 assert(snapshotForLead([boardA, boardB], { funnelId: "funil-a" })?.name === "A", "lead com script usa o quadro daquela landing")
+assert(leadFunnelUnread(true, "fun-ads", []), "unread + funil miss não cai no publicado leftover")
+assert(!leadFunnelUnread(true, "fun-ads", [{ id: "fun-ads" }]), "funil leftover no KV segue")
+assert(!leadFunnelUnread(true, "", [{ id: "fun-other" }]), "sem funnelId usa o publicado leftover")
+assert(!leadFunnelUnread(false, "fun-ads", []), "GET confirmado + miss é órfão")
 const madeScript = addPageScript([], { name: "Landing Superbet", funnelId: "funil-b" })
 assert(madeScript.ok && madeScript.script.funnelId === "funil-b", "cria script de outra página")
 assert(cleanTelegramGroupUrl("https://t.me/+abc123").includes("t.me"), "convite t.me passa")
@@ -5928,6 +5932,41 @@ await scriptHitCtx.flush()
 const scriptHit = (await listLeads(scriptHookKv, 20, "all")).find((item) => item.contact === "@scripthit")
 assert(scriptHit?.funnelId === "fun-ads", "/start com script no KV liga o funil mesmo unread")
 assert(scriptHit?.campaign === "Facebook · Landing ads", "/start unread usa o nome do script do KV")
+await saveFunnelsKv(scriptHookKv, [
+  {
+    ...emptySalesFunnel("Outro quadro"),
+    id: "fun-other",
+    status: "active",
+    production: { name: "Outro quadro", publishedAt: "2026-01-01T00:00:00.000Z", nodes: [], edges: [] },
+  },
+])
+const scriptWrongCtx = backgroundCtx()
+assert(
+  (
+    await handleRequest(
+      new Request("http://local.test/api/telegram", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-secret" },
+        body: JSON.stringify({
+          update_id: 8811,
+          message: {
+            chat: { id: 8811 },
+            text: "/start fb_sdeadbeef_aabbcc11",
+            from: { id: 8811, username: "scriptwrong", first_name: "Noa" },
+          },
+        }),
+      }),
+      scriptHookEnv,
+      scriptWrongCtx
+    )
+  ).status === 200,
+  "webhook unread + funil do script em falta ainda é 200"
+)
+await scriptWrongCtx.flush()
+assert(
+  !(await listLeads(scriptHookKv, 20, "all")).some((item) => item.contact === "@scriptwrong"),
+  "/start com funil unread não fala o publicado leftover"
+)
 globalThis.fetch = scriptHookPrev
 const cronEnv = { ...liveEnv, CRON_SECRET: "cron" } as Env
 await upsertLeadKv(cronEnv.AUTH, {
@@ -6473,6 +6512,54 @@ try {
   assert((await loadLead(unreadDueKv, "due-kv"))?.waitUntil !== unreadWait, "espera do KV avançou mesmo unread")
 } finally {
   globalThis.fetch = unreadDueFetch
+}
+
+const funnelMissWait = new Date(Date.now() - 2000).toISOString()
+const funnelMissKv = memoryKv()
+await saveFunnelsKv(funnelMissKv, [
+  {
+    ...emptySalesFunnel("Outro quadro"),
+    id: "fun-other",
+    status: "active",
+    production: { name: "Outro quadro", publishedAt: "2026-01-01T00:00:00.000Z", nodes: [], edges: [] },
+  },
+])
+await upsertLeadKv(funnelMissKv, {
+  ...lead("due-funnel-miss", "@duemiss"),
+  waitUntil: funnelMissWait,
+  memory: "ste:remarketing",
+  stePhase: "offer",
+  funnelId: "fun-ads",
+})
+await upsertLeadKv(funnelMissKv, {
+  ...lead("due-funnel-ok", "@dueok"),
+  waitUntil: funnelMissWait,
+  memory: "ste:remarketing",
+  stePhase: "offer",
+})
+const funnelMissEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: funnelMissKv,
+  CRON_SECRET: "cron",
+  ABILION_ENV: "development",
+} as Env
+const funnelMissFetch = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL) => {
+  const url = String(input)
+  if (url.includes("/rest/v1/funnels")) throw new Error("funnels down")
+  return new Response("[]", { status: 200, headers: { "content-type": "application/json" } })
+}) as typeof fetch
+try {
+  const funnelMissCron = await handleRequest(new Request("http://local.test/api/cron?secret=cron"), funnelMissEnv, backgroundCtx())
+  const funnelMissBody = (await funnelMissCron.json()) as { ok?: boolean; advanced?: number; funnelsUnread?: boolean }
+  assert(funnelMissCron.status === 200 && funnelMissBody.ok && funnelMissBody.advanced === 1, "cron avança a espera sem funil preso")
+  assert(funnelMissBody.funnelsUnread, "cron marca funis unread quando o quadro do lead falha")
+  assert((await loadLead(funnelMissKv, "due-funnel-miss"))?.waitUntil === funnelMissWait, "espera do funil unread não cai no publicado leftover")
+  assert((await loadLead(funnelMissKv, "due-funnel-ok"))?.waitUntil !== funnelMissWait, "espera sem funnelId avança no leftover")
+} finally {
+  globalThis.fetch = funnelMissFetch
 }
 
 const goneRemote = lead("gone-remote", "@goneremote")
