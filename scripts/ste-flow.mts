@@ -6789,13 +6789,13 @@ await saveSecrets(runtimeHoleKv, {
   elevenVoiceId: "voice_leftover",
 })
 let elevenHits = 0
-const voiceFetch = globalThis.fetch
+const elevenLabsFetch = globalThis.fetch
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   if (String(input).includes("api.elevenlabs.io")) {
     elevenHits += 1
     return new Response("blocked", { status: 500 })
   }
-  return voiceFetch(input, init)
+  return elevenLabsFetch(input, init)
 }) as typeof fetch
 const voicePostOf = (ip: string, env: Env) =>
   handleRequest(
@@ -6836,7 +6836,7 @@ assert(
 )
 assert(elevenHits === 0, "POST voice store throw não gasta ElevenLabs")
 assert((await loadSecrets(runtimeHoleKv)).elevenApiKey === "sk_leftover", "POST voice store throw não pisa a chave leftover")
-globalThis.fetch = voiceFetch
+globalThis.fetch = elevenLabsFetch
 const kvDownMcpHealth = await handleRequest(
   new Request("http://local.test/mcp", {
     method: "POST",
