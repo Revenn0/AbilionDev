@@ -8,7 +8,7 @@ import { TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { campaignFromStart, originFromStart, parseTelegramStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { applyEvent, canAdvanceRemoteWait, dueWaits, pickLiveDueLead, snapshotForLead } from "../src/lib/runtime.ts"
 import { adsLandingDocument, pageInstallManual, pageScriptById } from "../src/lib/page-script.ts"
-import { authForgotDocument, authLoginDocument, authPrivacyDocument } from "../src/lib/auth-pages.ts"
+import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument } from "../src/lib/auth-pages.ts"
 import { safeAppPath } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { BANCA_FIXED, type Lead, type LeadEvent, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types.ts"
@@ -37,7 +37,6 @@ import {
   dueLeadsKv,
   filterLiveLeads,
   findLeadInKv,
-  lookupLeadsByQuery,
   isLeadPageCursor,
   leadPageFromRemote,
   listLeadPage,
@@ -66,7 +65,7 @@ import {
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
 import { readJsonObject, readJsonStrict, type JsonFail } from "./json-body.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall } from "./telegram.ts"
-import { fetchRemoteLeadPage, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, rowToLead, type LeadRow } from "./workspace-settings.ts"
+import { fetchRemoteLeadPage, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, rowToLead, searchWorkspaceLeads, type LeadRow } from "./workspace-settings.ts"
 import type { KvLike } from "./kv.ts"
 
 type Fetcher = { fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> }
@@ -217,6 +216,18 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext) {
       new Response(request.method === "HEAD" ? null : authForgotDocument({ next: url.searchParams.get("next") }), {
         headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
       })
+    )
+  }
+  if ((url.pathname === "/reset" || url.pathname === "/reset/") && (request.method === "GET" || request.method === "HEAD")) {
+    return withSecurityHeaders(
+      new Response(
+        request.method === "HEAD"
+          ? null
+          : authResetDocument({ token: url.searchParams.get("token"), next: url.searchParams.get("next") }),
+        {
+          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+        }
+      )
     )
   }
   if ((url.pathname === "/privacidade" || url.pathname === "/privacidade/") && (request.method === "GET" || request.method === "HEAD")) {
@@ -514,8 +525,9 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     const query = (url.searchParams.get("q") || "").trim()
     if (query) {
       if (query.length > 80) return json({ error: "Busca inválida." }, 400)
-      const found = await lookupLeadsByQuery(env.AUTH, query)
-      const leads = await attachLeadEvents(env, await filterLiveLeads(env.AUTH, found))
+      const found = await searchWorkspaceLeads(env, query)
+      if (!found.ok) return json({ error: "Não li os leads do Postgres." }, 503)
+      const leads = await attachLeadEvents(env, await filterLiveLeads(env.AUTH, found.leads))
       return json({ ok: true, leads })
     }
     const cursor = (url.searchParams.get("cursor") || "").trim()

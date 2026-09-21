@@ -87,6 +87,38 @@ ${done ? `<p id="forgot-done" role="status" class="ok">${escapeHtml(done)}</p>` 
   )
 }
 
+export function authResetDocument(input: { token?: string | null; next?: string | null; error?: string } = {}) {
+  const token = (input.token || "").trim().slice(0, 200)
+  const next = safeAppPath(input.next)
+  const error = (input.error || "").trim().slice(0, 180)
+  const loginHref = next === "/" ? "/login" : `/login?next=${encodeURIComponent(next)}`
+  const forgotHref = next === "/" ? "/forgot" : `/forgot?next=${encodeURIComponent(next)}`
+  if (!token) {
+    return authShell(
+      "Nova senha",
+      `<p class="brand">Abilion</p>
+<h1>Nova senha</h1>
+<p class="hint">Este link está incompleto. Pede um novo em Esqueceu a senha.</p>
+<nav><a href="${escapeHtml(forgotHref)}">Gerar outro link</a> · <a href="${escapeHtml(loginHref)}">Voltar ao login</a></nav>`
+    )
+  }
+  return authShell(
+    "Nova senha",
+    `<p class="brand">Abilion</p>
+<h1>Nova senha</h1>
+<p class="hint">Define a senha desta conta.</p>
+${error ? `<p id="reset-error" role="alert" class="err">${escapeHtml(error)}</p>` : ""}
+<form method="post" action="/api/auth/reset" accept-charset="utf-8">
+<input type="hidden" name="token" value="${escapeHtml(token)}">
+<input type="hidden" name="next" value="${escapeHtml(next)}">
+<label for="password">Senha</label>
+<input id="password" name="password" type="password" autocomplete="new-password" minlength="6" required>
+<button type="submit">Guardar senha</button>
+</form>
+<nav><a href="${escapeHtml(loginHref)}">Voltar ao login</a></nav>`
+  )
+}
+
 export function authPrivacyDocument() {
   return authShell(
     "Privacidade",

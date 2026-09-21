@@ -1,8 +1,9 @@
 import { adoptFunnelStores, emptySettings, publicSettings } from "../src/lib/crm.ts"
 import { sanitizeLeadCategory } from "../src/lib/lead-category.ts"
+import { leadMatchesQuery } from "../src/lib/lead-name.ts"
 import { migrateSettings, sanitizeIncomingFunnel } from "../src/lib/migrate.ts"
 import type { Lead, LeadEvent, SalesFunnel, Settings } from "../src/lib/types.ts"
-import { isLeadPageCursor, loadAdoptedSettings, loadFunnelsKv, loadRemovedFunnelIds, persistFunnelsMerge, persistSettingsMerge } from "./crm-store.ts"
+import { isLeadPageCursor, listLeadPage, loadAdoptedSettings, loadFunnelsKv, loadRemovedFunnelIds, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge } from "./crm-store.ts"
 import type { KvLike } from "./kv.ts"
 
 const WORKSPACE = "local"
@@ -96,6 +97,73 @@ export function remoteLeadListPath(channel: "telegram" | "all", limit: number, c
     parts.push(`or=(updated_at.lt.${updatedAt},and(updated_at.eq.${updatedAt},id.lt.${id}))`)
   }
   return `leads?${parts.join("&")}`
+}
+
+/** Corta `,()*` e afins para o `or=` do PostgREST não virar outro filtro. */
+export function sanitizeRemoteSearchNeedle(query: string) {
+  return query
+    .trim()
+    .slice(0, 80)
+    .replace(/[^a-zA-ZÀ-ÿ0-9@+_.\s-]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+/** KV oco: busca no backup. Sem needle seguro devolve path vazio. */
+export function remoteLeadSearchPath(query: string, limit = 50) {
+  const exact = query.trim().slice(0, 80)
+  const needle = sanitizeRemoteSearchNeedle(exact)
+  const digits = exact.replace(/\D/g, "")
+  const filters: string[] = []
+  if (needle.length >= 3) {
+    const like = `*${needle}*`
+    filters.push(
+      `name.ilike.${like}`,
+      `contact.ilike.${like}`,
+      `campaign.ilike.${like}`,
+      `last_message.ilike.${like}`,
+      `telegram_chat_id.ilike.${like}`,
+      `facts->>category.ilike.${like}`
+    )
+  }
+  if (digits.length >= 8) filters.push(`contact.ilike.*${digits}*`)
+  if (/^[a-z0-9-]{3,80}$/i.test(exact)) filters.push(`id.eq.${exact}`)
+  if (!filters.length) return ""
+  return `leads?${[
+    `workspace_id=eq.${WORKSPACE}`,
+    "select=*",
+    `or=(${filters.join(",")})`,
+    "order=updated_at.desc,id.desc",
+    `limit=${Math.max(1, Math.min(50, limit))}`,
+  ].join("&")}`
+}
+
+/** KV oco: lê o backup pela busca. `null` é falha; `[]` é vazio, sem credenciais ou needle curto. */
+export async function fetchRemoteLeadSearch(env: SettingsEnv, query: string): Promise<Lead[] | null> {
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return []
+  const path = remoteLeadSearchPath(query)
+  if (!path) return []
+  const rows = await restWorkspace<LeadRow[]>(env, path)
+  if (rows === null || !Array.isArray(rows)) return null
+  return rows.map(rowToLead).filter((lead) => leadMatchesQuery(lead, query))
+}
+
+/**
+ * Painel e MCP: o KV ganha. Índice oco cai no Postgres.
+ * `ok: false` só quando o índice está vazio, há credenciais e o backup falha.
+ */
+export async function searchWorkspaceLeads(
+  env: SettingsEnv,
+  query: string
+): Promise<{ ok: true; leads: Lead[] } | { ok: false }> {
+  if (!env.AUTH) return { ok: true, leads: [] }
+  const found = await lookupLeadsByQuery(env.AUTH, query)
+  if (found.length) return { ok: true, leads: found }
+  const page = await listLeadPage(env.AUTH, 1, "all")
+  if (!page.empty) return { ok: true, leads: [] }
+  const remote = await fetchRemoteLeadSearch(env, query)
+  if (remote === null) return { ok: false }
+  return { ok: true, leads: remote }
 }
 
 /** KV oco: lê o backup. `null` é falha; `[]` é vazio ou sem credenciais. */

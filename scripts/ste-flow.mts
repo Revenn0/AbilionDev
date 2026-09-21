@@ -86,7 +86,7 @@ import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.t
 import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, leadPageCursor, leadPageFromRemote, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
-import { leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, remoteLeadListPath, rowToLead } from "../worker/workspace-settings.ts"
+import { leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, remoteLeadListPath, remoteLeadSearchPath, rowToLead, sanitizeRemoteSearchNeedle, searchWorkspaceLeads } from "../worker/workspace-settings.ts"
 import { STE_LLM_FALLBACK, STE_LLM_MODEL, STE_OPENCODE_MODEL, steLlmAttempts, steModelChain } from "../src/lib/llm.ts"
 import { clipHash, linkFollowUp, linksFromReplies, spokenHasUrl, STE_VOICE_CLIPS, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { FETCH_TIMEOUT_MS, KEEPALIVE_MAX_BYTES } from "../src/lib/http.ts"
@@ -98,7 +98,7 @@ import { contactLookups, normalizeTelegramContact, sameLeadContact, validateCapt
 import { displayContact, draftLeadField, formatPhoneContact, isPhoneLikeName, isResolvedPersonName, leadMatchesQuery, nameFromMessages, preferLeadName, resolveLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, migrateLeadOrigin, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink, campaignFromStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
-import { authForgotDocument, authLoginDocument, authPrivacyDocument, wantsAuthHtml } from "../src/lib/auth-pages.ts"
+import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument, wantsAuthHtml } from "../src/lib/auth-pages.ts"
 import { addPageScript, adsLandingDocument, adsLandingUrl, adsStartToken, pageInstallManual, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
 import { leadFromImport, parseLeadImportLine, parseLeadImportText } from "../src/lib/lead-category.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
@@ -676,6 +676,17 @@ assert(!authLoginDocument({ error: "<script>alert(1)</script>" }).includes("<scr
 assert(authForgotDocument().includes('action="/api/auth/forgot"'), "HTML do forgot tem o formulário")
 assert(authPrivacyDocument().includes("Privacidade") && authPrivacyDocument().includes("/login"), "HTML da privacidade liga o login")
 assert(
+  authResetDocument().includes("incompleto") && authResetDocument().includes("Gerar outro"),
+  "HTML do reset sem token é empty state"
+)
+assert(authResetDocument({ token: "abc" }).includes('action="/api/auth/reset"'), "HTML do reset tem o formulário")
+assert(authResetDocument({ token: "abc", next: "//evil.com" }).includes('name="next" value="/"'), "next perigoso no reset vira /")
+assert(
+  !authResetDocument({ token: '"><img src=x>', error: "<script>alert(1)</script>" }).includes("<script>alert"),
+  "erro do reset é escapado"
+)
+assert(!authResetDocument({ token: '"><img src=x>' }).includes("<img"), "token sujo não entra no HTML")
+assert(
   wantsAuthHtml(new Request("http://local.test/api/auth/login", { headers: { "content-type": "application/x-www-form-urlencoded" } })),
   "POST form pede HTML"
 )
@@ -1009,6 +1020,13 @@ assert(
   "cursor do backup vira keyset no Postgres"
 )
 assert(leadFactsForRemote({ ...lead("cat-1"), category: "Grupo" }).category === "Grupo", "facts do backup levam a categoria")
+assert(sanitizeRemoteSearchNeedle("ana,(id.eq.x)") === "anaid.eq.x", "needle da busca corta vírgulas e parênteses")
+assert(remoteLeadSearchPath("ab") === "", "busca curta não monta filtro no Postgres")
+assert(remoteLeadSearchPath("!!!") === "", "needle só pontuação não monta filtro")
+assert(remoteLeadSearchPath("look-me").includes("id.eq.look-me"), "busca pelo id vai no eq")
+assert(remoteLeadSearchPath("Grupo Premium").includes("name.ilike.*Grupo Premium*"), "busca pelo nome vai no ilike")
+assert(remoteLeadSearchPath("Grupo Premium").includes("facts->>category.ilike.*Grupo Premium*"), "busca pela categoria vai no jsonb")
+assert(!remoteLeadSearchPath("foo,bar").includes("foo,bar"), "vírgula do operador não entra no or=")
 const fromFacts = rowToLead({
   id: "cat-1",
   name: "Ana",
@@ -3000,6 +3018,115 @@ const pgFullNext = await handleRequest(
 const pgFullNextBody = (await pgFullNext.json()) as { leads?: unknown[]; nextCursor?: string; clipped?: boolean }
 assert(pgFullNext.status === 200 && pgFullCursorSeen, "segunda página do backup usa o keyset")
 assert((pgFullNextBody.leads?.length ?? 1) === 0 && !pgFullNextBody.nextCursor && !pgFullNextBody.clipped, "última página curta do backup fecha a lista")
+const pgSearchRow = {
+  id: "pg-ana",
+  name: "Ana Souza",
+  contact: "@anasouza",
+  channel: "telegram" as const,
+  campaign: "Facebook · ads",
+  origin: "facebook" as const,
+  temperature: "novo" as const,
+  stage: "capture" as const,
+  memory: "",
+  facts: { category: "Grupo Premium" },
+  messages: [],
+  telegram_chat_id: "4401",
+  updated_at: "2026-06-02T00:00:00.000Z",
+  created_at: "2026-06-01T00:00:00.000Z",
+}
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  if (url.includes("/rest/v1/leads") && (init?.method || "GET").toUpperCase() === "GET" && url.includes("ilike")) {
+    return new Response(JSON.stringify([pgSearchRow]), { status: 200 })
+  }
+  if (url.includes("/rest/v1/")) return new Response("[]", { status: 200 })
+  return pgFullPrev(input, init)
+}) as typeof fetch
+const pgSearchHit = await searchWorkspaceLeads(pgFullEnv, "Ana Souza")
+assert(pgSearchHit.ok && pgSearchHit.leads[0]?.id === "pg-ana", "índice oco encontra o lead no Postgres")
+const pgSearchCat = await searchWorkspaceLeads(pgFullEnv, "Grupo Premium")
+assert(pgSearchCat.ok && pgSearchCat.leads[0]?.id === "pg-ana", "índice oco encontra pela categoria no jsonb")
+const pgSearchHttp = await handleRequest(
+  new Request("http://local.test/api/leads?q=Ana%20Souza", { headers: { cookie: pgFullCookie } }),
+  pgFullEnv,
+  backgroundCtx()
+)
+const pgSearchHttpBody = (await pgSearchHttp.json()) as { ok?: boolean; leads?: Array<{ id?: string }> }
+assert(pgSearchHttp.status === 200 && pgSearchHttpBody.leads?.some((item) => item.id === "pg-ana"), "GET ?q= no KV oco lê o Postgres")
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("/rest/v1/")) throw new Error("postgres down")
+  return pgFullPrev(input, init)
+}) as typeof fetch
+const pgSearchFail = await searchWorkspaceLeads(pgFullEnv, "Ana Souza")
+assert(!pgSearchFail.ok, "índice oco + Postgres em baixo não finge busca vazia")
+const pgSearchFailHttp = await handleRequest(
+  new Request("http://local.test/api/leads?q=Ana%20Souza", { headers: { cookie: pgFullCookie } }),
+  pgFullEnv,
+  backgroundCtx()
+)
+assert(pgSearchFailHttp.status === 503, "GET ?q= no KV oco é 503 se o Postgres falhar")
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  if (url.includes("/rest/v1/leads") && (init?.method || "GET").toUpperCase() === "GET" && url.includes("ilike")) {
+    return new Response(JSON.stringify([pgSearchRow]), { status: 200 })
+  }
+  if (url.includes("/rest/v1/")) return new Response("[]", { status: 200 })
+  return pgFullPrev(input, init)
+}) as typeof fetch
+const pgSearchMint = await handleRequest(
+  new Request("http://local.test/api/tokens", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: pgFullCookie, "x-forwarded-for": "198.51.100.77" },
+    body: JSON.stringify({ name: "Busca" }),
+  }),
+  pgFullEnv,
+  backgroundCtx()
+)
+const pgSearchMinted = (await pgSearchMint.json()) as { token?: string }
+assert(pgSearchMint.status === 201 && pgSearchMinted.token?.startsWith("abn_"), "token para a busca MCP")
+const mcpSearch = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${pgSearchMinted.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 80,
+      method: "tools/call",
+      params: { name: "abilion_list_leads", arguments: { q: "Ana Souza" } },
+    }),
+  }),
+  pgFullEnv,
+  backgroundCtx()
+)
+const mcpSearchBody = (await mcpSearch.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
+const mcpSearchList = JSON.parse(mcpSearchBody.result?.content?.[0]?.text || "{}") as { ok?: boolean; leads?: Array<{ id?: string }> }
+assert(mcpSearch.status === 200 && mcpSearchList.ok && mcpSearchList.leads?.some((item) => item.id === "pg-ana"), "MCP q= no KV oco lê o Postgres")
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("/rest/v1/")) throw new Error("postgres down")
+  return pgFullPrev(input, init)
+}) as typeof fetch
+const mcpSearchFail = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${pgSearchMinted.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 81,
+      method: "tools/call",
+      params: { name: "abilion_list_leads", arguments: { q: "Ana Souza" } },
+    }),
+  }),
+  pgFullEnv,
+  backgroundCtx()
+)
+const mcpSearchFailBody = (await mcpSearchFail.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
+const mcpSearchFailText = JSON.parse(mcpSearchFailBody.result?.content?.[0]?.text || "{}") as { error?: string }
+assert(mcpSearchFailBody.result?.isError && mcpSearchFailText.error?.includes("Postgres"), "MCP q= no KV oco é erro se o Postgres falhar")
+await upsertLeadKv(pgFullEnv.AUTH, lead("kv-live", "@kvlive"))
+const pgSearchKvMiss = await searchWorkspaceLeads(pgFullEnv, "zzzmissing")
+assert(pgSearchKvMiss.ok && pgSearchKvMiss.leads.length === 0, "índice com entradas e zero hits não é 503")
+const pgSearchKvHit = await searchWorkspaceLeads(pgFullEnv, "@kvlive")
+assert(pgSearchKvHit.ok && pgSearchKvHit.leads[0]?.id === "kv-live", "GET ?q= ainda lê o KV quando ele tem o lead")
 globalThis.fetch = pgFullPrev
 const inbox = (await (
   await handleRequest(new Request("http://local.test/api/inbox", { headers: { cookie: startCookie } }), startEnv, backgroundCtx())
@@ -3974,6 +4101,73 @@ const privacyHtml = await handleRequest(new Request("http://local.test/privacida
 assert(privacyHtml.status === 200 && (await privacyHtml.text()).includes("Privacidade"), "GET /privacidade é HTML do Worker")
 const forgotHtml = await handleRequest(new Request("http://local.test/forgot"), liveEnv, backgroundCtx())
 assert(forgotHtml.status === 200 && (await forgotHtml.text()).includes('action="/api/auth/forgot"'), "GET /forgot é HTML do Worker")
+const resetEmptyHtml = await handleRequest(
+  new Request("http://local.test/reset"),
+  {
+    ...liveEnv,
+    ASSETS: {
+      fetch: async () => {
+        throw new Error("assets down")
+      },
+    },
+  } as Env,
+  backgroundCtx()
+)
+assert(resetEmptyHtml.status === 200, "GET /reset não depende dos assets")
+const resetEmptyBody = await resetEmptyHtml.text()
+assert(resetEmptyBody.includes("incompleto") && resetEmptyBody.includes("Gerar outro"), "GET /reset sem token é empty state")
+const resetHtml = await handleRequest(new Request("http://local.test/reset?token=abc&next=/leads"), liveEnv, backgroundCtx())
+const resetHtmlBody = await resetHtml.text()
+assert(resetHtml.status === 200 && resetHtmlBody.includes('action="/api/auth/reset"'), "GET /reset?token= traz o formulário")
+assert(resetHtmlBody.includes('name="token" value="abc"') && resetHtmlBody.includes('name="next" value="/leads"'), "GET /reset conserva token e next")
+const resetFormEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  AUTH: memoryKv(),
+  ABILION_ENV: "development",
+} as Env
+await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  resetFormEnv,
+  backgroundCtx()
+)
+const resetFormBad = await handleRequest(
+  new Request("http://local.test/api/auth/reset", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: "token=nope&password=senhaok&next=%2Fleads",
+  }),
+  resetFormEnv,
+  backgroundCtx()
+)
+assert(resetFormBad.status === 400, "reset form inválido é 400")
+assert((await resetFormBad.text()).includes("Link expirado ou inválido."), "reset form inválido mostra o erro no HTML")
+const resetForgot = (await (
+  await handleRequest(
+    new Request("http://local.test/api/auth/forgot", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.41" },
+      body: JSON.stringify({ email: "victor@abilion.com" }),
+    }),
+    resetFormEnv,
+    backgroundCtx()
+  )
+).json()) as { resetPath?: string }
+const resetFormToken = resetForgot.resetPath?.split("token=")[1] || ""
+assert(resetFormToken, "forgot local devolve token para o form do reset")
+const resetFormOk = await handleRequest(
+  new Request("http://local.test/api/auth/reset", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: `token=${encodeURIComponent(resetFormToken)}&password=senhaok&next=%2Fleads`,
+  }),
+  resetFormEnv,
+  backgroundCtx()
+)
+assert(resetFormOk.status === 303 && resetFormOk.headers.get("location") === "/login?next=%2Fleads", "reset form válido redirecciona ao login")
 const pixelPlain = await handleRequest(
   new Request("http://local.test/api/track", {
     method: "POST",

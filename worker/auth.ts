@@ -1,4 +1,4 @@
-import { authForgotDocument, authLoginDocument, wantsAuthHtml } from "../src/lib/auth-pages.ts"
+import { authForgotDocument, authLoginDocument, authResetDocument, wantsAuthHtml } from "../src/lib/auth-pages.ts"
 import { safeAppPath } from "../src/lib/safe-path.ts"
 import { readJsonObject } from "./json-body.ts"
 
@@ -635,6 +635,16 @@ function loginFail(request: Request, error: string, status: number, body?: AuthB
   return json({ error }, status)
 }
 
+function resetFail(request: Request, error: string, status: number, body?: AuthBody) {
+  if (wantsAuthHtml(request)) return authHtml(authResetDocument({ token: body?.token, next: body?.next, error }), status)
+  return json({ error }, status)
+}
+
+function resetLoginPath(next?: string) {
+  const path = safeAppPath(next)
+  return path === "/" ? "/login" : `/login?next=${encodeURIComponent(path)}`
+}
+
 export function retainUserSessions(sessions: Session[], userId: string, next: Session, cap = SESSION_CAP) {
   const others = sessions.filter((item) => item.userId !== userId)
   const mine = sessions
@@ -891,25 +901,25 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     const body = parsed.body
     const token = body.token || ""
     const password = body.password || ""
-    if (!token || password.length < 6) return json({ error: "Token ou senha inválidos." }, 400)
+    if (!token || password.length < 6) return resetFail(request, "Token ou senha inválidos.", 400, body)
     let snapshot = prune(await store.load())
     const guard = consumeThrottle(snapshot, `reset:${clientIp(request)}`, 5, 15 * 60 * 1000)
     snapshot = guard.snapshot
     if (!guard.ok) {
       await store.save(snapshot)
-      return json({ error: "Muitas tentativas. Espera uns minutos e tenta de novo." }, 429)
+      return resetFail(request, "Muitas tentativas. Espera uns minutos e tenta de novo.", 429, body)
     }
     const rec = snapshot.resets[token]
     if (!rec) {
       await store.save(snapshot)
-      return json({ error: "Link expirado ou inválido." }, 400)
+      return resetFail(request, "Link expirado ou inválido.", 400, body)
     }
     const user = snapshot.users.find((item) => item.id === rec.userId)
     if (!user || user.disabled) {
       snapshot.spentResets = clipAuthTokens([token, ...(snapshot.spentResets ?? [])], AUTH_SPENT_RESET_CAP)
       delete snapshot.resets[token]
       await store.save(snapshot)
-      return json({ error: "Link expirado ou inválido." }, 400)
+      return resetFail(request, "Link expirado ou inválido.", 400, body)
     }
     user.passwordHash = await hashPassword(password)
     user.passwordUpdatedAt = Date.now()
@@ -920,6 +930,15 @@ export async function handleAuth(request: Request, store: AuthStore, env?: { ABI
     dropUserApiTokens(snapshot, user)
     delete snapshot.resets[token]
     await store.save(snapshot)
+    if (wantsAuthHtml(request)) {
+      return new Response(null, {
+        status: 303,
+        headers: {
+          location: resetLoginPath(body.next),
+          "cache-control": "no-store",
+        },
+      })
+    }
     return json({ ok: true })
   }
 

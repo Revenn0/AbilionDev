@@ -14,8 +14,8 @@ import {
   type PublicUser,
 } from "./auth.ts"
 import { handleTokens, handleUsers } from "./users.ts"
-import { filterLiveLeads, importOrAdoptLead, leadPageFromRemote, listLeadPage, lookupLeadsByQuery } from "./crm-store.ts"
-import { fetchRemoteLeadPage, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings } from "./workspace-settings.ts"
+import { filterLiveLeads, importOrAdoptLead, leadPageFromRemote, listLeadPage } from "./crm-store.ts"
+import { fetchRemoteLeadPage, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings, searchWorkspaceLeads } from "./workspace-settings.ts"
 import { readJsonStrict } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -172,7 +172,7 @@ const TOOLS = [
   },
   {
     name: "abilion_list_leads",
-    description: "Lista leads (recorte). Não devolve o histórico completo da conversa.",
+    description: "Lista leads (recorte). q= busca no KV e, se o índice estiver oco, no Postgres. Não devolve o histórico completo da conversa.",
     inputSchema: {
       type: "object",
       properties: {
@@ -392,8 +392,9 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     const query = str(args.q).trim()
     if (query) {
       if (query.length > 80) throw new Error("Busca inválida.")
-      const found = await lookupLeadsByQuery(env.AUTH, query)
-      return { ok: true, leads: (await filterLiveLeads(env.AUTH, found)).slice(0, 50).map(compactLead) }
+      const found = await searchWorkspaceLeads(env, query)
+      if (!found.ok) throw new Error("Não li os leads do Postgres.")
+      return { ok: true, leads: (await filterLiveLeads(env.AUTH, found.leads)).slice(0, 50).map(compactLead) }
     }
     const limit = Math.min(50, Math.max(1, Number(args.limit) || 20))
     const cursor = str(args.cursor).trim()

@@ -147,7 +147,7 @@ Públicas:
 
 - `/login` — entrada. Em produção o Worker manda o formulário no primeiro HTML (sem esperar o SPA). Victor e Gabriel no primeiro acesso; as outras contas vêm de Utilizadores. O POST `application/x-www-form-urlencoded` redirecciona; o JSON do painel continua igual.
 - `/forgot` — localmente gera link de reset. Em produção não envia e-mail. O `next=` do login segue para forgot/reset e volta.
-- `/reset?token=` — nova senha a partir do link local.
+- `/reset?token=` — nova senha a partir do link local. Em produção o Worker manda o formulário no primeiro HTML (sem esperar o SPA). O POST `application/x-www-form-urlencoded` redirecciona para o login; o JSON do painel continua igual.
 - `/privacidade` — política do CRM interno.
 - `/l` — landing do anúncio: em produção o Worker manda HTML com `/t.js` e o CTA no primeiro byte (o Facebook não espera o SPA). O botão aponta para o username do Worker; o `t.js` reescreve `fb_{vid}`. Sem username, mostra empty state — não inventa um bot. Localmente o Vite ainda hidrata a mesma página em React.
 
@@ -157,7 +157,7 @@ Autenticadas:
 - `/analytics` — funil Ads → landing → Telegram, globo, 30 dias.
 - `/fluxo` — lista de funis. **Importar** lê JSON do ManyChat, n8n, Typebot, um funil Abilion ou uma lista de mensagens. O resultado fica rascunho.
 - `/fluxo/funil/:id` — editor visual + runtime. Zoom/ajuste no canto superior direito; **Testar fluxo** no canto inferior direito — no telemóvel já não tapam um ao outro.
-- `/leads` — CRM, captura, categorias, **Importar lista** (opcionalmente para o grupo). Contacto `ana` e `@ana` são o mesmo lead — import e MCP reusam o id do alias, não criam uma segunda ficha. Fechar a ficha grava o rascunho (onChange) e, se o React não ouviu, o texto visível — sem reverter a temperatura. Excluir só fecha a ficha se o Worker aceitar. Em lead com `telegramChatId` **ou** lista importada (WhatsApp / origem `import`) a ficha não avança print, espera nem oferta. Nota, temperatura e categoria ainda gravam. O tick da Sté / isolate não apaga a categoria. O POST `/api/leads` (`adoptOperatorLead`) recusa o mesmo avanço num chat real **e** num import. A busca `?q=` também casa a categoria.
+- `/leads` — CRM, captura, categorias, **Importar lista** (opcionalmente para o grupo). Contacto `ana` e `@ana` são o mesmo lead — import e MCP reusam o id do alias, não criam uma segunda ficha. Fechar a ficha grava o rascunho (onChange) e, se o React não ouviu, o texto visível — sem reverter a temperatura. Excluir só fecha a ficha se o Worker aceitar. Em lead com `telegramChatId` **ou** lista importada (WhatsApp / origem `import`) a ficha não avança print, espera nem oferta. Nota, temperatura e categoria ainda gravam. O tick da Sté / isolate não apaga a categoria. O POST `/api/leads` (`adoptOperatorLead`) recusa o mesmo avanço num chat real **e** num import. A busca `?q=` também casa a categoria. Com o índice KV oco, o painel e o MCP leem o Postgres em vez de fingir lista vazia.
 - `/conversas` — inbox Telegram da Sté. Os primeiros 80 vêm na lista; **Carregar mais** abre o resto hidratado. Sem conversas, “Simular conversa” corre o motor no painel. Leads com `telegramChatId` real não avançam a espera no browser e a caixa “Simular lead” fica fechada — simular ali gravaria falas que o Telegram nunca enviou. O cron é que manda o Telegram. Leads só do painel disparam a espera no `waitUntil` (setTimeout), não só quando o operador volta a escrever.
 - `/telegram` — saúde do bot, webhook, snippet do pixel, simulação de /start.
 - `/utilizadores` — contas (dono cria / desliga / muda papel) e tokens MCP para Claude Code e outros agentes.
@@ -179,7 +179,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `POST /api/auth/reset` | token de reset |
 | `POST /api/auth/password` | sessão |
 | `GET/POST /api/crm` | sessão — funis e settings (sem token). POST aceita `removedFunnelIds`; o KV ganha se já houver quadro. GET une KV com o Postgres: um objecto vazio no KV não esconde username, scripts, categorias nem funis que ainda estão no backup. Se o KV está oco e o Postgres falha, GET é 503 — o painel não semeia por cima |
-| `GET/POST/DELETE /api/leads` | sessão — GET pagina 400 (`nextCursor`, `stale` se o cursor sumiu) ou `?q=@user` no alias. A primeira página manda `removed` (tombstones) e `clipped` se o índice está no teto (8000 chats / 4000 sem chat), se o KV está vazio e o Postgres falhou, ou se o backup do Postgres devolveu uma página cheia. Com o KV oco o GET pagina o Postgres (keyset) em vez de fingir que 400 é o universo. O hydrate pede até 40 páginas (16000). Página a meio vazia/stale **não** conta como lista; `clipped` ou teto de páginas é janela incompleta e **não** apaga leads locais |
+| `GET/POST/DELETE /api/leads` | sessão — GET pagina 400 (`nextCursor`, `stale` se o cursor sumiu) ou `?q=@user` no alias, no nome, no telefone e na categoria. A primeira página manda `removed` (tombstones) e `clipped` se o índice está no teto (8000 chats / 4000 sem chat), se o KV está vazio e o Postgres falhou, ou se o backup do Postgres devolveu uma página cheia. Com o KV oco o GET pagina o Postgres (keyset) em vez de fingir que 400 é o universo. A busca `?q=` lê o KV primeiro; índice oco cai no Postgres (ilike) e é 503 se o backup falhar — o painel não trata isso como “Nada nesta busca”. Índice com entradas e zero hits continua lista vazia, mesmo se o Postgres cair. O hydrate pede até 40 páginas (16000). Página a meio vazia/stale **não** conta como lista; `clipped` ou teto de páginas é janela incompleta e **não** apaga leads locais |
 | `GET /api/inbox` | sessão — página 400 do Telegram (`nextCursor`, `stale` se o cursor sumiu). A primeira página manda `removed` (tombstones), como o GET de leads. KV oco pagina o Postgres e marca `clipped` se a página estiver cheia. O poll de 5 s aplica os tombstones e não reabre lead apagado noutro dispositivo |
 | `GET/POST /api/runtime` | sessão — GET qualquer conta; POST só dono (token, IA, voz) |
 | `POST /api/runtime/voice` | sessão, só dono — gera clips ElevenLabs |
@@ -188,7 +188,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `GET/POST/PATCH /api/users` | sessão — lista; POST/PATCH só dono (máx. 40 contas) |
 | `GET/POST/DELETE /api/tokens` | sessão — token `abn_…` (o valor completo só no POST) |
 | `POST /api/funnels/import` | sessão — ManyChat / n8n / Typebot / Abilion / mensagens |
-| `POST /mcp` ou `/api/mcp` | Bearer ou cookie — JSON-RPC para agentes (60 / min por conta e IP). Settings, scripts, funis e import de leads usam o mesmo merge e a mesma cópia Postgres do painel |
+| `POST /mcp` ou `/api/mcp` | Bearer ou cookie — JSON-RPC para agentes (60 / min por conta e IP). Settings, scripts, funis e import de leads usam o mesmo merge e a mesma cópia Postgres do painel. `abilion_list_leads` com `q=` usa a mesma busca do GET (KV, depois Postgres se o índice estiver oco) |
 | `GET /mcp` | público: `{ ok, name, version, install }` |
 | `GET /api/install` | público: manual do pixel + snippet (`?s=` para um script) |
 | `POST /api/telegram` | Telegram; `secret_token` do webhook |
@@ -197,6 +197,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `GET /l` | público: HTML da landing do anúncio (`t.js` + CTA). `?s=` escolhe o script |
 | `GET /login` | público: HTML do formulário. Com sessão, 303 para o `next` seguro |
 | `GET /forgot` | público: HTML do pedido de reset |
+| `GET /reset` | público: HTML da nova senha (`?token=`). Sem token mostra o empty state |
 | `GET /privacidade` | público: HTML da política |
 
 ## MCP (Claude Code e outros agentes)
