@@ -953,14 +953,27 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
   )
   const remoteFailed = canReachRemote && rows === null
   const remote = applyRemovedLeads((rows ?? []).map(rowToLead), env.AUTH ? await loadRemovedLeadIds(env.AUTH) : [])
+  if (!kv.length) {
+    if (remoteFailed) return { leads: [], clipped: true, failed: !cursor, stale: Boolean(cursor) }
+    if (!cursor) {
+      const folded = leadPageFromRemote(remote, limit, canReachRemote)
+      const live = env.AUTH ? await filterLiveLeads(env.AUTH, folded.leads) : folded.leads
+      return {
+        leads: await attachLeadEvents(env, live),
+        nextCursor: folded.nextCursor,
+        clipped: folded.clipped || !live.length,
+      }
+    }
+    return { leads: [], nextCursor: page.nextCursor, stale: page.stale, clipped: true }
+  }
   const keep = new Set(kv.map((lead) => lead.id))
-  const scoped = kv.length || cursor ? remote.filter((lead) => keep.has(lead.id)) : remote
+  const scoped = remote.filter((lead) => keep.has(lead.id))
   const live = env.AUTH ? await filterLiveLeads(env.AUTH, scoped) : scoped
   return {
     leads: adoptLeadStores(kv, await attachLeadEvents(env, live)).slice(0, limit),
     nextCursor: page.stale ? undefined : page.nextCursor,
     stale: page.stale,
-    clipped: page.clipped === true || (remoteFailed && !kv.length && !cursor),
+    clipped: page.clipped === true,
   }
 }
 

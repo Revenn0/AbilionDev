@@ -84,7 +84,7 @@ import { applyEvent, canAdvanceRemoteWait, eventFromOrigin, pickLiveDueLead, pub
 import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
-import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, leadPageCursor, leadPageFromRemote, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
+import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_INDEX, CRM_REMOVED, CRM_REMOVED_FUNNELS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, leadPageCursor, leadPageFromRemote, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
 import { leadFactsForRemote, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, persistWorkspaceFunnels, persistWorkspaceSettings, remoteLeadListPath, remoteLeadSearchPath, rowToLead, sanitizeRemoteSearchNeedle, searchWorkspaceLeads } from "../worker/workspace-settings.ts"
@@ -1224,6 +1224,22 @@ assert(remotePosts.some((item) => item.includes("@ws_bot")), "persistWorkspaceSe
 const postsBeforeSkip = remotePosts.length
 await persistRemoteFunnels({ AUTH: memoryKv() }, [remoteBoard])
 assert(remotePosts.length === postsBeforeSkip, "sem service role o persist remoto não fala com o Postgres")
+const failDeletes: string[] = []
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  const method = (init?.method || "GET").toUpperCase()
+  if (url.includes("/rest/v1/funnels") && method === "POST") return new Response("nope", { status: 500 })
+  if (url.includes("/rest/v1/funnels") && method === "GET") {
+    return new Response(JSON.stringify([{ id: "keep-backup" }]), { status: 200 })
+  }
+  if (url.includes("/rest/v1/funnels") && method === "DELETE") {
+    failDeletes.push(url)
+    return new Response("", { status: 204 })
+  }
+  return remotePrev(input, init)
+}) as typeof fetch
+await persistRemoteFunnels(remoteEnv, [remoteBoard])
+assert(failDeletes.length === 0, "POST falho dos funis não apaga o backup")
 globalThis.fetch = remotePrev
 assert(
   !settingsPersistSettled(
@@ -3012,6 +3028,95 @@ assert(pgFailCrm.status === 503, "GET CRM não finge funis vazios quando o Postg
 const pgFailHealth = await handleRequest(new Request("http://local.test/api/health"), pgFailEnv, backgroundCtx())
 assert(pgFailHealth.status === 200, "health público continua de pé se o Postgres falhar")
 globalThis.fetch = pgFailPrev
+const orphanKv = memoryKv()
+await orphanKv.put(
+  CRM_INDEX,
+  JSON.stringify({
+    entries: [{ id: "ghost-1", contact: "@ghost1", updatedAt: "2026-06-01T00:00:00.000Z", channel: "telegram" }],
+  })
+)
+const orphanEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: orphanKv,
+  ABILION_ENV: "development",
+} as Env
+const orphanLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  orphanEnv,
+  backgroundCtx()
+)
+assert(orphanLogin.status === 200, "login no índice órfão")
+const orphanCookie = orphanLogin.headers.get("set-cookie") || ""
+const orphanPrev = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input).includes("/rest/v1/")) throw new Error("postgres down")
+  return orphanPrev(input, init)
+}) as typeof fetch
+const orphanFail = await handleRequest(
+  new Request("http://local.test/api/leads", { headers: { cookie: orphanCookie } }),
+  orphanEnv,
+  backgroundCtx()
+)
+assert(orphanFail.status === 503, "índice órfão + Postgres em baixo é 503")
+const orphanInboxFail = await handleRequest(
+  new Request("http://local.test/api/inbox", { headers: { cookie: orphanCookie } }),
+  orphanEnv,
+  backgroundCtx()
+)
+assert(orphanInboxFail.status === 503, "inbox com índice órfão + Postgres em baixo é 503")
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  if (url.includes("/rest/v1/leads") && (init?.method || "GET").toUpperCase() === "GET") {
+    return new Response("[]", { status: 200 })
+  }
+  if (url.includes("/rest/v1/")) return new Response("[]", { status: 200 })
+  return orphanPrev(input, init)
+}) as typeof fetch
+const orphanEmpty = await handleRequest(
+  new Request("http://local.test/api/leads", { headers: { cookie: orphanCookie } }),
+  orphanEnv,
+  backgroundCtx()
+)
+const orphanEmptyBody = (await orphanEmpty.json()) as { ok?: boolean; leads?: unknown[]; clipped?: boolean }
+assert(orphanEmpty.status === 200 && orphanEmptyBody.ok && orphanEmptyBody.clipped === true, "índice órfão + backup vazio não finge universo")
+assert(collectLeadPages([{ leads: [], clipped: true }]).complete === false, "página clipped vazia não reconcilia")
+const orphanRow = {
+  id: "pg-orphan",
+  name: "Ana Viva",
+  contact: "@anaviva",
+  channel: "telegram" as const,
+  campaign: "Facebook · ads",
+  origin: "facebook" as const,
+  temperature: "novo" as const,
+  stage: "capture" as const,
+  memory: "",
+  facts: {},
+  messages: [],
+  updated_at: "2026-06-02T00:00:00.000Z",
+  created_at: "2026-06-01T00:00:00.000Z",
+}
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  if (url.includes("/rest/v1/leads") && (init?.method || "GET").toUpperCase() === "GET") {
+    return new Response(JSON.stringify([orphanRow]), { status: 200 })
+  }
+  if (url.includes("/rest/v1/")) return new Response("[]", { status: 200 })
+  return orphanPrev(input, init)
+}) as typeof fetch
+const orphanHit = await handleRequest(
+  new Request("http://local.test/api/leads", { headers: { cookie: orphanCookie } }),
+  orphanEnv,
+  backgroundCtx()
+)
+const orphanHitBody = (await orphanHit.json()) as { leads?: Array<{ id?: string }> }
+assert(orphanHit.status === 200 && orphanHitBody.leads?.some((item) => item.id === "pg-orphan"), "índice órfão lê o lead do Postgres")
+globalThis.fetch = orphanPrev
 const pgFullRows = Array.from({ length: 400 }, (_, index) => ({
   id: `pg-${String(index).padStart(3, "0")}`,
   name: `Lead ${index}`,

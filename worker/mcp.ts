@@ -399,7 +399,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     const limit = Math.min(50, Math.max(1, Number(args.limit) || 20))
     const cursor = str(args.cursor).trim()
     const page = await listLeadPage(env.AUTH, limit, "all", cursor)
-    if (page.empty) {
+    if (page.empty || !page.leads.length) {
       const remote = await fetchRemoteLeadPage(env, limit, "all", cursor)
       if (remote === null && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE) {
         throw new Error("Não li os leads do Postgres.")
@@ -409,7 +409,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
         ok: true,
         leads: (await filterLiveLeads(env.AUTH, folded.leads)).map(compactLead),
         nextCursor: folded.nextCursor,
-        clipped: folded.clipped || undefined,
+        clipped: folded.clipped || (!page.empty && !folded.leads.length) || undefined,
       }
     }
     return {

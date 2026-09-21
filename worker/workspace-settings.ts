@@ -293,7 +293,7 @@ async function restWorkspace<T>(env: SettingsEnv, path: string, init?: RequestIn
 export async function persistRemoteFunnels(env: SettingsEnv, funnels: SalesFunnel[]) {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return
   if (funnels.length) {
-    await restWorkspace(env, "funnels", {
+    const wrote = await restWorkspace(env, "funnels", {
       method: "POST",
       headers: { Prefer: "resolution=merge-duplicates" },
       body: JSON.stringify(
@@ -310,6 +310,7 @@ export async function persistRemoteFunnels(env: SettingsEnv, funnels: SalesFunne
         }))
       ),
     })
+    if (wrote === null) return
   }
   const rows = (await restWorkspace<{ id: string }[]>(env, `funnels?workspace_id=eq.${WORKSPACE}&select=id`)) ?? []
   const keep = new Set(funnels.map((item) => item.id))
