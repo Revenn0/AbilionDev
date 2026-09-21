@@ -95,7 +95,7 @@ export function DashboardPage() {
             href="/leads"
             label="Ofertas"
             value={offerPending ? "…" : ops.offered}
-            hint={offerPending ? (persistSync === "idle" ? "a carregar" : "sem leitura") : "disparadas pelo quadro"}
+            hint={offerPending ? (persistSync === "idle" || eventsSync === "idle" ? "a carregar" : "sem leitura") : "disparadas pelo quadro"}
             bars={offerSpark}
           />
         </section>
