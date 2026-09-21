@@ -253,10 +253,19 @@ export async function claimLeadAlias(
 ): Promise<string> {
   const key = aliasKey(kind, value)
   if (!key || !id) return id
-  const current = await loadAlias(kv, kind, value)
+  let current: string | null
+  try {
+    current = await loadAlias(kv, kind, value)
+  } catch {
+    return id
+  }
   if (current && current !== id && (await aliasOwnerState(kv, current)) !== "dead") return current
   await kv.put(key, JSON.stringify({ id }))
-  return (await loadAlias(kv, kind, value)) || id
+  try {
+    return (await loadAlias(kv, kind, value)) || id
+  } catch {
+    return id
+  }
 }
 
 async function bindContactAliases(kv: KvLike, contact: string, id: string) {
@@ -464,6 +473,14 @@ export async function listLeads(kv: KvLike, limit = 80, channel: Lead["channel"]
   return (await listLeadPage(kv, limit, channel)).leads
 }
 
+async function loadAliasForRead(kv: KvLike, kind: "contact" | "chat", value: string): Promise<string | null | undefined> {
+  try {
+    return await loadAlias(kv, kind, value)
+  } catch {
+    return undefined
+  }
+}
+
 export async function findLeadInKv(
   kv: KvLike,
   contact: string,
@@ -472,14 +489,17 @@ export async function findLeadInKv(
   removedIds?: ReadonlySet<string>
 ): Promise<Lead | null> {
   const candidates = [...new Set([...contactLookups(contact), `tg:${telegramId}`, chatId].filter(Boolean))]
+  let aliasUnread = false
   for (const value of candidates) {
-    const byContact = await loadAlias(kv, "contact", value)
-    if (byContact) {
+    const byContact = await loadAliasForRead(kv, "contact", value)
+    if (byContact === undefined) aliasUnread = true
+    else if (byContact) {
       const lead = await loadLead(kv, byContact, removedIds)
       if (lead) return lead
     }
-    const byChat = await loadAlias(kv, "chat", value)
-    if (byChat) {
+    const byChat = await loadAliasForRead(kv, "chat", value)
+    if (byChat === undefined) aliasUnread = true
+    else if (byChat) {
       const lead = await loadLead(kv, byChat, removedIds)
       if (lead) return lead
     }
@@ -489,7 +509,9 @@ export async function findLeadInKv(
   const hit = index.entries.find(
     (item) => aliases.has(item.contact) || (item.chatId && (item.chatId === chatId || aliases.has(item.chatId)))
   )
-  return hit ? loadLead(kv, hit.id, removedIds) : null
+  if (hit) return loadLead(kv, hit.id, removedIds)
+  if (aliasUnread) throw new Error("Não confirmei o alias do lead.")
+  return null
 }
 
 function readNameMap(raw: unknown): Record<string, string> {

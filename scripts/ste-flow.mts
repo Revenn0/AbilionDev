@@ -8442,6 +8442,109 @@ try {
 } finally {
   globalThis.fetch = pgOnlyRemovedPrev
 }
+const aliasIndexKv = memoryKv()
+const aliasIndexLead = { ...lead("alias-index", "@aliasidx"), memory: "ficha-indice" }
+await upsertLeadKv(aliasIndexKv, aliasIndexLead)
+const aliasDownKv = kvThrowsOn(aliasIndexKv, aliasKey("contact", "@aliasidx"), aliasKey("contact", "aliasidx"))
+assert((await findLeadInKv(aliasDownKv, "@aliasidx", 0, ""))?.id === "alias-index", "alias unread ainda lê o leftover no índice")
+assert((await findLeadInKv(aliasDownKv, "@aliasidx", 0, ""))?.contact === "@aliasidx", "alias unread não esconde o contacto leftover")
+assert((await findLeadInKv(aliasDownKv, "@aliasidx", 0, ""))?.memory === "ficha-indice", "alias unread não esconde a ficha leftover")
+assert(
+  (await findWorkspaceLead({ AUTH: aliasDownKv } as Env, "@aliasidx", 0, ""))?.id === "alias-index",
+  "lookup webhook alias unread ainda devolve o leftover"
+)
+const aliasIndexDownKv = kvThrowsOn(
+  aliasIndexKv,
+  aliasKey("contact", "@aliasidx"),
+  aliasKey("contact", "aliasidx"),
+  CRM_INDEX
+)
+let aliasIndexUnread = ""
+try {
+  await findLeadInKv(aliasIndexDownKv, "@aliasidx", 0, "")
+} catch (error) {
+  aliasIndexUnread = error instanceof Error ? error.message : "threw"
+}
+assert(aliasIndexUnread.length > 0, "alias+índice unread não finge miss")
+let workspaceAliasIndexUnread = ""
+try {
+  await findWorkspaceLead(
+    { AUTH: aliasIndexDownKv, SUPABASE_URL: "https://sb.test", SUPABASE_SERVICE_ROLE: "role" } as Env,
+    "@aliasidx",
+    0,
+    ""
+  )
+} catch (error) {
+  workspaceAliasIndexUnread = error instanceof Error ? error.message : ""
+}
+assert(workspaceAliasIndexUnread.includes("Postgres"), "lookup alias+índice unread recusa o segundo UUID")
+const aliasMissKv = memoryKv()
+const aliasMissDownKv = kvThrowsOn(aliasMissKv, aliasKey("contact", "@ghostalias"))
+let aliasMissUnread = false
+try {
+  await findLeadInKv(aliasMissDownKv, "@ghostalias", 0, "")
+} catch {
+  aliasMissUnread = true
+}
+assert(aliasMissUnread, "alias unread sem leftover no índice não finge miss")
+assert((await findLeadInKv(aliasMissKv, "@ghostalias", 0, "")) === null, "alias confirmado sem leftover é miss")
+const writeAlias = await resolveWorkspaceLeadWrite({ AUTH: aliasDownKv } as Env, {
+  ...lead("mint-alias", "@aliasidx"),
+  memory: "write-alias",
+})
+assert(writeAlias.ok && writeAlias.incoming.id === "alias-index", "POST/MCP write alias unread ainda adopta o leftover")
+assert(writeAlias.ok && writeAlias.prev?.id === "alias-index", "POST/MCP write alias unread não esconde a ficha leftover")
+const writeAliasMiss = await resolveWorkspaceLeadWrite({ AUTH: aliasMissDownKv } as Env, lead("mint-ghost", "@ghostalias"))
+assert(!writeAliasMiss.ok && writeAliasMiss.unread, "POST/MCP write alias unread sem leftover não mint")
+assert((await loadLead(aliasMissKv, "mint-ghost")) === null, "write alias unread não grava o segundo UUID")
+const aliasHoleKv = kvThrowsOn(runtimeHoleKv, aliasKey("contact", "@holelead"), aliasKey("contact", "holelead"))
+const aliasHoleEnv = { ...runtimeHoleBase, AUTH: aliasHoleKv } as Env
+assert((await findLeadInKv(aliasHoleKv, "@holelead", 0, ""))?.id === "hole-lead", "alias unread do hole ainda lê o leftover")
+assert((await findWorkspaceLead(aliasHoleEnv, "@holelead", 0, ""))?.contact === "@holelead", "lookup hole alias unread ainda devolve o leftover")
+const holeLeadIdsBeforeAlias = (await listLeads(runtimeHoleKv, 40, "all")).filter((item) => item.contact === "@holelead").map((item) => item.id)
+const hookAliasCtx = backgroundCtx()
+const hookAliasPrevFetch = globalThis.fetch
+try {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("api.telegram.org")) {
+      return new Response(JSON.stringify({ ok: true }), { status: 200 })
+    }
+    return hookAliasPrevFetch(input, init)
+  }) as typeof fetch
+  const hookAlias = await handleRequest(
+    new Request("http://local.test/api/telegram", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": "hook-kv" },
+      body: JSON.stringify({
+        update_id: 88006,
+        message: {
+          chat: { id: 88006 },
+          text: "oi alias unread",
+          from: { id: 88006, username: "holelead", first_name: "Hole" },
+        },
+      }),
+    }),
+    aliasHoleEnv,
+    hookAliasCtx
+  )
+  const hookAliasBody = (await hookAlias.json()) as { ok?: boolean; error?: string }
+  assert(hookAlias.status === 200, "webhook alias unread ainda acks o Telegram")
+  assert(hookAlias.status !== 500, "webhook alias unread não é Falha interna")
+  assert(hookAliasBody.ok === true, "webhook alias unread não mente falha no ack")
+  await hookAliasCtx.flush()
+} finally {
+  globalThis.fetch = hookAliasPrevFetch
+}
+const holeLeadIdsAfterAlias = (await listLeads(runtimeHoleKv, 40, "all")).filter((item) => item.contact === "@holelead").map((item) => item.id)
+assert(holeLeadIdsAfterAlias.join() === holeLeadIdsBeforeAlias.join(), "webhook alias unread não mint o segundo UUID")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.id === "hole-lead", "webhook alias unread não apaga o leftover")
+assert((await loadLead(runtimeHoleKv, "hole-lead"))?.contact === "@holelead", "webhook alias unread não troca o contacto leftover")
+const holeAfterAlias = await loadLead(runtimeHoleKv, "hole-lead")
+assert(
+  (holeAfterAlias?.messages ?? []).some((item) => item.role === "lead" && item.text === "oi alias unread") ||
+    (holeAfterAlias?.messages ?? []).some((item) => item.role === "ste"),
+  "webhook alias unread grava a fala no leftover"
+)
 await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
 const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
 const landingTaggedHtml = await landingTagged.text()
