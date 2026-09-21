@@ -372,6 +372,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setCrmSync(crm.ok ? "ok" : "error")
       markLeadRead(remoteLeads.ok)
       if (remoteLeads.ok) ingestRemoteRemoved(remoteLeads.removed)
+      if (inbox.ok) ingestRemoteRemoved(inbox.removed)
       setInboxSync(inbox.ok ? "ok" : "error")
       setRemote(runtime.persist === "supabase" ? "cloud" : runtime.ok ? "local" : "off")
       setState((prev) => {
@@ -503,8 +504,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const inbox = await fetchInbox()
       if (cancelled) return
       setInboxSync(inbox.ok ? "ok" : "error")
+      if (inbox.ok) ingestRemoteRemoved(inbox.removed)
       const incoming = applyRemovedLeads(inbox.leads.map((lead) => migrateLead(lead)), removedLeadIds.current)
-      if (!incoming.length) return
       setState((prev) => {
         const leads = overlayPendingLeads(
           mergeLeads(applyRemovedLeads(prev.leads, removedLeadIds.current), incoming),
@@ -533,6 +534,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (cancelled) return
       markLeadRead(remoteLeads.ok)
       if (remoteLeads.ok) ingestRemoteRemoved(remoteLeads.removed)
+      if (inbox.ok) ingestRemoteRemoved(inbox.removed)
       setInboxSync(inbox.ok ? "ok" : "error")
       if (!remoteLeads.ok) {
         if (pendingLeadWrites.current.size) void flushLeadWrites()

@@ -7,7 +7,7 @@ import { linkFollowUp, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { campaignFromStart, originFromStart, parseTelegramStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { applyEvent, canAdvanceRemoteWait, dueWaits, pickLiveDueLead, snapshotForLead } from "../src/lib/runtime.ts"
-import { pageInstallManual, pageScriptById } from "../src/lib/page-script.ts"
+import { adsLandingDocument, pageInstallManual, pageScriptById } from "../src/lib/page-script.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { BANCA_FIXED, type Lead, type LeadEvent, type LeadOrigin, type SalesFunnel, type Settings } from "../src/lib/types.ts"
 import { compactGeo, factsFromGeo } from "../src/lib/geo.ts"
@@ -169,6 +169,28 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext) {
           "access-control-allow-origin": "*",
           "cache-control": "public, max-age=60",
           "x-content-type-options": "nosniff",
+        },
+      })
+    )
+  }
+  if ((url.pathname === "/l" || url.pathname === "/l/") && (request.method === "GET" || request.method === "HEAD")) {
+    const scriptId = url.searchParams.get("s") || ""
+    let html = adsLandingDocument({ scriptId })
+    try {
+      const { resolved } = await runtimeOf(env, webhookUrl(request, env))
+      const settings = await loadSettings(env).catch(() => emptySettings())
+      html = adsLandingDocument({
+        botUsername: cleanBotUsername(resolved.telegramBotUsername || settings.telegramBotUsername),
+        scriptId,
+      })
+    } catch {
+      html = adsLandingDocument({ scriptId })
+    }
+    return withSecurityHeaders(
+      new Response(request.method === "HEAD" ? null : html, {
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "public, max-age=30",
         },
       })
     )
@@ -530,6 +552,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
       nextCursor: page.stale ? undefined : page.nextCursor,
       stale: page.stale || undefined,
       clipped: page.clipped || undefined,
+      removed: cursor ? undefined : await loadRemovedLeadIds(env.AUTH),
     })
   }
 

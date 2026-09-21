@@ -12,7 +12,7 @@ Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / M
 - Áudio: mensagens grandes do funil saem como áudio da ElevenLabs. Cada clip é gerado uma vez, guardado e reutilizado. Os links continuam no texto.
 - Funil com mapa e fluxo executável, no estúdio visual claro (catálogo, quadro e propriedades). O rascunho grava sozinho e também ao sair (Voltar / fechar o separador). Publicar um funil torna-o o único quadro activo — a Sté segue o `publishedAt` mais recente. No telemóvel, toca num bloco da paleta para o adicionar. O último funil publicado não se apaga.
 - Telegram: webhook no Worker (`/api/telegram`) — /start abre a Sté
-- Facebook → Telegram: o anúncio aponta para `https://www.abilion.lol/l` (500–1000 /start por dia). O pixel fecha o visitante no `?start=fb_{vid}`.
+- Facebook → Telegram: o anúncio aponta para `https://www.abilion.lol/l` (500–1000 /start por dia). O Worker serve o HTML com `t.js` e o CTA no primeiro byte; o pixel fecha o visitante no `?start=fb_{vid}`.
 - Configurações: Telegram, webhook, pixel `/t.js`. A cópia da Sté edita-se no funil publicado
 - Persistência no Worker (KV) + Supabase quando houver service role
 
@@ -125,7 +125,7 @@ Pixel da landing — botão **Pixel Ads** no Dashboard, no topo de Telegram e de
 
 Manual de instalação (os mesmos 5 passos no painel, no comentário do `t.js`, no snippet que colas, em GET `/api/install` e no MCP `abilion_page_install_manual` / recurso `abilion://install`): [https://www.abilion.lol/api/install](https://www.abilion.lol/api/install). Outra landing / outro funil: cria um script em Telegram → Pixel, no funil (botão Script) ou `abilion_create_page_script` e cola `/t.js?v=2&s=ID`. O `/start` vira `fb_sID_vid` e a Sté fala o quadro daquele funil. Sem `s=`, usa o funil publicado. Teste: `/l?s=ID`. Leads: categorias no recorte e **Importar lista** (opção para o grupo Telegram).
 
-O script reescreve o `t.me/BOT?start=fb_{vid}` (ou `fb_sID_{vid}`) no `pointerdown`, no clique e no clique do meio. Se o construtor da página puser o script em `async`, o pixel ainda encontra o `/t.js` sem `currentScript`. Sem página própria, o anúncio aponta para [https://www.abilion.lol/l](https://www.abilion.lol/l). A `/l` já sai com o visitor no href. O webhook fecha o evento `telegram` com o mesmo visitante.
+O script reescreve o `t.me/BOT?start=fb_{vid}` (ou `fb_sID_{vid}`) no `pointerdown`, no clique e no clique do meio. Se o construtor da página puser o script em `async`, o pixel ainda encontra o `/t.js` sem `currentScript`. Sem página própria, o anúncio aponta para [https://www.abilion.lol/l](https://www.abilion.lol/l). Em produção o Worker responde `/l` com HTML próprio (`t.js` + CTA) — não é a casca do SPA. O href sai `start=fb` ou `fb_sID`; o `t.js` mete o visitor no clique. O webhook fecha o evento `telegram` com o mesmo visitante.
 
 Landing de teste (pixel + CTA): `/l` — local [http://127.0.0.1:43173/l](http://127.0.0.1:43173/l), produção [https://www.abilion.lol/l](https://www.abilion.lol/l).
 
@@ -149,7 +149,7 @@ Públicas:
 - `/forgot` — localmente gera link de reset. Em produção não envia e-mail. O `next=` do login segue para forgot/reset e volta.
 - `/reset?token=` — nova senha a partir do link local.
 - `/privacidade` — política do CRM interno.
-- `/l` — landing de teste do pixel + CTA Telegram. O botão só aponta para o username gravado no Worker (`GET /api/health`) e já leva `fb_{vid}`. Sem username, mostra empty state — não inventa um bot.
+- `/l` — landing do anúncio: em produção o Worker manda HTML com `/t.js` e o CTA no primeiro byte (o Facebook não espera o SPA). O botão aponta para o username do Worker; o `t.js` reescreve `fb_{vid}`. Sem username, mostra empty state — não inventa um bot. Localmente o Vite ainda hidrata a mesma página em React.
 
 Autenticadas:
 
@@ -180,7 +180,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `POST /api/auth/password` | sessão |
 | `GET/POST /api/crm` | sessão — funis e settings (sem token). POST aceita `removedFunnelIds`; o KV ganha se já houver quadro. GET une KV com o Postgres: um objecto vazio no KV não esconde username, scripts, categorias nem funis que ainda estão no backup. Se o KV está oco e o Postgres falha, GET é 503 — o painel não semeia por cima |
 | `GET/POST/DELETE /api/leads` | sessão — GET pagina 400 (`nextCursor`, `stale` se o cursor sumiu) ou `?q=@user` no alias. A primeira página manda `removed` (tombstones) e `clipped` se o índice está no teto (8000 chats / 4000 sem chat) ou se o KV está vazio e o Postgres falhou. O hydrate pede até 40 páginas (16000). Página a meio vazia/stale **não** conta como lista; `clipped` ou teto de páginas é janela incompleta e **não** apaga leads locais |
-| `GET /api/inbox` | sessão — página 400 do Telegram (`nextCursor`, `stale` se o cursor sumiu). O poll pede a primeira página e não reabre lead apagado nesta sessão |
+| `GET /api/inbox` | sessão — página 400 do Telegram (`nextCursor`, `stale` se o cursor sumiu). A primeira página manda `removed` (tombstones), como o GET de leads. O poll de 5 s aplica esses ids e não reabre lead apagado noutro dispositivo |
 | `GET/POST /api/runtime` | sessão — GET qualquer conta; POST só dono (token, IA, voz) |
 | `POST /api/runtime/voice` | sessão, só dono — gera clips ElevenLabs |
 | `POST /api/track` | público, CORS aberto só aqui (pixel) |
@@ -194,6 +194,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `POST /api/telegram` | Telegram; `secret_token` do webhook |
 | `GET /api/cron` | `CRON_SECRET` obrigatório; cada espera corre isolada |
 | `GET /t.js` | pixel |
+| `GET /l` | público: HTML da landing do anúncio (`t.js` + CTA). `?s=` escolhe o script |
 
 ## MCP (Claude Code e outros agentes)
 

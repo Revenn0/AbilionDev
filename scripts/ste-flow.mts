@@ -97,7 +97,7 @@ import { contactLookups, normalizeTelegramContact, sameLeadContact, validateCapt
 import { displayContact, draftLeadField, formatPhoneContact, isPhoneLikeName, isResolvedPersonName, leadMatchesQuery, nameFromMessages, preferLeadName, resolveLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, migrateLeadOrigin, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink, campaignFromStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
-import { addPageScript, adsLandingUrl, adsStartToken, pageInstallManual, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
+import { addPageScript, adsLandingDocument, adsLandingUrl, adsStartToken, pageInstallManual, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
 import { leadFromImport, parseLeadImportLine, parseLeadImportText } from "../src/lib/lead-category.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
@@ -655,6 +655,19 @@ assert(pageInstallManual({ script: { id: "deadbeef", name: "Landing", funnelId: 
 assert(adsLandingUrl() === "https://www.abilion.lol/l", "anúncio sem script vai à landing geral")
 assert(adsLandingUrl("deadbeef") === "https://www.abilion.lol/l?s=deadbeef", "anúncio com script leva ?s=")
 assert(adsLandingUrl("nao-e-id") === "https://www.abilion.lol/l", "id inválido não inventa query")
+const landingDoc = adsLandingDocument({ botUsername: "@ste_bot" })
+assert(
+  landingDoc.includes("/t.js?v=2") && landingDoc.includes("data-abilion-cta") && landingDoc.includes("t.me/ste_bot?start=fb"),
+  "HTML da /l leva t.js e CTA no primeiro byte"
+)
+assert(!adsLandingDocument({}).includes("<a data-abilion-cta"), "HTML da /l sem bot não inventa CTA")
+assert(
+  adsLandingDocument({ botUsername: "@ste_bot", scriptId: "deadbeef" }).includes("/t.js?v=2&s=deadbeef") &&
+    adsLandingDocument({ botUsername: "@ste_bot", scriptId: "deadbeef" }).includes("start=fb_sdeadbeef"),
+  "HTML da /l?s= leva o script no t.js e no start"
+)
+assert(!adsLandingDocument({ scriptId: '"><script>alert(1)</script>' }).includes("<script>alert"), "id inválido não entra no HTML")
+assert(!adsLandingDocument({ botUsername: '"><img src=x>' }).includes("<img"), "username sujo não entra no HTML")
 assert(pageInstallManual({}).landing === adsLandingUrl(), "manual geral aponta o ads para /l")
 assert(
   pageInstallManual({
@@ -3541,6 +3554,18 @@ assert(
 )
 assert((await loadLead(liveEnv.AUTH, "zombie")) === null, "lead apagado some do KV")
 assert((await loadRemovedLeadIds(liveEnv.AUTH)).includes("zombie"), "DELETE grava tombstone")
+const inboxRemoved = (await (
+  await handleRequest(new Request("http://local.test/api/inbox", { headers: { cookie: liveCookie } }), liveEnv, backgroundCtx())
+).json()) as { removed?: string[] }
+assert(inboxRemoved.removed?.includes("zombie"), "GET inbox da primeira página manda o tombstone")
+const inboxCursorGone = (await (
+  await handleRequest(
+    new Request("http://local.test/api/inbox?cursor=2026-01-01T00:00:00.000Z%7Czombie", { headers: { cookie: liveCookie } }),
+    liveEnv,
+    backgroundCtx()
+  )
+).json()) as { removed?: string[] }
+assert(inboxCursorGone.removed === undefined, "GET inbox com cursor não remete a lista de tombstones")
 assert(
   (
     await handleRequest(
@@ -3722,6 +3747,38 @@ assert(tracker.headers.get("strict-transport-security")?.includes("max-age=31536
 const trackerBody = await tracker.text()
 assert(trackerBody.includes("/api/track"), "t.js aponta o pixel")
 assert(trackerBody.includes("joinchat"), "t.js não reescreve convite de grupo")
+const landingBare = await handleRequest(
+  new Request("http://local.test/l"),
+  {
+    ...liveEnv,
+    ASSETS: {
+      fetch: async () => {
+        throw new Error("assets down")
+      },
+    },
+  } as Env,
+  backgroundCtx()
+)
+assert(landingBare.status === 200, "GET /l não depende dos assets")
+assert((landingBare.headers.get("content-type") || "").includes("text/html"), "GET /l é HTML")
+assert((landingBare.headers.get("content-security-policy") || "").includes("script-src 'self'"), "GET /l leva CSP")
+const landingBareHtml = await landingBare.text()
+assert(landingBareHtml.includes("/t.js?v=2") && landingBareHtml.includes("ainda não está ligado"), "GET /l sem bot ainda serve o pixel")
+assert(!landingBareHtml.includes("<a data-abilion-cta"), "GET /l sem username não inventa CTA")
+await saveSettingsKv(liveEnv.AUTH, migrateSettings({ telegramBotUsername: "@steaviator" }))
+const landingTagged = await handleRequest(new Request("http://local.test/l?s=deadbeef&fbclid=IwAR"), liveEnv, backgroundCtx())
+const landingTaggedHtml = await landingTagged.text()
+assert(landingTagged.status === 200, "GET /l?s= é 200")
+assert(
+  landingTaggedHtml.includes("/t.js?v=2&s=deadbeef") &&
+    landingTaggedHtml.includes("data-abilion-cta") &&
+    landingTaggedHtml.includes("t.me/steaviator?start=fb_sdeadbeef"),
+  "GET /l?s= leva t.js, CTA e start do script"
+)
+const landingSlash = await handleRequest(new Request("http://local.test/l/"), liveEnv, backgroundCtx())
+assert((await landingSlash.text()).includes("/t.js?v=2"), "GET /l/ também é a landing do Worker")
+const landingHead = await handleRequest(new Request("http://local.test/l", { method: "HEAD" }), liveEnv, backgroundCtx())
+assert(landingHead.status === 200 && (await landingHead.text()) === "", "HEAD /l não manda o HTML")
 const pixelPlain = await handleRequest(
   new Request("http://local.test/api/track", {
     method: "POST",

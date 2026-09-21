@@ -122,6 +122,81 @@ export function adsLandingUrl(scriptId = "") {
   return PAGE_SCRIPT_ID.test(id) ? `${ADS_ORIGIN}/l?s=${id}` : `${ADS_ORIGIN}/l`
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
+/** HTML da /l no Worker: t.js + CTA no primeiro byte, sem esperar o SPA. */
+export function adsLandingDocument(input: { botUsername?: string; scriptId?: string } = {}) {
+  const scriptId = PAGE_SCRIPT_ID.test((input.scriptId || "").trim().toLowerCase())
+    ? (input.scriptId || "").trim().toLowerCase()
+    : ""
+  const href = adsDeepLink(input.botUsername || "", adsStartToken(scriptId || undefined))
+  const src = scriptId ? `/t.js?v=${PIXEL_VERSION}&s=${scriptId}` : `/t.js?v=${PIXEL_VERSION}`
+  const scriptAttr = scriptId ? ` data-abilion-script="${scriptId}"` : ""
+  const startHint = scriptId ? `fb_s${scriptId}_vid` : "fb_vid"
+  const title = "Sté, a Mãe do Aviator, te chama no Telegram."
+  const description =
+    "Entra, recebe as 3 mensagens de boas-vindas e o minicurso. O pixel desta página grava a visita, o clique e o estado — depois o /start fecha o mesmo visitante no CRM."
+  const canonical = adsLandingUrl(scriptId)
+  const cta = href
+    ? `<a data-abilion-cta href="${escapeHtml(href)}" class="cta">Falar com a Sté no Telegram</a>`
+    : `<p role="status" class="muted">O Telegram desta campanha ainda não está ligado. Volta daqui a pouco.</p>`
+  const hint = href
+    ? `O botão vira <code>t.me/...?start=${startHint}</code>. Sem cadastro nesta página.`
+    : "Sem cadastro nesta página. O clique só abre quando o bot estiver ligado."
+  return `<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(title)}</title>
+<meta name="description" content="${escapeHtml(description)}">
+<link rel="canonical" href="${escapeHtml(canonical)}">
+<meta property="og:title" content="${escapeHtml(title)}">
+<meta property="og:description" content="${escapeHtml(description)}">
+<meta property="og:url" content="${escapeHtml(canonical)}">
+<meta property="og:type" content="website">
+<!-- Abilion pixel — o anúncio aponta para esta página, não para t.me. -->
+<script src="${src}" data-cta="[data-abilion-cta]" data-abilion-pixel="1"${scriptAttr}></script>
+<style>
+  html,body{margin:0;background:#0b0d12;color:#f4f4f5;font-family:ui-sans-serif,system-ui,sans-serif}
+  main{box-sizing:border-box;min-height:100vh;max-width:36rem;margin:0 auto;padding:2rem 1.25rem;display:flex;flex-direction:column}
+  .kicker{margin:0;font-size:12px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:#38bdf8}
+  h1{margin:12px 0 0;font-size:clamp(28px,6vw,42px);line-height:1.05;letter-spacing:-.04em}
+  .lead{margin:16px 0 0;font-size:16px;line-height:1.6;color:#a1a1aa}
+  ul{margin:24px 0 0;padding:0 0 0 1.1rem;color:#d4d4d8;font-size:14px;line-height:1.6}
+  .cta{display:inline-flex;align-items:center;justify-content:center;height:48px;margin-top:32px;padding:0 24px;border-radius:999px;background:#38bdf8;color:#082f49;font-size:15px;font-weight:600;text-decoration:none}
+  .cta:focus-visible{outline:2px solid #e0f2fe;outline-offset:2px}
+  .muted{margin:32px 0 0;font-size:14px;color:#a1a1aa}
+  .hint{margin:16px 0 0;font-size:12px;color:#a1a1aa}
+  footer{margin-top:auto;padding-top:64px;font-size:11px;color:#a1a1aa}
+  footer a{color:inherit}
+</style>
+</head>
+<body>
+<main id="conteudo" tabindex="-1">
+<p class="kicker">Minicurso gratuito</p>
+<h1>${escapeHtml(title)}</h1>
+<p class="lead">${escapeHtml(description)}</p>
+<ul>
+<li>Como parar de operar no escuro</li>
+<li>Cadastro Superbet com o bônus certo</li>
+<li>Grupo Premium só se fizer sentido</li>
+</ul>
+${cta}
+<p class="hint">${hint}</p>
+<footer>Abilion · landing do pixel · <a href="/privacidade">Privacidade</a></footer>
+</main>
+</body>
+</html>`
+}
+
 export function pageScriptById(scripts: PageScript[] | undefined, id: string | undefined) {
   const needle = (id || "").trim().toLowerCase()
   if (!PAGE_SCRIPT_ID.test(needle)) return undefined

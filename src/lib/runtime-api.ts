@@ -153,13 +153,22 @@ async function readInboxPage(cursor: string): Promise<LeadListPage | { failed: t
   })
   noteUnauthorized(res)
   if (!res.ok) return { failed: true }
-  const data = (await res.json()) as { leads?: Lead[]; nextCursor?: string; stale?: boolean; clipped?: boolean }
+  const data = (await res.json()) as {
+    leads?: Lead[]
+    nextCursor?: string
+    stale?: boolean
+    clipped?: boolean
+    removed?: string[]
+  }
   if (!Array.isArray(data.leads)) return { failed: true }
   return {
     leads: data.leads,
     nextCursor: typeof data.nextCursor === "string" ? data.nextCursor.trim() : undefined,
     stale: data.stale === true,
     clipped: data.clipped === true,
+    removed: Array.isArray(data.removed)
+      ? data.removed.filter((id): id is string => typeof id === "string" && Boolean(id.trim())).map((id) => id.trim())
+      : undefined,
   }
 }
 
@@ -168,20 +177,22 @@ export async function fetchInbox(pages = 1) {
     const limit = Math.max(1, pages)
     const pulled: LeadListPage[] = []
     let cursor = ""
+    let removed: string[] = []
     for (let page = 0; page < limit; page++) {
       const next = await readInboxPage(cursor)
       if ("failed" in next) {
         return page === 0
-          ? { ok: false as const, leads: [] as Lead[], complete: false }
-          : collectLeadPages([...pulled, { leads: [], stale: true }])
+          ? { ok: false as const, leads: [] as Lead[], complete: false, removed: [] as string[] }
+          : { ...collectLeadPages([...pulled, { leads: [], stale: true }]), removed }
       }
+      if (next.removed?.length) removed = next.removed
       pulled.push(next)
-      if (next.stale || !next.nextCursor) return collectLeadPages(pulled)
+      if (next.stale || !next.nextCursor) return { ...collectLeadPages(pulled), removed }
       cursor = next.nextCursor
     }
-    return collectLeadPages(pulled, "window")
+    return { ...collectLeadPages(pulled, "window"), removed }
   } catch {
-    return { ok: false as const, leads: [] as Lead[] }
+    return { ok: false as const, leads: [] as Lead[], complete: false, removed: [] as string[] }
   }
 }
 
