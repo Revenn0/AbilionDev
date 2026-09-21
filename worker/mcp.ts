@@ -16,7 +16,7 @@ import {
 import { handleTokens, handleUsers } from "./users.ts"
 import { filterLiveLeads, importOrAdoptLead, leadPageFromRemote, listLeadPage } from "./crm-store.ts"
 import { emptySecrets, loadSecrets, resolveRuntime } from "./runtime-secrets.ts"
-import { attachWorkspaceLeadEvents, fetchRemoteLeadPage, fetchRemoteLeadsByIds, fillLeadHoles, findWorkspaceLeadById, leadCatalogUnread, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceFunnels, readWorkspaceSettings, resolveWorkspaceLeadWrite, searchWorkspaceLeads } from "./workspace-settings.ts"
+import { attachWorkspaceLeadEvents, fetchRemoteLeadPage, fetchRemoteLeadsByIds, fillLeadHoles, findWorkspaceLeadById, leadCatalogUnread, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings, readInstallFunnelName, readWorkspaceFunnels, readWorkspaceSettings, resolveWorkspaceLeadWrite, searchWorkspaceLeads } from "./workspace-settings.ts"
 import { readJsonStrict } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -675,20 +675,15 @@ async function installManualOf(env: McpEnv, scriptId?: string) {
       throw new Error("Não confirmei o script desta página.")
     }
     let funnelName: string | undefined
+    let funnelUnread: boolean | undefined
     if (script) {
-      try {
-        const boards = await readWorkspaceFunnels(env)
-        const named = boards.funnels.find((item) => item.id === script.funnelId)
-        if (!named && boards.unread) throw new Error("Não confirmei o funil deste script.")
-        funnelName = named?.name
-      } catch (error) {
-        if (error instanceof Error && error.message === "Não confirmei o funil deste script.") throw error
-        throw new Error("Não confirmei o funil deste script.")
-      }
+      const named = await readInstallFunnelName(env, script.funnelId)
+      funnelName = named.funnelName
+      funnelUnread = named.funnelUnread
     }
-    return pageInstallManual({ botUsername: loaded.settings.telegramBotUsername, script, funnelName })
+    return pageInstallManual({ botUsername: loaded.settings.telegramBotUsername, script, funnelName, funnelUnread })
   } catch (error) {
-    if (error instanceof Error && (error.message === "Não confirmei o script desta página." || error.message === "Não confirmei o funil deste script.")) {
+    if (error instanceof Error && error.message === "Não confirmei o script desta página.") {
       throw error
     }
     if (installSettingsBlocked(true, scriptId, undefined)) {

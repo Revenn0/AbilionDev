@@ -271,9 +271,16 @@ export function funnelHasInstallableBoard(funnel?: SalesFunnel | null) {
   return Boolean(funnel?.production)
 }
 
-export function pageInstallManual(input: { botUsername?: string; script?: PageScript; funnelName?: string }) {
+/** Manual público: o snippet leftover não espera o nome do funil. Unread omite o nome. */
+export function pageInstallManual(input: {
+  botUsername?: string
+  script?: PageScript
+  funnelName?: string
+  funnelUnread?: boolean
+}) {
   const href = adsDeepLink(input.botUsername || "", adsStartToken(input.script?.id))
   const snippet = pixelPageHtml(ADS_ORIGIN, href, input.script?.id)
+  const funnelUnread = input.funnelUnread || undefined
   return {
     ok: true as const,
     title: "Instalar o pixel da Abilion",
@@ -283,8 +290,16 @@ export function pageInstallManual(input: { botUsername?: string; script?: PageSc
     scriptSrc: input.script ? `${ADS_ORIGIN}/t.js?v=${PIXEL_VERSION}&s=${input.script.id}` : `${ADS_ORIGIN}/t.js?v=${PIXEL_VERSION}`,
     cta: "data-abilion-cta",
     start: input.script ? `fb_s${input.script.id}_{vid}` : "fb_{vid}",
+    funnelUnread,
     script: input.script
-      ? { id: input.script.id, name: input.script.name, funnelId: input.script.funnelId, funnelName: input.funnelName, pageUrl: input.script.pageUrl }
+      ? {
+          id: input.script.id,
+          name: input.script.name,
+          funnelId: input.script.funnelId,
+          funnelName: input.funnelName,
+          funnelUnread,
+          pageUrl: input.script.pageUrl,
+        }
       : undefined,
     notes: [
       "O anúncio aponta para a landing, não para t.me.",

@@ -68,7 +68,7 @@ import {
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
 import { readJsonObject, readJsonStrict, type JsonFail } from "./json-body.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall, telegramJoinActor, telegramUpdateActor } from "./telegram.ts"
-import { attachWorkspaceLeadEvents, fetchRemoteDueLeads, fetchRemoteLeadPage, fetchRemoteLeadsByIds, fetchRemotePageEvents, fillLeadHoles, findWorkspaceLead, hydrateWorkspaceLead, leadCatalogUnread, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, readWorkspaceFunnels, readWorkspaceSettings, resolveWorkspaceLeadWrite, rowToLead, searchWorkspaceLeads, summarizeWorkspaceTrack, type LeadRow } from "./workspace-settings.ts"
+import { attachWorkspaceLeadEvents, fetchRemoteDueLeads, fetchRemoteLeadPage, fetchRemoteLeadsByIds, fetchRemotePageEvents, fillLeadHoles, findWorkspaceLead, hydrateWorkspaceLead, leadCatalogUnread, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, readInstallFunnelName, readWorkspaceFunnels, readWorkspaceSettings, resolveWorkspaceLeadWrite, rowToLead, searchWorkspaceLeads, summarizeWorkspaceTrack, type LeadRow } from "./workspace-settings.ts"
 import type { KvLike } from "./kv.ts"
 
 type Fetcher = { fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> }
@@ -350,21 +350,18 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
         return json({ error: "Não confirmei o script desta página." }, 503)
       }
       let funnelName: string | undefined
+      let funnelUnread: boolean | undefined
       if (script) {
-        try {
-          const boards = await readWorkspaceFunnels(env)
-          const named = boards.funnels.find((item) => item.id === script.funnelId)
-          if (!named && boards.unread) return json({ error: "Não confirmei o funil deste script." }, 503)
-          funnelName = named?.name
-        } catch {
-          return json({ error: "Não confirmei o funil deste script." }, 503)
-        }
+        const named = await readInstallFunnelName(env, script.funnelId)
+        funnelName = named.funnelName
+        funnelUnread = named.funnelUnread
       }
       return json(
         pageInstallManual({
           botUsername: telegramBotUsername,
           script,
           funnelName,
+          funnelUnread,
         })
       )
     } catch {

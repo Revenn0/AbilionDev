@@ -772,6 +772,14 @@ assert(
   }).landing === adsLandingUrl("deadbeef"),
   "manual do script aponta o ads para /l?s="
 )
+const leftoverInstallManual = pageInstallManual({
+  script: { id: "deadbeef", name: "Landing unread", funnelId: "fun-install", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" },
+  funnelUnread: true,
+})
+assert(leftoverInstallManual.script?.id === "deadbeef", "manual leftover do script não some se o funil unread")
+assert(leftoverInstallManual.funnelUnread === true && leftoverInstallManual.script?.funnelUnread === true, "manual leftover marca funnelUnread")
+assert(!leftoverInstallManual.script?.funnelName, "manual leftover não inventa o nome do funil")
+assert(leftoverInstallManual.snippet.includes("/t.js") && leftoverInstallManual.landing.includes("s=deadbeef"), "manual leftover ainda tem snippet e /l")
 assert(installSettingsBlocked(true, "deadbeef", undefined), "unread + s= válido + miss bloqueia o manual")
 assert(!installSettingsBlocked(false, "deadbeef", undefined), "settings lidas + miss não bloqueiam")
 assert(!installSettingsBlocked(true, "", undefined), "unread sem s= não bloqueia o manual geral")
@@ -9702,10 +9710,20 @@ const installUnreadEnv = {
   ABILION_ENV: "development",
 } as Env
 const downInstallFunnel = await handleRequest(new Request("http://local.test/api/install?s=deadbeef"), installUnreadEnv, backgroundCtx())
-assert(downInstallFunnel.status === 503, "script no KV sem funis e Postgres em baixo não omite o nome à calada")
+const downInstallFunnelBody = (await downInstallFunnel.json()) as {
+  ok?: boolean
+  error?: string
+  funnelUnread?: boolean
+  snippet?: string
+  landing?: string
+  script?: { id?: string; funnelName?: string }
+}
+assert(downInstallFunnel.status === 200 && downInstallFunnelBody.ok, "script leftover no KV continua o manual se o funil unread")
+assert(downInstallFunnelBody.script?.id === "deadbeef", "install leftover não esconde o script")
+assert(!downInstallFunnelBody.script?.funnelName && downInstallFunnelBody.funnelUnread === true, "install leftover omite o nome do funil unread")
 assert(
-  ((await downInstallFunnel.json()) as { error?: string }).error === "Não confirmei o funil deste script.",
-  "503 do install pede confirmação do funil"
+  Boolean(downInstallFunnelBody.snippet?.includes("/t.js")) && Boolean(downInstallFunnelBody.landing?.includes("s=deadbeef")),
+  "install leftover ainda serve snippet e /l"
 )
 await saveFunnelsKv(installHollowKv, [{ ...emptySalesFunnel("Quadro do script"), id: "fun-install" }])
 const downInstallFound = await handleRequest(new Request("http://local.test/api/install?s=deadbeef"), installUnreadEnv, backgroundCtx())
@@ -9714,11 +9732,15 @@ assert(downInstallFound.status === 200 && downInstallFoundBody.script?.id === "d
 assert(downInstallFoundBody.script?.funnelName === "Quadro do script", "funil no KV entra no manual mesmo unread")
 await saveFunnelsKv(installHollowKv, [{ ...emptySalesFunnel("Outro quadro"), id: "fun-other" }])
 const downInstallOther = await handleRequest(new Request("http://local.test/api/install?s=deadbeef"), installUnreadEnv, backgroundCtx())
-assert(downInstallOther.status === 503, "script cujo funil não está no KV leftover é unread")
-assert(
-  ((await downInstallOther.json()) as { error?: string }).error === "Não confirmei o funil deste script.",
-  "503 do install não omite o nome do funil que só está no Postgres"
-)
+const downInstallOtherBody = (await downInstallOther.json()) as {
+  ok?: boolean
+  funnelUnread?: boolean
+  snippet?: string
+  script?: { id?: string; funnelName?: string }
+}
+assert(downInstallOther.status === 200 && downInstallOtherBody.ok, "script leftover continua se o funil só está no Postgres unread")
+assert(downInstallOtherBody.script?.id === "deadbeef" && !downInstallOtherBody.script?.funnelName, "install leftover não inventa o nome do outro quadro")
+assert(downInstallOtherBody.funnelUnread === true && Boolean(downInstallOtherBody.snippet?.includes("/t.js")), "install leftover marca funnelUnread e serve o snippet")
 const leftoverInstallLogin = await handleRequest(
   new Request("http://local.test/api/auth/login", {
     method: "POST",
@@ -9747,9 +9769,16 @@ const leftoverInstallMcp = await handleRequest(
 const leftoverInstallMcpBody = (await leftoverInstallMcp.json()) as {
   result?: { isError?: boolean; content?: Array<{ text?: string }> }
 }
-const leftoverInstallMcpData = JSON.parse(leftoverInstallMcpBody.result?.content?.[0]?.text || "{}") as { error?: string }
-assert(leftoverInstallMcp.status === 200 && leftoverInstallMcpBody.result?.isError, "MCP não omite o funil unread do script")
-assert(leftoverInstallMcpData.error === "Não confirmei o funil deste script.", "MCP leftover pede confirmação do funil")
+const leftoverInstallMcpData = JSON.parse(leftoverInstallMcpBody.result?.content?.[0]?.text || "{}") as {
+  ok?: boolean
+  error?: string
+  funnelUnread?: boolean
+  snippet?: string
+  script?: { id?: string; funnelName?: string }
+}
+assert(leftoverInstallMcp.status === 200 && !leftoverInstallMcpBody.result?.isError && leftoverInstallMcpData.ok, "MCP serve o script leftover se o funil unread")
+assert(leftoverInstallMcpData.script?.id === "deadbeef" && !leftoverInstallMcpData.script?.funnelName, "MCP leftover não esconde o script nem inventa o funil")
+assert(leftoverInstallMcpData.funnelUnread === true && Boolean(leftoverInstallMcpData.snippet?.includes("/t.js")), "MCP leftover marca funnelUnread e serve o snippet")
 const leftoverListMcp = await handleRequest(
   new Request("http://local.test/mcp", {
     method: "POST",

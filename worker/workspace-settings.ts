@@ -702,6 +702,23 @@ export async function loadWorkspaceFunnels(env: SettingsEnv): Promise<SalesFunne
   return (await readWorkspaceFunnels(env)).funnels
 }
 
+/** GET/MCP install: leftover do script não some se o nome do funil estiver unread. */
+export async function readInstallFunnelName(
+  env: SettingsEnv,
+  funnelId: string
+): Promise<{ funnelName?: string; funnelUnread?: boolean }> {
+  const needle = funnelId.trim()
+  if (!needle) return {}
+  try {
+    const boards = await readWorkspaceFunnels(env)
+    const named = boards.funnels.find((item) => item.id === needle)
+    if (named?.name) return { funnelName: named.name, funnelUnread: boards.unread || undefined }
+    return { funnelUnread: boards.unread || undefined }
+  } catch {
+    return { funnelUnread: true }
+  }
+}
+
 async function restWorkspace<T>(env: SettingsEnv, path: string, init?: RequestInit): Promise<T | null> {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE) return null
   const method = (init?.method || "GET").toUpperCase()
