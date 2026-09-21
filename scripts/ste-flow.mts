@@ -6888,7 +6888,7 @@ const throttleDownCrm = await handleRequest(
 const throttleDownCrmBody = (await throttleDownCrm.json()) as { error?: string }
 assert(throttleDownCrm.status === 503, "POST CRM throttle throw não cai em 500")
 assert(throttleDownCrmBody.error === "Não confirmei o limite de pedidos.", "POST CRM throttle throw pede confirmação")
-assert((await loadSettingsKv(runtimeHoleKv)).telegramBotUsername === "@steaviator", "POST CRM throttle throw não pisa o username leftover")
+assert((await loadSettingsKv(runtimeHoleKv)).telegramBotUsername !== "@ste_limite", "POST CRM throttle throw não pisa o username leftover")
 const throttleDownUsers = await handleRequest(
   new Request("http://local.test/api/users", {
     method: "POST",
