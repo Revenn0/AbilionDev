@@ -673,6 +673,8 @@ assert(
 assert(!adsLandingDocument({ scriptId: '"><script>alert(1)</script>' }).includes("<script>alert"), "id inválido não entra no HTML")
 assert(!adsLandingDocument({ botUsername: '"><img src=x>' }).includes("<img"), "username sujo não entra no HTML")
 assert(authLoginDocument().includes('id="email"') && authLoginDocument().includes('action="/api/auth/login"'), "HTML do login tem o formulário")
+assert(authLoginDocument().includes('src="/auth.js"') && authLoginDocument().includes('data-toggle-password="password"'), "HTML do login tem Mostrar senha sem script inline")
+assert(authResetDocument({ token: "tok" }).includes('data-toggle-password="password"'), "HTML do reset também mostra a senha")
 assert(authLoginDocument({ next: "//evil.com" }).includes('name="next" value="/"'), "next perigoso no login vira /")
 assert(!authLoginDocument({ error: "<script>alert(1)</script>" }).includes("<script>alert"), "erro do login é escapado")
 assert(authForgotDocument().includes('action="/api/auth/forgot"'), "HTML do forgot tem o formulário")

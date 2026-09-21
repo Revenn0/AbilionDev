@@ -26,8 +26,12 @@ function authShell(title: string, body: string) {
   label{display:block;margin:16px 0 6px;font-size:13px}
   input{box-sizing:border-box;width:100%;height:40px;padding:0 12px;border:1px solid #3f3f46;border-radius:8px;background:#09090b;color:#fafafa;font-size:14px}
   input:focus{outline:2px solid #38bdf8;outline-offset:1px}
-  button{width:100%;height:40px;margin-top:20px;border:0;border-radius:8px;background:#38bdf8;color:#082f49;font-size:14px;font-weight:600}
-  button:focus-visible{outline:2px solid #e0f2fe;outline-offset:2px}
+  button[type=submit]{width:100%;height:40px;margin-top:20px;border:0;border-radius:8px;background:#38bdf8;color:#082f49;font-size:14px;font-weight:600}
+  button[type=submit]:focus-visible{outline:2px solid #e0f2fe;outline-offset:2px}
+  .pass-wrap{position:relative}
+  .pass-wrap input{padding-right:5.75rem}
+  .pass-toggle{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:auto;height:28px;margin:0;padding:0 .65rem;border:0;border-radius:6px;background:transparent;color:#7dd3fc;font-size:12px;font-weight:500}
+  .pass-toggle:focus-visible{outline:2px solid #38bdf8;outline-offset:2px}
   .err{margin:12px 0 0;font-size:13px;color:#fca5a5}
   .ok{margin:12px 0 0;font-size:13px;color:#a1a1aa}
   nav{margin-top:16px;font-size:13px}
@@ -42,6 +46,7 @@ function authShell(title: string, body: string) {
 <main id="conteudo" tabindex="-1">
 <div class="card">${body}</div>
 </main>
+<script src="/auth.js" defer></script>
 </body>
 </html>`
 }
@@ -61,7 +66,10 @@ ${error ? `<p id="login-error" role="alert" class="err">${escapeHtml(error)}</p>
 <label for="email">E-mail</label>
 <input id="email" name="email" type="email" autocomplete="email" required>
 <label for="password">Senha</label>
+<div class="pass-wrap">
 <input id="password" name="password" type="password" autocomplete="current-password" minlength="6" required>
+<button type="button" class="pass-toggle" data-toggle-password="password" aria-label="Mostrar senha">Mostrar</button>
+</div>
 <button type="submit">Entrar</button>
 </form>
 <nav><a href="${escapeHtml(next === "/" ? "/forgot" : `/forgot?next=${encodeURIComponent(next)}`)}">Esqueceu a senha?</a> · <a href="/privacidade">Privacidade</a></nav>`
@@ -115,7 +123,10 @@ ${error ? `<p id="reset-error" role="alert" class="err">${escapeHtml(error)}</p>
 <input type="hidden" name="token" value="${escapeHtml(token)}">
 <input type="hidden" name="next" value="${escapeHtml(next)}">
 <label for="password">Senha</label>
+<div class="pass-wrap">
 <input id="password" name="password" type="password" autocomplete="new-password" minlength="6" required>
+<button type="button" class="pass-toggle" data-toggle-password="password" aria-label="Mostrar senha">Mostrar</button>
+</div>
 <button type="submit">Guardar senha</button>
 </form>
 <nav><a href="${escapeHtml(loginHref)}">Voltar ao login</a></nav>`
