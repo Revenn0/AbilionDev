@@ -15,7 +15,7 @@ import {
 } from "./auth.ts"
 import { handleTokens, handleUsers } from "./users.ts"
 import { filterLiveLeads, importOrAdoptLead, leadPageFromRemote, listLeadPage } from "./crm-store.ts"
-import { fetchRemoteLeadPage, fetchRemoteLeadsByIds, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings, searchWorkspaceLeads } from "./workspace-settings.ts"
+import { fetchRemoteLeadPage, fillLeadHoles, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings, searchWorkspaceLeads } from "./workspace-settings.ts"
 import { readJsonStrict } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -399,7 +399,7 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
     const limit = Math.min(50, Math.max(1, Number(args.limit) || 20))
     const cursor = str(args.cursor).trim()
     const page = await listLeadPage(env.AUTH, limit, "all", cursor)
-    if (page.empty || !page.leads.length) {
+    if (page.empty || (!page.leads.length && !page.nextCursor)) {
       const remote = await fetchRemoteLeadPage(env, limit, "all", cursor)
       if (remote === null && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE) {
         throw new Error("Não li os leads do Postgres.")
@@ -412,29 +412,13 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
         clipped: folded.clipped || (!page.empty && !folded.leads.length) || undefined,
       }
     }
-    let leads = page.leads
-    let clipped = page.clipped === true
-    if (page.missingIds?.length) {
-      const extras = await fetchRemoteLeadsByIds(env, page.missingIds)
-      if (extras === null) clipped = true
-      else {
-        const liveExtras = await filterLiveLeads(env.AUTH, extras)
-        const have = new Set(leads.map((item) => item.id))
-        for (const lead of liveExtras) {
-          if (!have.has(lead.id)) {
-            leads = [...leads, lead]
-            have.add(lead.id)
-          }
-        }
-        if (page.missingIds.some((id) => !have.has(id))) clipped = true
-      }
-    }
+    const filled = await fillLeadHoles(env, page.leads, page.missingIds ?? [])
     return {
       ok: true,
-      leads: (await filterLiveLeads(env.AUTH, leads)).map(compactLead),
+      leads: (await filterLiveLeads(env.AUTH, filled.leads)).map(compactLead),
       nextCursor: page.stale ? undefined : page.nextCursor,
       stale: page.stale || undefined,
-      clipped: clipped || undefined,
+      clipped: page.clipped === true || filled.holesOpen || undefined,
     }
   }
   if (name === "abilion_get_settings") {

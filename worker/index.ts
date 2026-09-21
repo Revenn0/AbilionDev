@@ -66,7 +66,7 @@ import {
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
 import { readJsonObject, readJsonStrict, type JsonFail } from "./json-body.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall } from "./telegram.ts"
-import { fetchRemoteLeadPage, fetchRemoteLeadsByIds, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, rowToLead, searchWorkspaceLeads, type LeadRow } from "./workspace-settings.ts"
+import { fetchRemoteLeadPage, fillLeadHoles, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, rowToLead, searchWorkspaceLeads, type LeadRow } from "./workspace-settings.ts"
 import type { KvLike } from "./kv.ts"
 
 type Fetcher = { fetch(input: Request | URL | string, init?: RequestInit): Promise<Response> }
@@ -955,6 +955,15 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
   const remoteFailed = canReachRemote && rows === null
   const remote = applyRemovedLeads((rows ?? []).map(rowToLead), env.AUTH ? await loadRemovedLeadIds(env.AUTH) : [])
   if (!kv.length) {
+    if (page.nextCursor) {
+      const filled = await fillLeadHoles(env, [], missing)
+      return {
+        leads: await attachLeadEvents(env, filled.leads),
+        nextCursor: page.nextCursor,
+        stale: page.stale,
+        clipped: page.clipped === true || filled.holesOpen,
+      }
+    }
     if (remoteFailed) return { leads: [], clipped: true, failed: !cursor, stale: Boolean(cursor) }
     if (!cursor) {
       const folded = leadPageFromRemote(remote, limit, canReachRemote)
@@ -967,31 +976,15 @@ async function loadMergedLeads(env: Env, limit: number, channel: "telegram" | "a
     }
     return { leads: [], nextCursor: page.nextCursor, stale: page.stale, clipped: true }
   }
-  let holes = [...kv]
-  let holesOpen = missing.length > 0
-  if (missing.length) {
-    const extras = await fetchRemoteLeadsByIds(env, missing)
-    if (extras === null) holesOpen = true
-    else {
-      const liveExtras = env.AUTH ? await filterLiveLeads(env.AUTH, extras) : extras
-      const have = new Set(holes.map((lead) => lead.id))
-      for (const lead of liveExtras) {
-        if (!have.has(lead.id)) {
-          holes.push(lead)
-          have.add(lead.id)
-        }
-      }
-      holesOpen = missing.some((id) => !have.has(id))
-    }
-  }
-  const keep = new Set(holes.map((lead) => lead.id))
+  const filled = await fillLeadHoles(env, kv, missing)
+  const keep = new Set(filled.leads.map((lead) => lead.id))
   const scoped = remote.filter((lead) => keep.has(lead.id))
   const live = env.AUTH ? await filterLiveLeads(env.AUTH, scoped) : scoped
   return {
-    leads: adoptLeadStores(holes, await attachLeadEvents(env, live)).slice(0, Math.max(limit, holes.length)),
+    leads: adoptLeadStores(filled.leads, await attachLeadEvents(env, live)).slice(0, Math.max(limit, filled.leads.length)),
     nextCursor: page.stale ? undefined : page.nextCursor,
     stale: page.stale,
-    clipped: page.clipped === true || holesOpen,
+    clipped: page.clipped === true || filled.holesOpen,
   }
 }
 

@@ -3,7 +3,7 @@ import { sanitizeLeadCategory } from "../src/lib/lead-category.ts"
 import { leadMatchesQuery } from "../src/lib/lead-name.ts"
 import { migrateSettings, sanitizeIncomingFunnel } from "../src/lib/migrate.ts"
 import type { Lead, LeadEvent, SalesFunnel, Settings } from "../src/lib/types.ts"
-import { isLeadPageCursor, listLeadPage, loadAdoptedSettings, loadFunnelsKv, loadRemovedFunnelIds, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge } from "./crm-store.ts"
+import { filterLiveLeads, isLeadPageCursor, listLeadPage, loadAdoptedSettings, loadFunnelsKv, loadRemovedFunnelIds, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge } from "./crm-store.ts"
 import type { KvLike } from "./kv.ts"
 
 const WORKSPACE = "local"
@@ -181,6 +181,27 @@ export async function fetchRemoteLeadsByIds(env: SettingsEnv, ids: string[]): Pr
   )
   if (rows === null || !Array.isArray(rows)) return null
   return rows.map(rowToLead)
+}
+
+/** Junta no KV os ids órfãos que o Postgres ainda tem. `holesOpen` se algum id ficar por resolver. */
+export async function fillLeadHoles(
+  env: SettingsEnv,
+  leads: Lead[],
+  missingIds: string[]
+): Promise<{ leads: Lead[]; holesOpen: boolean }> {
+  const missing = [...new Set(missingIds.map((id) => id.trim()).filter(Boolean))]
+  if (!missing.length) return { leads, holesOpen: false }
+  const extras = await fetchRemoteLeadsByIds(env, missing)
+  if (extras === null) return { leads, holesOpen: true }
+  const liveExtras = env.AUTH ? await filterLiveLeads(env.AUTH, extras) : extras
+  const next = [...leads]
+  const have = new Set(next.map((lead) => lead.id))
+  for (const lead of liveExtras) {
+    if (have.has(lead.id)) continue
+    next.push(lead)
+    have.add(lead.id)
+  }
+  return { leads: next, holesOpen: missing.some((id) => !have.has(id)) }
 }
 
 /** KV oco: lê o backup. `null` é falha; `[]` é vazio ou sem credenciais. */

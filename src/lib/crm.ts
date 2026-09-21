@@ -47,13 +47,15 @@ export function collectLeadPages(
   fold: LeadPageFold = "strict"
 ): { ok: boolean; leads: Lead[]; retry: boolean; complete: boolean } {
   const leads: Lead[] = []
+  let clipped = false
   for (let index = 0; index < pages.length; index++) {
     const page = pages[index]
     if (page.stale || (index > 0 && page.leads.length === 0)) {
       return { ok: false, leads: [], retry: true, complete: false }
     }
     leads.push(...page.leads)
-    if (!page.nextCursor) return { ok: true, leads, retry: false, complete: page.clipped !== true }
+    if (page.clipped) clipped = true
+    if (!page.nextCursor) return { ok: true, leads, retry: false, complete: clipped !== true }
   }
   if (!pages.length) return { ok: true, leads: [], retry: false, complete: true }
   if (fold === "window") return { ok: true, leads, retry: false, complete: false }

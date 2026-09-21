@@ -1001,6 +1001,7 @@ assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }], "window").ok, "j
 assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }], "window").leads[0]?.id === "page-a", "janela cheia conserva os leads")
 assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }], "window").complete === false, "janela cheia não é lista completa")
 assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1" }, { leads: [pageB] }]).complete, "sem cursor residual a lista está completa")
+assert(collectLeadPages([{ leads: [pageA], nextCursor: "c1", clipped: true }, { leads: [pageB] }]).complete === false, "clipped no meio não é universo")
 assert(collectLeadPages([{ leads: [pageA], clipped: true }]).ok, "índice no teto ainda entrega a página")
 assert(collectLeadPages([{ leads: [pageA], clipped: true }]).complete === false, "índice no teto não é lista completa")
 assert(collectLeadPages([{ leads: [], clipped: true }]).complete === false, "página vazia no teto não é lista completa")
@@ -3336,6 +3337,177 @@ assert(mixedMcpFail.status === 200 && !mixedMcpFailBody.result?.isError && mixed
 assert(mixedMcpFailText.clipped === true, "MCP mista + Postgres em baixo marca clipped")
 assert(mixedMcpFailText.leads?.some((item) => item.id === "mix-live"), "MCP mista conserva o vivo se o backup cair")
 globalThis.fetch = mixedPrev
+const pagedOrphanKv = memoryKv()
+await upsertLeadKv(pagedOrphanKv, lead("page-live", "@pagelive"))
+await pagedOrphanKv.put(
+  CRM_INDEX,
+  JSON.stringify({
+    entries: [
+      ...Array.from({ length: 400 }, (_, index) => ({
+        id: `page-ghost-${index}`,
+        contact: `@pageghost${index}`,
+        updatedAt: `2026-07-01T00:${String(Math.floor(index / 60)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}.000Z`,
+        channel: "telegram",
+      })),
+      { id: "page-live", contact: "@pagelive", updatedAt: "2026-01-01T00:00:00.000Z", channel: "telegram" },
+    ],
+  })
+)
+const pagedOrphanEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: pagedOrphanKv,
+  ABILION_ENV: "development",
+} as Env
+const pagedLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  pagedOrphanEnv,
+  backgroundCtx()
+)
+assert(pagedLogin.status === 200, "login na página órfã com continuação")
+const pagedCookie = pagedLogin.headers.get("set-cookie") || ""
+const pagedPrev = globalThis.fetch
+const pagedUnrelated = {
+  id: "pg-unrelated",
+  name: "Outro",
+  contact: "@outro",
+  channel: "telegram" as const,
+  campaign: "Facebook · ads",
+  origin: "facebook" as const,
+  temperature: "novo" as const,
+  stage: "capture" as const,
+  memory: "",
+  facts: {},
+  messages: [],
+  updated_at: "2026-08-01T00:00:00.000Z",
+  created_at: "2026-08-01T00:00:00.000Z",
+}
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input)
+  if (url.includes("/rest/v1/leads") && url.includes("id=in.") && (init?.method || "GET").toUpperCase() === "GET") {
+    return new Response("[]", { status: 200 })
+  }
+  if (url.includes("/rest/v1/leads") && (init?.method || "GET").toUpperCase() === "GET") {
+    return new Response(JSON.stringify([pagedUnrelated]), { status: 200 })
+  }
+  if (url.includes("/rest/v1/")) return new Response("[]", { status: 200 })
+  return pagedPrev(input, init)
+}) as typeof fetch
+const pagedFirst = await handleRequest(
+  new Request("http://local.test/api/leads", { headers: { cookie: pagedCookie } }),
+  pagedOrphanEnv,
+  backgroundCtx()
+)
+const pagedFirstBody = (await pagedFirst.json()) as {
+  ok?: boolean
+  leads?: Array<{ id?: string }>
+  nextCursor?: string
+  clipped?: boolean
+}
+assert(pagedFirst.status === 200 && pagedFirstBody.ok && pagedFirstBody.nextCursor, "primeira página órfã mantém o cursor do índice")
+assert(pagedFirstBody.clipped === true, "primeira página órfã sem fill marca clipped")
+assert(!pagedFirstBody.leads?.some((item) => item.id === "pg-unrelated"), "página órfã com continuação não troca o índice pelo Postgres")
+assert(!pagedFirstBody.leads?.some((item) => item.id === "page-live"), "o vivo da página 2 não vem na primeira")
+const pagedSecond = await handleRequest(
+  new Request(`http://local.test/api/leads?cursor=${encodeURIComponent(pagedFirstBody.nextCursor || "")}`, {
+    headers: { cookie: pagedCookie },
+  }),
+  pagedOrphanEnv,
+  backgroundCtx()
+)
+const pagedSecondBody = (await pagedSecond.json()) as { ok?: boolean; leads?: Array<{ id?: string }>; clipped?: boolean }
+assert(pagedSecond.status === 200 && pagedSecondBody.leads?.some((item) => item.id === "page-live"), "página 2 do índice ainda entrega o vivo")
+assert(
+  collectLeadPages([
+    { leads: (pagedFirstBody.leads ?? []) as Lead[], nextCursor: pagedFirstBody.nextCursor, clipped: true },
+    { leads: (pagedSecondBody.leads ?? []) as Lead[] },
+  ]).complete === false,
+  "órfãos na página 1 não fecham o universo"
+)
+const mcpPageEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  SUPABASE_URL: "https://sb.test",
+  SUPABASE_SERVICE_ROLE: "role",
+  AUTH: memoryKv(),
+  ABILION_ENV: "development",
+} as Env
+await upsertLeadKv(mcpPageEnv.AUTH, lead("mcp-live", "@mcplive"))
+await mcpPageEnv.AUTH.put(
+  CRM_INDEX,
+  JSON.stringify({
+    entries: [
+      { id: "mcp-ghost", contact: "@mcpghost", updatedAt: "2026-07-01T00:00:00.000Z", channel: "telegram" },
+      { id: "mcp-live", contact: "@mcplive", updatedAt: "2026-01-01T00:00:00.000Z", channel: "telegram" },
+    ],
+  })
+)
+const mcpPageLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "victor@abilion.com", password: "senhaok" }),
+  }),
+  mcpPageEnv,
+  backgroundCtx()
+)
+const mcpPageCookie = mcpPageLogin.headers.get("set-cookie") || ""
+const mcpPageMint = await handleRequest(
+  new Request("http://local.test/api/tokens", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: mcpPageCookie, "x-forwarded-for": "198.51.100.93" },
+    body: JSON.stringify({ name: "Paginada" }),
+  }),
+  mcpPageEnv,
+  backgroundCtx()
+)
+const mcpPageMinted = (await mcpPageMint.json()) as { token?: string }
+assert(mcpPageMint.status === 201 && mcpPageMinted.token?.startsWith("abn_"), "token para a lista MCP paginada")
+const mcpPagedFirst = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mcpPageMinted.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 85,
+      method: "tools/call",
+      params: { name: "abilion_list_leads", arguments: { limit: 1 } },
+    }),
+  }),
+  mcpPageEnv,
+  backgroundCtx()
+)
+const mcpPagedFirstBody = (await mcpPagedFirst.json()) as { result?: { content?: Array<{ text?: string }>; isError?: boolean } }
+const mcpPagedFirstText = JSON.parse(mcpPagedFirstBody.result?.content?.[0]?.text || "{}") as {
+  ok?: boolean
+  leads?: Array<{ id?: string }>
+  nextCursor?: string
+  clipped?: boolean
+}
+assert(mcpPagedFirst.status === 200 && !mcpPagedFirstBody.result?.isError && mcpPagedFirstText.nextCursor, "MCP órfã com continuação mantém o cursor")
+assert(!mcpPagedFirstText.leads?.some((item) => item.id === "pg-unrelated"), "MCP órfã com continuação não pagina o Postgres")
+const mcpPagedSecond = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mcpPageMinted.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 86,
+      method: "tools/call",
+      params: { name: "abilion_list_leads", arguments: { limit: 1, cursor: mcpPagedFirstText.nextCursor } },
+    }),
+  }),
+  mcpPageEnv,
+  backgroundCtx()
+)
+const mcpPagedSecondBody = (await mcpPagedSecond.json()) as { result?: { content?: Array<{ text?: string }> } }
+const mcpPagedSecondText = JSON.parse(mcpPagedSecondBody.result?.content?.[0]?.text || "{}") as { leads?: Array<{ id?: string }> }
+assert(mcpPagedSecondText.leads?.some((item) => item.id === "mcp-live"), "MCP página 2 entrega o vivo do índice")
+globalThis.fetch = pagedPrev
 const pgFullRows = Array.from({ length: 400 }, (_, index) => ({
   id: `pg-${String(index).padStart(3, "0")}`,
   name: `Lead ${index}`,
