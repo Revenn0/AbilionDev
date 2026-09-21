@@ -1,6 +1,6 @@
 import { clipNewestIds, FUNNEL_CAP, publicSettings } from "../src/lib/crm.ts"
 import { addLeadCategory, leadFromImport, parseLeadImportText } from "../src/lib/lead-category.ts"
-import { addPageScript, pageInstallManual, pageScriptById, PAGE_SCRIPT_REMOVED_CAP, removePageScript } from "../src/lib/page-script.ts"
+import { addPageScript, installSettingsBlocked, pageInstallManual, pageScriptById, PAGE_SCRIPT_REMOVED_CAP, removePageScript } from "../src/lib/page-script.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
 import { emptySalesFunnel, publishSnapshot } from "../src/lib/templates.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
@@ -15,7 +15,7 @@ import {
 } from "./auth.ts"
 import { handleTokens, handleUsers } from "./users.ts"
 import { filterLiveLeads, importOrAdoptLead, leadPageFromRemote, listLeadPage } from "./crm-store.ts"
-import { fetchRemoteLeadPage, fillLeadHoles, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings, searchWorkspaceLeads } from "./workspace-settings.ts"
+import { fetchRemoteLeadPage, fillLeadHoles, loadWorkspaceFunnels, loadWorkspaceSettings, persistRemoteLead, persistWorkspaceFunnels, persistWorkspaceSettings, readWorkspaceSettings, searchWorkspaceLeads } from "./workspace-settings.ts"
 import { readJsonStrict } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
 
@@ -514,10 +514,20 @@ async function toolResult(request: Request, env: McpEnv, actor: PublicUser, name
 
 async function installManualOf(env: McpEnv, scriptId?: string) {
   if (!env.AUTH) throw new Error("Auth ainda sem KV.")
-  const settings = await loadWorkspaceSettings(env)
-  const script = pageScriptById(settings.pageScripts, scriptId)
-  const funnel = script ? (await funnelsOf(env)).find((item) => item.id === script.funnelId) : undefined
-  return pageInstallManual({ botUsername: settings.telegramBotUsername, script, funnelName: funnel?.name })
+  const loaded = await readWorkspaceSettings(env)
+  const script = pageScriptById(loaded.settings.pageScripts, scriptId)
+  if (installSettingsBlocked(loaded.unread, scriptId, script)) {
+    throw new Error("Não confirmei o script desta página.")
+  }
+  let funnelName: string | undefined
+  if (script) {
+    try {
+      funnelName = (await funnelsOf(env)).find((item) => item.id === script.funnelId)?.name
+    } catch {
+      throw new Error("Não confirmei o funil deste script.")
+    }
+  }
+  return pageInstallManual({ botUsername: loaded.settings.telegramBotUsername, script, funnelName })
 }
 
 function installManualOfSync(botUsername: string, script: { id: string; name: string; funnelId: string; pageUrl?: string; createdAt: string; updatedAt: string }, funnelName?: string) {
@@ -560,8 +570,13 @@ async function dispatch(request: Request, env: McpEnv, actor: PublicUser, req: R
     const uri = str(params.uri)
     if (uri === "abilion://install" || uri.startsWith("abilion://install/")) {
       const scriptId = uri.split("/")[3] || ""
-      const manual = await installManualOf(env, scriptId)
-      return rpcResult(id, { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(manual) }] })
+      try {
+        const manual = await installManualOf(env, scriptId)
+        return rpcResult(id, { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(manual) }] })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Não confirmei o script desta página."
+        return rpcError(id, -32603, message)
+      }
     }
     return rpcError(id, -32602, "Recurso desconhecido.")
   }

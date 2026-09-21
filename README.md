@@ -190,7 +190,7 @@ Todas as rotas `/api/*` (excepto `POST /api/track` e `POST /api/telegram`) exige
 | `POST /api/funnels/import` | sessão — ManyChat / n8n / Typebot / Abilion / mensagens |
 | `POST /mcp` ou `/api/mcp` | Bearer ou cookie — JSON-RPC para agentes (60 / min por conta e IP). Settings, scripts, funis e import de leads usam o mesmo merge e a mesma cópia Postgres do painel. `abilion_list_leads` com `q=` usa a mesma busca do GET (KV, depois Postgres se o KV não tiver o nome). Sem `q=`, ids órfãos da página mista vêm do Postgres; se o backup falhar no meio da página a ferramenta marca `clipped` e não inventa lista vazia. `/Mcp` e `/Api/mcp` também |
 | `GET /mcp` | público: `{ ok, name, version, install }`. `/Mcp` também |
-| `GET /api/install` | público: manual do pixel + snippet (`?s=` para um script) |
+| `GET /api/install` | público: manual do pixel + snippet (`?s=` para um script). Sem `s=` o JSON dos 5 passos continua mesmo se o Postgres das definições estiver unread. `?s=` com id de 8 hex e settings unread sem esse script no KV é 503 — não finge “script inexistente”. Se o script está no KV e os funis não confirmam, 503 no funil. MCP `abilion_page_install_manual` e `abilion://install/{id}` usam o mesmo critério |
 | `POST /api/telegram` | Telegram; `secret_token` do webhook |
 | `GET /api/cron` | `CRON_SECRET` obrigatório; cada espera corre isolada |
 | `GET /t.js` | pixel. `/T.js` também. O Vite local manda a mesma rota ao Worker |

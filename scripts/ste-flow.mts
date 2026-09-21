@@ -101,7 +101,7 @@ import { displayContact, draftLeadField, formatPhoneContact, isPhoneLikeName, is
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, migrateLeadOrigin, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink, campaignFromStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument, wantsAuthHtml } from "../src/lib/auth-pages.ts"
-import { addPageScript, adsLandingDocument, adsLandingUrl, adsStartToken, pageInstallManual, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
+import { addPageScript, adsLandingDocument, adsLandingUrl, adsStartToken, installSettingsBlocked, pageInstallManual, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
 import { leadFromImport, parseLeadImportLine, parseLeadImportText } from "../src/lib/lead-category.ts"
 import { burstFacebookLeads, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
 import { leadFromCapture } from "../src/lib/templates.ts"
@@ -704,6 +704,20 @@ assert(
     script: { id: "deadbeef", name: "Landing", funnelId: "f1", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" },
   }).landing === adsLandingUrl("deadbeef"),
   "manual do script aponta o ads para /l?s="
+)
+assert(installSettingsBlocked(true, "deadbeef", undefined), "unread + s= válido + miss bloqueia o manual")
+assert(!installSettingsBlocked(false, "deadbeef", undefined), "settings lidas + miss não bloqueiam")
+assert(!installSettingsBlocked(true, "", undefined), "unread sem s= não bloqueia o manual geral")
+assert(!installSettingsBlocked(true, "nao-e-id", undefined), "unread + s= inválido não bloqueia")
+assert(
+  !installSettingsBlocked(true, "deadbeef", {
+    id: "deadbeef",
+    name: "Landing",
+    funnelId: "f1",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  }),
+  "unread com o script no KV não bloqueia"
 )
 assert(FUNNEL_CAP === 20 && !canCreateFunnel(Array.from({ length: 20 }, () => emptySalesFunnel("x"))).ok, "criar o 21.º funil é recusado")
 const twentyOne = Array.from({ length: 21 }, (_, index) => ({ ...emptySalesFunnel(`n${index}`), id: `funil-${index}` }))
@@ -5279,6 +5293,53 @@ assert(downCrm.status === 200, "CRM lê o KV se o Supabase cair")
 const downCrmBody = (await downCrm.json()) as { settingsUnread?: boolean; funnels?: unknown[] }
 assert(Array.isArray(downCrmBody.funnels), "CRM com Postgres em baixo ainda manda os funis do KV")
 assert(downCrmBody.settingsUnread === true, "CRM marca definições por confirmar se o Postgres cair")
+const downInstallMiss = await handleRequest(new Request("http://local.test/api/install?s=deadbeef"), downEnv, backgroundCtx())
+assert(downInstallMiss.status === 503, "GET /api/install?s= com settings unread não finge script em falta")
+assert(
+  ((await downInstallMiss.json()) as { error?: string }).error === "Não confirmei o script desta página.",
+  "503 do install pede confirmação do script"
+)
+const downInstallGeneral = await handleRequest(new Request("http://local.test/api/install"), downEnv, backgroundCtx())
+const downInstallGeneralBody = (await downInstallGeneral.json()) as { ok?: boolean; steps?: unknown[] }
+assert(
+  downInstallGeneral.status === 200 && downInstallGeneralBody.ok && (downInstallGeneralBody.steps?.length ?? 0) >= 5,
+  "GET /api/install sem s= continua o manual mesmo unread"
+)
+const downInstallBadId = await handleRequest(new Request("http://local.test/api/install?s=nao-e-id"), downEnv, backgroundCtx())
+assert(downInstallBadId.status === 200, "s= inválido não 503")
+const installHollowKv = memoryKv()
+await saveSettingsKv(
+  installHollowKv,
+  migrateSettings({
+    pageScripts: [
+      {
+        id: "deadbeef",
+        name: "Landing unread",
+        funnelId: "fun-install",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+  })
+)
+const installUnreadEnv = {
+  ASSETS: { fetch: async () => new Response("ok") },
+  AUTH: installHollowKv,
+  SUPABASE_URL: "https://invalid.invalid",
+  SUPABASE_SERVICE_ROLE: "role",
+  ABILION_ENV: "development",
+} as Env
+const downInstallFunnel = await handleRequest(new Request("http://local.test/api/install?s=deadbeef"), installUnreadEnv, backgroundCtx())
+assert(downInstallFunnel.status === 503, "script no KV sem funis e Postgres em baixo não omite o nome à calada")
+assert(
+  ((await downInstallFunnel.json()) as { error?: string }).error === "Não confirmei o funil deste script.",
+  "503 do install pede confirmação do funil"
+)
+await saveFunnelsKv(installHollowKv, [{ ...emptySalesFunnel("Quadro do script"), id: "fun-install" }])
+const downInstallFound = await handleRequest(new Request("http://local.test/api/install?s=deadbeef"), installUnreadEnv, backgroundCtx())
+const downInstallFoundBody = (await downInstallFound.json()) as { ok?: boolean; script?: { id?: string; funnelName?: string } }
+assert(downInstallFound.status === 200 && downInstallFoundBody.script?.id === "deadbeef", "script no KV sobrevive ao Postgres unread")
+assert(downInstallFoundBody.script?.funnelName === "Quadro do script", "funil no KV entra no manual mesmo unread")
 const cronEnv = { ...liveEnv, CRON_SECRET: "cron" } as Env
 await upsertLeadKv(cronEnv.AUTH, {
   ...lead("due-cron"),
@@ -6108,6 +6169,73 @@ const installPublic = await handleRequest(new Request("http://local.test/api/ins
 const installBody = (await installPublic.json()) as { ok?: boolean; title?: string; snippet?: string; steps?: unknown[] }
 assert(installPublic.status === 200 && installBody.ok && (installBody.steps?.length ?? 0) >= 5, "GET /api/install é o manual")
 assert(Boolean(installBody.snippet?.includes("/t.js")), "manual público inclui o snippet")
+const mcpInstallDownEnv = {
+  ...teamEnv,
+  SUPABASE_URL: "https://invalid.invalid",
+  SUPABASE_SERVICE_ROLE: "role",
+} as Env
+const mcpInstallUnread = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 90,
+      method: "tools/call",
+      params: { name: "abilion_page_install_manual", arguments: { scriptId: "deadbeef" } },
+    }),
+  }),
+  mcpInstallDownEnv,
+  backgroundCtx()
+)
+const mcpInstallUnreadBody = (await mcpInstallUnread.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const mcpInstallUnreadData = JSON.parse(mcpInstallUnreadBody.result?.content?.[0]?.text || "{}") as { error?: string }
+assert(mcpInstallUnread.status === 200 && mcpInstallUnreadBody.result?.isError, "MCP não finge script em falta se settings unread")
+assert(mcpInstallUnreadData.error === "Não confirmei o script desta página.", "MCP pede confirmação do script unread")
+const mcpInstallResourceUnread = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 91, method: "resources/read", params: { uri: "abilion://install/deadbeef" } }),
+  }),
+  mcpInstallDownEnv,
+  backgroundCtx()
+)
+const mcpInstallResourceUnreadBody = (await mcpInstallResourceUnread.json()) as { error?: { message?: string } }
+assert(mcpInstallResourceUnread.status === 200, "resources/read unread não rebenta o MCP")
+assert(
+  mcpInstallResourceUnreadBody.error?.message === "Não confirmei o script desta página.",
+  "resources/read unread devolve o mesmo erro"
+)
+const mcpInstallGeneralUnread = await handleRequest(
+  new Request("http://local.test/mcp", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${mintedBody.token}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 92,
+      method: "tools/call",
+      params: { name: "abilion_page_install_manual", arguments: {} },
+    }),
+  }),
+  mcpInstallDownEnv,
+  backgroundCtx()
+)
+const mcpInstallGeneralUnreadBody = (await mcpInstallGeneralUnread.json()) as {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> }
+}
+const mcpInstallGeneralUnreadData = JSON.parse(mcpInstallGeneralUnreadBody.result?.content?.[0]?.text || "{}") as {
+  ok?: boolean
+  steps?: unknown[]
+}
+assert(
+  mcpInstallGeneralUnread.status === 200 &&
+    !mcpInstallGeneralUnreadBody.result?.isError &&
+    (mcpInstallGeneralUnreadData.steps?.length ?? 0) >= 5,
+  "MCP manual geral continua unread"
+)
 
 const mcpImport = await handleRequest(
   new Request("http://local.test/mcp", {

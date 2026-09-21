@@ -7,7 +7,7 @@ import { linkFollowUp, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { campaignFromStart, originFromStart, parseTelegramStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { applyEvent, canAdvanceRemoteWait, dueWaits, pickLiveDueLead, snapshotForLead } from "../src/lib/runtime.ts"
-import { adsLandingDocument, pageInstallManual, pageScriptById } from "../src/lib/page-script.ts"
+import { adsLandingDocument, installSettingsBlocked, pageInstallManual, pageScriptById } from "../src/lib/page-script.ts"
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument } from "../src/lib/auth-pages.ts"
 import { foldPublicPath, foldStudioPath, safeAppPath } from "../src/lib/safe-path.ts"
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
@@ -296,17 +296,25 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
 
   if (url.pathname === "/api/install" && request.method === "GET") {
     const { resolved } = await runtimeOf(env, webhookUrl(request, env))
-    const settings = await loadSettings(env).catch(() => emptySettings())
+    const loaded = await readWorkspaceSettings(env)
     const scriptId = (url.searchParams.get("s") || "").trim().toLowerCase()
-    const script = pageScriptById(settings.pageScripts, scriptId)
-    const funnel = script
-      ? (await loadFunnels(env).catch(() => [] as SalesFunnel[])).find((item) => item.id === script.funnelId)
-      : undefined
+    const script = pageScriptById(loaded.settings.pageScripts, scriptId)
+    if (installSettingsBlocked(loaded.unread, scriptId, script)) {
+      return json({ error: "Não confirmei o script desta página." }, 503)
+    }
+    let funnelName: string | undefined
+    if (script) {
+      try {
+        funnelName = (await loadFunnels(env)).find((item) => item.id === script.funnelId)?.name
+      } catch {
+        return json({ error: "Não confirmei o funil deste script." }, 503)
+      }
+    }
     return json(
       pageInstallManual({
-        botUsername: cleanBotUsername(resolved.telegramBotUsername || settings.telegramBotUsername),
+        botUsername: cleanBotUsername(resolved.telegramBotUsername || loaded.settings.telegramBotUsername),
         script,
-        funnelName: funnel?.name,
+        funnelName,
       })
     )
   }

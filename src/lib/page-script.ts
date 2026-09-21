@@ -206,6 +206,12 @@ export function pageScriptById(scripts: PageScript[] | undefined, id: string | u
   return (scripts ?? []).find((item) => item.id === needle)
 }
 
+/** Settings unread + `s=` válido + miss: não fingir que o script não existe. Sem `s=` o manual geral continua. */
+export function installSettingsBlocked(unread: boolean, scriptId: string | undefined, script: PageScript | undefined) {
+  const needle = (scriptId || "").trim().toLowerCase()
+  return unread && PAGE_SCRIPT_ID.test(needle) && !script
+}
+
 export function funnelHasInstallableBoard(funnel?: SalesFunnel | null) {
   return Boolean(funnel?.production)
 }
