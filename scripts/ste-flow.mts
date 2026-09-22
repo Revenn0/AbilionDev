@@ -15,9 +15,13 @@ import {
   applySteVoice,
   guardSteVoice,
   listenLine,
+  heardSuperbetSignup,
   STE_WELCOME,
   STE_COURSE_BLOCK,
   STE_SUPERBET_BLOCK,
+  STE_SUPERBET_CONFIRM,
+  STE_SUPERBET_HELP,
+  STE_SUPERBET_OK,
   STE_SUPERBET_RESCUE,
   STE_OFFER_BLOCK,
   STE_LIVE_BLOCK,
@@ -417,6 +421,27 @@ assert(tooSoon.replies.length === 0, "nao resgata antes de 5 min")
 
 const rescue = replySteTick(platform.lead, Date.now() + 8 * 60_000)
 assert(rescue.replies[0] === STE_SUPERBET_RESCUE, "resgate 5-10 min")
+
+assert(heardSuperbetSignup("aqui o print"), "print do cadastro conta como Superbet")
+assert(heardSuperbetSignup("cadastrei"), "cadastrei conta como Superbet")
+assert(!heardSuperbetSignup("oi"), "oi sozinho não é cadastro")
+const asking = replySte(platform.lead, "oi")
+assert(asking.replies[0] === STE_SUPERBET_CONFIRM, "oi na Superbet pede o cadastro uma vez")
+assert(asking.lead.stePhase === "solution", "oi não pula a Superbet")
+const askingLived = replySteLived(platform.lead, "oi")
+assert(askingLived.replies[0] !== STE_SUPERBET_CONFIRM, "voz reconhece o oi")
+assert(askingLived.replies[0].includes("Superbet"), "voz ainda pede o cadastro")
+const looped = replySte(asking.lead, "Oi oi")
+assert(looped.replies[0] === STE_SUPERBET_HELP, "segunda fala não copia a confirmação")
+assert(looped.lead.stePhase === "solution", "sem print continua na Superbet")
+const silentLoop = replySte(looped.lead, "oi")
+assert(silentLoop.replies.length === 0, "terceira fala não spam a mesma pergunta")
+assert((silentLoop.lead.messages ?? []).at(-1)?.role === "lead", "a fala do lead fica gravada")
+const printed = replySteLived(asking.lead, "aqui o print")
+assert(printed.lead.facts.hasSuperbet === true, "print marca Superbet")
+assert(printed.replies[0] === STE_SUPERBET_OK, "print avança em vez de repetir")
+assert(printed.lead.stePhase === "offer", "print vai à oferta")
+assert(printed.lead.printAt, "print do chat marca o print da ficha")
 
 const lives = replySte(start.lead, "que horas é a live?")
 assert(lives.replies[0] === STE_LIVE_BLOCK[0], "faq lives")

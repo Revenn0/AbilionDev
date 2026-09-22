@@ -115,6 +115,15 @@ export const STE_SUPERBET_BLOCK = [
 export const STE_SUPERBET_RESCUE =
   "E aí, conseguiu fazer o cadastro na plataforma? Porque essa semana a gente conseguiu uma promoção para novos jogadores que, se você conseguir fazer o seu cadastro e fazer qualquer tipo de depósito, a gente te dá mais uma banca para você jogar. Me confirma aí se você conseguiu, se você é um cliente novo, que eu te dou esse bônus de entrada para jogar com a gente na próxima live."
 
+export const STE_SUPERBET_CONFIRM =
+  "Me confirma se o cadastro na Superbet já saiu — se travar em alguma etapa, me fala que eu te ajudo."
+
+export const STE_SUPERBET_OK =
+  "Boa! Com a conta certa a gente opera junto nas lives. Qualquer depósito novo eu te encaixo no bônus de entrada."
+
+export const STE_SUPERBET_HELP =
+  "Se o cadastro travar, me diz a etapa: CPF, selfie ou depósito. Ou manda o print que eu te ajudo."
+
 export const STE_OFFER_BLOCK = [
   "O App é a ferramenta própria: catalogador em tempo real, validador de padrões e gestão de banca blindada.",
   steLink("app"),
@@ -152,7 +161,16 @@ const WANT_OFFER =
   /\b(app|plano|planos|assinar|assinatura|ferramenta|catalogador|premium|checkout|vaga|preço|preco|valor|quanto custa|perfectpay|pagar|quero o (app|grupo)|link do (app|grupo|checkout))\b/i
 
 const SIGNED_UP =
-  /\b(cadastrei|me cadastrei|fiz o cadastro|criei a conta|já tenho conta|ja tenho conta|já tenho|ja tenho|depositei|depósito|deposito|sou cliente|conta feita|tá feito|ta feito)\b/i
+  /\b(cadastrei|me cadastrei|fiz o cadastro|criei a conta|já tenho conta|ja tenho conta|já tenho|ja tenho|depositei|depósito|deposito|sou cliente|conta feita|tá feito|ta feito|cadastro (feito|ok|pronto)|já (fiz|saiu|cadastrei)|ja (fiz|saiu|cadastrei)|consegui cadastr)\b/i
+
+const SENT_PRINT = /\b(print|printou|screenshot)\b/i
+
+const GREETING = /^(oi+|o+l[aá]|e a[ií]|opa|hey|hola)\b/i
+
+export function heardSuperbetSignup(incoming: string, facts?: LeadFacts | null) {
+  const text = incoming.trim()
+  return Boolean(facts?.hasSuperbet) || SIGNED_UP.test(text) || SENT_PRINT.test(text)
+}
 
 const CONVERTED = /\b(paguei|assinei|comprei|já assinei|ja assinei|já paguei|ja paguei)\b/i
 
@@ -366,7 +384,7 @@ export function applyLeadFacts(lead: Lead, incoming: string) {
   if (/j[aá] jogo|experien|veterano|h[aá] tempo|j[aá] opero/i.test(text)) facts.experience = "experienced"
   if (/perdend|queim|no preju|zerou|quebr|tilt/i.test(text)) facts.results = "losing"
   if (/ganhand|lucr|positivo|no verde/i.test(text)) facts.results = "winning"
-  if (SIGNED_UP.test(text)) facts.hasSuperbet = true
+  if (SIGNED_UP.test(text) || SENT_PRINT.test(text)) facts.hasSuperbet = true
   if (/n[aã]o tenho conta|ainda n[aã]o tenho|sem conta/i.test(text)) facts.hasSuperbet = false
   lead.facts = facts
 }
@@ -448,6 +466,19 @@ function lastLeadTalk(lead: Lead) {
   return last?.role === "lead" ? last.text : undefined
 }
 
+function lastSteText(lead: Lead) {
+  for (let index = (lead.messages?.length ?? 0) - 1; index >= 0; index--) {
+    const item = lead.messages?.[index]
+    if (item?.role === "ste") return item.text
+  }
+}
+
+function isSuperbetConfirmAsk(text?: string) {
+  if (!text) return false
+  if (text === STE_SUPERBET_CONFIRM || text === STE_SUPERBET_HELP) return true
+  return /cadastro na Superbet já saiu|CPF, selfie ou depósito/i.test(text)
+}
+
 /** Webhook: se o envio da Sté falhar, a fala do lead fica no CRM sem avançar a fase. */
 export function rememberLeadTalk(lead: Lead, incoming?: string | null, now = Date.now()): Lead {
   const text = (incoming ?? "").trim()
@@ -512,10 +543,11 @@ export function listenLine(facts: LeadFacts | undefined, incoming: string, kind:
     return "Pra rodar as estratégias de verdade, você precisa estar na casa certa. Eu opero na Superbet."
   }
   if (kind === "confirm") {
-    if (facts?.hasSuperbet === true) {
-      return "Boa! Com a conta certa a gente opera junto nas lives. Qualquer depósito novo eu te encaixo no bônus de entrada."
+    if (heardSuperbetSignup(incoming, facts)) return STE_SUPERBET_OK
+    if (GREETING.test(incoming.trim())) {
+      return "Oi. Me confirma se o cadastro na Superbet já saiu — se travar em alguma etapa, me fala que eu te ajudo."
     }
-    return "Me confirma se o cadastro na Superbet já saiu — se travar em alguma etapa, me fala que eu te ajudo."
+    return STE_SUPERBET_CONFIRM
   }
   if (kind === "offer") {
     return "Se quiser subir de nível agora, o caminho é o App, o Grupo Premium ou o checkout direto."
@@ -738,15 +770,22 @@ function replyToIncoming(lead: Lead, incoming: string, now: number, copy: Return
 
   if (phase === "solution") {
     cancelSuperbetWait(lead, now)
-    if (SIGNED_UP.test(incoming)) {
+    if (heardSuperbetSignup(incoming, lead.facts)) {
       setPhase(lead, "offer")
-      const text = "Boa! Com a conta certa a gente opera junto nas lives. Qualquer depósito novo eu te encaixo no bônus de entrada."
-      push(lead, "ste", text, now)
-      return pack(lead, [text], "confirm")
+      if (SENT_PRINT.test(incoming)) lead.printAt = lead.printAt ?? nowIso(now)
+      push(lead, "ste", STE_SUPERBET_OK, now)
+      return pack(lead, [STE_SUPERBET_OK], "confirm")
     }
-    const text = "Me confirma se o cadastro na Superbet já saiu — se travar em alguma etapa, me fala que eu te ajudo."
-    push(lead, "ste", text, now)
-    return pack(lead, [text], "confirm")
+    const asked = lastSteText(lead)
+    if (isSuperbetConfirmAsk(asked)) {
+      if (asked === STE_SUPERBET_HELP || /CPF, selfie ou depósito/i.test(asked ?? "")) {
+        return pack(lead, [], "confirm")
+      }
+      push(lead, "ste", STE_SUPERBET_HELP, now)
+      return pack(lead, [STE_SUPERBET_HELP], "confirm")
+    }
+    push(lead, "ste", STE_SUPERBET_CONFIRM, now)
+    return pack(lead, [STE_SUPERBET_CONFIRM], "confirm")
   }
 
   const text = `Se quiser subir de nível, o caminho é o App, o Grupo Premium ou o checkout direto: ${steLink("app")}`
