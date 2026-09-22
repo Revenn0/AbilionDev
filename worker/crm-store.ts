@@ -329,6 +329,23 @@ export async function reserveLeadIdentity(
   proposedId: string,
   integrationId?: string
 ): Promise<string> {
+  if (integrationId === LEGACY_INTEGRATION_ID) {
+    for (const value of contactLookups(contact)) {
+      const current = await liveAliasId(kv, "contact", value)
+      if (!current) continue
+      if (chatId) await claimLeadAlias(kv, "chat", chatId, current, integrationId)
+      await bindContactAliases(kv, contact, current, integrationId)
+      return current
+    }
+    if (chatId) {
+      const current = await liveAliasId(kv, "chat", chatId)
+      if (current) {
+        await claimLeadAlias(kv, "chat", chatId, current, integrationId)
+        if (contact) await bindContactAliases(kv, contact, current, integrationId)
+        return current
+      }
+    }
+  }
   if (contact) {
     for (const value of contactLookups(contact)) {
       const current = await liveAliasId(kv, "contact", value, integrationId)
