@@ -134,6 +134,13 @@ import { ensureVoiceClip, VOICE_STORE_KEY, voiceClipStatus } from "../worker/ste
 import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTelegramClaims, telegramCall, telegramJoinActor, telegramJoinRequest, telegramUpdateActor, TG_UPDATES } from "../worker/telegram.ts"
 import { backgroundCtx, handleRequest, type Env } from "../worker/index.ts"
 import { clearSessionExpired, noteUnauthorized, subscribeSessionExpired } from "../src/lib/session.ts"
+import {
+  KV_BACKUP_FORMAT,
+  isOperationalBackupKey,
+  makeBackupEnvelope,
+  parseBackupEnvelope,
+  selectOperationalBackupKeys,
+} from "./kv-backup-lib.mts"
 
 function lead(id = "lead-1", contact = "@fb1"): Lead {
   const now = new Date().toISOString()
@@ -158,6 +165,36 @@ function lead(id = "lead-1", contact = "@fb1"): Lead {
 function assert(cond: unknown, message: string) {
   if (!cond) throw new Error(message)
 }
+
+assert(isOperationalBackupKey("crm:lead:abc"), "backup inclui a ficha do lead")
+assert(isOperationalBackupKey("crm:removed"), "backup inclui tombstones")
+assert(isOperationalBackupKey("voice:clips"), "backup inclui os assets de voz")
+assert(!isOperationalBackupKey("snapshot"), "backup não leva contas e sessões")
+assert(!isOperationalBackupKey("runtime:secrets"), "backup não leva tokens e chaves")
+assert(!isOperationalBackupKey("crm:cron-lock"), "backup não restaura locks")
+assert(
+  selectOperationalBackupKeys(["crm:settings", "snapshot", "crm:settings", "track:events"]).join(",") ===
+    "crm:settings,track:events",
+  "backup deduplica e ordena só as chaves operacionais"
+)
+const backupFixture = makeBackupEnvelope(
+  "staging",
+  "99b7a6f2ce764741a37a5a1330f90cf6",
+  [
+    { key: "crm:settings", value: "{\"ok\":true}" },
+    { key: "snapshot", value: "segredo" },
+  ],
+  "2026-09-22T09:00:00.000Z"
+)
+assert(backupFixture.format === KV_BACKUP_FORMAT && backupFixture.items.length === 1, "backup filtra segredos no envelope")
+assert(parseBackupEnvelope(JSON.parse(JSON.stringify(backupFixture))).items[0]?.key === "crm:settings", "backup validado restaura o conteúdo")
+let rejectedSensitiveBackup = false
+try {
+  parseBackupEnvelope({ ...backupFixture, items: [{ key: "runtime:secrets", value: "não" }] })
+} catch {
+  rejectedSensitiveBackup = true
+}
+assert(rejectedSensitiveBackup, "restore recusa chave sensível")
 
 function kvThrowsOn(base: ReturnType<typeof memoryKv>, ...blocked: string[]) {
   return {

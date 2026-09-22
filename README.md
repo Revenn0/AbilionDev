@@ -78,9 +78,16 @@ npm install
 npx wrangler login
 npm run deploy:staging                      # staging.abilion.lol — qualquer branch
 npm run deploy:prod -- --approved <sha>     # www.abilion.lol — só no main, só o que staging já serviu
+npm run backup:staging                      # backup operacional local, sem auth/secrets
+npm run restore:staging -- <backup.json>    # valida; acrescenta --yes para restaurar
 npm run origin:rulesets                     # aplica protect-main / staging no Origin (máquina do Victor)
 npm run promote:check                       # HEAD == árvore que staging está a servir?
 ```
+
+O contrato anterior à evolução multi-bot e as invariantes de migração estão em
+[`docs/arquitetura-atual.md`](docs/arquitetura-atual.md). Backups ficam em
+`.data/backups/`, fora do git. Um backup de produção nunca é aceite pelo restore
+de staging.
 
 ## Ambientes
 
