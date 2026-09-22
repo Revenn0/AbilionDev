@@ -496,10 +496,11 @@ export function inferLeadImportMapping(headersInput: readonly string[]) {
 
 export const autoMapImportColumns = inferLeadImportMapping
 
-function sourceValues(row: ParsedImportRow | ImportSourceRecord) {
-  return "values" in row && row.values && typeof row.values === "object"
-    ? row.values
-    : (row as ImportSourceRecord)
+function sourceValues(row: ParsedImportRow | ImportSourceRecord): ImportSourceRecord {
+  if ("sourceIndex" in row && "rowNumber" in row && "values" in row) {
+    return (row as ParsedImportRow).values
+  }
+  return row
 }
 
 export function applyImportMapping(

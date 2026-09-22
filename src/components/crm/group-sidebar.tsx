@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
   LEAD_GROUP_FILTER_ALL,
-  LEAD_GROUP_FILTER_UNGROUPED,
   buildLeadGroupFilters,
   normalizeLeadGroups,
   validateLeadGroupName,
