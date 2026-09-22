@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils"
 import type { SalesFunnel, SalesKind, SalesSnapshot } from "@/lib/types"
 import { funnelsWriteBlocked } from "@/lib/ops"
 import { validatePublish } from "@/lib/validate"
+import { LEGACY_BOT_ID, LEGACY_BRAIN_ID } from "@/lib/platform"
 import { defaultSalesData, type SalesCatalogItem } from "./catalog"
 import { SalesInspector } from "./inspector"
 import { salesNodeTypes, type SalesCanvasNode } from "./nodes"
@@ -379,6 +380,10 @@ export function SalesCanvas({
               setSaving(true)
               setPublishError("")
               const snap: SalesSnapshot = {
+                id: crypto.randomUUID(),
+                version: (production?.version ?? 0) + 1,
+                botId: funnel.botId || LEGACY_BOT_ID,
+                brainVersionId: production?.brainVersionId || LEGACY_BRAIN_ID,
                 name,
                 publishedAt: new Date().toISOString(),
                 nodes: draftNodes,

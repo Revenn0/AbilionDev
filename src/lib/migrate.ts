@@ -3,6 +3,7 @@ import { factsWithoutRemoteKeys, sanitizeLeadEvents } from "./lead-events.ts"
 import { isEmailName, resolveLeadName } from "./lead-name.ts"
 import { migrateLeadCategories, sanitizeLeadCategory, seedLeadGroups } from "./lead-category.ts"
 import { migratePageScripts, migrateRemovedPageScripts } from "./page-script.ts"
+import { LEGACY_BOT_ID, LEGACY_BRAIN_ID, LEGACY_INTEGRATION_ID } from "./platform.ts"
 import { defaultSettings, isFlowKind, isMapKind, type Lead, type LeadOrigin, type SalesFunnel, type SalesKind, type SalesSnapshot, type Settings } from "./types.ts"
 
 export function migrateLeadOrigin(value?: string): LeadOrigin {
@@ -55,6 +56,10 @@ export function migrateFunnel(raw: SalesFunnel): SalesFunnel {
   const production = raw.production
     ? {
         ...raw.production,
+        id: raw.production.id || `${raw.id}:legacy`,
+        version: raw.production.version ?? 1,
+        botId: raw.production.botId || raw.botId || LEGACY_BOT_ID,
+        brainVersionId: raw.production.brainVersionId || LEGACY_BRAIN_ID,
         nodes: (raw.production.nodes ?? []).map((node) => ({
           ...node,
           type: kindForNode(node.type, node.data?.title),
@@ -62,7 +67,7 @@ export function migrateFunnel(raw: SalesFunnel): SalesFunnel {
         })),
       }
     : raw.production
-  return { ...raw, nodes, production }
+  return { ...raw, botId: raw.botId || LEGACY_BOT_ID, nodes, production }
 }
 
 export function migrateLead(raw: Partial<Lead> & { id: string }): Lead {
@@ -73,6 +78,11 @@ export function migrateLead(raw: Partial<Lead> & { id: string }): Lead {
   const events = Array.isArray(raw.events) && raw.events.length ? raw.events : sanitizeLeadEvents((rawFacts as { timeline?: unknown }).timeline)
   return {
     id: raw.id,
+    botId: raw.botId || LEGACY_BOT_ID,
+    integrationId: raw.integrationId || (raw.telegramChatId ? LEGACY_INTEGRATION_ID : undefined),
+    flowVersionId: raw.flowVersionId,
+    brainVersionId: raw.brainVersionId,
+    testRunId: raw.testRunId,
     name: resolveLeadName(raw.name, raw.contact, { email, messages: raw.messages }),
     contact: normalizeTelegramContact(raw.contact ?? "") || (raw.contact ?? ""),
     channel: raw.channel === "whatsapp" ? "whatsapp" : "telegram",
@@ -204,6 +214,13 @@ function sanitizeProduction(raw: unknown): SalesSnapshot | null {
   const row = raw as Partial<SalesSnapshot>
   const graph = sanitizeGraph(row.nodes, row.edges)
   return {
+    id: typeof row.id === "string" ? row.id.trim().slice(0, 80) || undefined : undefined,
+    version: typeof row.version === "number" && Number.isFinite(row.version) ? Math.max(1, Math.floor(row.version)) : undefined,
+    botId: typeof row.botId === "string" && row.botId.trim() ? row.botId.trim().slice(0, 80) : LEGACY_BOT_ID,
+    brainVersionId:
+      typeof row.brainVersionId === "string" && row.brainVersionId.trim()
+        ? row.brainVersionId.trim().slice(0, 80)
+        : LEGACY_BRAIN_ID,
     name: String(row.name || "Funil").slice(0, 80) || "Funil",
     publishedAt: typeof row.publishedAt === "string" ? row.publishedAt : new Date().toISOString(),
     nodes: graph.nodes as SalesSnapshot["nodes"],
@@ -223,6 +240,7 @@ export function sanitizeIncomingFunnel(raw: unknown): SalesFunnel | null {
   return clipFunnel(
     migrateFunnel({
       id,
+      botId: typeof row.botId === "string" && row.botId.trim() ? row.botId.trim().slice(0, 80) : LEGACY_BOT_ID,
       name: String(row.name || "Funil").slice(0, 80) || "Funil",
       mode: row.mode === "messages" ? "messages" : "sales",
       status: row.status === "active" ? "active" : "draft",
@@ -249,6 +267,11 @@ export function sanitizeIncomingLead(raw: unknown): Lead | null {
   lead.startPayload = lead.startPayload ? lead.startPayload.trim().slice(0, 80) : undefined
   lead.visitorId = lead.visitorId ? lead.visitorId.trim().slice(0, 32) : undefined
   lead.telegramChatId = lead.telegramChatId ? String(lead.telegramChatId).trim().slice(0, 32) : undefined
+  lead.botId = lead.botId ? lead.botId.trim().slice(0, 80) : LEGACY_BOT_ID
+  lead.integrationId = lead.integrationId ? lead.integrationId.trim().slice(0, 80) : undefined
+  lead.flowVersionId = lead.flowVersionId ? lead.flowVersionId.trim().slice(0, 80) : undefined
+  lead.brainVersionId = lead.brainVersionId ? lead.brainVersionId.trim().slice(0, 80) : undefined
+  lead.testRunId = lead.testRunId ? lead.testRunId.trim().slice(0, 80) : undefined
   lead.funnelId = lead.funnelId ? lead.funnelId.trim().slice(0, 80) : undefined
   lead.nodeId = lead.nodeId ? lead.nodeId.trim().slice(0, 80) : undefined
   if (lead.facts) {

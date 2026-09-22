@@ -19,6 +19,7 @@ import {
 import { leadMatchesQuery } from "../src/lib/lead-name.ts"
 import { migrateLead, migrateSettings, sanitizeIncomingFunnel } from "../src/lib/migrate.ts"
 import type { Lead, SalesFunnel, Settings } from "../src/lib/types.ts"
+import { LEGACY_INTEGRATION_ID } from "../src/lib/platform.ts"
 import type { KvLike } from "./kv.ts"
 
 export const CRM_INDEX = "crm:index"
@@ -33,13 +34,17 @@ export { LEAD_REMOVED_CAP, FUNNEL_REMOVED_CAP }
 export const LEAD_INDEX_REST_CAP = 4000
 export const LEAD_INDEX_PINNED_CAP = 8000
 
-export function aliasKey(kind: "contact" | "chat", value: string) {
+export function aliasKey(kind: "contact" | "chat", value: string, integrationId?: string) {
   const next = value.trim().slice(0, 80)
-  return next ? `crm:alias:${kind}:${next}` : ""
+  const scope = (integrationId || "").trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80)
+  return next ? `crm:alias:${scope ? `${scope}:` : ""}${kind}:${next}` : ""
 }
 
 export type CrmIndexEntry = {
   id: string
+  botId?: string
+  integrationId?: string
+  flowVersionId?: string
   contact: string
   name?: string
   category?: string
@@ -228,24 +233,45 @@ export function leadPageFromRemote(
   }
 }
 
-async function writeAliases(kv: KvLike, lead: Pick<Lead, "id" | "contact" | "telegramChatId">) {
-  for (const value of contactLookups(lead.contact)) {
-    await claimLeadAlias(kv, "contact", value, lead.id)
-  }
-  if (lead.telegramChatId) await claimLeadAlias(kv, "chat", lead.telegramChatId, lead.id)
+function aliasScopes(integrationId?: string) {
+  const scope = (integrationId || "").trim()
+  return scope === LEGACY_INTEGRATION_ID ? [scope, undefined] : scope ? [scope] : [undefined]
 }
 
-async function clearAliases(kv: KvLike, lead: Pick<Lead, "contact" | "telegramChatId"> | null, entry?: CrmIndexEntry) {
-  for (const value of contactLookups(lead?.contact || entry?.contact || "")) {
-    const contact = aliasKey("contact", value)
-    if (contact) await kv.delete?.(contact)
+async function writeAliases(
+  kv: KvLike,
+  lead: Pick<Lead, "id" | "contact" | "telegramChatId" | "integrationId">
+) {
+  for (const scope of aliasScopes(lead.integrationId)) {
+    for (const value of contactLookups(lead.contact)) {
+      await claimLeadAlias(kv, "contact", value, lead.id, scope)
+    }
+    if (lead.telegramChatId) await claimLeadAlias(kv, "chat", lead.telegramChatId, lead.id, scope)
   }
-  const chat = aliasKey("chat", lead?.telegramChatId || entry?.chatId || "")
-  if (chat) await kv.delete?.(chat)
 }
 
-async function loadAlias(kv: KvLike, kind: "contact" | "chat", value: string): Promise<string | null> {
-  const key = aliasKey(kind, value)
+async function clearAliases(
+  kv: KvLike,
+  lead: Pick<Lead, "contact" | "telegramChatId" | "integrationId"> | null,
+  entry?: CrmIndexEntry
+) {
+  for (const scope of aliasScopes(lead?.integrationId || entry?.integrationId)) {
+    for (const value of contactLookups(lead?.contact || entry?.contact || "")) {
+      const contact = aliasKey("contact", value, scope)
+      if (contact) await kv.delete?.(contact)
+    }
+    const chat = aliasKey("chat", lead?.telegramChatId || entry?.chatId || "", scope)
+    if (chat) await kv.delete?.(chat)
+  }
+}
+
+async function loadAlias(
+  kv: KvLike,
+  kind: "contact" | "chat",
+  value: string,
+  integrationId?: string
+): Promise<string | null> {
+  const key = aliasKey(kind, value, integrationId)
   if (!key) return null
   const raw = await kv.get(key, "json")
   if (!raw || typeof raw !== "object") return null
@@ -264,33 +290,34 @@ export async function claimLeadAlias(
   kv: KvLike,
   kind: "contact" | "chat",
   value: string,
-  id: string
+  id: string,
+  integrationId?: string
 ): Promise<string> {
-  const key = aliasKey(kind, value)
+  const key = aliasKey(kind, value, integrationId)
   if (!key || !id) return id
   let current: string | null
   try {
-    current = await loadAlias(kv, kind, value)
+    current = await loadAlias(kv, kind, value, integrationId)
   } catch {
     return id
   }
   if (current && current !== id && (await aliasOwnerState(kv, current)) !== "dead") return current
   await kv.put(key, JSON.stringify({ id }))
   try {
-    return (await loadAlias(kv, kind, value)) || id
+    return (await loadAlias(kv, kind, value, integrationId)) || id
   } catch {
     return id
   }
 }
 
-async function bindContactAliases(kv: KvLike, contact: string, id: string) {
+async function bindContactAliases(kv: KvLike, contact: string, id: string, integrationId?: string) {
   for (const value of contactLookups(contact)) {
-    await claimLeadAlias(kv, "contact", value, id)
+    await claimLeadAlias(kv, "contact", value, id, integrationId)
   }
 }
 
-async function liveAliasId(kv: KvLike, kind: "contact" | "chat", value: string) {
-  const current = await loadAlias(kv, kind, value)
+async function liveAliasId(kv: KvLike, kind: "contact" | "chat", value: string, integrationId?: string) {
+  const current = await loadAlias(kv, kind, value, integrationId)
   if (!current) return null
   return (await aliasOwnerState(kv, current)) === "dead" ? null : current
 }
@@ -299,26 +326,27 @@ export async function reserveLeadIdentity(
   kv: KvLike,
   contact: string,
   chatId: string,
-  proposedId: string
+  proposedId: string,
+  integrationId?: string
 ): Promise<string> {
   if (contact) {
     for (const value of contactLookups(contact)) {
-      const current = await liveAliasId(kv, "contact", value)
+      const current = await liveAliasId(kv, "contact", value, integrationId)
       if (!current) continue
-      if (chatId) await claimLeadAlias(kv, "chat", chatId, current)
-      await bindContactAliases(kv, contact, current)
+      if (chatId) await claimLeadAlias(kv, "chat", chatId, current, integrationId)
+      await bindContactAliases(kv, contact, current, integrationId)
       return current
     }
   }
   if (chatId) {
-    const id = await claimLeadAlias(kv, "chat", chatId, proposedId)
-    if (contact) await bindContactAliases(kv, contact, id)
+    const id = await claimLeadAlias(kv, "chat", chatId, proposedId, integrationId)
+    if (contact) await bindContactAliases(kv, contact, id, integrationId)
     return id
   }
   if (contact) {
-    await bindContactAliases(kv, contact, proposedId)
+    await bindContactAliases(kv, contact, proposedId, integrationId)
     for (const value of contactLookups(contact)) {
-      const current = await loadAlias(kv, "contact", value)
+      const current = await loadAlias(kv, "contact", value, integrationId)
       if (current) return current
     }
     return proposedId
@@ -330,7 +358,7 @@ export async function resolveLeadWrite(kv: KvLike, lead: Lead): Promise<{ incomi
   const removed = await removedIdsForRead(kv)
   const existing = await loadLead(kv, lead.id, removed)
   if (existing) return { incoming: lead, prev: existing }
-  const reserved = await reserveLeadIdentity(kv, lead.contact, lead.telegramChatId ?? "", lead.id)
+  const reserved = await reserveLeadIdentity(kv, lead.contact, lead.telegramChatId ?? "", lead.id, lead.integrationId)
   const prev = reserved === lead.id ? null : await loadLead(kv, reserved, removed)
   return {
     incoming: { ...lead, id: reserved, createdAt: prev?.createdAt ?? lead.createdAt },
@@ -401,6 +429,9 @@ export async function persistFunnelsMerge(kv: KvLike, incoming: SalesFunnel[], i
 function indexEntryFromLead(lead: Lead): CrmIndexEntry {
   return {
     id: lead.id,
+    botId: lead.botId,
+    integrationId: lead.integrationId,
+    flowVersionId: lead.flowVersionId,
     contact: lead.contact,
     name: lead.name,
     category: lead.category,
@@ -492,9 +523,14 @@ export async function listLeads(kv: KvLike, limit = 80, channel: Lead["channel"]
   return (await listLeadPage(kv, limit, channel)).leads
 }
 
-async function loadAliasForRead(kv: KvLike, kind: "contact" | "chat", value: string): Promise<string | null | undefined> {
+async function loadAliasForRead(
+  kv: KvLike,
+  kind: "contact" | "chat",
+  value: string,
+  integrationId?: string
+): Promise<string | null | undefined> {
   try {
-    return await loadAlias(kv, kind, value)
+    return await loadAlias(kv, kind, value, integrationId)
   } catch {
     return undefined
   }
@@ -505,18 +541,19 @@ export async function findLeadInKv(
   contact: string,
   telegramId: number,
   chatId: string,
-  removedIds?: ReadonlySet<string>
+  removedIds?: ReadonlySet<string>,
+  integrationId?: string
 ): Promise<Lead | null> {
   const candidates = [...new Set([...contactLookups(contact), `tg:${telegramId}`, chatId].filter(Boolean))]
   let aliasUnread = false
   for (const value of candidates) {
-    const byContact = await loadAliasForRead(kv, "contact", value)
+    const byContact = await loadAliasForRead(kv, "contact", value, integrationId)
     if (byContact === undefined) aliasUnread = true
     else if (byContact) {
       const lead = await loadLead(kv, byContact, removedIds)
       if (lead) return lead
     }
-    const byChat = await loadAliasForRead(kv, "chat", value)
+    const byChat = await loadAliasForRead(kv, "chat", value, integrationId)
     if (byChat === undefined) aliasUnread = true
     else if (byChat) {
       const lead = await loadLead(kv, byChat, removedIds)
@@ -526,7 +563,9 @@ export async function findLeadInKv(
   const index = await loadIndex(kv)
   const aliases = new Set(candidates)
   const hit = index.entries.find(
-    (item) => aliases.has(item.contact) || (item.chatId && (item.chatId === chatId || aliases.has(item.chatId)))
+    (item) =>
+      (!integrationId || item.integrationId === integrationId || (integrationId === LEGACY_INTEGRATION_ID && !item.integrationId)) &&
+      (aliases.has(item.contact) || Boolean(item.chatId && (item.chatId === chatId || aliases.has(item.chatId))))
   )
   if (hit) return loadLead(kv, hit.id, removedIds)
   if (aliasUnread) throw new Error("Não confirmei o alias do lead.")

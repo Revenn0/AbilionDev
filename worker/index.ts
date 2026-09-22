@@ -6,7 +6,7 @@ import { advanceSteIfDue, isSteWait, rememberLeadTalk, replySte, replySteSmart, 
 import { linkFollowUp, voiceClipFor } from "../src/lib/ste-voice.ts"
 import { TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { campaignFromInvite, campaignFromStart, normalizeInviteLink, originFromStart, parseTelegramStart, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
-import { applyEvent, canAdvanceRemoteWait, dueWaits, leadFunnelUnread, pickLiveDueLead, snapshotForLead } from "../src/lib/runtime.ts"
+import { applyEvent, canAdvanceRemoteWait, dueWaits, leadFunnelUnread, pickLiveDueLead, publishedFunnel, snapshotForLead } from "../src/lib/runtime.ts"
 import { leadCategoriesMutationBlocked, leadGroupsMutationBlocked } from "../src/lib/lead-category.ts"
 import { adsLandingDocument, installSettingsBlocked, pageInstallManual, pageScriptById, pageScriptForInvite, pageScriptsMutationBlocked } from "../src/lib/page-script.ts"
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument } from "../src/lib/auth-pages.ts"
@@ -67,6 +67,9 @@ import {
 } from "./runtime-secrets.ts"
 import { ensureVoiceClip, loadVoiceStore, prepareVoiceClips, rememberVoiceFile, sendStoredVoice, voiceClipStatus } from "./ste-voice.ts"
 import { readJsonObject, readJsonStrict, type JsonFail } from "./json-body.ts"
+import { handlePlatformApi } from "./platform-api.ts"
+import { loadPlatformState, type StoredBotIntegration } from "./platform-store.ts"
+import type { PlatformEnvironment } from "../src/lib/platform.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall, telegramJoinActor, telegramJoinRequest, telegramUpdateActor } from "./telegram.ts"
 import { attachWorkspaceLeadEvents, fetchRemoteDueLeads, fetchRemoteLeadPage, fetchRemoteLeadsByIds, fetchRemotePageEvents, fillLeadHoles, findWorkspaceLead, hydrateWorkspaceLead, leadCatalogUnread, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, readInstallFunnelName, readWorkspaceFunnels, readWorkspaceSettings, resolveWorkspaceLeadWrite, rowToLead, searchWorkspaceLeads, summarizeWorkspaceTrack, type LeadRow } from "./workspace-settings.ts"
 import type { KvLike } from "./kv.ts"
@@ -132,6 +135,12 @@ export function backgroundCtx(): WorkerContext {
 async function runtimeOf(env: Env, webhookFallback = "") {
   const secrets = kvOf(env) ? await loadSecrets(kvOf(env)!) : {}
   return { secrets, resolved: resolveRuntime(env, secrets, webhookFallback) }
+}
+
+function platformEnvironment(env: Env): PlatformEnvironment {
+  const name = (env.ABILION_ENV || "").trim().toLowerCase()
+  if (name === "production" || name === "staging") return name
+  return "development"
 }
 
 /** `/api/health`: qual ambiente e qual commit estão no ar. O deploy injecta `GIT_SHA`. */
@@ -407,6 +416,47 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     }
     if (url.pathname === "/api/users") return handleUsers(request, kvAuthStore(env.AUTH), actor)
     return handleTokens(request, kvAuthStore(env.AUTH), actor)
+  }
+
+  if (
+    url.pathname === "/api/platform" ||
+    url.pathname === "/api/bots" ||
+    url.pathname === "/api/brains" ||
+    url.pathname === "/api/integrations"
+  ) {
+    const gated = await requireStudioUser(request, env)
+    if (!gated.ok) return gated.response
+    if (!env.AUTH) return json({ error: "Plataforma ainda sem KV." }, 503)
+    if (request.method !== "GET") {
+      const limited = await gateKvThrottle(
+        env.AUTH,
+        `platform:${gated.user.id}:${clientIp(request)}`,
+        40,
+        60_000,
+        "Demasiadas alterações à plataforma. Espera um pouco."
+      )
+      if (limited) return limited
+    }
+    const live = await runtimeOf(env, webhookUrl(request, env))
+    const settings = await loadSettings(env).catch(() => emptySettings())
+    const funnels = await readWorkspaceFunnels(env).then((item) => item.funnels, () => [])
+    return handlePlatformApi(request, env.AUTH, gated.user, {
+      environment: platformEnvironment(env),
+      origin: (env.APP_URL || url.origin).replace(/\/$/, ""),
+      legacy: {
+        environment: platformEnvironment(env),
+        actorId: gated.user.id,
+        telegramBotToken: live.resolved.telegramBotToken,
+        telegramBotUsername: live.resolved.telegramBotUsername || settings.telegramBotUsername,
+        telegramGroupUrl: live.resolved.telegramGroupUrl || settings.telegramGroupUrl,
+        webhookUrl: live.resolved.webhookUrl,
+        webhookOk: live.resolved.webhookOk,
+        webhookSecret: live.secrets.telegramWebhookSecret,
+        model: live.resolved.model,
+        fallbackModel: live.resolved.fallbackModel,
+        defaultFunnelId: publishedFunnel(funnels)?.id,
+      },
+    })
   }
 
   if (url.pathname === "/api/funnels/import" && request.method === "POST") {
@@ -861,6 +911,48 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     })
   }
 
+  const scopedTelegram = /^\/api\/telegram\/([a-zA-Z0-9_-]{1,80})$/.exec(url.pathname)
+  if (scopedTelegram && request.method === "POST") {
+    if (!env.AUTH) return json({ ok: false, error: "Webhook ainda sem KV." }, 503)
+    let integration: StoredBotIntegration | undefined
+    try {
+      integration = (await loadPlatformState(env.AUTH)).integrations.find(
+        (item) => item.id === scopedTelegram[1] && item.status === "connected"
+      )
+    } catch {
+      return json({ ok: false, error: "Não confirmei a integração." }, 503)
+    }
+    if (!integration?.telegramBotToken || !integration.webhookSecret) return json({ ok: false }, 404)
+    const header = request.headers.get("x-telegram-bot-api-secret-token") || ""
+    if (header !== integration.webhookSecret) return json({ ok: false }, 401)
+    const parsed = await readJsonStrict(request, 65_536)
+    if (!parsed.ok) return json({ ok: false }, parsed.status)
+    const update = parsed.value as TelegramUpdate
+    let base: RuntimeSecrets = {}
+    try {
+      base = await loadSecrets(env.AUTH)
+    } catch {
+      /* a integração isolada ainda pode processar sem IA/voz global */
+    }
+    const secrets: RuntimeSecrets = {
+      ...base,
+      telegramBotToken: integration.telegramBotToken,
+      telegramBotUsername: integration.externalUsername,
+      telegramWebhookSecret: integration.webhookSecret,
+      webhookUrl: integration.webhookUrl,
+      webhookOk: integration.webhookOk,
+    }
+    const bot = (await loadPlatformState(env.AUTH)).bots.find((item) => item.id === integration?.botId)
+    ctx.waitUntil(
+      handleTelegram(env, update, secrets, {
+        botId: integration.botId,
+        integrationId: integration.id,
+        defaultFunnelId: bot?.defaultFunnelId,
+      })
+    )
+    return json({ ok: true })
+  }
+
   if (url.pathname === "/api/telegram" && request.method === "POST") {
     let secrets
     try {
@@ -902,34 +994,51 @@ function webhookUrl(request: Request, env: Env) {
   return `${origin}/api/telegram`
 }
 
-async function handleTelegram(env: Env, update: TelegramUpdate, secrets?: RuntimeSecrets) {
+type TelegramExecutionScope = {
+  botId: string
+  integrationId: string
+  defaultFunnelId?: string
+}
+
+async function handleTelegram(
+  env: Env,
+  update: TelegramUpdate,
+  secrets?: RuntimeSecrets,
+  scope?: TelegramExecutionScope
+) {
   try {
-    await runTelegram(env, update, secrets)
+    await runTelegram(env, update, secrets, scope)
   } catch {
     console.error("telegram update falhou", typeof update.update_id === "number" ? update.update_id : "")
   }
 }
 
-async function runTelegram(env: Env, update: TelegramUpdate, secrets?: RuntimeSecrets) {
+async function runTelegram(
+  env: Env,
+  update: TelegramUpdate,
+  secrets?: RuntimeSecrets,
+  scope?: TelegramExecutionScope
+) {
   const resolved = secrets ? resolveRuntime(env, secrets) : (await runtimeOf(env)).resolved
   if (!resolved.telegramBotToken) return
   if (!telegramUpdateActor(update)) return
+  if (scope && !scope.defaultFunnelId) return
   const updateId = typeof update.update_id === "number" && update.update_id > 0 ? update.update_id : 0
   const kv = kvOf(env)
   if (updateId && kv) {
     try {
-      if (!(await claimTelegramUpdate(kv, updateId))) return
+      if (!(await claimTelegramUpdate(kv, updateId, scope?.integrationId))) return
     } catch {
       /* claim unread — o 200 já saiu; leftover não é “já visto” */
     }
   }
   let sent = false
   try {
-    sent = (await deliverTelegram(env, update, resolved.telegramBotToken, resolved)).sent
+    sent = (await deliverTelegram(env, update, resolved.telegramBotToken, resolved, scope)).sent
   } catch (error) {
     if (updateId && kv && !sent) {
       try {
-        await forgetTelegramUpdate(kv, updateId)
+        await forgetTelegramUpdate(kv, updateId, scope?.integrationId)
       } catch {
         /* claim unread */
       }
@@ -938,7 +1047,7 @@ async function runTelegram(env: Env, update: TelegramUpdate, secrets?: RuntimeSe
   }
   if (updateId && kv && !sent) {
     try {
-      await forgetTelegramUpdate(kv, updateId)
+      await forgetTelegramUpdate(kv, updateId, scope?.integrationId)
     } catch {
       /* claim unread */
     }
@@ -953,7 +1062,8 @@ async function deliverJoinRequest(
   env: Env,
   update: TelegramUpdate,
   token: string,
-  resolved?: ResolvedRuntime
+  resolved?: ResolvedRuntime,
+  scope?: TelegramExecutionScope
 ): Promise<{ sent: boolean } | null> {
   const request = telegramJoinRequest(update)
   if (!request?.from || typeof request.chat?.id !== "number") return null
@@ -971,13 +1081,15 @@ async function deliverJoinRequest(
       : from.id
   )
   const invite = normalizeInviteLink(request.invite_link?.invite_link || "")
-  const existing = await findLead(env, contact, from.id, dmChatId)
+  const existing = await findLead(env, contact, from.id, dmChatId, scope?.integrationId)
   if (existing && leadAlreadyTalked(existing)) return { sent: true }
 
   const live = resolved ?? (await runtimeOf(env)).resolved
   let reservedId = ""
   if (!existing) {
-    reservedId = env.AUTH ? await reserveLeadIdentity(env.AUTH, contact, dmChatId, crypto.randomUUID()) : crypto.randomUUID()
+    reservedId = env.AUTH
+      ? await reserveLeadIdentity(env.AUTH, contact, dmChatId, crypto.randomUUID(), scope?.integrationId)
+      : crypto.randomUUID()
   }
   const raced =
     !existing && env.AUTH && reservedId ? await loadLead(env.AUTH, reservedId, await removedIdsForRead(env.AUTH)) : null
@@ -1022,6 +1134,8 @@ async function deliverJoinRequest(
   } else {
     lead = {
       id: reservedId || crypto.randomUUID(),
+      botId: scope?.botId,
+      integrationId: scope?.integrationId,
       name,
       contact,
       channel: "telegram",
@@ -1037,6 +1151,11 @@ async function deliverJoinRequest(
       createdAt: now,
       updatedAt: now,
     }
+  }
+  if (scope) {
+    lead.botId = scope.botId
+    lead.integrationId = scope.integrationId
+    if (!lead.funnelId && scope.defaultFunnelId) lead.funnelId = scope.defaultFunnelId
   }
   if (script) {
     lead.funnelId = script.funnelId
@@ -1062,7 +1181,7 @@ async function deliverJoinRequest(
   } else {
     if (!(await persistLeadAfterSend(env, lead))) console.error("telegram lead após recusa não gravou")
     const updateId = typeof update.update_id === "number" && update.update_id > 0 ? update.update_id : 0
-    if (updateId && env.AUTH) await forgetTelegramUpdate(env.AUTH, updateId)
+    if (updateId && env.AUTH) await forgetTelegramUpdate(env.AUTH, updateId, scope?.integrationId)
   }
   return { sent: delivered }
 }
@@ -1071,10 +1190,11 @@ async function deliverTelegram(
   env: Env,
   update: TelegramUpdate,
   token: string,
-  resolved?: ResolvedRuntime
+  resolved?: ResolvedRuntime,
+  scope?: TelegramExecutionScope
 ): Promise<{ sent: boolean }> {
   const live = resolved ?? (await runtimeOf(env)).resolved
-  const requested = await deliverJoinRequest(env, update, token, live)
+  const requested = await deliverJoinRequest(env, update, token, live, scope)
   if (requested) return requested
   const joinUser = telegramJoinActor(update)
   const message = update.message
@@ -1090,10 +1210,12 @@ async function deliverTelegram(
   const campaign = joinUser ? campaignFor("telegram") : start.isStart ? campaignFromStart(start.payload) : campaignFor("telegram", origin)
   const now = new Date().toISOString()
 
-  const existing = await findLead(env, contact, from.id, chatId)
+  const existing = await findLead(env, contact, from.id, chatId, scope?.integrationId)
   let reservedId = ""
   if (!existing) {
-    reservedId = env.AUTH ? await reserveLeadIdentity(env.AUTH, contact, chatId, crypto.randomUUID()) : crypto.randomUUID()
+    reservedId = env.AUTH
+      ? await reserveLeadIdentity(env.AUTH, contact, chatId, crypto.randomUUID(), scope?.integrationId)
+      : crypto.randomUUID()
   }
   const raced =
     !existing && env.AUTH && reservedId ? await loadLead(env.AUTH, reservedId, await removedIdsForRead(env.AUTH)) : null
@@ -1114,6 +1236,8 @@ async function deliverTelegram(
   } else {
     lead = {
       id: reservedId || crypto.randomUUID(),
+      botId: scope?.botId,
+      integrationId: scope?.integrationId,
       name,
       contact,
       channel: "telegram",
@@ -1130,6 +1254,11 @@ async function deliverTelegram(
       createdAt: now,
       updatedAt: now,
     }
+  }
+  if (scope) {
+    lead.botId = scope.botId
+    lead.integrationId = scope.integrationId
+    if (!lead.funnelId && scope.defaultFunnelId) lead.funnelId = scope.defaultFunnelId
   }
 
   lead.telegramChatId = chatId
@@ -1211,7 +1340,7 @@ async function deliverTelegram(
   } else {
     if (!(await persistLeadAfterSend(env, lead))) console.error("telegram lead após recusa não gravou")
     const updateId = typeof update.update_id === "number" && update.update_id > 0 ? update.update_id : 0
-    if (updateId && env.AUTH) await forgetTelegramUpdate(env.AUTH, updateId)
+    if (updateId && env.AUTH) await forgetTelegramUpdate(env.AUTH, updateId, scope?.integrationId)
   }
   return { sent: delivered }
 }
@@ -1393,8 +1522,14 @@ async function removedLeadIdsOf(kv: NonNullable<Env["AUTH"]>) {
   }
 }
 
-async function findLead(env: Env, contact: string, telegramId: number, chatId: string): Promise<Lead | null> {
-  const found = await findWorkspaceLead(env, contact, telegramId, chatId)
+async function findLead(
+  env: Env,
+  contact: string,
+  telegramId: number,
+  chatId: string,
+  integrationId?: string
+): Promise<Lead | null> {
+  const found = await findWorkspaceLead(env, contact, telegramId, chatId, integrationId)
   if (!found) return null
   const attached = await attachLeadEvents(env, [found])
   return attached.leads[0] ?? found

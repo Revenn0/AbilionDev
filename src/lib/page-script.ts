@@ -1,4 +1,5 @@
 import { adsDeepLink, normalizeInviteLink } from "./telegram-start.ts"
+import { LEGACY_BOT_ID } from "./platform.ts"
 import { ADS_ORIGIN, PAGE_INSTALL_STEPS, PIXEL_VERSION, pixelPageHtml } from "./tracker-script.ts"
 import type { PageScript, SalesFunnel } from "./types.ts"
 
@@ -36,7 +37,24 @@ export function sanitizePageScript(raw: unknown): PageScript | null {
   const pageUrl = pageUrlOf(typeof row.pageUrl === "string" ? row.pageUrl : "")
   const createdAt = typeof row.createdAt === "string" && row.createdAt ? row.createdAt : new Date().toISOString()
   const updatedAt = typeof row.updatedAt === "string" && row.updatedAt ? row.updatedAt : createdAt
-  return { id, name, funnelId, pageUrl: pageUrl || undefined, createdAt, updatedAt }
+  const botId = typeof row.botId === "string" && row.botId.trim() ? row.botId.trim().slice(0, 80) : LEGACY_BOT_ID
+  const flowVersionId =
+    typeof row.flowVersionId === "string" && row.flowVersionId.trim() ? row.flowVersionId.trim().slice(0, 80) : undefined
+  const creativeVariantId =
+    typeof row.creativeVariantId === "string" && row.creativeVariantId.trim()
+      ? row.creativeVariantId.trim().slice(0, 80)
+      : undefined
+  return {
+    id,
+    botId,
+    flowVersionId,
+    creativeVariantId,
+    name,
+    funnelId,
+    pageUrl: pageUrl || undefined,
+    createdAt,
+    updatedAt,
+  }
 }
 
 export function migratePageScripts(raw: unknown): PageScript[] {

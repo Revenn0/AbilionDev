@@ -2,6 +2,7 @@ import { normalizeTelegramContact } from "./capture.ts"
 import { uid } from "./format.ts"
 import { sanitizeLeadCategory } from "./lead-category.ts"
 import { campaignFor } from "./labels.ts"
+import { LEGACY_BOT_ID, LEGACY_BRAIN_ID, LEGACY_INTEGRATION_ID } from "./platform.ts"
 import { applyEvent, eventFromOrigin, publishedSnapshot } from "./runtime.ts"
 import { replySte, steRuntimeFromSnapshot, STE_COURSE_BLOCK, STE_LIVE_BLOCK, STE_OFFER_BLOCK, STE_REMARKETING_BLOCK, STE_SUPERBET_BLOCK, STE_SUPERBET_RESCUE, STE_WELCOME } from "./ste.ts"
 import type { Lead, LeadChannel, LeadOrigin, SalesFunnel, SalesSnapshot } from "./types.ts"
@@ -156,6 +157,7 @@ export function emptySalesFunnel(name = "Operação"): SalesFunnel {
 
   return {
     id: uid(),
+    botId: LEGACY_BOT_ID,
     name,
     mode: "sales",
     status: "draft",
@@ -167,6 +169,10 @@ export function emptySalesFunnel(name = "Operação"): SalesFunnel {
 
 export function publishSnapshot(funnel: SalesFunnel): SalesSnapshot {
   return {
+    id: uid(),
+    version: (funnel.production?.version ?? 0) + 1,
+    botId: funnel.botId || LEGACY_BOT_ID,
+    brainVersionId: funnel.production?.brainVersionId || LEGACY_BRAIN_ID,
     name: funnel.name,
     publishedAt: new Date().toISOString(),
     nodes: funnel.nodes,
@@ -194,6 +200,10 @@ export function leadFromCapture(
   const now = new Date().toISOString()
   const base: Lead = {
     id: uid(),
+    botId: snapshot?.botId || LEGACY_BOT_ID,
+    integrationId: input.channel === "telegram" ? LEGACY_INTEGRATION_ID : undefined,
+    flowVersionId: snapshot?.id,
+    brainVersionId: snapshot?.brainVersionId,
     name: input.name.trim(),
     contact: normalizeTelegramContact(input.contact) || input.contact.trim(),
     channel: input.channel,

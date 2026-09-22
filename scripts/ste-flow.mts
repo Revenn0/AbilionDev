@@ -101,6 +101,19 @@ import { applyEvent, canAdvanceRemoteWait, eventFromOrigin, leadFunnelUnread, pi
 import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
+import {
+  LEGACY_BOT_ID,
+  LEGACY_BRAIN_ID,
+  LEGACY_INTEGRATION_ID,
+  botIsRecent,
+  canAccess,
+  experimentHasEnoughData,
+  maskAuditValue,
+  nextBrainVersion,
+  permissionsFor,
+  tokenHintOf,
+  type CreativeExperiment,
+} from "../src/lib/platform.ts"
 import { CRM_CRON_LOCK, CRM_FUNNELS, CRM_INDEX, CRM_NAMES, CRM_REMOVED, CRM_REMOVED_FUNNELS, CRM_SETTINGS, LEAD_INDEX_PINNED_CAP, LEAD_INDEX_REST_CAP, LEAD_REMOVED_CAP, aliasKey, claimCronLock, claimLeadAlias, clipCrmIndex, crmIndexClipped, deleteLeadKv, dueLeadsKv, filterLiveLeads, findLeadInKv, goneFunnelKey, goneLeadKey, importOrAdoptLead, isFunnelRemoved, isLeadPageCursor, isLeadRemoved, leadKey, leadPageCursor, leadPageFromRemote, listLeadPage, listLeads, loadFunnelsKv, loadLead, lookupLeadsByQuery, loadAdoptedSettings, loadRemovedFunnelIds, loadRemovedLeadIds, loadSettingsKv, mergeIndexEntries, persistFunnelsMerge, persistSettingsMerge, rememberLeadNames, rememberRemovedFunnels, rememberRemovedLead, rememberSentLead, releaseCronLock, renewCronLock, reserveLeadIdentity, resolveLeadWrite, saveFunnelsKv, saveSettingsKv, sentLeadKey, settingsPersistSettled, upsertLeadKv } from "../worker/crm-store.ts"
 import { readJsonObject } from "../worker/json-body.ts"
 import { memoryKv } from "../worker/kv.ts"
@@ -131,9 +144,10 @@ import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThro
 import { handleUsers } from "../worker/users.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
 import { ensureVoiceClip, VOICE_STORE_KEY, voiceClipStatus } from "../worker/ste-voice.ts"
-import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTelegramClaims, telegramCall, telegramJoinActor, telegramJoinRequest, telegramUpdateActor, TG_UPDATES } from "../worker/telegram.ts"
+import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTelegramClaims, telegramCall, telegramJoinActor, telegramJoinRequest, telegramUpdateActor, telegramUpdatesKey, TG_UPDATES } from "../worker/telegram.ts"
 import { backgroundCtx, handleRequest, type Env } from "../worker/index.ts"
 import { clearSessionExpired, noteUnauthorized, subscribeSessionExpired } from "../src/lib/session.ts"
+import { ensureLegacyPlatform, loadPlatformState, publicIntegration } from "../worker/platform-store.ts"
 import {
   KV_BACKUP_FORMAT,
   isOperationalBackupKey,
@@ -195,6 +209,83 @@ try {
   rejectedSensitiveBackup = true
 }
 assert(rejectedSensitiveBackup, "restore recusa chave sensível")
+assert(tokenHintOf("123456:abcdef") === "•••• cdef", "token público mostra só os últimos quatro")
+assert(botIsRecent({ createdAt: "2026-09-20T00:00:00.000Z" }, new Date("2026-09-22T00:00:00.000Z").getTime()), "bot recente tem selo")
+assert(nextBrainVersion([], "bot-a") === 1, "primeiro cérebro começa na versão um")
+assert(permissionsFor(["viewer", "publisher"]).includes("flows.publish"), "perfis combinam capacidades")
+assert(!canAccess(["viewer"], "crm.write"), "visualizador não altera CRM")
+assert(
+  (maskAuditValue({ telegramBotToken: "segredo", nested: { password: "segredo", ok: true } }) as {
+    telegramBotToken?: string
+    nested?: { password?: string; ok?: boolean }
+  }).telegramBotToken === "[mascarado]",
+  "auditoria mascara credenciais"
+)
+const enoughExperiment: CreativeExperiment = {
+  id: "exp-1",
+  name: "Teste ES",
+  hypothesis: "A",
+  status: "running",
+  variantIds: ["a", "b"],
+  traffic: { a: 50, b: 50 },
+  audience: "ES",
+  operation: "Espanhol",
+  primaryMetric: "conversion",
+  minimumSample: 100,
+  metrics: [
+    { variantId: "a", impressions: 100, clicks: 10, leads: 3, conversions: 1 },
+    { variantId: "b", impressions: 99, clicks: 11, leads: 4, conversions: 2 },
+  ],
+  createdAt: "2026-09-22T00:00:00.000Z",
+  updatedAt: "2026-09-22T00:00:00.000Z",
+}
+assert(!experimentHasEnoughData(enoughExperiment), "criativo não declara vencedor sem amostra mínima")
+assert(telegramUpdatesKey() === TG_UPDATES, "integração antiga conserva o anel de updates")
+assert(
+  telegramUpdatesKey("integration-a") !== telegramUpdatesKey("integration-b"),
+  "cada integração tem deduplicação própria"
+)
+const platformKv = memoryKv()
+const migratedPlatform = await ensureLegacyPlatform(platformKv, {
+  environment: "staging",
+  actorId: "owner-1",
+  telegramBotToken: "000:legacy-token",
+  telegramBotUsername: "@ste",
+  webhookUrl: "https://staging.abilion.lol/api/telegram",
+  webhookOk: true,
+  webhookSecret: "hook",
+  defaultFunnelId: "funil-1",
+  now: "2026-09-22T00:00:00.000Z",
+})
+assert(migratedPlatform.bots.some((item) => item.id === LEGACY_BOT_ID), "migração cria a Sté como bot")
+assert(
+  migratedPlatform.integrations.some(
+    (item) => item.id === LEGACY_INTEGRATION_ID && item.telegramBotToken === "000:legacy-token"
+  ),
+  "migração liga a integração existente"
+)
+assert(
+  migratedPlatform.brains.some((item) => item.id === LEGACY_BRAIN_ID && item.status === "published"),
+  "migração publica o cérebro compatível"
+)
+assert(
+  publicIntegration(migratedPlatform.integrations[0]!).tokenHint === "•••• oken" &&
+    !("telegramBotToken" in publicIntegration(migratedPlatform.integrations[0]!)),
+  "integração pública não vaza token"
+)
+await ensureLegacyPlatform(platformKv, {
+  environment: "staging",
+  telegramBotToken: "000:legacy-token",
+  now: "2026-09-22T00:00:00.000Z",
+})
+const migratedAgain = await loadPlatformState(platformKv)
+assert(migratedAgain.bots.filter((item) => item.id === LEGACY_BOT_ID).length === 1, "migração é idempotente")
+assert(migratedAgain.audit.filter((item) => item.action === "platform.legacy_migrated").length === 1, "migração audita uma vez")
+
+const scopedClaimsKv = memoryKv()
+assert(await claimTelegramUpdate(scopedClaimsKv, 77, "integration-a"), "integração A reclama update")
+assert(await claimTelegramUpdate(scopedClaimsKv, 77, "integration-b"), "integração B pode ter o mesmo update_id")
+assert(!(await claimTelegramUpdate(scopedClaimsKv, 77, "integration-a")), "integração A não repete update")
 
 function kvThrowsOn(base: ReturnType<typeof memoryKv>, ...blocked: string[]) {
   return {

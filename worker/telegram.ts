@@ -3,6 +3,11 @@ import type { KvLike } from "./kv.ts"
 export const TG_UPDATES = "tg:updates"
 export const UPDATE_CAP = 8000
 
+export function telegramUpdatesKey(integrationId?: string) {
+  const scope = (integrationId || "").trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80)
+  return scope ? `${TG_UPDATES}:${scope}` : TG_UPDATES
+}
+
 export type TelegramCallResult = {
   ok: boolean
   status: number
@@ -67,12 +72,13 @@ export function mergeTelegramClaims(
   return { ids: kept, owners: clipped, seenBelow: seenBelow || undefined }
 }
 
-export async function claimTelegramUpdate(kv: KvLike, id: number): Promise<boolean> {
+export async function claimTelegramUpdate(kv: KvLike, id: number, integrationId?: string): Promise<boolean> {
   if (!Number.isFinite(id) || id < 1) return true
+  const storeKey = telegramUpdatesKey(integrationId)
   const owner = crypto.randomUUID()
   for (let attempt = 0; attempt < 16; attempt++) {
     if (attempt) await new Promise((resolve) => setTimeout(resolve, attempt * 2))
-    const current = readTelegramUpdates(await kv.get(TG_UPDATES, "json"))
+    const current = readTelegramUpdates(await kv.get(storeKey, "json"))
     if ((current.seenBelow ?? 0) >= id && !current.owners[String(id)]) return false
     const existing = current.owners[String(id)]
     if (existing) return existing === owner
@@ -82,14 +88,14 @@ export async function claimTelegramUpdate(kv: KvLike, id: number): Promise<boole
       owners: { ...current.owners, [String(id)]: owner },
       seenBelow: current.seenBelow,
     }
-    const latest = readTelegramUpdates(await kv.get(TG_UPDATES, "json"))
+    const latest = readTelegramUpdates(await kv.get(storeKey, "json"))
     const latestOwner = latest.owners[String(id)]
     if (latestOwner) return latestOwner === owner
     if ((latest.seenBelow ?? 0) >= id && !latestOwner) return false
-    await kv.put(TG_UPDATES, JSON.stringify(mergeTelegramClaims(latest, next)))
-    const stored = readTelegramUpdates(await kv.get(TG_UPDATES, "json"))
+    await kv.put(storeKey, JSON.stringify(mergeTelegramClaims(latest, next)))
+    const stored = readTelegramUpdates(await kv.get(storeKey, "json"))
     if (stored.owners[String(id)] === owner) {
-      const confirm = readTelegramUpdates(await kv.get(TG_UPDATES, "json"))
+      const confirm = readTelegramUpdates(await kv.get(storeKey, "json"))
       if (confirm.owners[String(id)] === owner) return true
       if (confirm.owners[String(id)] && confirm.owners[String(id)] !== owner) return false
       continue
@@ -105,12 +111,13 @@ export function forgetTelegramId(store: TelegramUpdateStore, id: number): Telegr
   return { ids: store.ids.filter((item) => item !== id), owners, seenBelow: store.seenBelow }
 }
 
-export async function forgetTelegramUpdate(kv: KvLike, id: number) {
+export async function forgetTelegramUpdate(kv: KvLike, id: number, integrationId?: string) {
   if (!Number.isFinite(id) || id < 1) return
-  const current = readTelegramUpdates(await kv.get(TG_UPDATES, "json"))
+  const storeKey = telegramUpdatesKey(integrationId)
+  const current = readTelegramUpdates(await kv.get(storeKey, "json"))
   const next = forgetTelegramId(current, id)
-  const latest = readTelegramUpdates(await kv.get(TG_UPDATES, "json"))
-  await kv.put(TG_UPDATES, JSON.stringify(forgetTelegramId(mergeTelegramClaims(latest, next), id)))
+  const latest = readTelegramUpdates(await kv.get(storeKey, "json"))
+  await kv.put(storeKey, JSON.stringify(forgetTelegramId(mergeTelegramClaims(latest, next), id)))
 }
 
 export type TelegramActor = {

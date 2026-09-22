@@ -37,25 +37,29 @@ function publishedAt(funnel: SalesFunnel) {
   return funnel.production?.publishedAt ?? funnel.updatedAt
 }
 
-export function publishedFunnel(funnels: SalesFunnel[]): SalesFunnel | undefined {
-  const live = funnels.filter((item) => item.status === "active" && item.production)
-  const pool = live.length ? live : funnels.filter((item) => item.production)
+export function publishedFunnel(funnels: SalesFunnel[], botId?: string): SalesFunnel | undefined {
+  const scoped = botId ? funnels.filter((item) => item.botId === botId) : funnels
+  const live = scoped.filter((item) => item.status === "active" && item.production)
+  const pool = live.length ? live : scoped.filter((item) => item.production)
   if (!pool.length) return undefined
   return pool.slice().sort((a, b) => publishedAt(b).localeCompare(publishedAt(a)))[0]
 }
 
-export function publishedSnapshot(funnels: SalesFunnel[]): SalesSnapshot | null {
-  return publishedFunnel(funnels)?.production ?? null
+export function publishedSnapshot(funnels: SalesFunnel[], botId?: string): SalesSnapshot | null {
+  return publishedFunnel(funnels, botId)?.production ?? null
 }
 
 /** /start com script ou lead.funnelId usa o quadro daquela landing; senão o publicado. */
-export function snapshotForLead(funnels: SalesFunnel[], lead?: Pick<Lead, "funnelId"> | null): SalesSnapshot | null {
+export function snapshotForLead(
+  funnels: SalesFunnel[],
+  lead?: Pick<Lead, "funnelId" | "botId"> | null
+): SalesSnapshot | null {
   if (lead?.funnelId) {
     const match = funnels.find((item) => item.id === lead.funnelId)
     if (match?.production) return match.production
     if (match) return snapshotOf(match)
   }
-  return publishedSnapshot(funnels)
+  return publishedSnapshot(funnels, lead?.botId)
 }
 
 /** Funil do /start ou do lead só no Postgres unread: o webhook/cron não caem no publicado leftover. */

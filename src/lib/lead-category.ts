@@ -1,6 +1,7 @@
 import { normalizeTelegramContact } from "./capture.ts"
 import { uid } from "./format.ts"
 import { isEmailName, isPhoneLikeName, resolveLeadName, resolvePersonName } from "./lead-name.ts"
+import { LEGACY_BOT_ID, LEGACY_INTEGRATION_ID } from "./platform.ts"
 import type { Lead, LeadGroup } from "./types.ts"
 
 export const LEAD_CATEGORY_CAP = 20
@@ -240,6 +241,8 @@ export function leadFromImport(
   const category = sanitizeLeadCategory(input.category) || groupName || (input.toGroup ? GROUP_CATEGORY : "")
   return {
     id: uid(),
+    botId: LEGACY_BOT_ID,
+    integrationId: channel === "telegram" ? LEGACY_INTEGRATION_ID : undefined,
     name: resolveLeadName(row.name, contact),
     contact,
     channel,

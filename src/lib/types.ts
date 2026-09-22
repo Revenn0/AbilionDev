@@ -83,6 +83,10 @@ export type FlowNode = {
 }
 
 export type SalesSnapshot = {
+  id?: string
+  version?: number
+  botId?: string
+  brainVersionId?: string
   name: string
   publishedAt: string
   nodes: FlowNode[]
@@ -91,6 +95,7 @@ export type SalesSnapshot = {
 
 export type SalesFunnel = {
   id: string
+  botId?: string
   name: string
   mode: "sales" | "messages"
   status: "draft" | "active"
@@ -155,6 +160,11 @@ export type LeadFacts = {
 
 export type Lead = {
   id: string
+  botId?: string
+  integrationId?: string
+  flowVersionId?: string
+  brainVersionId?: string
+  testRunId?: string
   name: string
   contact: string
   channel: LeadChannel
@@ -188,6 +198,9 @@ export type PluginId = "whatsapp" | "telegram" | "webhooks" | "forms" | "reports
 
 export type PageScript = {
   id: string
+  botId?: string
+  flowVersionId?: string
+  creativeVariantId?: string
   name: string
   funnelId: string
   pageUrl?: string

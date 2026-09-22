@@ -243,6 +243,75 @@ export async function saveSecrets(kv: KvLike, next: RuntimeSecrets) {
 
 export const TELEGRAM_ALLOWED_UPDATES = ["message", "chat_member", "my_chat_member", "chat_join_request"] as const
 
+type TelegramApiResponse<T> = {
+  ok?: boolean
+  result?: T
+  description?: string
+}
+
+export async function getTelegramIdentity(token: string) {
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/getMe`, { method: "POST" })
+    const data = (await res.json().catch(() => ({}))) as TelegramApiResponse<{
+      id?: number
+      username?: string
+      first_name?: string
+    }>
+    return {
+      ok: Boolean(res.ok && data.ok && Number.isFinite(data.result?.id)),
+      id: Number.isFinite(data.result?.id) ? String(data.result?.id) : "",
+      username: data.result?.username ? `@${data.result.username.replace(/^@/, "")}` : "",
+      name: data.result?.first_name || "",
+      description: data.description || "",
+    }
+  } catch {
+    return { ok: false, id: "", username: "", name: "", description: "Sem ligação ao Telegram." }
+  }
+}
+
+export async function getTelegramWebhookInfo(token: string) {
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`, { method: "POST" })
+    const data = (await res.json().catch(() => ({}))) as TelegramApiResponse<{
+      url?: string
+      pending_update_count?: number
+      last_error_message?: string
+      allowed_updates?: string[]
+    }>
+    return {
+      ok: Boolean(res.ok && data.ok),
+      url: data.result?.url || "",
+      pending: Number(data.result?.pending_update_count || 0),
+      lastError: data.result?.last_error_message || "",
+      allowedUpdates: Array.isArray(data.result?.allowed_updates) ? data.result.allowed_updates : [],
+      description: data.description || "",
+    }
+  } catch {
+    return {
+      ok: false,
+      url: "",
+      pending: 0,
+      lastError: "",
+      allowedUpdates: [] as string[],
+      description: "Sem ligação ao Telegram.",
+    }
+  }
+}
+
+export async function deleteTelegramWebhook(token: string) {
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/deleteWebhook`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ drop_pending_updates: false }),
+    })
+    const data = (await res.json().catch(() => ({}))) as TelegramApiResponse<boolean>
+    return { ok: Boolean(res.ok && data.ok), description: data.description || "" }
+  } catch {
+    return { ok: false, description: "Sem ligação ao Telegram." }
+  }
+}
+
 export async function setTelegramWebhook(token: string, url: string, secret?: string) {
   const res = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
     method: "POST",

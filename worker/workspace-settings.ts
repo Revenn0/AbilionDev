@@ -5,6 +5,7 @@ import { countryName, normalizeCountryCode, normalizeRegionCode } from "../src/l
 import { migrateSettings, sanitizeIncomingFunnel } from "../src/lib/migrate.ts"
 import { sanitizeVisitorId, summarizeTrack, type TrackEvent, type TrackKind, type TrackSummary } from "../src/lib/track.ts"
 import type { Lead, LeadEvent, SalesFunnel, Settings } from "../src/lib/types.ts"
+import { LEGACY_INTEGRATION_ID } from "../src/lib/platform.ts"
 import { mergeTrackEvents } from "./track-store.ts"
 import { filterLiveLeads, findLeadInKv, funnelRemovedForRead, isLeadPageCursor, leadRemovedForRead, listLeadPage, loadAdoptedSettings, loadFunnelsKv, loadLead, loadRemovedFunnelIds, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge, removedIdsForRead, resolveLeadWrite } from "./crm-store.ts"
 import type { KvLike } from "./kv.ts"
@@ -246,14 +247,15 @@ export async function findWorkspaceLead(
   env: SettingsEnv,
   contact: string,
   telegramId: number,
-  chatId: string
+  chatId: string,
+  integrationId?: string
 ): Promise<Lead | null> {
   let kvLead: Lead | null = null
   let kvUnread = false
   if (env.AUTH) {
     try {
       const removed = await removedIdsForRead(env.AUTH)
-      kvLead = await findLeadInKv(env.AUTH, contact, telegramId, chatId, removed)
+      kvLead = await findLeadInKv(env.AUTH, contact, telegramId, chatId, removed, integrationId)
     } catch {
       kvUnread = true
     }
@@ -262,6 +264,10 @@ export async function findWorkspaceLead(
     const extras = await fetchRemoteLeadsByIds(env, [kvLead.id])
     if (extras === null) return kvLead
     return hydrateWorkspaceLead(kvLead, extras[0])
+  }
+  if (integrationId && integrationId !== LEGACY_INTEGRATION_ID) {
+    if (kvUnread) throw new Error("Não li o lead no KV.")
+    return null
   }
   const remote = await fetchRemoteLeadByIdentity(env, contact, telegramId, chatId)
   if (remote === null) throw new Error("Não li o lead do Postgres.")
