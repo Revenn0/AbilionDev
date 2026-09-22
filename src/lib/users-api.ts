@@ -10,6 +10,9 @@ export type ManagedUser = User & {
   createdAt: string
   seeded: boolean
   tokenCount: number
+  sessionCount: number
+  lastSeenAt?: string
+  passwordChangedAt?: string
 }
 
 export type ApiTokenItem = {
@@ -61,8 +64,10 @@ export function patchUserRequest(input: {
   role?: UserRole
   disabled?: boolean
   profiles?: AccessProfile[]
+  password?: string
+  resetPassword?: boolean
 }) {
-  return parse<{ ok: boolean; user: ManagedUser }>(
+  return parse<{ ok: boolean; user: ManagedUser; password?: string }>(
     fetchWithTimeout("/api/users", {
       method: "PATCH",
       credentials: "include",

@@ -60,6 +60,9 @@ export type ManagedUser = PublicUser & {
   createdAt: string
   seeded: boolean
   tokenCount: number
+  sessionCount: number
+  lastSeenAt?: string
+  passwordChangedAt?: string
 }
 
 export type Session = {
@@ -188,13 +191,22 @@ export function publicUser(user: StoredUser): PublicUser {
   }
 }
 
-export function publicManagedUser(user: StoredUser): ManagedUser {
+export function liveSessionsFor(userId: string, sessions: Session[] = [], now = Date.now()) {
+  return sessions.filter((item) => item.userId === userId && item.expiresAt > now)
+}
+
+export function publicManagedUser(user: StoredUser, sessions: Session[] = [], now = Date.now()): ManagedUser {
+  const live = liveSessionsFor(user.id, sessions, now)
+  const lastIssued = live.reduce((max, item) => Math.max(max, item.issuedAt), 0)
   return {
     ...publicUser(user),
     disabled: Boolean(user.disabled) && !holdsOperatorSeat(user),
     createdAt: user.createdAt,
     seeded: holdsOperatorSeat(user),
     tokenCount: (user.tokens ?? []).length,
+    sessionCount: live.length,
+    ...(lastIssued ? { lastSeenAt: new Date(lastIssued).toISOString() } : {}),
+    ...(user.passwordUpdatedAt ? { passwordChangedAt: new Date(user.passwordUpdatedAt).toISOString() } : {}),
   }
 }
 
@@ -839,6 +851,24 @@ export function dropUserApiTokens(snapshot: AuthSnapshot, user: StoredUser) {
   const next = rememberRevokedApi(snapshot, ids)
   snapshot.revokedApi = next.revokedApi
   user.tokens = []
+}
+
+export function dropUserSessions(snapshot: AuthSnapshot, user: StoredUser) {
+  const dropped = snapshot.sessions.filter((item) => item.userId === user.id)
+  snapshot.revoked = clipAuthTokens([...dropped.map((item) => item.token), ...(snapshot.revoked ?? [])], AUTH_REVOKED_CAP)
+  snapshot.sessions = snapshot.sessions.filter((item) => item.userId !== user.id)
+  for (const [token, rec] of Object.entries(snapshot.resets)) {
+    if (rec.userId !== user.id) continue
+    snapshot.spentResets = clipAuthTokens([token, ...(snapshot.spentResets ?? [])], AUTH_SPENT_RESET_CAP)
+    delete snapshot.resets[token]
+  }
+}
+
+export async function setManagedUserPassword(snapshot: AuthSnapshot, user: StoredUser, password: string) {
+  user.passwordHash = await hashPassword(password)
+  user.passwordUpdatedAt = Date.now()
+  dropUserSessions(snapshot, user)
+  dropUserApiTokens(snapshot, user)
 }
 
 export async function findUserByApiToken(snapshot: AuthSnapshot, token: string) {

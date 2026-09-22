@@ -1,8 +1,7 @@
 import { readJsonObject } from "./json-body.ts"
 import { sanitizeAccessProfiles, type AccessProfile } from "../src/lib/platform.ts"
+import { generateAccountPassword } from "../src/lib/team.ts"
 import {
-  AUTH_REVOKED_CAP,
-  clipAuthTokens,
   hashApiToken,
   hashPassword,
   emailInUse,
@@ -17,7 +16,9 @@ import {
   publicManagedUser,
   randomToken,
   dropUserApiTokens,
+  dropUserSessions,
   rememberRevokedApi,
+  setManagedUserPassword,
   TOKEN_CAP,
   USER_CAP,
   type AuthStore,
@@ -71,7 +72,7 @@ export async function handleUsers(request: Request, store: AuthStore, actor: Pub
     if (loaded.unread || !loaded.snapshot) return json({ error: ACCOUNTS_UNREAD }, 503)
     return json({
       ok: true,
-      users: loaded.snapshot.users.map(publicManagedUser),
+      users: loaded.snapshot.users.map((user) => publicManagedUser(user, loaded.snapshot.sessions)),
       cap: USER_CAP,
       me: actor,
     })
@@ -114,7 +115,7 @@ export async function handleUsers(request: Request, store: AuthStore, actor: Pub
     }
     snapshot.users.push(user)
     if (!(await saveAccounts(store, snapshot))) return json({ error: ACCOUNTS_UNREAD }, 503)
-    return json({ ok: true, user: publicManagedUser(user) }, 201)
+    return json({ ok: true, user: publicManagedUser(user, snapshot.sessions) }, 201)
   }
 
   if (request.method === "PATCH") {
@@ -125,6 +126,8 @@ export async function handleUsers(request: Request, store: AuthStore, actor: Pub
       role?: UserRole
       disabled?: boolean
       profiles?: AccessProfile[]
+      password?: string
+      resetPassword?: boolean
     }>(request, 8_192)
     if (!parsed.ok) return json({ error: parsed.status === 413 ? "Pedido demasiado grande." : "JSON inválido." }, parsed.status)
     const id = (parsed.value.id || "").trim()
@@ -160,15 +163,26 @@ export async function handleUsers(request: Request, store: AuthStore, actor: Pub
       }
       user.disabled = parsed.value.disabled
       if (user.disabled) {
-        const dropped = snapshot.sessions.filter((item) => item.userId === user.id)
-        snapshot.revoked = clipAuthTokens([...dropped.map((item) => item.token), ...(snapshot.revoked ?? [])], AUTH_REVOKED_CAP)
-        snapshot.sessions = snapshot.sessions.filter((item) => item.userId !== user.id)
+        dropUserSessions(snapshot, user)
         dropUserApiTokens(snapshot, user)
       }
     }
+    const wantsReset = parsed.value.resetPassword === true
+    const nextPassword = (parsed.value.password || "").trim()
+    let issuedPassword: string | undefined
+    if (wantsReset || nextPassword) {
+      if (user.id === actor.id) return json({ error: "Não redefines a tua própria senha aqui." }, 400)
+      issuedPassword = nextPassword || generateAccountPassword()
+      if (issuedPassword.length < 6) return json({ error: "A senha precisa de 6+ caracteres." }, 400)
+      await setManagedUserPassword(snapshot, user, issuedPassword)
+    }
     user.accountUpdatedAt = Date.now()
     if (!(await saveAccounts(store, snapshot))) return json({ error: ACCOUNTS_UNREAD }, 503)
-    return json({ ok: true, user: publicManagedUser(user) })
+    return json({
+      ok: true,
+      user: publicManagedUser(user, snapshot.sessions),
+      ...(issuedPassword ? { password: issuedPassword } : {}),
+    })
   }
 
   return json({ error: "not_found" }, 404)

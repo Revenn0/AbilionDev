@@ -132,6 +132,16 @@ import { adsDeepLink, campaignFromInvite, campaignFromStart, normalizeInviteLink
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument, wantsAuthHtml } from "../src/lib/auth-pages.ts"
 import { addPageScript, adsLandingDocument, adsLandingUrl, adsStartToken, installSettingsBlocked, pageInstallManual, pageScriptForInvite, pageScriptFunnelLabel, pageScriptFunnelPending, pageScriptsFunnelUnread, pageScriptsListBlocked, pageScriptsMutationBlocked, pageScriptsWriteBlocked, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
 import { navAllowed, profilesForUser, userCan } from "../src/lib/access.ts"
+import {
+  accountLocks,
+  countTeamUsers,
+  filterTeamUsers,
+  generateAccountPassword,
+  isGeneratedAccountPassword,
+  sortTeamUsers,
+  userMatchesQuery,
+  userMatchesTeamFilter,
+} from "../src/lib/team.ts"
 import { addLeadToGroup, anonymizeLeadRecord, createLeadGroup, isDisposableTestLead, migrateCategoriesToLeadGroups } from "../src/lib/lead-groups.ts"
 import { createImportPreview, parseDelimitedImport } from "../src/lib/import-jobs.ts"
 import { addLeadGroup, leadCategoriesListBlocked, leadCategoriesMutationBlocked, leadCategoriesWriteBlocked, leadFromImport, leadGroupsMutationBlocked, leadGroupsWriteBlocked, leadImportGroupBlocked, leadImportSubmitBlocked, listImportGroups, parseLeadImportLine, parseLeadImportText, seedLeadGroups } from "../src/lib/lead-category.ts"
@@ -143,7 +153,7 @@ import { barShare, catalogMetricPending, crmSyncAfterFlush, eventsSyncAfterNarro
 import { usersWriteBlocked } from "../src/lib/users-api.ts"
 import { commitSecrets, loadSecrets, mergeSecrets, resolveRuntime, RUNTIME_KEY, saveSecrets, setTelegramWebhook, TELEGRAM_ALLOWED_UPDATES, tokenHint } from "../worker/runtime-secrets.ts"
 import { kvTrackStore, memoryTrackStore, mergeTrackEvents, recordTrack } from "../worker/track-store.ts"
-import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, confirmKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, gateActor, handleAuth, hashApiToken, hashPassword, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, readActor, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
+import { AUTH_REVOKED_CAP, consumeThrottle, consumeMemoryThrottle, consumeKvThrottle, confirmKvThrottle, clearThrottle, ensureOperatorUsers, findUserByApiToken, gateActor, handleAuth, hashApiToken, hashPassword, kvAuthStore, memoryAuthStore, mergeAuthSnapshots, mergeTokens, mergeThrottles, mintApiToken, publicManagedUser, readActor, requestHasAuth, retainUserSessions, sessionUser } from "../worker/auth.ts"
 import { handleUsers } from "../worker/users.ts"
 import { importFunnel } from "../src/lib/funnel-import.ts"
 import { ensureVoiceClip, VOICE_STORE_KEY, voiceClipStatus } from "../worker/ste-voice.ts"
@@ -10960,6 +10970,38 @@ assert(usersWriteBlocked(null, "Não li as contas."), "equipa sem leitura bloque
 assert(usersWriteBlocked([{ id: "1" }], "Não li as contas."), "equipa leftover com GET falho bloqueia criar")
 assert(!usersWriteBlocked([], ""), "equipa vazia confirmada deixa criar")
 assert(!usersWriteBlocked([{ id: "1" }], ""), "equipa lida deixa criar")
+const teamSample = [
+  { id: "1", name: "Victor Junger", email: "victor@abilion.com", role: "owner" as const, disabled: false, seeded: true, tokenCount: 0, sessionCount: 2, lastSeenAt: "2026-09-22T10:00:00.000Z" },
+  { id: "2", name: "Ana", email: "ana@abilion.com", role: "operator" as const, disabled: false, seeded: false, tokenCount: 1, sessionCount: 0 },
+  { id: "3", name: "Bruno", email: "bruno@abilion.com", role: "operator" as const, disabled: true, seeded: false, tokenCount: 0, sessionCount: 0 },
+]
+assert(userMatchesQuery(teamSample[1], "ana"), "busca pelo nome")
+assert(userMatchesQuery(teamSample[1], "ABILION"), "busca pelo e-mail ignora maiúsculas")
+assert(!userMatchesQuery(teamSample[1], "victor"), "busca não inventa match")
+assert(userMatchesTeamFilter(teamSample[0], "owners"), "filtro donos")
+assert(userMatchesTeamFilter(teamSample[0], "online"), "filtro em sessão")
+assert(userMatchesTeamFilter(teamSample[2], "disabled"), "filtro desligadas")
+assert(!userMatchesTeamFilter(teamSample[1], "online"), "sem sessão não é online")
+assert(countTeamUsers(teamSample).operators === 2, "conta operadores")
+assert(sortTeamUsers(teamSample)[0]?.seeded, "conta inicial fica primeiro")
+assert(filterTeamUsers(teamSample, "bruno", "disabled")[0]?.id === "3", "busca e recorte juntos")
+assert(generateAccountPassword().length >= 12, "senha gerada tem 12+")
+assert(isGeneratedAccountPassword(generateAccountPassword()), "senha gerada é copiável")
+assert(!accountLocks(teamSample[0], "x").canDisable, "conta inicial não desliga")
+assert(accountLocks(teamSample[1], "1").canResetPassword, "dono redefine operador")
+assert(!accountLocks(teamSample[1], "2").canResetPassword, "não redefine a própria senha")
+const managedLive = publicManagedUser(
+  { id: "u1", email: "ana@abilion.com", name: "Ana", passwordHash: "h", createdAt: "2026-01-01T00:00:00.000Z", tokens: [] },
+  [{ token: "s", userId: "u1", issuedAt: 1_700_000_000_000, expiresAt: 1_800_000_000_000 }],
+  1_750_000_000_000
+)
+assert(managedLive.sessionCount === 1 && Boolean(managedLive.lastSeenAt), "lista conta sessão viva")
+const managedDead = publicManagedUser(
+  { id: "u1", email: "ana@abilion.com", name: "Ana", passwordHash: "h", createdAt: "2026-01-01T00:00:00.000Z" },
+  [{ token: "s", userId: "u1", issuedAt: 1, expiresAt: 2 }],
+  10
+)
+assert(managedDead.sessionCount === 0 && !managedDead.lastSeenAt, "sessão caducada não conta")
 assert(leadTimelinePending("idle", 0), "timeline hidrata sem eventos")
 assert(leadTimelinePending("error", 0), "timeline unread sem eventos não finge vazia")
 assert(!leadTimelinePending("ok", 0), "timeline confirmada vazia esconde a lista")
@@ -12815,9 +12857,11 @@ assert(importedHttpHollow.status === 503, "POST import com KV oco e Postgres em 
 assert(importedHttpHollowBody.error === "Não confirmei os funis.", "POST import oco não rebenta em 500")
 
 const listed = await handleRequest(new Request("http://local.test/api/users", { headers: { cookie: teamCookie } }), teamEnv, backgroundCtx())
-const listedBody = (await listed.json()) as { users?: Array<{ id?: string; email?: string; disabled?: boolean }> }
+const listedBody = (await listed.json()) as { users?: Array<{ id?: string; email?: string; disabled?: boolean; sessionCount?: number }> }
 const anaRow = listedBody.users?.find((item) => item.email === "ana@abilion.com")
+const victorRow = listedBody.users?.find((item) => item.email === "victor@abilion.com")
 assert(listed.status === 200 && Boolean(anaRow), "lista mostra a Ana")
+assert(Boolean(victorRow?.id) && (victorRow?.sessionCount ?? 0) >= 1, "lista conta a sessão do dono")
 const anaId = anaRow?.id
 assert(Boolean(anaId), "id da Ana existe")
 const disableAna = await handleRequest(
@@ -12876,5 +12920,100 @@ const anaBearerAfterStale = await sessionUser(
   kvAuthStore(teamEnv.AUTH!)
 )
 assert(anaBearerAfterStale === null, "Bearer da Ana continua morto depois do save velho")
+
+const createdBruno = await handleRequest(
+  new Request("http://local.test/api/users", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: teamCookie, "x-forwarded-for": "203.0.113.201" },
+    body: JSON.stringify({ email: "bruno@abilion.com", name: "Bruno", password: "senhaok", role: "operator", profiles: ["viewer"] }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const brunoCreated = (await createdBruno.json()) as { user?: { id?: string; sessionCount?: number; profiles?: string[] } }
+assert(createdBruno.status === 201 && Boolean(brunoCreated.user?.id), "dono cria Bruno para reset")
+assert(brunoCreated.user?.profiles?.includes("viewer"), "criar operador guarda o acesso")
+const brunoLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.231" },
+    body: JSON.stringify({ email: "bruno@abilion.com", password: "senhaok" }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+assert(brunoLogin.status === 200, "Bruno entra com a senha inicial")
+const brunoCookie = brunoLogin.headers.get("set-cookie") || ""
+const brunoMinted = await handleRequest(
+  new Request("http://local.test/api/tokens", {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: brunoCookie, "x-forwarded-for": "203.0.113.231" },
+    body: JSON.stringify({ name: "Bruno MCP" }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const brunoMintedBody = (await brunoMinted.json()) as { token?: string }
+assert(brunoMinted.status === 201 && brunoMintedBody.token?.startsWith("abn_"), "Bruno gera token antes do reset")
+const brunoForbiddenReset = await handleRequest(
+  new Request("http://local.test/api/users", {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie: brunoCookie, "x-forwarded-for": "203.0.113.231" },
+    body: JSON.stringify({ id: brunoCreated.user?.id, resetPassword: true }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+assert(brunoForbiddenReset.status === 403, "operador não redefine senhas")
+const selfReset = await handleRequest(
+  new Request("http://local.test/api/users", {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie: teamCookie, "x-forwarded-for": "203.0.113.201" },
+    body: JSON.stringify({ id: victorRow?.id, resetPassword: true }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+assert(selfReset.status === 400, "dono não redefine a própria senha aqui")
+const resetBruno = await handleRequest(
+  new Request("http://local.test/api/users", {
+    method: "PATCH",
+    headers: { "content-type": "application/json", cookie: teamCookie, "x-forwarded-for": "203.0.113.201" },
+    body: JSON.stringify({ id: brunoCreated.user?.id, resetPassword: true }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+const resetBrunoBody = (await resetBruno.json()) as { password?: string; user?: { sessionCount?: number; tokenCount?: number } }
+assert(resetBruno.status === 200 && isGeneratedAccountPassword(resetBrunoBody.password || ""), "dono gera senha nova")
+assert(resetBrunoBody.user?.sessionCount === 0, "reset derruba sessões")
+assert(resetBrunoBody.user?.tokenCount === 0, "reset derruba tokens")
+const brunoOldLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.232" },
+    body: JSON.stringify({ email: "bruno@abilion.com", password: "senhaok" }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+assert(brunoOldLogin.status === 401, "senha antiga cai")
+const brunoNewLogin = await handleRequest(
+  new Request("http://local.test/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.233" },
+    body: JSON.stringify({ email: "bruno@abilion.com", password: resetBrunoBody.password }),
+  }),
+  teamEnv,
+  backgroundCtx()
+)
+assert(brunoNewLogin.status === 200, "senha gerada entra")
+const brunoBearerDead = await sessionUser(
+  new Request("http://local.test/api/crm", { headers: { authorization: `Bearer ${brunoMintedBody.token}` } }),
+  kvAuthStore(teamEnv.AUTH!)
+)
+assert(brunoBearerDead === null, "token cai depois do reset")
+const brunoStaleSession = await handleRequest(new Request("http://local.test/api/runtime", { headers: { cookie: brunoCookie } }), teamEnv, backgroundCtx())
+assert(brunoStaleSession.status === 401, "sessão antiga cai depois do reset")
 
 console.log("ste-flow ok")
