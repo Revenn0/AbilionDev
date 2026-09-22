@@ -40,16 +40,22 @@ function wrangler(params: string[]) {
   })
 }
 
-const listed = wrangler(["kv", "key", "list", "--namespace-id", namespaceId, "--remote"])
-const start = listed.indexOf("[")
-if (start < 0) throw new Error("O Wrangler não devolveu a lista de chaves.")
-const names = (JSON.parse(listed.slice(start)) as Array<{ name?: unknown }>)
-  .map((item) => (typeof item.name === "string" ? item.name : ""))
-const keys = selectOperationalBackupKeys(names)
-const items: KvBackupItem[] = []
-for (const key of keys) {
-  const value = wrangler(["kv", "key", "get", key, "--namespace-id", namespaceId, "--remote", "--text"])
-  items.push({ key, value })
+let items: KvBackupItem[] = []
+try {
+  const listed = wrangler(["kv", "key", "list", "--namespace-id", namespaceId, "--remote"])
+  const start = listed.indexOf("[")
+  if (start < 0) throw new Error("O Wrangler não devolveu a lista de chaves.")
+  const names = (JSON.parse(listed.slice(start)) as Array<{ name?: unknown }>)
+    .map((item) => (typeof item.name === "string" ? item.name : ""))
+  const keys = selectOperationalBackupKeys(names)
+  items = []
+  for (const key of keys) {
+    const value = wrangler(["kv", "key", "get", key, "--namespace-id", namespaceId, "--remote", "--text"])
+    items.push({ key, value })
+  }
+} catch {
+  console.error("A Cloudflare recusou a leitura do KV. Confirma uma credencial com Workers KV Storage:Read e repete.")
+  process.exit(1)
 }
 
 const envelope = makeBackupEnvelope(target, namespaceId, items)
