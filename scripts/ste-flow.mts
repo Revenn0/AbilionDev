@@ -21,6 +21,9 @@ import {
   STE_SUPERBET_BLOCK,
   STE_SUPERBET_CONFIRM,
   STE_SUPERBET_HELP,
+  STE_SUPERBET_HOLD,
+  STE_LISTEN_REASK,
+  STE_OFFER_ACK,
   STE_SUPERBET_OK,
   STE_SUPERBET_RESCUE,
   STE_OFFER_BLOCK,
@@ -435,13 +438,55 @@ const looped = replySte(asking.lead, "Oi oi")
 assert(looped.replies[0] === STE_SUPERBET_HELP, "segunda fala não copia a confirmação")
 assert(looped.lead.stePhase === "solution", "sem print continua na Superbet")
 const silentLoop = replySte(looped.lead, "oi")
-assert(silentLoop.replies.length === 0, "terceira fala não spam a mesma pergunta")
-assert((silentLoop.lead.messages ?? []).at(-1)?.role === "lead", "a fala do lead fica gravada")
+assert(silentLoop.replies[0] === STE_SUPERBET_HOLD, "terceira fala muda e deixa o link")
+assert(silentLoop.replies[0] !== STE_SUPERBET_CONFIRM && silentLoop.replies[0] !== STE_SUPERBET_HELP, "terceira fala não copia as anteriores")
+assert((silentLoop.lead.messages ?? []).some((item) => item.role === "lead" && item.text === "oi"), "a fala do lead fica gravada")
+assert(!heardSuperbetSignup("não mandei o print"), "print negado não é cadastro")
+assert(!heardSuperbetSignup("já tenho experiência"), "já tenho experiência não é conta na Superbet")
 const printed = replySteLived(asking.lead, "aqui o print")
 assert(printed.lead.facts.hasSuperbet === true, "print marca Superbet")
 assert(printed.replies[0] === STE_SUPERBET_OK, "print avança em vez de repetir")
 assert(printed.lead.stePhase === "offer", "print vai à oferta")
 assert(printed.lead.printAt, "print do chat marca o print da ficha")
+
+function talk(startLead: ReturnType<typeof replySte>["lead"], lines: string[]) {
+  const said: string[] = []
+  let current = startLead
+  for (const line of lines) {
+    const result = replySteLived(current, line)
+    current = result.lead
+    const reply = result.replies.join("\n")
+    const previous = said.at(-1) ?? ""
+    assert(reply !== previous, `não repete a fala anterior depois de «${line}»`)
+    assert(!reply || !reply.includes(line), `não ecoa «${line}»`)
+    said.push(reply)
+  }
+  return { lead: current, said }
+}
+const earlyPrint = talk(start.lead, ["aqui o print"])
+assert(earlyPrint.said[0]?.includes("Antes de seguir"), "print antes da pergunta não finge que a conta está feita")
+assert(earlyPrint.lead.stePhase === "listen" && earlyPrint.lead.facts.hasSuperbet !== true, "print cedo não marca Superbet")
+const greeted = talk(start.lead, ["oi"])
+assert(greeted.said[0] === STE_LISTEN_REASK, "oi sozinho não despeja o minicurso")
+assert(greeted.lead.stePhase === "listen", "oi deixa a Sté à espera da resposta")
+const beginner = talk(start.lead, ["to começando agora e perdendo tudo", "não tenho conta", "oi", "ainda não", "travou no cpf", "aqui o print", "e agora?", "obrigado"])
+assert(beginner.said[0]?.includes("prejuízo") && beginner.said[0]?.includes("minicurso"), "iniciante no prejuízo recebe o curso")
+assert(beginner.said[1]?.includes("Superbet"), "sem conta recebe a Superbet")
+assert(beginner.said[2]?.includes("cadastro"), "oi depois do link pede o cadastro")
+assert(beginner.said[3]?.includes("print") && beginner.said[3]?.includes("Superbet"), "ainda não espera o print em vez de repetir a pergunta")
+assert(beginner.said[4]?.toLowerCase().includes("cpf"), "travou no CPF responde a etapa")
+assert(beginner.said[5] === STE_SUPERBET_OK, "print confirma a conta")
+assert(!beginner.said.slice(5).some((item) => item.includes("cadastro na Superbet já saiu")), "depois do print não pede o cadastro outra vez")
+assert(beginner.said[6]?.includes("App") && beginner.said[6]?.includes("Premium"), "depois do print a conversa segue para a oferta")
+assert(beginner.said[7] === STE_OFFER_ACK, "obrigado não repete a oferta inteira")
+assert(beginner.lead.stePhase === "offer" && beginner.lead.facts.hasSuperbet === true, "conversa do iniciante termina na oferta")
+const veteran = talk(start.lead, ["já jogo há tempo e tô ganhando", "sim, já tenho conta", "cadastrei"])
+assert(veteran.said[0]?.includes("resultado") || veteran.said[0]?.includes("método"), "quem já ganha não ouve iniciante")
+assert(veteran.lead.facts.hasSuperbet === true, "já tenho conta marca a casa")
+assert(veteran.said[2] === STE_SUPERBET_OK, "cadastrei fecha a Superbet")
+const pix = talk(platform.lead, ["que horas eu faço o pix?"])
+assert(!pix.said[0]?.includes("10:30"), "pix não vira horário de live")
+assert(pix.said[0]?.toLowerCase().includes("pix") || pix.said[0]?.toLowerCase().includes("depósito"), "pix recebe ajuda de depósito")
 
 const lives = replySte(start.lead, "que horas é a live?")
 assert(lives.replies[0] === STE_LIVE_BLOCK[0], "faq lives")
@@ -795,7 +840,7 @@ globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
         {
           message: {
             content:
-              "Quer subir de nível agora? Te passo o caminho sem enrolação.\n\n[clique aqui para conhecer os planos do App](https://app.mundoaviator.com.br/)",
+              "Quer subir de nível agora? Te passo o caminho sem enrolação.\n\n[clique aqui para conhecer os planos do App](https://app.mundoaviator.com.br/)\n\n[clique aqui para conhecer o Grupo Premium](https://mundoaviator.com.br/premium-vsl/)\n\n[clique aqui para garantir sua vaga direto no checkout](https://go.perfectpay.com.br/PPU38CQDT9B)",
           },
         },
       ],

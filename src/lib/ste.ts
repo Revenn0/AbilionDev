@@ -124,6 +124,23 @@ export const STE_SUPERBET_OK =
 export const STE_SUPERBET_HELP =
   "Se o cadastro travar, me diz a etapa: CPF, selfie ou depósito. Ou manda o print que eu te ajudo."
 
+export const STE_SUPERBET_HOLD = `Sem pressa. Quando o cadastro sair, manda o print aqui. O link continua este: ${steLink("superbet")}`
+
+export const STE_SUPERBET_STEP =
+  "Me diz a etapa que travou: CPF, selfie ou depósito. Com o print eu te falo o que fazer."
+
+export const STE_LISTEN_REASK =
+  "Oi! Pra eu te orientar direito: você já joga Aviator ou está começando agora? E como têm sido os resultados?"
+
+export const STE_PRINT_EARLY =
+  "Vi o print. Antes de seguir, me conta: você já joga Aviator ou está começando agora? E como têm sido os resultados?"
+
+export const STE_OFFER_NEXT =
+  "Com a conta feita, o próximo passo é o App ou o Grupo Premium. Quer que eu te explique a diferença?"
+
+export const STE_OFFER_ACK =
+  "Fechado. Quando quiser o link do App, do Grupo Premium ou do checkout, é só pedir."
+
 export const STE_OFFER_BLOCK = [
   "O App é a ferramenta própria: catalogador em tempo real, validador de padrões e gestão de banca blindada.",
   steLink("app"),
@@ -155,21 +172,40 @@ const OFFTOPIC =
   /\b(eleição|eleicao|bolsonaro|lula|receita de|bolo|clima|previsão do tempo|futebol|flamengo|política|politica)\b/i
 
 const LIVE_HOURS =
-  /\b(live|lives|horário|horario|transmissão|transmissao|que horas|quando (voc[eê]|tu) (entra|opera|transmite)|hora da live)\b/i
+  /\b(lives?|hor[aá]rios? das lives|transmiss[aã]o|quando (voc[eê]|tu) (entra|opera|transmite)|hora da live|que horas\b[^?.!]{0,40}\b(live|lives|entra|opera|transmite))\b/i
 
 const WANT_OFFER =
-  /\b(app|plano|planos|assinar|assinatura|ferramenta|catalogador|premium|checkout|vaga|preço|preco|valor|quanto custa|perfectpay|pagar|quero o (app|grupo)|link do (app|grupo|checkout))\b/i
+  /\b(app|planos|assinar|assinatura|ferramenta|catalogador|premium|checkout|vaga|pre[cç]o|quanto custa|perfectpay|pagar|quero o (app|grupo)|link do (app|grupo|checkout))\b/i
 
 const SIGNED_UP =
-  /\b(cadastrei|me cadastrei|fiz o cadastro|criei a conta|já tenho conta|ja tenho conta|já tenho|ja tenho|depositei|depósito|deposito|sou cliente|conta feita|tá feito|ta feito|cadastro (feito|ok|pronto)|já (fiz|saiu|cadastrei)|ja (fiz|saiu|cadastrei)|consegui cadastr)\b/i
+  /\b(cadastrei|me cadastrei|fiz o cadastro|criei a conta|j[aá] tenho conta|depositei|dep[oó]sito feito|sou cliente|conta feita|cadastro (feito|ok|pronto)|j[aá] (fiz|saiu|cadastrei)|consegui cadastr)\b/i
 
 const SENT_PRINT = /\b(print|printou|screenshot)\b/i
 
-const GREETING = /^(oi+|o+l[aá]|e a[ií]|opa|hey|hola)\b/i
+const GREETING = /^(oi+|o+l[aá]|e+ a[ií]|opa|hey|hola|bom dia|boa tarde|boa noite)\b/i
 
-export function heardSuperbetSignup(incoming: string, facts?: LeadFacts | null) {
+function isOnlyGreeting(text: string) {
+  return /^(oi+|ol[aá]+|e+ a[ií]|opa|hey|hola|bom dia|boa tarde|boa noite|tudo bem)[!.?\s]*$/i.test(text.trim())
+}
+
+function affirms(text: string) {
+  return /^(sim|ss|claro|isso|pronto|feito|consegui|já|ja|foi|cadastrei)[!.?\s]*$/i.test(text.trim())
+}
+
+function denies(text: string) {
+  return /^(n[aã]o|ainda n[aã]o|nao|n)[!.?\s]*$/i.test(text.trim())
+    || /\b(ainda n[aã]o|n[aã]o consegui|n[aã]o deu|n[aã]o abre|n[aã]o fiz|n[aã]o tenho|n[aã]o mandei|travei na|travou na|emperrou)\b/i.test(text)
+}
+
+function mentionsPrint(text: string) {
+  if (!SENT_PRINT.test(text) || denies(text)) return false
+  return !/\b(n[aã]o|sem|nenhum)\b[^?.!]{0,30}\b(print|printou|screenshot)\b/i.test(text)
+}
+
+export function heardSuperbetSignup(incoming: string) {
   const text = incoming.trim()
-  return Boolean(facts?.hasSuperbet) || SIGNED_UP.test(text) || SENT_PRINT.test(text)
+  if (!text || denies(text)) return false
+  return SIGNED_UP.test(text) || mentionsPrint(text)
 }
 
 const CONVERTED = /\b(paguei|assinei|comprei|já assinei|ja assinei|já paguei|ja paguei)\b/i
@@ -381,11 +417,13 @@ export function applyLeadFacts(lead: Lead, incoming: string) {
   const facts = { ...(lead.facts ?? {}) }
   facts.heard = text.slice(0, 140)
   if (/come[cç]ando|iniciante|primeira vez|nunca jog/i.test(text)) facts.experience = "beginner"
-  if (/j[aá] jogo|experien|veterano|h[aá] tempo|j[aá] opero/i.test(text)) facts.experience = "experienced"
+  if (/j[aá] jogo|experi[eê]n|veterano|h[aá] tempo|j[aá] opero/i.test(text)) facts.experience = "experienced"
   if (/perdend|queim|no preju|zerou|quebr|tilt/i.test(text)) facts.results = "losing"
   if (/ganhand|lucr|positivo|no verde/i.test(text)) facts.results = "winning"
-  if (SIGNED_UP.test(text) || SENT_PRINT.test(text)) facts.hasSuperbet = true
-  if (/n[aã]o tenho conta|ainda n[aã]o tenho|sem conta/i.test(text)) facts.hasSuperbet = false
+  const phase = lead.stePhase ?? "entry"
+  if (!denies(text) && SIGNED_UP.test(text)) facts.hasSuperbet = true
+  if (!denies(text) && mentionsPrint(text) && phase !== "listen" && phase !== "entry") facts.hasSuperbet = true
+  if (/n[aã]o tenho conta|ainda n[aã]o tenho|sem conta|n[aã]o mandei o print/i.test(text)) facts.hasSuperbet = false
   lead.facts = facts
 }
 
@@ -473,12 +511,6 @@ function lastSteText(lead: Lead) {
   }
 }
 
-function isSuperbetConfirmAsk(text?: string) {
-  if (!text) return false
-  if (text === STE_SUPERBET_CONFIRM || text === STE_SUPERBET_HELP) return true
-  return /cadastro na Superbet já saiu|CPF, selfie ou depósito/i.test(text)
-}
-
 /** Webhook: se o envio da Sté falhar, a fala do lead fica no CRM sem avançar a fase. */
 export function rememberLeadTalk(lead: Lead, incoming?: string | null, now = Date.now()): Lead {
   const text = (incoming ?? "").trim()
@@ -513,14 +545,11 @@ function hasRawUrl(text: string) {
   return /https?:\/\//i.test(text.replace(/\[[^\]]+\]\(https?:[^)\s]+\)/g, ""))
 }
 
-export function listenLine(facts: LeadFacts | undefined, incoming: string, kind: SteBeatKind) {
+export function listenLine(facts: LeadFacts | undefined, incoming: string, kind: SteBeatKind, scripted?: string) {
   const text = incoming.trim()
   if (kind === "course") {
     if (facts?.experience === "beginner" && facts.results === "losing") {
       return "Começar e já estar no prejuízo é o mais comum — sem método a banca some rápido."
-    }
-    if (facts?.experience === "beginner") {
-      return "Beleza, então a gente começa do zero, sem pressa e sem furada."
     }
     if (facts?.experience === "experienced" && facts.results === "losing") {
       return "Quem já joga e tá queimando precisa de gestão, não de mais palpite."
@@ -530,6 +559,12 @@ export function listenLine(facts: LeadFacts | undefined, incoming: string, kind:
     }
     if (facts?.results === "losing") {
       return "Te ouvi: tá no prejuízo. Primeiro a gente alinha o método."
+    }
+    if (facts?.experience === "beginner") {
+      return "Beleza, então a gente começa do zero, sem pressa e sem furada."
+    }
+    if (facts?.experience === "experienced") {
+      return "Entendi, você já joga. Então a gente alinha o método em vez de começar do zero."
     }
     return text ? "Te entendi. Vou te passar a base pra você não operar no achismo." : null
   }
@@ -543,11 +578,15 @@ export function listenLine(facts: LeadFacts | undefined, incoming: string, kind:
     return "Pra rodar as estratégias de verdade, você precisa estar na casa certa. Eu opero na Superbet."
   }
   if (kind === "confirm") {
-    if (heardSuperbetSignup(incoming, facts)) return STE_SUPERBET_OK
+    if (scripted === STE_SUPERBET_OK || heardSuperbetSignup(incoming)) return STE_SUPERBET_OK
+    if (scripted === STE_SUPERBET_HOLD) return null
+    if (scripted === STE_SUPERBET_HELP || scripted === STE_SUPERBET_STEP) {
+      return "Se travar, me fala a etapa — CPF, selfie ou depósito — ou manda o print."
+    }
     if (GREETING.test(incoming.trim())) {
       return "Oi. Me confirma se o cadastro na Superbet já saiu — se travar em alguma etapa, me fala que eu te ajudo."
     }
-    return STE_SUPERBET_CONFIRM
+    return null
   }
   if (kind === "offer") {
     return "Se quiser subir de nível agora, o caminho é o App, o Grupo Premium ou o checkout direto."
@@ -591,8 +630,11 @@ function withKeptLinks(opening: string, source: string) {
 export function applySteVoice(result: SteResult, incoming: string, now = Date.now()): SteResult {
   const beat = result.beat
   if (!beat.vary || result.lead.steBlocked || result.lead.steQuiet || !result.replies.length) return result
-  const opening = listenLine(result.lead.facts, incoming, beat.kind)
+  const opening = listenLine(result.lead.facts, incoming, beat.kind, result.replies[0])
   if (!opening) return result
+  const spoken = (result.lead.messages ?? []).filter((item) => item.role === "ste").map((item) => item.text)
+  const older = spoken.slice(0, Math.max(0, spoken.length - result.replies.length))
+  if (older.includes(opening)) return result
   const voiced = [withKeptLinks(opening, result.replies[0] ?? ""), ...result.replies.slice(1)]
   if (voiced[0] === result.replies[0]) return result
   if (!guardSteVoice(result.replies, voiced, beat)) return result
@@ -752,6 +794,96 @@ function close(lead: Lead, now: number, text: string) {
   return pack(lead, [text], "close")
 }
 
+function isConfirmQuestion(text?: string) {
+  return Boolean(text && /cadastro na Superbet já saiu|conseguiu fazer o cadastro/i.test(text))
+}
+
+function isHelpQuestion(text?: string) {
+  return Boolean(text && (text === STE_SUPERBET_HELP || text === STE_SUPERBET_STEP || /CPF, selfie ou depósito|etapa que travou|se o cadastro travar/i.test(text)))
+}
+
+function signupHelp(incoming: string) {
+  if (/cpf|documento|receita federal/i.test(incoming)) {
+    return "No CPF, digita os 11 números sem ponto. Se a tela recusar, espera um minuto e tenta de novo — e me manda o print."
+  }
+  if (/selfie|foto do rosto|c[aâ]mera|biometria/i.test(incoming)) {
+    return "Na selfie, o rosto inteiro, sem boné e com luz na frente. Se a câmera não abrir, fecha o site e entra de novo pelo link."
+  }
+  if (/dep[oó]sito|pix|b[oô]nus|bonus/i.test(incoming)) {
+    return "O bônus de entrada entra num depósito novo, depois da conta criada. Se o Pix não aparecer, me manda o print dessa tela."
+  }
+  if (/n[aã]o abre|link trav|erro|travei|travou|emperr/i.test(incoming)) {
+    return `Se o link travar, abre de novo por aqui: ${steLink("superbet")}`
+  }
+  return null
+}
+
+function pushFresh(lead: Lead, text: string, now: number) {
+  if (!text || lastSteText(lead) === text) return false
+  push(lead, "ste", text, now)
+  return true
+}
+
+function finishSignup(lead: Lead, incoming: string, now: number): SteResult {
+  lead.facts = { ...(lead.facts ?? {}), hasSuperbet: true }
+  if (mentionsPrint(incoming)) lead.printAt = lead.printAt ?? nowIso(now)
+  setPhase(lead, "offer")
+  cancelSuperbetWait(lead, now)
+  push(lead, "ste", STE_SUPERBET_OK, now)
+  return pack(lead, [STE_SUPERBET_OK], "confirm")
+}
+
+function solutionReply(lead: Lead, incoming: string, now: number): SteResult {
+  cancelSuperbetWait(lead, now)
+  const asked = lastSteText(lead)
+  const signed =
+    heardSuperbetSignup(incoming) || (affirms(incoming) && !denies(incoming) && isConfirmQuestion(asked))
+  if (signed) return finishSignup(lead, incoming, now)
+
+  const specific = signupHelp(incoming)
+  if (specific && pushFresh(lead, specific, now)) return pack(lead, [specific], "confirm")
+
+  if (denies(incoming)) {
+    if (pushFresh(lead, STE_SUPERBET_HOLD, now)) return pack(lead, [STE_SUPERBET_HOLD], "confirm")
+    if (pushFresh(lead, STE_SUPERBET_HELP, now)) return pack(lead, [STE_SUPERBET_HELP], "confirm")
+    return pack(lead, [], "confirm")
+  }
+
+  if (affirms(incoming) && isHelpQuestion(asked) && pushFresh(lead, STE_SUPERBET_STEP, now)) {
+    return pack(lead, [STE_SUPERBET_STEP], "confirm")
+  }
+
+  const nudges = [STE_SUPERBET_CONFIRM, STE_SUPERBET_HELP, STE_SUPERBET_HOLD, STE_SUPERBET_STEP]
+  const index = !asked
+    ? -1
+    : asked === STE_SUPERBET_STEP || /Me diz a etapa que travou/i.test(asked)
+      ? 3
+      : asked === STE_SUPERBET_HOLD || /Quando o cadastro sair, manda o print/i.test(asked)
+        ? 2
+        : isHelpQuestion(asked)
+          ? 1
+          : isConfirmQuestion(asked)
+            ? 0
+            : -1
+  const next = index < 0 ? STE_SUPERBET_CONFIRM : nudges[index + 1]
+  if (next && pushFresh(lead, next, now)) return pack(lead, [next], "confirm")
+  return pack(lead, [], "confirm")
+}
+
+function offerReply(lead: Lead, incoming: string, now: number, copy: ReturnType<typeof resolveCopy>): SteResult {
+  if (isOnlyGreeting(incoming) && pushFresh(lead, STE_OFFER_NEXT, now)) {
+    return pack(lead, [STE_OFFER_NEXT], "offer")
+  }
+  if (/\b(obrigad[oa]|valeu|show|entendi|fechou|perfeito|beleza|blz)\b/i.test(incoming) && pushFresh(lead, STE_OFFER_ACK, now)) {
+    return pack(lead, [STE_OFFER_ACK], "offer")
+  }
+  const pitched = (lead.messages ?? []).some((item) => item.role === "ste" && /Grupo Premium|checkout direto/i.test(item.text))
+  if (!pitched) return offer(lead, now, copy.offer, copy.remarketingMs)
+  if (pushFresh(lead, STE_OFFER_NEXT, now)) return pack(lead, [STE_OFFER_NEXT], "offer")
+  if (pushFresh(lead, STE_OFFER_ACK, now)) return pack(lead, [STE_OFFER_ACK], "offer")
+  return pack(lead, [], "offer")
+}
+
 function replyToIncoming(lead: Lead, incoming: string, now: number, copy: ReturnType<typeof resolveCopy>): SteResult {
   applyLeadFacts(lead, incoming)
   if (HOSTILE.test(incoming)) return close(lead, now, copy.close)
@@ -762,36 +894,43 @@ function replyToIncoming(lead: Lead, incoming: string, now: number, copy: Return
     push(lead, "ste", REDIRECT, now)
     return pack(lead, [REDIRECT], "redirect")
   }
-
-  const phase = lead.stePhase ?? "entry"
-  if (phase === "listen" || phase === "entry") return course(lead, now, copy.course, copy.remarketingMs)
-
-  if (phase === "diagnosis") return superbet(lead, now, copy.superbet)
-
-  if (phase === "solution") {
-    cancelSuperbetWait(lead, now)
-    if (heardSuperbetSignup(incoming, lead.facts)) {
-      setPhase(lead, "offer")
-      if (SENT_PRINT.test(incoming)) lead.printAt = lead.printAt ?? nowIso(now)
-      push(lead, "ste", STE_SUPERBET_OK, now)
-      return pack(lead, [STE_SUPERBET_OK], "confirm")
-    }
-    const asked = lastSteText(lead)
-    if (isSuperbetConfirmAsk(asked)) {
-      if (asked === STE_SUPERBET_HELP || /CPF, selfie ou depósito/i.test(asked ?? "")) {
-        return pack(lead, [], "confirm")
-      }
-      push(lead, "ste", STE_SUPERBET_HELP, now)
-      return pack(lead, [STE_SUPERBET_HELP], "confirm")
-    }
-    push(lead, "ste", STE_SUPERBET_CONFIRM, now)
-    return pack(lead, [STE_SUPERBET_CONFIRM], "confirm")
+  if (memHas(lead, MEM.converted) && lead.stePhase !== "offer") {
+    setPhase(lead, "offer")
+    const thanks = "Que bom que você entrou. Se quiser o App ou o Grupo Premium, eu te mando o link."
+    push(lead, "ste", thanks, now)
+    return pack(lead, [thanks], "offer")
   }
 
-  const text = `Se quiser subir de nível, o caminho é o App, o Grupo Premium ou o checkout direto: ${steLink("app")}`
-  push(lead, "ste", text, now)
-  setPhase(lead, "offer")
-  return pack(lead, [text], "offer")
+  const phase = lead.stePhase ?? "entry"
+  if (phase === "listen" || phase === "entry") {
+    if (mentionsPrint(incoming) && lastSteText(lead) !== STE_PRINT_EARLY) {
+      push(lead, "ste", STE_PRINT_EARLY, now)
+      return pack(lead, [STE_PRINT_EARLY], "welcome")
+    }
+    if (isOnlyGreeting(incoming) && lastSteText(lead) !== STE_LISTEN_REASK) {
+      push(lead, "ste", STE_LISTEN_REASK, now)
+      return pack(lead, [STE_LISTEN_REASK], "welcome")
+    }
+    return course(lead, now, copy.course, copy.remarketingMs)
+  }
+
+  if (phase === "diagnosis") {
+    if (mentionsPrint(incoming)) {
+      lead.facts = { ...(lead.facts ?? {}), hasSuperbet: true }
+      lead.printAt = lead.printAt ?? nowIso(now)
+      return superbet(lead, now, copy.superbet)
+    }
+    if (denies(incoming) || /sem conta|n[aã]o tenho conta/i.test(incoming)) {
+      lead.facts = { ...(lead.facts ?? {}), hasSuperbet: false }
+    } else if (SIGNED_UP.test(incoming) || affirms(incoming)) {
+      lead.facts = { ...(lead.facts ?? {}), hasSuperbet: true }
+    }
+    return superbet(lead, now, copy.superbet)
+  }
+
+  if (phase === "solution") return solutionReply(lead, incoming, now)
+
+  return offerReply(lead, incoming, now, copy)
 }
 
 export function replySte(lead: Lead, incoming?: string | null, now = Date.now(), runtime?: SteRuntime): SteResult {
