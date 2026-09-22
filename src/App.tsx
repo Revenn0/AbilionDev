@@ -17,6 +17,12 @@ const AnalyticsPage = lazy(() => import("@/pages/analytics").then((m) => ({ defa
 const TelegramPage = lazy(() => import("@/pages/telegram").then((m) => ({ default: m.TelegramPage })))
 const UsersPage = lazy(() => import("@/pages/users").then((m) => ({ default: m.UsersPage })))
 const AccountPage = lazy(() => import("@/pages/account").then((m) => ({ default: m.AccountPage })))
+const BotsPage = lazy(() => import("@/pages/bots").then((m) => ({ default: m.BotsPage })))
+const BotDetailPage = lazy(() => import("@/pages/bot-detail").then((m) => ({ default: m.BotDetailPage })))
+const BrainPage = lazy(() => import("@/pages/brain").then((m) => ({ default: m.BrainPage })))
+const AudioPage = lazy(() => import("@/pages/audio").then((m) => ({ default: m.AudioPage })))
+const CreativesPage = lazy(() => import("@/pages/creatives").then((m) => ({ default: m.CreativesPage })))
+const LogsPage = lazy(() => import("@/pages/logs").then((m) => ({ default: m.LogsPage })))
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { ready, state } = useStore()
@@ -81,6 +87,13 @@ function AppRoutes() {
                 <Routes>
                   <Route path="/" element={<DashboardPage />} />
                   <Route path="/analytics" element={<AnalyticsPage />} />
+                  <Route path="/bots" element={<BotsPage />} />
+                  <Route path="/bots/:botId" element={<BotDetailPage />} />
+                  <Route path="/bots/:botId/brain" element={<BrainPage />} />
+                  <Route path="/bots/:botId/audio" element={<AudioPage />} />
+                  <Route path="/audio" element={<AudioPage />} />
+                  <Route path="/criativos" element={<CreativesPage />} />
+                  <Route path="/registos" element={<LogsPage />} />
                   <Route path="/fluxo" element={<FluxoPage />} />
                   <Route path="/fluxo/funil/:id" element={<FunnelEditorPage />} />
                   <Route path="/leads" element={<LeadsPage />} />

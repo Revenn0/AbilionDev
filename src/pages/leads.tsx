@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Plus, Upload, Users } from "lucide-react"
+import { useSearchParams } from "react-router-dom"
 import { PageChrome, StatusPill } from "@/components/layout/chrome"
 import { HydratePanel } from "@/components/layout/hydrate-panel"
 import { SyncBanner } from "@/components/layout/sync-banner"
@@ -40,9 +41,28 @@ import { displayContact, draftLeadField, isPhoneLikeName, leadMatchesQuery, reso
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { GeoBadge } from "@/components/crm/geo-badge"
+import { GroupSidebar } from "@/components/crm/group-sidebar"
 import { factsWithTrack } from "@/lib/geo"
 import { useTrackSummary } from "@/lib/use-track-summary"
 import { remoteSearchBlank, useRemoteLeadSearch } from "@/lib/use-lead-query"
+import {
+  LEAD_GROUP_FILTER_ALL,
+  LEAD_GROUP_FILTER_UNGROUPED,
+  addLeadToGroup,
+  anonymizeLeadRecord,
+  createLeadGroup,
+  deleteLeadGroup,
+  getLeadGroupCounts,
+  isDisposableTestLead,
+  leadMatchesGroupFilter,
+  migrateCategoriesToLeadGroups,
+  normalizeLeadGroups,
+  removeLeadFromGroup,
+  renameLeadGroup,
+  reorderLeadGroups,
+  type LeadGroupFilter,
+  type LeadGroupV2,
+} from "@/lib/lead-groups"
 
 const FILTERS = [
   { id: "all", label: "Todos" },
@@ -58,6 +78,7 @@ const FILTERS = [
 
 export function LeadsPage() {
   const { state, createLead, createLeads, saveLead, saveSettings, flushLeadNow, deleteLead, crmSync, inboxSync, persistSync, catalogComplete, settingsSync, eventsSync } = useStore()
+  const [params, setParams] = useSearchParams()
   const { summary, status: trackStatus, hasData: trackHasData } = useTrackSummary(8000)
   const geoEmpty = pixelGeoEmpty(trackStatus, trackHasData)
   const [filter, setFilter] = useState<string>("all")
@@ -70,11 +91,66 @@ export function LeadsPage() {
   const [open, setOpen] = useState(false)
   const [importing, setImporting] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
-  const lead = state.leads.find((item) => item.id === selected) ?? null
   const categories = useMemo(
     () => mergeLeadCategories(state.settings.leadCategories, state.leads.map((item) => item.category).filter(Boolean) as string[]),
     [state.leads, state.settings.leadCategories]
   )
+  const groupMigration = useMemo(
+    () => migrateCategoriesToLeadGroups(state.leads, normalizeLeadGroups(state.settings.leadGroups)),
+    [state.leads, state.settings.leadGroups]
+  )
+  const crmGroups = groupMigration.groups
+  const groupedLeads = groupMigration.leads as Lead[]
+  const requestedGroup = params.get("group") || LEAD_GROUP_FILTER_ALL
+  const groupFilter: LeadGroupFilter =
+    requestedGroup === LEAD_GROUP_FILTER_ALL ||
+    requestedGroup === LEAD_GROUP_FILTER_UNGROUPED ||
+    crmGroups.some((item) => item.id === requestedGroup)
+      ? requestedGroup
+      : LEAD_GROUP_FILTER_ALL
+  const groupCounts = useMemo(() => getLeadGroupCounts(groupedLeads, crmGroups), [groupedLeads, crmGroups])
+  const lead = groupedLeads.find((item) => item.id === selected) ?? null
+  const migratedRef = useRef("")
+  useEffect(() => {
+    if (settingsSync !== "ok" || persistSync !== "ok") return
+    if (!groupMigration.createdGroupCount && !groupMigration.migratedLeadCount) return
+    const fingerprint = `${crmGroups.map((item) => `${item.id}:${item.name}`).join("|")}:${groupedLeads
+      .map((item) => `${item.id}:${(item.groupIds ?? []).join(",")}`)
+      .join("|")}`
+    if (migratedRef.current === fingerprint) return
+    migratedRef.current = fingerprint
+    saveSettings({
+      leadGroups: crmGroups.map((item) => ({
+        id: item.id,
+        name: item.name,
+        url: item.url || "",
+        order: item.order,
+        createdAt: state.settings.leadGroups.find((group) => group.id === item.id)?.createdAt || new Date().toISOString(),
+      })),
+    })
+    for (const next of groupedLeads) {
+      const previous = state.leads.find((item) => item.id === next.id)
+      if (JSON.stringify(previous?.groupIds ?? []) !== JSON.stringify(next.groupIds ?? [])) saveLead(next)
+    }
+  }, [
+    crmGroups,
+    groupMigration.createdGroupCount,
+    groupMigration.migratedLeadCount,
+    groupedLeads,
+    persistSync,
+    saveLead,
+    saveSettings,
+    settingsSync,
+    state.leads,
+    state.settings.leadGroups,
+  ])
+  useEffect(() => {
+    if (requestedGroup === groupFilter) return
+    const next = new URLSearchParams(params)
+    next.delete("group")
+    setParams(next, { replace: true })
+    toast.warning("Este grupo já não existe. Mostrei Todos.")
+  }, [groupFilter, params, requestedGroup, setParams])
   const categoriesUnread = leadCategoriesWriteBlocked(settingsSync !== "ok")
   const importGroups = useMemo(
     () => listImportGroups(state.settings.leadGroups, categories, state.settings.telegramGroupUrl),
@@ -101,6 +177,87 @@ export function LeadsPage() {
     })
     return made
   }
+  const storeGroups = (groups: LeadGroupV2[]) => {
+    saveSettings({
+      leadGroups: groups.map((item) => ({
+        id: item.id,
+        name: item.name,
+        url: item.url || "",
+        order: item.order,
+        createdAt: state.settings.leadGroups.find((group) => group.id === item.id)?.createdAt || new Date().toISOString(),
+      })),
+    })
+  }
+  const selectCrmGroup = (nextGroup: LeadGroupFilter) => {
+    const next = new URLSearchParams(params)
+    if (nextGroup === LEAD_GROUP_FILTER_ALL) next.delete("group")
+    else next.set("group", nextGroup)
+    setParams(next, { replace: true })
+  }
+  const createCrmGroup = (name: string) => {
+    if (groupsUnread) return { ok: false, error: "Não confirmei os grupos." }
+    const made = createLeadGroup(crmGroups, name)
+    if (!made.ok) return made
+    storeGroups(made.groups)
+    toast.success("Grupo criado.")
+    return { ok: true }
+  }
+  const renameCrmGroup = (groupId: string, name: string) => {
+    if (groupsUnread) return { ok: false, error: "Não confirmei os grupos." }
+    const made = renameLeadGroup(crmGroups, groupId, name)
+    if (!made.ok) return made
+    storeGroups(made.groups)
+    toast.success("Grupo renomeado.")
+    return { ok: true }
+  }
+  const reorderCrmGroups = (orderedIds: string[]) => {
+    if (groupsUnread) return { ok: false, error: "Não confirmei os grupos." }
+    const made = reorderLeadGroups(crmGroups, orderedIds)
+    if (!made.ok) return made
+    storeGroups(made.groups)
+    return { ok: true }
+  }
+  const testLeads = useMemo(() => groupedLeads.filter(isDisposableTestLead), [groupedLeads])
+  const assignLeadGroup = (leadId: string, groupId: string, next: boolean) => {
+    const current = groupedLeads.find((item) => item.id === leadId)
+    if (!current) return
+    const result = next
+      ? addLeadToGroup([current], crmGroups, leadId, groupId)
+      : removeLeadFromGroup([current], crmGroups, leadId, groupId)
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+    const updated = result.leads[0]
+    if (updated) saveLead(updated as Lead)
+  }
+  const cleanTestLeads = async () => {
+    if (!testLeads.length) {
+      toast.message("Não há contactos de teste para limpar.")
+      return
+    }
+    if (!confirm(`Remover ${testLeads.length} contactos de teste? Isto não se desfaz.`)) return
+    let removed = 0
+    for (const item of testLeads) {
+      if (await deleteLead(item.id)) removed += 1
+    }
+    toast.success(removed ? `${removed} contactos de teste removidos.` : "Não removi os contactos de teste.")
+  }
+  const deleteCrmGroup = (groupId: string) => {
+    const group = crmGroups.find((item) => item.id === groupId)
+    if (!group) return { ok: false, error: "Este grupo já não existe." }
+    if (!confirm(`Excluir “${group.name}”? Os leads continuam na base e só saem deste grupo.`)) return false
+    const removed = deleteLeadGroup(crmGroups, groupedLeads, groupId)
+    if (!removed.ok) return removed
+    storeGroups(removed.groups)
+    for (const next of removed.leads) {
+      const previous = groupedLeads.find((item) => item.id === next.id)
+      if (JSON.stringify(previous?.groupIds ?? []) !== JSON.stringify(next.groupIds ?? [])) saveLead(next as Lead)
+    }
+    if (groupFilter === groupId) selectCrmGroup(LEAD_GROUP_FILTER_ALL)
+    toast.success("Grupo excluído. Os leads foram preservados.")
+    return { ok: true }
+  }
   const filterCounts = useMemo(() => {
     const next: Record<string, number> = { all: state.leads.length }
     for (const item of FILTERS) next[item.id] = leadFilterCount(state.leads, item.id)
@@ -110,12 +267,13 @@ export function LeadsPage() {
 
   const rows = useMemo(() => {
     const needle = query.trim()
-    return state.leads.filter((item) => {
+    return groupedLeads.filter((item) => {
+      if (!leadMatchesGroupFilter(item, groupFilter, crmGroups)) return false
       if (!leadMatchesFilter(item, filter)) return false
       if (!needle) return true
       return leadMatchesQuery(item, needle, 1)
     })
-  }, [filter, query, state.leads])
+  }, [crmGroups, filter, groupFilter, groupedLeads, query])
 
   return (
     <div className="h-full overflow-y-auto">
@@ -158,8 +316,30 @@ export function LeadsPage() {
           >
             <Plus /> Nova captura
           </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-8 rounded-full px-3.5"
+            disabled={!testLeads.length || importBlocked}
+            title={testLeads.length ? `Remover ${testLeads.length} contactos de teste` : "Não há dados de teste"}
+            onClick={() => void cleanTestLeads()}
+          >
+            Limpar testes
+          </Button>
         </PageChrome>
 
+        <div className="grid items-start gap-3 lg:grid-cols-[240px_minmax(0,1fr)]">
+        <GroupSidebar
+          groups={crmGroups}
+          counts={groupCounts}
+          selectedFilter={groupFilter}
+          disabled={groupsUnread}
+          onSelect={selectCrmGroup}
+          onCreate={createCrmGroup}
+          onRename={renameCrmGroup}
+          onReorder={reorderCrmGroups}
+          onDelete={deleteCrmGroup}
+        />
         <section className="surface overflow-hidden">
           <div className="border-b border-border px-5 py-3">
             <Label htmlFor="lead-search" className="sr-only">
@@ -295,6 +475,7 @@ export function LeadsPage() {
             </ul>
           )}
         </section>
+        </div>
       </div>
 
       <CaptureDialog
@@ -321,6 +502,7 @@ export function LeadsPage() {
         groupsUnread={groupsUnread}
         blocked={importBlocked}
         onGroup={createGroup}
+        existingContacts={groupedLeads.map((item) => item.contact)}
         onImport={async (leads) => createLeads(leads)}
       />
       <LeadDrawer
@@ -329,13 +511,21 @@ export function LeadsPage() {
         funnelsUnread={funnelsUnread}
         categories={categories}
         categoriesUnread={categoriesUnread}
+        groups={crmGroups}
+        groupsUnread={groupsUnread}
         onCategory={createCategory}
+        onToggleGroup={assignLeadGroup}
         geos={summary.geos}
         geoEmpty={pixelGeoEmpty(trackStatus, trackHasData, "Estado ainda sem rastreio")}
         eventsSync={eventsSync}
         onClose={() => setSelected(null)}
         onSave={saveLead}
         onFlush={flushLeadNow}
+        onAnonymize={(current) => {
+          if (!confirm("Remover os dados pessoais deste contacto? A ficha fica, o nome e o contacto saem.")) return
+          saveLead({ ...anonymizeLeadRecord(current), updatedAt: new Date().toISOString() })
+          toast.success("Dados pessoais removidos. O contacto pode voltar a ser registado.")
+        }}
         onDelete={async (id) => {
           const ok = await deleteLead(id)
           if (ok) setSelected(null)
@@ -554,6 +744,7 @@ function ImportLeadsDialog({
   groupsUnread,
   blocked,
   onGroup,
+  existingContacts = [],
   onImport,
 }: {
   open: boolean
@@ -562,6 +753,7 @@ function ImportLeadsDialog({
   groupsUnread?: boolean
   blocked?: boolean
   onGroup: (name: string, url?: string) => { ok: true; group: LeadGroup } | { ok: false; error: string }
+  existingContacts?: string[]
   onImport: (leads: Lead[]) => Promise<boolean>
 }) {
   const [text, setText] = useState("")
@@ -572,6 +764,15 @@ function ImportLeadsDialog({
   const busy = useRef(false)
   const selected = groups.find((item) => item.id === groupId)
   const submitBlocked = leadImportSubmitBlocked(Boolean(blocked), groupId)
+  const preview = useMemo(() => {
+    if (!text.trim()) return null
+    return parseLeadImportText(text)
+  }, [text])
+  const duplicateCount = useMemo(() => {
+    if (!preview || preview.error) return 0
+    const known = new Set(existingContacts.map((item) => item.trim().toLocaleLowerCase("pt-BR")))
+    return preview.rows.filter((row) => known.has(row.contact.trim().toLocaleLowerCase("pt-BR"))).length
+  }, [existingContacts, preview])
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
@@ -638,6 +839,11 @@ function ImportLeadsDialog({
             {error ? (
               <p role="alert" className="text-[12px] text-destructive">
                 {error}
+              </p>
+            ) : preview && !preview.error ? (
+              <p className="text-[12px] text-muted-foreground">
+                {preview.rows.length} prontos
+                {duplicateCount ? ` · ${duplicateCount} já estão na base` : ""}
               </p>
             ) : null}
           </div>
@@ -798,7 +1004,11 @@ function LeadDrawer({
   funnelsUnread = false,
   categories,
   categoriesUnread,
+  groups = [],
+  groupsUnread,
   onCategory,
+  onToggleGroup,
+  onAnonymize,
   geos,
   geoEmpty = "Estado ainda sem rastreio",
   eventsSync = "ok",
@@ -812,7 +1022,11 @@ function LeadDrawer({
   funnelsUnread?: boolean
   categories: string[]
   categoriesUnread?: boolean
+  groups?: LeadGroupV2[]
+  groupsUnread?: boolean
   onCategory: (name: string) => { ok: true; category: string } | { ok: false; error: string }
+  onToggleGroup?: (leadId: string, groupId: string, next: boolean) => void
+  onAnonymize?: (lead: Lead) => void
   geos?: Record<string, { country?: string; countryCode?: string; city?: string; region?: string; regionCode?: string }>
   geoEmpty?: string
   eventsSync?: "idle" | "ok" | "error"
@@ -1044,6 +1258,37 @@ function LeadDrawer({
             onCreate={onCategory}
           />
         </div>
+        <div className="mt-4 space-y-1.5">
+          <p className="text-[13px] font-medium">Grupos</p>
+          {groupsUnread ? (
+            <p className="text-[12px] text-muted-foreground">Não confirmei os grupos.</p>
+          ) : groups.length === 0 ? (
+            <p className="text-[12px] text-muted-foreground">Ainda não há grupos. Cria um na lista lateral.</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {groups.map((group) => {
+                const checked = (lead.groupIds ?? []).includes(group.id)
+                return (
+                  <label
+                    key={group.id}
+                    className={cn(
+                      "inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[12px]",
+                      checked ? "bg-foreground text-background" : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={checked}
+                      onChange={(event) => onToggleGroup?.(lead.id, group.id, event.target.checked)}
+                    />
+                    {group.name}
+                  </label>
+                )
+              })}
+            </div>
+          )}
+        </div>
         <p className="mt-2 text-[13.5px] font-medium">
           <GeoBadge facts={factsWithTrack(lead, geos)} empty={geoEmpty} />
         </p>
@@ -1164,6 +1409,11 @@ function LeadDrawer({
           <Button variant="ghost" className="rounded-full" data-lead-close onClick={close}>
             Fechar
           </Button>
+          {onAnonymize ? (
+            <Button variant="ghost" className="rounded-full" onClick={() => onAnonymize(lead)}>
+              Remover dados
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             className="rounded-full text-destructive"

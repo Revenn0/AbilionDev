@@ -48,6 +48,7 @@ export type CrmIndexEntry = {
   contact: string
   name?: string
   category?: string
+  groupIds?: string[]
   chatId?: string
   waitUntil?: string
   updatedAt: string
@@ -452,6 +453,7 @@ function indexEntryFromLead(lead: Lead): CrmIndexEntry {
     contact: lead.contact,
     name: lead.name,
     category: lead.category,
+    groupIds: lead.groupIds,
     chatId: lead.telegramChatId,
     waitUntil: lead.waitUntil,
     updatedAt: lead.updatedAt,

@@ -154,6 +154,16 @@ function generatedGroupId(name: string) {
   return `group:${slug || "crm"}:${stableHash(key)}`
 }
 
+function availableGeneratedGroupId(name: string, groups: readonly LeadGroupV2[]) {
+  const base = generatedGroupId(name)
+  if (!groupById(groups, base)) return base
+  let suffix = 2
+  while (groupById(groups, `${base.slice(0, LEAD_GROUP_ID_MAX_LENGTH - String(suffix).length - 1)}-${suffix}`)) {
+    suffix += 1
+  }
+  return `${base.slice(0, LEAD_GROUP_ID_MAX_LENGTH - String(suffix).length - 1)}-${suffix}`
+}
+
 function groupById(groups: readonly LeadGroupV2[], id: string) {
   const key = caseKey(normalizedId(id))
   return groups.find((group) => caseKey(group.id) === key)
@@ -247,7 +257,7 @@ export function normalizeLeadGroups(raw: unknown): LeadGroupV2[] {
 
     const nameKey = caseKey(name)
     const idKey = caseKey(id)
-    if (names.has(nameKey) || ids.has(idKey)) return
+    if (RESERVED_FILTER_IDS.has(idKey) || names.has(nameKey) || ids.has(idKey)) return
     names.add(nameKey)
     ids.add(idKey)
 
@@ -290,6 +300,29 @@ export function normalizeLeadGroupIds(value: unknown, groups?: readonly LeadGrou
   return out
 }
 
+/**
+ * Canonicaliza IDs conhecidos sem apagar associações que podem pertencer a
+ * grupos ainda não carregados neste cliente.
+ */
+export function normalizeLeadGroupIdsPreservingUnknown(
+  value: unknown,
+  groups: readonly LeadGroupV2[]
+) {
+  const source = Array.isArray(value) ? value : typeof value === "string" ? [value] : []
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const item of source) {
+    const rawId = normalizedId(item)
+    if (!rawId) continue
+    const id = canonicalGroupId(groups, rawId) ?? rawId
+    const key = caseKey(id)
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(id)
+  }
+  return out
+}
+
 export function createLeadGroup(
   current: readonly LeadGroupV2[],
   input: string | { name: string; id?: string; url?: string }
@@ -299,7 +332,7 @@ export function createLeadGroup(
   const checkedName = validateLeadGroupName(request.name, groups)
   if (!checkedName.ok) return checkedName
 
-  const candidateId = normalizedId(request.id) || generatedGroupId(checkedName.name)
+  const candidateId = normalizedId(request.id) || availableGeneratedGroupId(checkedName.name, groups)
   const checkedId = validateLeadGroupId(candidateId, groups)
   if (!checkedId.ok) return checkedId
 
@@ -382,7 +415,12 @@ function normalizedLeads<T extends GroupableLead>(
   leads: readonly T[],
   groups?: readonly LeadGroupV2[]
 ): Array<GroupedLead<T>> {
-  return leads.map((lead) => ({ ...lead, groupIds: normalizeLeadGroupIds(lead.groupIds, groups) }))
+  return leads.map((lead) => ({
+    ...lead,
+    groupIds: groups
+      ? normalizeLeadGroupIdsPreservingUnknown(lead.groupIds, groups)
+      : normalizeLeadGroupIds(lead.groupIds),
+  }))
 }
 
 /**
@@ -395,7 +433,7 @@ export function applyLeadGroupMembershipsAtomically<T extends GroupableLead>(
   changes: readonly LeadGroupMembershipChange[]
 ): LeadGroupMembershipResult<T> {
   const groups = normalizeLeadGroups(groupsInput)
-  const leads = normalizedLeads(leadsInput)
+  const leads = normalizedLeads(leadsInput, groups)
   const memberships = new Map(leads.map((lead) => [lead.id, [...lead.groupIds]]))
   const changed = new Set<string>()
 
@@ -526,7 +564,7 @@ export function migrateCategoriesToLeadGroups<T extends GroupableLead>(
   let migratedLeadCount = 0
 
   const leads = leadsInput.map((lead) => {
-    const currentIds = normalizeLeadGroupIds(lead.groupIds)
+    const currentIds = normalizeLeadGroupIdsPreservingUnknown(lead.groupIds, groups)
     const category = normalizeLeadGroupName(lead.category)
     if (!category) return { ...lead, groupIds: currentIds }
 
@@ -614,6 +652,32 @@ export function countLeadsByGroup(
   if (filter === LEAD_GROUP_FILTER_ALL) return leads.length
   if (filter === LEAD_GROUP_FILTER_UNGROUPED) return getLeadGroupCounts(leads, groups).ungrouped
   return filterLeadsByGroup(leads, filter, groups).length
+}
+
+export function isDisposableTestLead(lead: {
+  testRunId?: unknown
+  tags?: unknown
+  campaign?: unknown
+}) {
+  if (typeof lead.testRunId === "string" && lead.testRunId.trim()) return true
+  const tags = Array.isArray(lead.tags) ? lead.tags : []
+  if (tags.some((tag) => typeof tag === "string" && /^(teste|test|sandbox)$/i.test(tag.trim()))) return true
+  return typeof lead.campaign === "string" && /\b(teste|test|sandbox)\b/i.test(lead.campaign)
+}
+
+export function anonymizeLeadRecord<T extends { id: string }>(
+  lead: T
+): T & { name: string; contact: string; anonymized: true } {
+  return {
+    ...lead,
+    name: "Contacto removido",
+    contact: `removed:${lead.id}`,
+    memory: "",
+    messages: [],
+    facts: {},
+    telegramChatId: undefined,
+    anonymized: true,
+  }
 }
 
 export function buildLeadGroupFilters(

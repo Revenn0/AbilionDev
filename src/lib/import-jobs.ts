@@ -204,6 +204,7 @@ export type RestoreImportJobResult =
 const DEFAULT_REQUIRED_FIELDS = ["contact"] as const
 const DEFAULT_IDENTITY_FIELDS = ["contact", "email", "phone"] as const
 const TERMINAL_ROW_STATUSES = new Set<ImportJobRowStatus>(["imported", "duplicate", "invalid"])
+const REPLAYABLE_ROW_STATUSES = new Set<ImportJobRowStatus>(["imported", "duplicate"])
 
 const LEAD_FIELD_ALIASES: Readonly<Record<string, readonly string[]>> = {
   name: ["name", "nome", "nome completo", "full name"],
@@ -582,12 +583,24 @@ function sourceCoordinates(row: ParsedImportRow | ImportSourceRecord, index: num
 
 function existingIdentitySet(options: CreateImportPreviewOptions) {
   const identities = new Set<string>()
+  const identityFields = options.identityFields ?? DEFAULT_IDENTITY_FIELDS
+  const fields = new Map(identityFields.map((field) => [normalizedKey(field), normalizedKey(field)]))
   for (const identity of options.existingIdentities ?? []) {
     const clean = normalizedText(identity)
-    if (clean) identities.add(clean.includes(":") ? normalizedKey(clean) : normalizeImportIdentity(clean))
+    if (!clean) continue
+    const separator = clean.indexOf(":")
+    const field = separator > 0 ? fields.get(normalizedKey(clean.slice(0, separator))) : undefined
+    if (field) {
+      const value = normalizeImportIdentity(clean.slice(separator + 1))
+      if (value) identities.add(`${field}:${value}`)
+      continue
+    }
+    const value = normalizeImportIdentity(clean)
+    if (!value) continue
+    for (const fieldKey of fields.values()) identities.add(`${fieldKey}:${value}`)
   }
   for (const record of options.existingRecords ?? []) {
-    for (const identity of importRecordIdentities(record, options.identityFields)) identities.add(identity)
+    for (const identity of importRecordIdentities(record, identityFields)) identities.add(identity)
   }
   return identities
 }
@@ -607,6 +620,10 @@ export function createImportPreview(
   const requiredFields = options.requiredFields ?? DEFAULT_REQUIRED_FIELDS
   const identityFields = options.identityFields ?? DEFAULT_IDENTITY_FIELDS
   const validation = validateImportMapping(headers, mappingInput, requiredFields)
+  const previewIssues = [...validation.issues]
+  if (!rows.length) {
+    previewIssues.push(issue("empty_input", "Não há linhas para pré-visualizar.", "error"))
+  }
   const existing = existingIdentitySet({ ...options, identityFields })
   const seen = new Map<string, number>()
   const mappedRows = rows.map((row) => applyImportMapping(row, validation.mapping, options.constants))
@@ -669,12 +686,15 @@ export function createImportPreview(
 
     const hasError = rowIssues.some((item) => item.severity === "error")
     const disposition: ImportPreviewDisposition = hasError ? "invalid" : duplicateOf ? "duplicate" : "ready"
-    const identitySeed = identities.slice().sort().join("|") || stableValue(data)
+    const identitySeed =
+      identities.slice().sort().join("|") || `${coordinates.sourceIndex}:${stableValue(data)}`
+    const baseKey = `import-row:${stableHash(identitySeed)}`
     return {
       ...coordinates,
       data,
       identities,
-      idempotencyKey: `import-row:${stableHash(identitySeed)}`,
+      idempotencyKey:
+        disposition === "ready" ? baseKey : `${baseKey}:${coordinates.sourceIndex}`,
       disposition,
       ...(duplicateOf ? { duplicateOf } : {}),
       issues: rowIssues,
@@ -691,7 +711,7 @@ export function createImportPreview(
     readyRows: previewRows.filter((row) => row.disposition === "ready").length,
     duplicateRows: previewRows.filter((row) => row.disposition === "duplicate").length,
     invalidRows: previewRows.filter((row) => row.disposition === "invalid").length,
-    issues: validation.issues,
+    issues: previewIssues,
   }
 }
 
@@ -775,6 +795,15 @@ export function resumeImportJob(
   const maxAttempts = positiveInteger(options.maxAttempts, 3, 100)
   const rows = job.rows.map((row): ImportJobRow => {
     if (row.status === "processing") {
+      if (row.attempts >= maxAttempts) {
+        return {
+          ...row,
+          status: "failed",
+          batchId: undefined,
+          error: row.error || "A linha atingiu o limite de tentativas.",
+          retryable: false,
+        }
+      }
       return { ...row, status: "pending", batchId: undefined, retryable: undefined }
     }
     if (row.status === "failed" && row.retryable && row.attempts < maxAttempts) {
@@ -811,6 +840,9 @@ export function claimImportBatch(
   if (!batchId) return { ok: false, job, error: "O lote precisa de um identificador." }
   if (job.status === "paused") return { ok: false, job, error: "A importação está pausada." }
   if (job.status === "completed") return { ok: false, job, error: "A importação já terminou." }
+  if (job.status === "failed" && !job.rows.some((row) => row.status === "pending")) {
+    return { ok: false, job, error: "A importação falhou; seleciona as linhas a repetir antes de continuar." }
+  }
 
   const claimed = job.rows.filter((row) => row.status === "processing" && row.batchId === batchId)
   if (claimed.length) {
@@ -832,9 +864,12 @@ export function claimImportBatch(
   }
 
   const pending = nextImportBatch(job, input.limit)
-  const keys = new Set(pending.map((row) => row.idempotencyKey))
+  const rowTokens = new Set(
+    pending.map((row) => `${row.sourceIndex}:${row.rowNumber}:${row.idempotencyKey}`)
+  )
   const rows = job.rows.map((row): ImportJobRow => {
-    if (row.status !== "pending" || !keys.has(row.idempotencyKey)) return row
+    const token = `${row.sourceIndex}:${row.rowNumber}:${row.idempotencyKey}`
+    if (row.status !== "pending" || !rowTokens.has(token)) return row
     return {
       ...row,
       status: "processing",
@@ -879,7 +914,7 @@ export function completeImportBatch(
       return { ok: false, job, error: "O resultado contém um estado desconhecido." }
     }
     const row = job.rows.find((item) => item.idempotencyKey === key)
-    const replay = row && TERMINAL_ROW_STATUSES.has(row.status)
+    const replay = row && REPLAYABLE_ROW_STATUSES.has(row.status)
     if (!row || (!replay && (row.status !== "processing" || row.batchId !== batchId))) {
       return { ok: false, job, error: `A linha "${key}" não pertence a este lote.` }
     }
@@ -1040,6 +1075,7 @@ export function restoreImportJob(snapshot: unknown): RestoreImportJobResult {
   }
 
   const rows: ImportJobRow[] = []
+  const rowKeys = new Set<string>()
   for (const rawRow of value.rows) {
     if (!isRecord(rawRow) || !isRecord(rawRow.data) || !isJobRowStatus(rawRow.status)) {
       return { ok: false, error: "O snapshot contém uma linha inválida." }
@@ -1059,6 +1095,10 @@ export function restoreImportJob(snapshot: unknown): RestoreImportJobResult {
     ) {
       return { ok: false, error: "O snapshot contém coordenadas de linha inválidas." }
     }
+    if (rowKeys.has(idempotencyKey)) {
+      return { ok: false, error: "O snapshot contém chaves idempotentes repetidas." }
+    }
+    rowKeys.add(idempotencyKey)
 
     const data: ImportMappedRecord = {}
     for (const [key, item] of Object.entries(rawRow.data)) {

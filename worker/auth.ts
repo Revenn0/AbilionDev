@@ -1,4 +1,5 @@
 import { authForgotDocument, authLoginDocument, authResetDocument, wantsAuthHtml } from "../src/lib/auth-pages.ts"
+import { sanitizeAccessProfiles, type AccessProfile } from "../src/lib/platform.ts"
 import { safeAppPath } from "../src/lib/safe-path.ts"
 import { readJsonObject } from "./json-body.ts"
 
@@ -41,6 +42,7 @@ export type StoredUser = {
   /** E-mails iniciais da Abilion que esta conta deixou. Continuam reservados. */
   aliases?: string[]
   role?: UserRole
+  profiles?: AccessProfile[]
   disabled?: boolean
   tokens?: ApiToken[]
 }
@@ -50,6 +52,7 @@ export type PublicUser = {
   email: string
   name: string
   role: UserRole
+  profiles?: AccessProfile[]
 }
 
 export type ManagedUser = PublicUser & {
@@ -174,7 +177,15 @@ export function isOwner(user: Pick<PublicUser, "role" | "email">) {
 }
 
 export function publicUser(user: StoredUser): PublicUser {
-  return { id: user.id, email: user.email, name: user.name, role: userRole(user) }
+  const role = userRole(user)
+  const profiles = role === "owner" ? [] : sanitizeAccessProfiles(user.profiles)
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role,
+    ...(profiles.length ? { profiles } : {}),
+  }
 }
 
 export function publicManagedUser(user: StoredUser): ManagedUser {
@@ -339,6 +350,7 @@ function preferUser(prev: StoredUser, next: StoredUser): StoredUser {
     email,
     aliases: aliases.length ? aliases : undefined,
     role: seeded ? "owner" : account.role === "owner" ? "owner" : "operator",
+    profiles: seeded || account.role === "owner" ? undefined : sanitizeAccessProfiles(account.profiles),
     disabled: seeded ? false : nextAcc !== prevAcc ? Boolean(account.disabled) : Boolean(prev.disabled || next.disabled),
     accountUpdatedAt: Math.max(prevAcc, nextAcc, winner.accountUpdatedAt ?? 0) || undefined,
     tokens: mergeTokens(prev.tokens, next.tokens),

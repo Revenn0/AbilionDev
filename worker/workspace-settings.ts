@@ -5,14 +5,25 @@ import { countryName, normalizeCountryCode, normalizeRegionCode } from "../src/l
 import { migrateSettings, sanitizeIncomingFunnel } from "../src/lib/migrate.ts"
 import { sanitizeVisitorId, summarizeTrack, type TrackEvent, type TrackKind, type TrackSummary } from "../src/lib/track.ts"
 import type { Lead, LeadEvent, SalesFunnel, Settings } from "../src/lib/types.ts"
-import { LEGACY_INTEGRATION_ID } from "../src/lib/platform.ts"
+import { LEGACY_BOT_ID, LEGACY_INTEGRATION_ID } from "../src/lib/platform.ts"
 import { mergeTrackEvents } from "./track-store.ts"
 import { filterLiveLeads, findLeadInKv, funnelRemovedForRead, isLeadPageCursor, leadRemovedForRead, listLeadPage, loadAdoptedSettings, loadFunnelsKv, loadLead, loadRemovedFunnelIds, lookupLeadsByQuery, persistFunnelsMerge, persistSettingsMerge, removedIdsForRead, resolveLeadWrite } from "./crm-store.ts"
 import type { KvLike } from "./kv.ts"
 
 const WORKSPACE = "local"
 
-type RemoteFacts = Lead["facts"] & { category?: string; timeline?: LeadEvent[] }
+type RemoteFacts = Lead["facts"] & {
+  category?: string
+  timeline?: LeadEvent[]
+  groupIds?: string[]
+  tags?: string[]
+  anonymized?: boolean
+  botId?: string
+  integrationId?: string
+  flowVersionId?: string
+  brainVersionId?: string
+  testRunId?: string
+}
 
 export type LeadRow = {
   id: string
@@ -46,6 +57,14 @@ export type LeadRow = {
 export function leadFactsForRemote(lead: Lead): RemoteFacts {
   const facts: RemoteFacts = { ...factsWithoutRemoteKeys(lead.facts) }
   if (lead.category) facts.category = lead.category
+  if (lead.groupIds?.length) facts.groupIds = lead.groupIds
+  if (lead.tags?.length) facts.tags = lead.tags
+  if (lead.anonymized) facts.anonymized = true
+  if (lead.botId) facts.botId = lead.botId
+  if (lead.integrationId) facts.integrationId = lead.integrationId
+  if (lead.flowVersionId) facts.flowVersionId = lead.flowVersionId
+  if (lead.brainVersionId) facts.brainVersionId = lead.brainVersionId
+  if (lead.testRunId) facts.testRunId = lead.testRunId
   const timeline = sanitizeLeadEvents(lead.events)
   if (timeline.length) facts.timeline = timeline
   return facts
@@ -54,8 +73,22 @@ export function leadFactsForRemote(lead: Lead): RemoteFacts {
 export function rowToLead(row: LeadRow): Lead {
   const raw = row.facts ?? {}
   const category = typeof raw.category === "string" ? sanitizeLeadCategory(raw.category) || undefined : undefined
+  const stringList = (value: unknown, max = 40) =>
+    Array.isArray(value)
+      ? [...new Set(value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean))].slice(0, max)
+      : []
   return {
     id: row.id,
+    botId: typeof raw.botId === "string" ? raw.botId : LEGACY_BOT_ID,
+    integrationId:
+      typeof raw.integrationId === "string"
+        ? raw.integrationId
+        : row.telegram_chat_id
+          ? LEGACY_INTEGRATION_ID
+          : undefined,
+    flowVersionId: typeof raw.flowVersionId === "string" ? raw.flowVersionId : undefined,
+    brainVersionId: typeof raw.brainVersionId === "string" ? raw.brainVersionId : undefined,
+    testRunId: typeof raw.testRunId === "string" ? raw.testRunId : undefined,
     name: row.name,
     contact: row.contact,
     channel: row.channel,
@@ -81,6 +114,9 @@ export function rowToLead(row: LeadRow): Lead {
     steQuiet: row.ste_quiet ?? false,
     telegramChatId: row.telegram_chat_id ?? undefined,
     category,
+    groupIds: stringList(raw.groupIds, 40),
+    tags: stringList(raw.tags, 40),
+    anonymized: raw.anonymized === true,
     updatedAt: row.updated_at,
     createdAt: row.created_at,
   }

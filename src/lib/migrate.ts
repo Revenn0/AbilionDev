@@ -108,6 +108,13 @@ export function migrateLead(raw: Partial<Lead> & { id: string }): Lead {
     steQuiet: raw.steQuiet ?? false,
     telegramChatId: raw.telegramChatId,
     category: typeof raw.category === "string" ? sanitizeLeadCategory(raw.category) : undefined,
+    groupIds: Array.isArray(raw.groupIds)
+      ? [...new Set(raw.groupIds.filter((item): item is string => typeof item === "string").map((item) => item.trim().slice(0, 128)).filter(Boolean))]
+      : [],
+    tags: Array.isArray(raw.tags)
+      ? [...new Set(raw.tags.filter((item): item is string => typeof item === "string").map((item) => item.trim().slice(0, 80)).filter(Boolean))].slice(0, 40)
+      : [],
+    anonymized: raw.anonymized === true,
     updatedAt: raw.updatedAt ?? now,
     createdAt: raw.createdAt ?? now,
   }

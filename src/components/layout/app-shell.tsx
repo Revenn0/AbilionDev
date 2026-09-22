@@ -16,7 +16,13 @@ function isCanvasEditor(pathname: string) {
 
 function pageTitle(pathname: string) {
   if (pathname.startsWith("/analytics")) return "Analytics"
-  if (pathname.startsWith("/fluxo")) return "Funil"
+  if (pathname.startsWith("/bots/") && pathname.endsWith("/brain")) return "Cérebro"
+  if (pathname.startsWith("/bots/") && pathname.endsWith("/audio")) return "Áudio"
+  if (pathname.startsWith("/bots")) return "Bots"
+  if (pathname.startsWith("/audio")) return "Áudio"
+  if (pathname.startsWith("/criativos")) return "Criativos"
+  if (pathname.startsWith("/registos")) return "Registos"
+  if (pathname.startsWith("/fluxo")) return "Fluxos"
   if (pathname.startsWith("/leads")) return "Leads"
   if (pathname.startsWith("/conversas")) return "Conversas"
   if (pathname.startsWith("/telegram")) return "Telegram"

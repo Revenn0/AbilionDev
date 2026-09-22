@@ -292,6 +292,24 @@ export type AccessProfile =
   | "viewer"
   | "publisher"
 
+export const ACCESS_PROFILES: readonly AccessProfile[] = [
+  "administrator",
+  "bot_editor",
+  "crm_editor",
+  "creative_manager",
+  "viewer",
+  "publisher",
+]
+
+export function isAccessProfile(value: unknown): value is AccessProfile {
+  return typeof value === "string" && (ACCESS_PROFILES as readonly string[]).includes(value)
+}
+
+export function sanitizeAccessProfiles(raw: unknown): AccessProfile[] {
+  if (!Array.isArray(raw)) return []
+  return [...new Set(raw.filter(isAccessProfile))]
+}
+
 export const PROFILE_PERMISSIONS: Record<AccessProfile, Permission[]> = {
   administrator: [
     "bots.read",
@@ -309,7 +327,7 @@ export const PROFILE_PERMISSIONS: Record<AccessProfile, Permission[]> = {
     "users.write",
     "audit.read",
   ],
-  bot_editor: ["bots.read", "bots.write", "brains.write", "flows.write", "audio.write"],
+  bot_editor: ["bots.read", "bots.write", "brains.write", "flows.write", "audio.write", "audit.read"],
   crm_editor: ["bots.read", "crm.write", "crm.export"],
   creative_manager: ["bots.read", "creatives.write"],
   viewer: ["bots.read"],

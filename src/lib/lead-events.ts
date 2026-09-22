@@ -14,10 +14,22 @@ const LEAD_EVENT_KINDS = new Set<LeadEventKind>([
   "blocked",
 ])
 
-/** Backup no jsonb `facts`: categoria e timeline não são geo/e-mail do painel. */
+/** Metadados do backup no jsonb não são factos observados do lead no painel. */
 export function factsWithoutRemoteKeys(facts?: object | null): LeadFacts {
   if (!facts || typeof facts !== "object" || Array.isArray(facts)) return {}
-  const { category: _category, timeline: _timeline, ...rest } = facts as Record<string, unknown>
+  const {
+    category: _category,
+    timeline: _timeline,
+    groupIds: _groupIds,
+    tags: _tags,
+    anonymized: _anonymized,
+    botId: _botId,
+    integrationId: _integrationId,
+    flowVersionId: _flowVersionId,
+    brainVersionId: _brainVersionId,
+    testRunId: _testRunId,
+    ...rest
+  } = facts as Record<string, unknown>
   return rest as LeadFacts
 }
 

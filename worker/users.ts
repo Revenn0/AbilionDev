@@ -1,4 +1,5 @@
 import { readJsonObject } from "./json-body.ts"
+import { sanitizeAccessProfiles, type AccessProfile } from "../src/lib/platform.ts"
 import {
   AUTH_REVOKED_CAP,
   clipAuthTokens,
@@ -78,12 +79,19 @@ export async function handleUsers(request: Request, store: AuthStore, actor: Pub
 
   if (request.method === "POST") {
     if (!isOwner(actor)) return json({ error: "Só o dono cria contas." }, 403)
-    const parsed = await readJsonObject<{ email?: string; name?: string; password?: string; role?: UserRole }>(request, 8_192)
+    const parsed = await readJsonObject<{
+      email?: string
+      name?: string
+      password?: string
+      role?: UserRole
+      profiles?: AccessProfile[]
+    }>(request, 8_192)
     if (!parsed.ok) return json({ error: parsed.status === 413 ? "Pedido demasiado grande." : "JSON inválido." }, parsed.status)
     const email = normalizeEmail(parsed.value.email || "")
     const password = parsed.value.password || ""
     const name = (parsed.value.name || operatorName(email) || email.split("@")[0] || "Operador").trim().slice(0, 80)
     const role: UserRole = parsed.value.role === "owner" || isOperatorEmail(email) ? "owner" : "operator"
+    const profiles = role === "owner" ? undefined : sanitizeAccessProfiles(parsed.value.profiles)
     if (!isValidEmail(email)) return json({ error: "Informa um e-mail válido." }, 400)
     if (password.length < 6) return json({ error: "A senha precisa de 6+ caracteres." }, 400)
     const loaded = await loadAccounts(store)
@@ -100,6 +108,7 @@ export async function handleUsers(request: Request, store: AuthStore, actor: Pub
       passwordUpdatedAt: Date.now(),
       accountUpdatedAt: Date.now(),
       role,
+      profiles,
       disabled: false,
       tokens: [],
     }
@@ -115,6 +124,7 @@ export async function handleUsers(request: Request, store: AuthStore, actor: Pub
       name?: string
       role?: UserRole
       disabled?: boolean
+      profiles?: AccessProfile[]
     }>(request, 8_192)
     if (!parsed.ok) return json({ error: parsed.status === 413 ? "Pedido demasiado grande." : "JSON inválido." }, parsed.status)
     const id = (parsed.value.id || "").trim()
@@ -137,6 +147,10 @@ export async function handleUsers(request: Request, store: AuthStore, actor: Pub
         return json({ error: "Mantém pelo menos um dono." }, 400)
       }
       user.role = parsed.value.role
+      if (user.role === "owner") user.profiles = undefined
+    }
+    if (parsed.value.profiles !== undefined && user.role !== "owner" && !holdsOperatorSeat(user)) {
+      user.profiles = sanitizeAccessProfiles(parsed.value.profiles)
     }
     if (typeof parsed.value.disabled === "boolean") {
       if (user.id === actor.id) return json({ error: "Não desligues a tua própria conta." }, 400)

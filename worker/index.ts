@@ -71,6 +71,7 @@ import { handlePlatformApi } from "./platform-api.ts"
 import { loadPlatformState, type StoredBotIntegration } from "./platform-store.ts"
 import type { PlatformEnvironment } from "../src/lib/platform.ts"
 import { executeStrictFlow, isStrictFlow } from "./flow-runner.ts"
+import { handleCreativeApi } from "./creative-api.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall, telegramJoinActor, telegramJoinRequest, telegramUpdateActor } from "./telegram.ts"
 import { attachWorkspaceLeadEvents, fetchRemoteDueLeads, fetchRemoteLeadPage, fetchRemoteLeadsByIds, fetchRemotePageEvents, fillLeadHoles, findWorkspaceLead, hydrateWorkspaceLead, leadCatalogUnread, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, readInstallFunnelName, readWorkspaceFunnels, readWorkspaceSettings, resolveWorkspaceLeadWrite, rowToLead, searchWorkspaceLeads, summarizeWorkspaceTrack, type LeadRow } from "./workspace-settings.ts"
 import type { KvLike } from "./kv.ts"
@@ -423,6 +424,7 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     url.pathname === "/api/platform" ||
     url.pathname === "/api/bots" ||
     url.pathname === "/api/brains" ||
+    url.pathname === "/api/audio" ||
     url.pathname === "/api/integrations"
   ) {
     const gated = await requireStudioUser(request, env)
@@ -444,6 +446,13 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
     return handlePlatformApi(request, env.AUTH, gated.user, {
       environment: platformEnvironment(env),
       origin: (env.APP_URL || url.origin).replace(/\/$/, ""),
+      runtime: {
+        apiKey: live.resolved.openaiApiKey || undefined,
+        openRouterKey: live.resolved.openaiApiKey || undefined,
+        openCodeKey: live.resolved.opencodeApiKey || undefined,
+        model: live.resolved.opencodeApiKey ? live.resolved.fallbackModel : live.resolved.model,
+        fallbackModel: live.resolved.opencodeApiKey ? undefined : live.resolved.fallbackModel,
+      },
       legacy: {
         environment: platformEnvironment(env),
         actorId: gated.user.id,
@@ -456,6 +465,33 @@ async function handleApi(request: Request, env: Env, url: URL, ctx: ExecutionCon
         model: live.resolved.model,
         fallbackModel: live.resolved.fallbackModel,
         defaultFunnelId: publishedFunnel(funnels)?.id,
+      },
+    })
+  }
+
+  if (url.pathname === "/api/creatives" || url.pathname === "/api/experiments") {
+    const gated = await requireStudioUser(request, env)
+    if (!gated.ok) return gated.response
+    if (!env.AUTH) return json({ error: "Criativos ainda sem KV." }, 503)
+    if (request.method !== "GET") {
+      const limited = await gateKvThrottle(
+        env.AUTH,
+        `creatives:${gated.user.id}:${clientIp(request)}`,
+        60,
+        60_000,
+        "Demasiadas alterações aos criativos. Espera um pouco."
+      )
+      if (limited) return limited
+    }
+    const live = await runtimeOf(env, webhookUrl(request, env))
+    return handleCreativeApi(request, env.AUTH, gated.user, {
+      environment: platformEnvironment(env),
+      runtime: {
+        apiKey: live.resolved.openaiApiKey || undefined,
+        openRouterKey: live.resolved.openaiApiKey || undefined,
+        openCodeKey: live.resolved.opencodeApiKey || undefined,
+        model: live.resolved.opencodeApiKey ? live.resolved.fallbackModel : live.resolved.model,
+        fallbackModel: live.resolved.opencodeApiKey ? undefined : live.resolved.fallbackModel,
       },
     })
   }

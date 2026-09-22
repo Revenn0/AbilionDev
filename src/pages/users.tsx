@@ -17,11 +17,19 @@ import {
   type ApiTokenItem,
   type ManagedUser,
 } from "@/lib/users-api"
+import { PROFILE_LABEL, profilesForUser } from "@/lib/access"
+import { ACCESS_PROFILES, type AccessProfile } from "@/lib/platform"
 import type { UserRole } from "@/lib/types"
 import { toast } from "sonner"
 
 function roleLabel(role: UserRole) {
   return role === "owner" ? "Dono" : "Operador"
+}
+
+const ASSIGNABLE_PROFILES = ACCESS_PROFILES.filter((item) => item !== "administrator")
+
+function toggleProfile(current: AccessProfile[], next: AccessProfile) {
+  return current.includes(next) ? current.filter((item) => item !== next) : [...current, next]
 }
 
 export function UsersPage() {
@@ -36,6 +44,7 @@ export function UsersPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [role, setRole] = useState<UserRole>("operator")
+  const [createProfiles, setCreateProfiles] = useState<AccessProfile[]>([])
   const [tokenName, setTokenName] = useState("Claude Code")
   const [freshToken, setFreshToken] = useState("")
   const [busy, setBusy] = useState(false)
@@ -80,13 +89,20 @@ export function UsersPage() {
     }
     lock.current = true
     setBusy(true)
-    void createUserRequest({ name: name.trim(), email: email.trim(), password, role })
+    void createUserRequest({
+      name: name.trim(),
+      email: email.trim(),
+      password,
+      role,
+      profiles: role === "operator" && createProfiles.length ? createProfiles : undefined,
+    })
       .then((result) => {
         setUsers((prev) => (prev ? [...prev, result.user] : prev))
         setName("")
         setEmail("")
         setPassword("")
         setRole("operator")
+        setCreateProfiles([])
         toast.success("Conta criada. Já pode entrar com esta senha.")
         reload()
       })
@@ -149,6 +165,11 @@ export function UsersPage() {
                     <StatusPill tone={user.disabled ? "danger" : user.role === "owner" ? "success" : "muted"}>
                       {user.disabled ? "Desligada" : roleLabel(user.role)}
                     </StatusPill>
+                    {user.role !== "owner" ? (
+                      <p className="text-[11.5px] text-muted-foreground">
+                        {profilesForUser(user).map((item) => PROFILE_LABEL[item]).join(" · ")}
+                      </p>
+                    ) : null}
                     {owner && !user.seeded && user.id !== me?.id ? (
                       <Button
                         type="button"
@@ -209,6 +230,36 @@ export function UsersPage() {
                       >
                         {user.role === "owner" ? "Tornar operador" : "Tornar dono"}
                       </Button>
+                    ) : null}
+                    {owner && !user.seeded && user.role !== "owner" ? (
+                      <select
+                        aria-label={`Acesso de ${user.name}`}
+                        className="h-8 max-w-[160px] rounded-lg border border-input bg-transparent px-2 text-[12px]"
+                        disabled={usersUnread}
+                        value=""
+                        onChange={(event) => {
+                          const next = event.target.value as AccessProfile
+                          if (!next || usersUnread || patchLock.current) return
+                          const current = profilesForUser(user).filter((item) => item !== "administrator")
+                          patchLock.current = true
+                          void patchUserRequest({ id: user.id, profiles: toggleProfile(current, next) })
+                            .then((result) => {
+                              setUsers((prev) => (prev ?? []).map((item) => (item.id === result.user.id ? result.user : item)))
+                              toast.success("Acesso actualizado.")
+                            })
+                            .catch((err: Error) => toast.error(err.message))
+                            .finally(() => {
+                              patchLock.current = false
+                            })
+                        }}
+                      >
+                        <option value="">Alterar acesso</option>
+                        {ASSIGNABLE_PROFILES.map((profile) => (
+                          <option key={profile} value={profile}>
+                            {profilesForUser(user).includes(profile) ? "Retirar" : "Dar"} {PROFILE_LABEL[profile]}
+                          </option>
+                        ))}
+                      </select>
                     ) : null}
                   </div>
                 </li>
@@ -281,6 +332,35 @@ export function UsersPage() {
                   <option value="owner">Dono</option>
                 </select>
               </div>
+              {role === "operator" ? (
+                <div className="space-y-1.5">
+                  <p className="text-[13px] font-medium">Acesso</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {ASSIGNABLE_PROFILES.map((profile) => {
+                      const checked = createProfiles.includes(profile)
+                      return (
+                        <label
+                          key={profile}
+                          className={`inline-flex h-7 items-center rounded-full px-2.5 text-[12px] ${
+                            checked ? "bg-foreground text-background" : "bg-muted text-muted-foreground"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="sr-only"
+                            checked={checked}
+                            onChange={() => setCreateProfiles((prev) => toggleProfile(prev, profile))}
+                          />
+                          {PROFILE_LABEL[profile]}
+                        </label>
+                      )
+                    })}
+                  </div>
+                  <p className="text-[12px] text-muted-foreground">
+                    Sem escolha, o operador edita bots, CRM e criativos. Tokens e contas ficam com o dono.
+                  </p>
+                </div>
+              ) : null}
               <Button type="submit" className="rounded-full" disabled={busy || usersUnread}>
                 Criar conta
               </Button>

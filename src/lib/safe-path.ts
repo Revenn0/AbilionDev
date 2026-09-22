@@ -1,6 +1,10 @@
 const ALLOWED = new Set([
   "/",
   "/analytics",
+  "/bots",
+  "/audio",
+  "/criativos",
+  "/registos",
   "/fluxo",
   "/leads",
   "/conversas",
@@ -29,7 +33,20 @@ export function isWorkerPublicPath(pathname: string) {
   return WORKER_PUBLIC.has(path) || path.startsWith("/api/")
 }
 
-const STUDIO = new Set(["/analytics", "/fluxo", "/leads", "/conversas", "/telegram", "/utilizadores", "/configuracoes", "/conta"])
+const STUDIO = new Set([
+  "/analytics",
+  "/bots",
+  "/audio",
+  "/criativos",
+  "/registos",
+  "/fluxo",
+  "/leads",
+  "/conversas",
+  "/telegram",
+  "/utilizadores",
+  "/configuracoes",
+  "/conta",
+])
 
 const STUDIO_ALIASES: Record<string, string> = {
   "/settings": "/configuracoes",
@@ -52,6 +69,15 @@ export function foldStudioPath(pathname: string): string | null {
     const dest = `/fluxo/funil/${id}`
     return dest === trimmed ? null : dest
   }
+  if (lower.startsWith("/bots/")) {
+    const segments = trimmed.split("/").filter(Boolean)
+    if (segments.length < 2 || segments.length > 3 || segments[0]?.toLowerCase() !== "bots") return null
+    const id = segments[1]
+    const child = segments[2]?.toLowerCase()
+    if (!id || id.includes("..") || (child && child !== "brain" && child !== "audio")) return null
+    const dest = `/bots/${id}${child ? `/${child}` : ""}`
+    return dest === trimmed ? null : dest
+  }
   return null
 }
 
@@ -69,6 +95,14 @@ export function safeAppPath(raw: string | null | undefined) {
   if (folded.startsWith("/fluxo/funil/")) {
     const id = folded.slice("/fluxo/funil/".length)
     if (id && !id.includes("/") && !id.includes("..")) return folded
+  }
+  if (folded.startsWith("/bots/")) {
+    const segments = folded.split("/").filter(Boolean)
+    const id = segments[1]
+    const child = segments[2]
+    if (id && !id.includes("..") && (!child || child === "brain" || child === "audio")) {
+      return query ? `${folded}?${query}` : folded
+    }
   }
   return "/"
 }

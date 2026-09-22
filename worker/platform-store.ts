@@ -144,6 +144,24 @@ export async function saveFlowRun(kv: KvLike, run: FlowRun) {
   return mergeCollection(kv, PLATFORM_RUNS, [run], RUN_CAP)
 }
 
+export async function deleteBotData(kv: KvLike, botId: string) {
+  const state = await loadPlatformState(kv)
+  const integrations = state.integrations.filter((item) => item.botId === botId)
+  if (integrations.some((item) => item.status === "connected" || item.telegramBotToken)) {
+    throw new Error("Redefine a integração antes de excluir o bot.")
+  }
+  await Promise.all([
+    putArray(kv, PLATFORM_BOTS, state.bots.filter((item) => item.id !== botId)),
+    putArray(kv, PLATFORM_INTEGRATIONS, state.integrations.filter((item) => item.botId !== botId)),
+    putArray(kv, PLATFORM_BRAINS, state.brains.filter((item) => item.botId !== botId)),
+  ])
+}
+
+export async function deleteBrainData(kv: KvLike, brainId: string) {
+  const brains = await loadArray<BrainVersion>(kv, PLATFORM_BRAINS)
+  await putArray(kv, PLATFORM_BRAINS, brains.filter((item) => item.id !== brainId))
+}
+
 export async function ensureLegacyPlatform(kv: KvLike, input: LegacyPlatformInput): Promise<PlatformState> {
   const current = await loadPlatformState(kv)
   const now = input.now || new Date().toISOString()

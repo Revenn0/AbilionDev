@@ -1,19 +1,24 @@
+import { profilesForUser } from "../src/lib/access.ts"
 import {
   LEGACY_BOT_ID,
+  canAccess,
   maskAuditValue,
   nextBrainVersion,
   tokenHintOf,
   type AuditEvent,
   type BotDefinition,
   type BrainVersion,
+  type Permission,
   type PlatformEnvironment,
 } from "../src/lib/platform.ts"
-import { isOwner, randomToken, type PublicUser } from "./auth.ts"
+import { randomToken, type PublicUser } from "./auth.ts"
 import { readJsonObject } from "./json-body.ts"
 import type { KvLike } from "./kv.ts"
 import {
   appendAudit,
   appendDiagnostic,
+  deleteBotData,
+  deleteBrainData,
   ensureLegacyPlatform,
   loadPlatformState,
   publicIntegration,
@@ -30,11 +35,27 @@ import {
   setTelegramWebhook,
   TELEGRAM_ALLOWED_UPDATES,
 } from "./runtime-secrets.ts"
+import {
+  loadAudioAssets,
+  loadAudioJobs,
+  publicAudioAsset,
+  publicAudioJob,
+  saveAudioJob,
+  sendAudioAsset,
+} from "./audio-store.ts"
+import { executeBotNode } from "./bot-executor.ts"
 
 type PlatformApiContext = {
   environment: PlatformEnvironment
   origin: string
   legacy: LegacyPlatformInput
+  runtime?: {
+    apiKey?: string
+    openCodeKey?: string
+    openRouterKey?: string
+    model?: string
+    fallbackModel?: string
+  }
 }
 
 function json(data: unknown, status = 200) {
@@ -42,6 +63,11 @@ function json(data: unknown, status = 200) {
     status,
     headers: { "content-type": "application/json", "cache-control": "no-store" },
   })
+}
+
+function forbidUnless(actor: PublicUser, permission: Permission) {
+  if (canAccess(profilesForUser(actor), permission)) return null
+  return json({ error: "Não tens permissão para esta acção." }, 403)
 }
 
 function nowIso() {
@@ -108,7 +134,8 @@ export async function handlePlatformApi(
   }
 
   if (url.pathname === "/api/bots" && request.method === "POST") {
-    if (!isOwner(actor)) return json({ error: "Só o administrador cria ou duplica bots." }, 403)
+    const denied = forbidUnless(actor, "bots.write")
+    if (denied) return denied
     const parsed = await readJsonObject<{
       name?: string
       description?: string
@@ -175,7 +202,8 @@ export async function handlePlatformApi(
   }
 
   if (url.pathname === "/api/bots" && request.method === "PATCH") {
-    if (!isOwner(actor)) return json({ error: "Só o administrador altera bots." }, 403)
+    const denied = forbidUnless(actor, "bots.write")
+    if (denied) return denied
     const parsed = await readJsonObject<{
       id?: string
       name?: string
@@ -225,10 +253,32 @@ export async function handlePlatformApi(
   }
 
   if (url.pathname === "/api/bots" && request.method === "DELETE") {
-    if (!isOwner(actor)) return json({ error: "Só o administrador arquiva bots." }, 403)
+    const denied = forbidUnless(actor, "bots.write")
+    if (denied) return denied
     const id = (url.searchParams.get("id") || "").trim()
     const current = state.bots.find((item) => item.id === id)
     if (!current) return json({ error: "Este bot já não existe." }, 404)
+    const permanent = url.searchParams.get("permanent") === "true"
+    if (permanent) {
+      if (id === LEGACY_BOT_ID) return json({ error: "A Sté principal pode ser arquivada, mas não excluída." }, 409)
+      if (current.status !== "archived") return json({ error: "Arquiva o bot antes da exclusão definitiva." }, 409)
+      try {
+        await deleteBotData(kv, id)
+      } catch (error) {
+        return json({ error: error instanceof Error ? error.message : "Não excluí o bot." }, 409)
+      }
+      await appendAudit(
+        kv,
+        audit(actor, context, {
+          action: "bot.deleted",
+          entityType: "bot",
+          entityId: id,
+          result: "success",
+          before: current,
+        })
+      )
+      return json({ ok: true, deleted: true })
+    }
     if (id === LEGACY_BOT_ID && current.status === "active") {
       return json({ error: "Pausa e desconecta a Sté antes de arquivar." }, 409)
     }
@@ -254,7 +304,8 @@ export async function handlePlatformApi(
   }
 
   if (url.pathname === "/api/brains" && request.method === "POST") {
-    if (!isOwner(actor)) return json({ error: "Só o administrador cria versões do Cérebro." }, 403)
+    const denied = forbidUnless(actor, "brains.write")
+    if (denied) return denied
     const parsed = await readJsonObject<Partial<BrainVersion> & { botId?: string; sourceId?: string }>(request, 131_072)
     if (!parsed.ok) return json({ error: "Pedido inválido." }, parsed.status)
     const botId = (parsed.value.botId || "").trim()
@@ -303,12 +354,20 @@ export async function handlePlatformApi(
   }
 
   if (url.pathname === "/api/brains" && request.method === "PATCH") {
-    if (!isOwner(actor)) return json({ error: "Só o administrador altera o Cérebro." }, 403)
-    const parsed = await readJsonObject<Partial<BrainVersion> & { id?: string; action?: "test" | "publish" }>(
+    const parsed = await readJsonObject<
+      Partial<BrainVersion> & { id?: string; action?: "test" | "publish"; message?: string }
+    >(
       request,
       131_072
     )
     if (!parsed.ok) return json({ error: "Pedido inválido." }, parsed.status)
+    const brainDenied = forbidUnless(
+      actor,
+      parsed.value.action === "publish" && canAccess(profilesForUser(actor), "flows.publish")
+        ? "flows.publish"
+        : "brains.write"
+    )
+    if (brainDenied) return brainDenied
     const current = state.brains.find((item) => item.id === parsed.value.id)
     if (!current) return json({ error: "Esta versão já não existe." }, 404)
     if (current.status === "published" && parsed.value.action !== "test") {
@@ -331,6 +390,51 @@ export async function handlePlatformApi(
       publishedBy: parsed.value.action === "publish" ? actor.id : current.publishedBy,
     }
     if (!next.systemPrompt.trim()) return json({ error: "O prompt principal não pode ficar vazio." }, 400)
+    if (parsed.value.action === "test") {
+      const message = typeof parsed.value.message === "string" ? parsed.value.message.trim().slice(0, 4_000) : ""
+      if (!message) return json({ error: "Escreve uma mensagem para testar." }, 400)
+      const bot = state.bots.find((item) => item.id === next.botId)
+      const tested = await executeBotNode(
+        next,
+        {
+          botId: next.botId,
+          brainVersionId: next.id,
+          instruction: "Responde à mensagem de teste sem executar qualquer acção externa.",
+          mode: "respond",
+          runWhen: "message",
+          language: next.language,
+          contextFields: ["name", "campaign", "temperature"],
+          allowedActions: ["reply"],
+          outputBranches: ["next"],
+          readLeadMemory: true,
+          writeLeadMemory: false,
+          timeoutSeconds: 20,
+          retries: 0,
+        },
+        {
+          id: "brain-test",
+          botId: bot?.id,
+          name: "Lead de teste",
+          contact: "@teste",
+          channel: "telegram",
+          campaign: "Simulação",
+          origin: "private",
+          temperature: "novo",
+          stage: "attendance",
+          memory: "",
+          facts: {},
+          events: [],
+          messages: [],
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+        },
+        message,
+        context.runtime || {}
+      )
+      if (!tested.ok) return json({ error: tested.error || "O Cérebro não respondeu ao teste." }, 400)
+      await saveBrains(kv, [next])
+      return json({ ok: true, output: tested.text, brain: next })
+    }
     await saveBrains(kv, [next])
     if (parsed.value.action === "publish") {
       const bot = state.bots.find((item) => item.id === next.botId)
@@ -354,8 +458,117 @@ export async function handlePlatformApi(
     return json({ ok: true, brain: next })
   }
 
+  if (url.pathname === "/api/brains" && request.method === "DELETE") {
+    const denied = forbidUnless(actor, "brains.write")
+    if (denied) return denied
+    const id = (url.searchParams.get("id") || "").trim()
+    const current = state.brains.find((item) => item.id === id)
+    if (!current) return json({ error: "Esta versão já não existe." }, 404)
+    const bot = state.bots.find((item) => item.id === current.botId)
+    if (current.status === "published" || bot?.activeBrainVersionId === current.id) {
+      return json({ error: "A versão publicada não pode ser excluída." }, 409)
+    }
+    await deleteBrainData(kv, id)
+    await appendAudit(
+      kv,
+      audit(actor, context, {
+        action: "brain.deleted",
+        entityType: "brain",
+        entityId: id,
+        result: "success",
+        before: current,
+      })
+    )
+    return json({ ok: true })
+  }
+
+  if (url.pathname === "/api/audio" && request.method === "GET") {
+    const botId = (url.searchParams.get("botId") || "").trim()
+    const [assets, jobs] = await Promise.all([loadAudioAssets(kv), loadAudioJobs(kv)])
+    return json({
+      ok: true,
+      assets: assets.filter((item) => !botId || item.botId === botId).map(publicAudioAsset),
+      jobs: jobs.filter((item) => !botId || item.botId === botId).map(publicAudioJob),
+    })
+  }
+
+  if (url.pathname === "/api/audio" && request.method === "POST") {
+    const denied = forbidUnless(actor, "audio.write")
+    if (denied) return denied
+    const parsed = await readJsonObject<{ action?: "retry"; jobId?: string }>(request, 8_192)
+    if (!parsed.ok) return json({ error: "Pedido inválido." }, parsed.status)
+    const jobs = await loadAudioJobs(kv)
+    const current = jobs.find((item) => item.id === parsed.value.jobId)
+    if (!current) return json({ error: "Este trabalho de áudio já não existe." }, 404)
+    if (parsed.value.action !== "retry") return json({ error: "Acção de áudio inválida." }, 400)
+    const assets = await loadAudioAssets(kv)
+    const asset = assets.find((item) => item.id === current.assetId)
+    const integration = state.integrations.find((item) => item.id === current.integrationId)
+    if (!asset || !integration?.telegramBotToken || !current.chatId) {
+      return json({
+        error: "Este trabalho não tem o arquivo ou destino necessário. Volta a executar o nó de áudio no Fluxo.",
+      }, 409)
+    }
+    const processing = {
+      ...current,
+      status: "processing" as const,
+      progress: 50,
+      attempts: current.attempts + 1,
+      errorCode: undefined,
+      errorMessage: undefined,
+      recommendation: undefined,
+      updatedAt: nowIso(),
+    }
+    await saveAudioJob(kv, processing)
+    const sent = await sendAudioAsset(kv, {
+      asset,
+      token: integration.telegramBotToken,
+      chatId: current.chatId,
+      integrationId: integration.id,
+      externalBotId: integration.externalBotId,
+    })
+    const next = {
+      ...processing,
+      status: sent.ok ? ("completed" as const) : ("error" as const),
+      progress: 100,
+      remoteMessageId: sent.ok ? sent.fileId : undefined,
+      errorCode: sent.ok ? undefined : sent.errorCode || "channel_rejected_audio",
+      errorMessage: sent.ok ? undefined : "O canal recusou o áudio.",
+      recommendation: sent.ok ? undefined : "Confere a integração e tenta novamente.",
+      updatedAt: nowIso(),
+    }
+    await saveAudioJob(kv, next)
+    await appendAudit(
+      kv,
+      audit(actor, context, {
+        action: "audio.retried",
+        entityType: "audio_job",
+        entityId: next.id,
+        result: sent.ok ? "success" : "failure",
+        before: publicAudioJob(current),
+        after: publicAudioJob(next),
+        message: next.errorMessage,
+      })
+    )
+    return sent.ok
+      ? json({ ok: true, job: publicAudioJob(next) })
+      : json({ error: next.errorMessage, job: publicAudioJob(next) }, 502)
+  }
+
+  if (url.pathname === "/api/audio" && request.method === "DELETE") {
+    const denied = forbidUnless(actor, "audio.write")
+    if (denied) return denied
+    const id = (url.searchParams.get("jobId") || "").trim()
+    const current = (await loadAudioJobs(kv)).find((item) => item.id === id)
+    if (!current) return json({ error: "Este trabalho já não existe." }, 404)
+    const next = { ...current, status: "cancelled" as const, progress: 100, updatedAt: nowIso() }
+    await saveAudioJob(kv, next)
+    return json({ ok: true, job: publicAudioJob(next) })
+  }
+
   if (url.pathname === "/api/integrations" && request.method === "POST") {
-    if (!isOwner(actor)) return json({ error: "Só o administrador altera integrações." }, 403)
+    const denied = forbidUnless(actor, "integrations.write")
+    if (denied) return denied
     const parsed = await readJsonObject<{
       botId?: string
       integrationId?: string

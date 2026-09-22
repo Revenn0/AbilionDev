@@ -1,4 +1,4 @@
-import type { BotNodePolicy } from "./platform.ts"
+import type { AccessProfile, BotNodePolicy } from "./platform.ts"
 
 export type UserRole = "owner" | "operator"
 
@@ -7,6 +7,7 @@ export type User = {
   name: string
   email: string
   role?: UserRole
+  profiles?: AccessProfile[]
 }
 
 export type MapKind = "traffic" | "landing" | "split"
@@ -215,6 +216,9 @@ export type Lead = {
   steQuiet?: boolean
   telegramChatId?: string
   category?: string
+  groupIds?: string[]
+  tags?: string[]
+  anonymized?: boolean
   updatedAt: string
   createdAt: string
 }
@@ -237,6 +241,8 @@ export type LeadGroup = {
   id: string
   name: string
   url: string
+  order?: number
+  createdAt?: string
 }
 
 export type Settings = {

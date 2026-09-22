@@ -10,6 +10,7 @@ import { pixelFigure } from "@/lib/analytics-view"
 import { barShare, catalogMetricPending, deriveOps, leadCatalogClipped, leadCatalogEmpty, leadsHydrating, leadsLoadFailed, metricPending, offerMetricPending, seriesLast30 } from "@/lib/ops"
 import { facebookOf } from "@/lib/track"
 import { useTrackSummary } from "@/lib/use-track-summary"
+import { PlatformOverview } from "@/components/platform/platform-overview"
 
 export function DashboardPage() {
   const { state, crmSync, inboxSync, persistSync, catalogComplete, eventsSync } = useStore()
@@ -64,7 +65,9 @@ export function DashboardPage() {
           </Button>
         </PageChrome>
 
-        <section aria-label="Operação">
+        <PlatformOverview />
+
+        <section aria-label="Operação" className="mt-6">
           <SectionHead kicker="Operação" title="Base e fila" />
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Kpi href="/leads" label="Leads" value={pending || (clipped && ops.leads === 0) ? "…" : ops.leads} hint={hydrating ? "a carregar" : failed ? "sem leitura" : clipped ? "recorte" : empty ? "à espera de captura" : "na base"} bars={spark} />

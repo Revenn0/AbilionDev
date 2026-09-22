@@ -91,6 +91,21 @@ function fillFacts(primary?: LeadFacts, fallback?: LeadFacts): LeadFacts {
   return { ...left, ...right }
 }
 
+function mergeStrings(...lists: Array<string[] | undefined>) {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const list of lists) {
+    for (const item of list ?? []) {
+      const value = item.trim()
+      const key = value.toLocaleLowerCase("pt-BR")
+      if (!value || seen.has(key)) continue
+      seen.add(key)
+      out.push(value)
+    }
+  }
+  return out
+}
+
 export function adoptStoredLead(prev: Lead, incoming: Lead): Lead {
   const incomingOlder = prev.updatedAt > incoming.updatedAt
   const newer = incomingOlder ? prev : incoming
@@ -103,6 +118,8 @@ export function adoptStoredLead(prev: Lead, incoming: Lead): Lead {
   const visitorId = newer.visitorId || older.visitorId
   const contact = newer.contact || older.contact
   const category = newer.category ?? older.category
+  const groupIds = mergeStrings(older.groupIds, newer.groupIds)
+  const tags = mergeStrings(older.tags, newer.tags)
   const extra = { email: facts.email, messages }
   const nextName = preferLeadName(newer.name, older.name, contact, extra)
   if (incomingOlder) {
@@ -114,6 +131,8 @@ export function adoptStoredLead(prev: Lead, incoming: Lead): Lead {
       telegramChatId === prev.telegramChatId &&
       visitorId === prev.visitorId &&
       category === prev.category &&
+      groupIds.join("\u0000") === (prev.groupIds ?? []).join("\u0000") &&
+      tags.join("\u0000") === (prev.tags ?? []).join("\u0000") &&
       nextName === prev.name &&
       JSON.stringify(facts ?? {}) === JSON.stringify(prev.facts ?? {})
     if (sameMessages && sameEvents && sameExtra) return prev
@@ -127,6 +146,9 @@ export function adoptStoredLead(prev: Lead, incoming: Lead): Lead {
       telegramChatId,
       visitorId,
       category,
+      groupIds,
+      tags,
+      anonymized: prev.anonymized || incoming.anonymized,
       printAt: prev.printAt || incoming.printAt,
       bancaAt: prev.bancaAt || incoming.bancaAt,
     }
@@ -141,6 +163,9 @@ export function adoptStoredLead(prev: Lead, incoming: Lead): Lead {
     telegramChatId,
     visitorId,
     category,
+    groupIds,
+    tags,
+    anonymized: prev.anonymized || incoming.anonymized,
     printAt: incoming.printAt || prev.printAt,
     bancaAt: incoming.bancaAt || prev.bancaAt,
     temperature: addedChat ? prev.temperature : incoming.temperature,
@@ -168,9 +193,18 @@ export function adoptOperatorLead(prev: Lead | null, incoming: Lead): Lead {
     memory: incoming.memory,
     facts: incoming.facts,
     category: incoming.category ?? prev.category,
+    groupIds: incoming.groupIds ?? prev.groupIds,
+    tags: incoming.tags ?? prev.tags,
+    anonymized: incoming.anonymized ?? prev.anonymized,
     updatedAt: incoming.updatedAt > prev.updatedAt ? incoming.updatedAt : prev.updatedAt,
   }
-  return adoptStoredLead(prev, patched)
+  const merged = adoptStoredLead(prev, patched)
+  return {
+    ...merged,
+    groupIds: incoming.groupIds ?? prev.groupIds,
+    tags: incoming.tags ?? prev.tags,
+    anonymized: incoming.anonymized ?? prev.anonymized,
+  }
 }
 
 /** Persist do lead: une o snapshot lido no início com o KV no instante do upsert. */

@@ -5,7 +5,8 @@ Fluxo de operação da Abilion: o canvas publicado **é o runtime** (Typebot / M
 ## O que entra
 
 - Login real: `victor@abilion.com` ou `gabriel@abilion.com` no primeiro acesso (cada um define a senha, 6+). Contas novas criam-se em **Utilizadores** — o login não inventa e-mails.
-- Dashboard: leads, conversas, página / cliques, Facebook, espera, ofertas
+- Dashboard: leads, conversas, página / cliques, Facebook, espera, ofertas, estado dos bots e avisos
+- Bots, Cérebro, Áudio, Criativos e Registos: cada bot tem integração, versões do cérebro e envios; o CRM organiza por grupos laterais
 - Analytics: funil Ads → landing → Telegram → chat, globo de visitantes, gráficos de 30 dias, geo e device — no mesmo estúdio claro do funil
 - Leads no passo do fluxo (print, banca, espera, oferta só se o grafo deixar)
 - Conversas Telegram: a Sté segue o funil publicado (boas-vindas, minicurso, Superbet, App/Premium, remarketing). A voz muda conforme o que o lead falou; o passo, os links e a próxima fase não mudam. Sem inbox, “Simular conversa” cria um lead Facebook a meio do funil (não o encerrado do lote). A caixa “Simular lead” corre o motor no painel — não envia Telegram. A IA começa no OpenCode (DeepSeek V4.1 Flash). Se falhar, cai no OpenRouter: Gemma 4 31B e depois DeepSeek V4 Flash. Sem chave, a voz local ainda reconhece o lead.
@@ -45,7 +46,7 @@ npm run build
 
 Nós de **mapa** (não executam): tráfego, landing, divisor de campanha.
 
-Nós de **fluxo** (executam): entrada, mensagem, espera, condição, handoff Sté, avisar Ester, tag, oferta.
+Nós de **fluxo** (executam): entrada, mensagem, espera, condição, handoff, avisar Ester, tag, oferta, bot/IA, humano, aprovar entrada, áudio, webhook.
 
 No 1:1 a Sté fala o que está no quadro publicado (boas-vindas, minicurso, Superbet, remarketing). O resto do quadro corre: espera, print, banca, oferta.
 

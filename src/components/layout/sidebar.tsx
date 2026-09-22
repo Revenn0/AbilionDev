@@ -1,10 +1,11 @@
 import type { ComponentType } from "react"
 import { Link, useLocation } from "react-router-dom"
-import { ChartNoAxesCombined, CircleUser, LayoutDashboard, LogOut, MessagesSquare, PanelLeft, PanelLeftClose, Send, Settings, UserRoundCog, Users, Workflow } from "lucide-react"
+import { AudioLines, Bot, ChartNoAxesCombined, CircleUser, LayoutDashboard, LogOut, MessagesSquare, PanelLeft, PanelLeftClose, ScrollText, Send, Settings, Sparkles, UserRoundCog, Users, Workflow } from "lucide-react"
 import { ThemeToggle } from "@/components/theme/toggle"
 import { LogoMark } from "@/components/brand/logo"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { navAllowed } from "@/lib/access"
 import { useStore } from "@/lib/store"
 import { initials } from "@/lib/format"
 
@@ -17,9 +18,13 @@ type NavItem = {
 const NAV: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/analytics", label: "Analytics", icon: ChartNoAxesCombined },
+  { href: "/bots", label: "Bots", icon: Bot },
+  { href: "/fluxo", label: "Fluxos", icon: Workflow },
+  { href: "/audio", label: "Áudio", icon: AudioLines },
   { href: "/leads", label: "Leads", icon: Users },
   { href: "/conversas", label: "Conversas", icon: MessagesSquare },
-  { href: "/fluxo", label: "Funil", icon: Workflow },
+  { href: "/criativos", label: "Criativos", icon: Sparkles },
+  { href: "/registos", label: "Registos", icon: ScrollText },
   { href: "/telegram", label: "Telegram", icon: Send },
   { href: "/utilizadores", label: "Utilizadores", icon: UserRoundCog },
   { href: "/configuracoes", label: "Configurações", icon: Settings },
@@ -111,7 +116,7 @@ export function Sidebar({
         </div>
 
         <nav className="flex flex-1 flex-col gap-0.5 px-2.5 pt-1">
-          {NAV.map((item) => (
+          {NAV.filter((item) => navAllowed(item.href, state.user)).map((item) => (
             <NavLink key={item.href} {...item} expanded={expanded} onNavigate={onNavigate} />
           ))}
         </nav>

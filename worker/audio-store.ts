@@ -14,6 +14,11 @@ export type StoredAudioAsset = AudioAsset & {
   remoteFiles: AudioRemoteFile[]
 }
 
+export type StoredAudioJob = AudioJob & {
+  chatId?: string
+  nodeId?: string
+}
+
 function bytesToB64(bytes: Uint8Array) {
   let binary = ""
   for (const value of bytes) binary += String.fromCharCode(value)
@@ -59,7 +64,7 @@ export async function loadAudioAssets(kv: KvLike) {
 }
 
 export async function loadAudioJobs(kv: KvLike) {
-  return loadArray<AudioJob>(kv, AUDIO_JOBS)
+  return loadArray<StoredAudioJob>(kv, AUDIO_JOBS)
 }
 
 export function publicAudioAsset(asset: StoredAudioAsset): AudioAsset & { remoteFiles: AudioRemoteFile[] } {
@@ -67,7 +72,12 @@ export function publicAudioAsset(asset: StoredAudioAsset): AudioAsset & { remote
   return safe
 }
 
-export async function saveAudioJob(kv: KvLike, job: AudioJob) {
+export function publicAudioJob(job: StoredAudioJob): AudioJob {
+  const { chatId: _chatId, nodeId: _nodeId, ...safe } = job
+  return safe
+}
+
+export async function saveAudioJob(kv: KvLike, job: StoredAudioJob) {
   return mergeById(kv, AUDIO_JOBS, [job], JOB_CAP)
 }
 

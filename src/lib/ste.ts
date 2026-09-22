@@ -319,6 +319,11 @@ export function steRuntimeFromFunnels(funnels?: SalesFunnel[], _settings?: Parti
 export function isolateLead(lead: Lead): Lead {
   return {
     id: lead.id,
+    botId: lead.botId,
+    integrationId: lead.integrationId,
+    flowVersionId: lead.flowVersionId,
+    brainVersionId: lead.brainVersionId,
+    testRunId: lead.testRunId,
     name: lead.name,
     contact: lead.contact,
     channel: lead.channel,
@@ -344,6 +349,9 @@ export function isolateLead(lead: Lead): Lead {
     steQuiet: lead.steQuiet,
     telegramChatId: lead.telegramChatId,
     category: lead.category,
+    groupIds: [...(lead.groupIds ?? [])],
+    tags: [...(lead.tags ?? [])],
+    anonymized: lead.anonymized,
     updatedAt: lead.updatedAt,
     createdAt: lead.createdAt,
   }

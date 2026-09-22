@@ -1,9 +1,11 @@
+import type { AccessProfile } from "@/lib/platform"
 import type { User, UserRole } from "@/lib/types"
 import { fetchWithTimeout } from "@/lib/http"
 import { noteUnauthorized } from "@/lib/session"
 
 export type ManagedUser = User & {
   role: UserRole
+  profiles?: AccessProfile[]
   disabled: boolean
   createdAt: string
   seeded: boolean
@@ -36,7 +38,13 @@ export function listUsersRequest() {
   )
 }
 
-export function createUserRequest(input: { email: string; name: string; password: string; role: UserRole }) {
+export function createUserRequest(input: {
+  email: string
+  name: string
+  password: string
+  role: UserRole
+  profiles?: AccessProfile[]
+}) {
   return parse<{ ok: boolean; user: ManagedUser }>(
     fetchWithTimeout("/api/users", {
       method: "POST",
@@ -47,7 +55,13 @@ export function createUserRequest(input: { email: string; name: string; password
   )
 }
 
-export function patchUserRequest(input: { id: string; name?: string; role?: UserRole; disabled?: boolean }) {
+export function patchUserRequest(input: {
+  id: string
+  name?: string
+  role?: UserRole
+  disabled?: boolean
+  profiles?: AccessProfile[]
+}) {
   return parse<{ ok: boolean; user: ManagedUser }>(
     fetchWithTimeout("/api/users", {
       method: "PATCH",

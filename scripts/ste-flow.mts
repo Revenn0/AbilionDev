@@ -131,6 +131,9 @@ import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, mig
 import { adsDeepLink, campaignFromInvite, campaignFromStart, normalizeInviteLink, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument, wantsAuthHtml } from "../src/lib/auth-pages.ts"
 import { addPageScript, adsLandingDocument, adsLandingUrl, adsStartToken, installSettingsBlocked, pageInstallManual, pageScriptForInvite, pageScriptFunnelLabel, pageScriptFunnelPending, pageScriptsFunnelUnread, pageScriptsListBlocked, pageScriptsMutationBlocked, pageScriptsWriteBlocked, PAGE_INSTALL_STEPS, removePageScript } from "../src/lib/page-script.ts"
+import { navAllowed, profilesForUser, userCan } from "../src/lib/access.ts"
+import { addLeadToGroup, anonymizeLeadRecord, createLeadGroup, isDisposableTestLead, migrateCategoriesToLeadGroups } from "../src/lib/lead-groups.ts"
+import { createImportPreview, parseDelimitedImport } from "../src/lib/import-jobs.ts"
 import { addLeadGroup, leadCategoriesListBlocked, leadCategoriesMutationBlocked, leadCategoriesWriteBlocked, leadFromImport, leadGroupsMutationBlocked, leadGroupsWriteBlocked, leadImportGroupBlocked, leadImportSubmitBlocked, listImportGroups, parseLeadImportLine, parseLeadImportText, seedLeadGroups } from "../src/lib/lead-category.ts"
 import { MCP_PUBLIC_URL, MCP_TOOLS, MCP_TOOL_GROUPS, mcpGroupedTools } from "../src/lib/mcp-catalog.ts"
 import { burstFacebookLeads, burstStartsBlocked, burstStats, simulateOpenLead } from "../src/lib/burst.ts"
@@ -287,6 +290,30 @@ const scopedClaimsKv = memoryKv()
 assert(await claimTelegramUpdate(scopedClaimsKv, 77, "integration-a"), "integração A reclama update")
 assert(await claimTelegramUpdate(scopedClaimsKv, 77, "integration-b"), "integração B pode ter o mesmo update_id")
 assert(!(await claimTelegramUpdate(scopedClaimsKv, 77, "integration-a")), "integração A não repete update")
+assert(userCan({ role: "owner" }, "crm.purge"), "dono limpa dados de teste")
+assert(!userCan({ role: "operator", profiles: ["viewer"] }, "crm.write"), "leitura não altera CRM")
+assert(userCan({ role: "operator" }, "crm.write"), "operador sem perfil explícito continua a editar CRM")
+assert(navAllowed("/registos", { role: "owner" }), "dono vê registos")
+assert(navAllowed("/registos", { role: "operator" }), "operador vê avisos e alterações")
+assert(!navAllowed("/utilizadores", { role: "operator", profiles: ["viewer"] }), "leitura não gere contas")
+assert(profilesForUser({ role: "owner" })[0] === "administrator", "dono é administrador")
+const vipGroup = createLeadGroup([], "VIP")
+assert(vipGroup.ok, "grupo VIP cria-se")
+if (!vipGroup.ok) throw new Error("grupo VIP cria-se")
+const migratedGroups = migrateCategoriesToLeadGroups([{ id: "lead-1", category: "VIP" }], [])
+assert(migratedGroups.createdGroupCount === 1 && migratedGroups.leads[0]?.groupIds.length === 1, "categoria vira grupo")
+const added = addLeadToGroup([{ id: "lead-2", groupIds: [] }], vipGroup.groups, "lead-2", vipGroup.group.id)
+assert(added.ok && added.leads[0]?.groupIds.includes(vipGroup.group.id), "lead entra no grupo")
+assert(isDisposableTestLead({ testRunId: "run-1" }), "lead de teste tem selo")
+assert(!isDisposableTestLead({ campaign: "Facebook · ads" }), "campanha real não é teste")
+assert(anonymizeLeadRecord({ id: "lead-9", name: "Ana", contact: "@ana" }).anonymized, "anonimizar marca a ficha")
+assert(anonymizeLeadRecord({ id: "lead-9", name: "Ana", contact: "@ana" }).contact === "removed:lead-9", "anonimizar tira o contacto")
+const parsedImport = parseDelimitedImport("nome,contacto\nAna,@ana", { hasHeader: true })
+const importPreview = createImportPreview(parsedImport.rows, { name: "nome", contact: "contacto" })
+assert(importPreview.readyRows === 1, "pré-visualização conta linhas prontas")
+assert(safeAppPath("/registos") === "/registos", "rota de registos passa")
+assert(safeAppPath("/criativos") === "/criativos", "rota de criativos passa")
+assert(safeAppPath("/bots") === "/bots", "rota de bots passa")
 
 function kvThrowsOn(base: ReturnType<typeof memoryKv>, ...blocked: string[]) {
   return {
@@ -408,6 +435,7 @@ assert(!JSON.stringify(bob.lead.messages).includes("perdendo tudo"), "transcript
 assert(isolateLead(alice.lead).id === "alice", "isolate guarda o id")
 assert(isolateLead(alice.lead).messages.every((item) => alice.lead.messages.some((own) => own.id === item.id)), "so mensagens dela")
 assert(isolateLead({ ...alice.lead, category: "Grupo" }).category === "Grupo", "isolate conserva a categoria")
+assert(isolateLead({ ...alice.lead, groupIds: ["group:vip"] }).groupIds?.[0] === "group:vip", "isolate conserva os grupos")
 const taggedLead = { ...alice.lead, category: "Grupo", updatedAt: "2026-01-01T00:00:00.000Z" }
 assert(
   adoptStoredLead(taggedLead, { ...isolateLead(taggedLead), category: undefined, updatedAt: "2026-06-01T00:00:00.000Z" }).category ===

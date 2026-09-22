@@ -240,6 +240,8 @@ export async function executeStrictFlow(input: {
         id: jobId,
         botId,
         integrationId,
+        chatId: input.runtime.chatId,
+        nodeId: effect.nodeId,
         progress: 10,
         attempts: 1,
         createdAt: new Date().toISOString(),

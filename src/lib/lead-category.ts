@@ -59,7 +59,16 @@ export function migrateLeadGroups(raw: unknown): LeadGroup[] {
     if (!name || seen.has(key)) continue
     seen.add(key)
     const id = typeof row.id === "string" && row.id.trim() ? row.id.trim().slice(0, 64) : `group:${key}`
-    out.push({ id, name, url: cleanGroupInvite(typeof row.url === "string" ? row.url : "") })
+    out.push({
+      id,
+      name,
+      url: cleanGroupInvite(typeof row.url === "string" ? row.url : ""),
+      order: typeof (row as { order?: unknown }).order === "number" ? Math.max(0, Math.floor((row as { order: number }).order)) : out.length,
+      createdAt:
+        typeof (row as { createdAt?: unknown }).createdAt === "string"
+          ? (row as { createdAt: string }).createdAt
+          : new Date().toISOString(),
+    })
     if (out.length >= LEAD_CATEGORY_CAP) break
   }
   return out
@@ -102,7 +111,13 @@ export function addLeadGroup(
     return { ok: true, groups: live.map((item) => (item.id === match.id ? group : item)), group }
   }
   if (live.length >= LEAD_CATEGORY_CAP) return { ok: false, error: `O estúdio aceita no máximo ${LEAD_CATEGORY_CAP} grupos.` }
-  const group = { id: uid(), name, url }
+  const group = {
+    id: uid(),
+    name,
+    url,
+    order: live.length,
+    createdAt: new Date().toISOString(),
+  }
   return { ok: true, groups: [...live, group], group }
 }
 
@@ -229,7 +244,7 @@ export function leadCategoriesMutationBlocked(
 
 export function leadFromImport(
   row: { name: string; contact: string },
-  input: { category?: string; toGroup?: boolean; groupUrl?: string; group?: { name?: string; url?: string } } = {}
+  input: { category?: string; toGroup?: boolean; groupUrl?: string; group?: { id?: string; name?: string; url?: string } } = {}
 ): Lead {
   const now = new Date().toISOString()
   const contact = row.contact.trim().slice(0, 80)
@@ -251,6 +266,7 @@ export function leadFromImport(
     temperature: "novo",
     stage: toGroup ? "group" : "capture",
     category: category || undefined,
+    groupIds: input.group?.id ? [input.group.id] : [],
     memory: toGroup && groupUrl ? `Grupo: ${groupUrl}`.slice(0, 4000) : "",
     facts: {},
     events: [],

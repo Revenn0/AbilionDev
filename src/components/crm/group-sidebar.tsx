@@ -69,11 +69,13 @@ export function GroupSidebar({
   const activeFilter = selectedFilter ?? selected ?? LEAD_GROUP_FILTER_ALL
   const createId = useId()
   const renameId = useId()
+  const errorId = useId()
   const [draft, setDraft] = useState("")
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState("")
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [error, setError] = useState("")
+  const busy = useRef(false)
   const renameInput = useRef<HTMLInputElement>(null)
 
   const run = async (
@@ -81,7 +83,8 @@ export function GroupSidebar({
     callback: () => GroupSidebarCallback,
     onSuccess?: () => void
   ) => {
-    if (disabled || busyAction) return
+    if (disabled || busy.current) return
+    busy.current = true
     setBusyAction(actionId)
     setError("")
     try {
@@ -95,6 +98,7 @@ export function GroupSidebar({
     } catch (reason) {
       setError(reason instanceof Error && reason.message.trim() ? reason.message : "Não foi possível concluir esta ação.")
     } finally {
+      busy.current = false
       setBusyAction(null)
     }
   }
@@ -111,7 +115,7 @@ export function GroupSidebar({
   }
 
   const beginRename = (group: LeadGroupV2) => {
-    if (disabled || busyAction) return
+    if (disabled || busy.current) return
     setError("")
     setRenamingId(group.id)
     setRenameDraft(group.name)
@@ -193,6 +197,7 @@ export function GroupSidebar({
                         maxLength={80}
                         disabled={disabled || Boolean(busyAction)}
                         aria-invalid={Boolean(error)}
+                        aria-describedby={error ? errorId : undefined}
                         onChange={(event) => {
                           setRenameDraft(event.target.value)
                           setError("")
@@ -252,6 +257,7 @@ export function GroupSidebar({
                     {group && hasActions ? (
                       <div
                         className="flex shrink-0 items-center pr-1 opacity-100 sm:opacity-0 sm:transition-opacity sm:group-focus-within:opacity-100 sm:group-hover:opacity-100"
+                        role="group"
                         aria-label={`Ações de ${group.name}`}
                       >
                         {onReorder ? (
@@ -315,7 +321,7 @@ export function GroupSidebar({
       </nav>
 
       {error ? (
-        <p className="mx-3 mb-2 text-[12px] text-destructive" role="alert">
+        <p id={errorId} className="mx-3 mb-2 text-[12px] text-destructive" role="alert">
           {error}
         </p>
       ) : null}
@@ -333,6 +339,7 @@ export function GroupSidebar({
               placeholder="Novo grupo"
               disabled={disabled || Boolean(busyAction)}
               aria-invalid={Boolean(error)}
+              aria-describedby={error ? errorId : undefined}
               onChange={(event) => {
                 setDraft(event.target.value)
                 setError("")
