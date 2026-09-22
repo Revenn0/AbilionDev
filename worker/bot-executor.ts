@@ -26,7 +26,10 @@ function parseOutput(raw: string, policy: BotNodePolicy): BotNodeExecution {
   const clean = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")
   let data: { text?: unknown; branch?: unknown; memory?: unknown } | null = null
   try {
-    data = JSON.parse(clean) as typeof data
+    const parsed = JSON.parse(clean) as unknown
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      data = parsed as { text?: unknown; branch?: unknown; memory?: unknown }
+    }
   } catch {
     if (policy.mode === "respond") {
       return { ok: Boolean(clean), text: clean.slice(0, 4_000), branch: "next" }

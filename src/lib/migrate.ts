@@ -149,6 +149,16 @@ function clipDelayHours(value: unknown) {
   return Math.min(8760, hours)
 }
 
+function clipAudioFallback(value: unknown): "text" | "error" | undefined {
+  if (value === "text" || value === "error") return value
+  return undefined
+}
+
+function clipWebhookMethod(value: unknown): "POST" | "PUT" | undefined {
+  if (value === "POST" || value === "PUT") return value
+  return undefined
+}
+
 export function cleanHttpUrl(value?: string) {
   const next = (value ?? "").trim()
   if (!next) return ""
@@ -223,8 +233,8 @@ function clipFunnel(funnel: SalesFunnel): SalesFunnel {
             conditionValue: clipText(data.conditionValue, 80),
             delayHours: data.delayHours === undefined ? undefined : clipDelayHours(data.delayHours),
             botPolicy: sanitizeBotPolicy(data.botPolicy),
-            audioFallback: data.audioFallback === "text" ? "text" : data.audioFallback === "error" ? "error" : undefined,
-            webhookMethod: data.webhookMethod === "PUT" ? "PUT" : data.webhookMethod === "POST" ? "POST" : undefined,
+            audioFallback: clipAudioFallback(data.audioFallback),
+            webhookMethod: clipWebhookMethod(data.webhookMethod),
             humanInstructions: clipText(data.humanInstructions, 4_000),
           },
         },

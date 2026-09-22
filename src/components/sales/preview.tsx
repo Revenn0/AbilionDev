@@ -13,6 +13,11 @@ const KIND: Record<SalesKind, { label: string; pill: string; stroke: string }> =
   notify: { label: "Ester", pill: "#fef3c7", stroke: "#fde68a" },
   tag: { label: "Tag", pill: "#f1f5f9", stroke: "#e2e8f0" },
   offer: { label: "Oferta", pill: "#d1fae5", stroke: "#a7f3d0" },
+  bot: { label: "Bot / IA", pill: "#ede9fe", stroke: "#ddd6fe" },
+  human: { label: "Humano", pill: "#fce7f3", stroke: "#fbcfe8" },
+  approve: { label: "Aprovar", pill: "#d1fae5", stroke: "#a7f3d0" },
+  audio: { label: "Áudio", pill: "#ffedd5", stroke: "#fed7aa" },
+  webhook: { label: "Webhook", pill: "#f1f5f9", stroke: "#e2e8f0" },
 }
 
 const NODE_W = 168

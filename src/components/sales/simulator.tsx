@@ -30,6 +30,7 @@ const ACTIONS: { id: RuntimeEvent["type"]; label: string }[] = [
   { id: "capture", label: "Popup" },
   { id: "join", label: "Join" },
   { id: "start", label: "/start" },
+  { id: "message", label: "Resposta do lead" },
   { id: "print", label: "Print" },
   { id: "banca", label: "Banca" },
   { id: "timer", label: "Timer" },
@@ -43,6 +44,11 @@ function effectLine(effect: RuntimeEffect) {
   if (effect.kind === "notify_ester") return `Ester · ${effect.body.slice(0, 60)}`
   if (effect.kind === "tag") return `Tag · ${effect.temperature ?? effect.campaign}`
   if (effect.kind === "offer") return "Oferta disparada"
+  if (effect.kind === "invoke_bot") return `Bot / IA · ${effect.policy.mode}`
+  if (effect.kind === "handoff_human") return "Humano · conversa pausada"
+  if (effect.kind === "approve_join") return "Automação · aprovar entrada"
+  if (effect.kind === "send_audio") return "Áudio · processar roteiro"
+  if (effect.kind === "call_webhook") return `Webhook · ${effect.method}`
   return `Bloqueado · ${effect.reason}`
 }
 

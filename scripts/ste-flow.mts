@@ -30,7 +30,7 @@ import {
   splitSteMarkup,
   toTelegramHtml,
 } from "../src/lib/ste.ts"
-import { emptySalesFunnel } from "../src/lib/templates.ts"
+import { emptySalesFunnel, seededOperation } from "../src/lib/templates.ts"
 import {
   activatePublishedFunnels,
   enforceSinglePublished,
@@ -3855,6 +3855,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 }) as typeof fetch
 const startCtx = backgroundCtx()
 const startEnv = { ...apiEnv, TELEGRAM_WEBHOOK_SECRET: "hook-secret", TELEGRAM_BOT_TOKEN: "000:test" } as Env
+await saveFunnelsKv(startEnv.AUTH, [seededOperation()])
 const startHook = await handleRequest(
   new Request("http://local.test/api/telegram", {
     method: "POST",
