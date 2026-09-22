@@ -4157,6 +4157,7 @@ const duda = (await listLeads(dupEnv.AUTH, 20, "all")).find((item) => item.conta
 assert((duda?.messages ?? []).filter((item) => item.role === "ste").length === dudaSte, "update_id repetido não reenvia")
 assert(await claimTelegramUpdate(dupEnv.AUTH, 42) === false, "update_id já visto não volta a entrar")
 const saveFailBase = memoryKv()
+await saveFunnelsKv(saveFailBase, [seededOperation()])
 const saveFailKv = {
   get: (key: string, type: "json") => saveFailBase.get(key, type),
   async put(key: string, value: string) {
