@@ -97,7 +97,7 @@ import {
   settingsWriteFingerprint,
   leadPersistSync,
 } from "../src/lib/crm.ts"
-import { applyEvent, canAdvanceRemoteWait, eventFromOrigin, leadFunnelUnread, pickLiveDueLead, publishedFunnel, publishedSnapshot, snapshotForLead, waitHours } from "../src/lib/runtime.ts"
+import { applyBotResult, applyEvent, canAdvanceRemoteWait, eventFromOrigin, leadFunnelUnread, pickLiveDueLead, publishedFunnel, publishedSnapshot, snapshotForLead, waitHours } from "../src/lib/runtime.ts"
 import { ADS_ORIGIN, isTelegramAdsHref, pixelPageHtml, pixelSnippet, TRACKER_JS } from "../src/lib/tracker-script.ts"
 import { csvCell, leadsToCsv } from "../src/lib/leads-export.ts"
 import { defaultSettings, type Lead, type SalesFunnel } from "../src/lib/types.ts"
@@ -148,6 +148,7 @@ import { claimTelegramUpdate, forgetTelegramUpdate, forgetTelegramId, mergeTeleg
 import { backgroundCtx, handleRequest, type Env } from "../worker/index.ts"
 import { clearSessionExpired, noteUnauthorized, subscribeSessionExpired } from "../src/lib/session.ts"
 import { ensureLegacyPlatform, loadPlatformState, publicIntegration } from "../worker/platform-store.ts"
+import { isStrictFlow } from "../worker/flow-runner.ts"
 import {
   KV_BACKUP_FORMAT,
   isOperationalBackupKey,
@@ -2259,6 +2260,66 @@ try {
   nanHours = -2
 }
 assert(nanHours === 84, "applyEvent com espera NaN não rebenta")
+const strictSnap = {
+  id: "flow-v1",
+  version: 1,
+  botId: LEGACY_BOT_ID,
+  brainVersionId: LEGACY_BRAIN_ID,
+  name: "Fluxo estrito",
+  publishedAt: "2026-09-22T00:00:00.000Z",
+  nodes: [
+    { id: "entry", type: "entry" as const, position: { x: 0, y: 0 }, data: { title: "Entrada", entryTrigger: "start" as const } },
+    {
+      id: "bot",
+      type: "bot" as const,
+      position: { x: 100, y: 0 },
+      data: {
+        title: "Diagnóstico IA",
+        botPolicy: {
+          botId: LEGACY_BOT_ID,
+          brainVersionId: LEGACY_BRAIN_ID,
+          instruction: "Responde somente sobre a dúvida.",
+          mode: "respond" as const,
+          runWhen: "message" as const,
+          language: "pt-BR",
+          contextFields: ["name"],
+          allowedActions: ["reply"],
+          outputBranches: ["next"],
+          readLeadMemory: true,
+          writeLeadMemory: false,
+          timeoutSeconds: 20,
+          retries: 1,
+        },
+      },
+    },
+    { id: "done", type: "message" as const, position: { x: 200, y: 0 }, data: { title: "Fim", body: "Próximo passo." } },
+  ],
+  edges: [
+    { id: "strict-e1", source: "entry", target: "bot" },
+    { id: "strict-e2", source: "bot", target: "done" },
+  ],
+}
+assert(isStrictFlow(strictSnap), "nó Bot activa o runtime estrito")
+const strictEntered = applyEvent(strictSnap, lead("strict"), { type: "start" }, Date.parse("2026-09-22T00:00:00.000Z"))
+assert(strictEntered.lead.nodeId === "bot" && strictEntered.lead.paused, "Bot configurado para mensagem espera o lead")
+assert(!strictEntered.effects.some((item) => item.kind === "invoke_bot"), "Cérebro não corre antes da mensagem")
+const strictInvoked = applyEvent(strictSnap, strictEntered.lead, { type: "message", text: "oi" }, Date.parse("2026-09-22T00:01:00.000Z"))
+assert(strictInvoked.effects.some((item) => item.kind === "invoke_bot"), "mensagem no nó Bot invoca o Cérebro")
+const strictCompleted = applyBotResult(
+  strictSnap,
+  strictInvoked.lead,
+  { nodeId: "bot", text: "Entendi.", branch: "next" },
+  Date.parse("2026-09-22T00:01:01.000Z")
+)
+assert(strictCompleted.effects.filter((item) => item.kind === "send_message").length === 2, "resultado do Bot segue apenas os próximos nós ligados")
+assert(strictCompleted.lead.messages.some((item) => item.role === "ste" && item.text === "Entendi."), "fala do Bot entra no transcript")
+const invalidBotPublish = validatePublish(
+  strictSnap.nodes.map((node) =>
+    node.id === "bot" ? { ...node, data: { ...node.data, botPolicy: { ...node.data.botPolicy!, instruction: "" } } } : node
+  ),
+  strictSnap.edges
+)
+assert(invalidBotPublish.some((item) => item.message.includes("instrução")), "publicação recusa nó Bot sem instrução")
 olderLead.facts = { regionCode: "SP" }
 olderLead.telegramChatId = "9001"
 const newerBare = { ...newerEmpty, facts: {}, telegramChatId: undefined }

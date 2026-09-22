@@ -140,7 +140,7 @@ export async function sendStoredVoice(token: string, chatId: string, stored: Sto
   const method = stored.mime === "audio/mpeg" ? "sendAudio" : "sendVoice"
   const field = stored.mime === "audio/mpeg" ? "audio" : "voice"
   const filename = stored.mime === "audio/mpeg" ? "ste.mp3" : "ste.ogg"
-  const uploaded = await telegramUpload(token, method, chatId, field, bytes, stored.mime, filename)
+  const uploaded = await uploadTelegramMedia(token, method, chatId, field, bytes, stored.mime, filename)
   return uploaded.ok
     ? uploaded.result?.voice?.file_id || uploaded.result?.audio?.file_id || ""
     : ""
@@ -156,7 +156,7 @@ export async function rememberVoiceFile(kv: KvLike, clipId: string, fileId: stri
   await saveVoiceStore(kv, store)
 }
 
-async function telegramUpload(
+export async function uploadTelegramMedia(
   token: string,
   method: string,
   chatId: string,

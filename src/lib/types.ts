@@ -1,3 +1,5 @@
+import type { BotNodePolicy } from "./platform.ts"
+
 export type UserRole = "owner" | "operator"
 
 export type User = {
@@ -8,7 +10,21 @@ export type User = {
 }
 
 export type MapKind = "traffic" | "landing" | "split"
-export type FlowKind = "entry" | "message" | "wait" | "condition" | "handoff" | "notify" | "tag" | "offer"
+
+export type FlowKind =
+  | "entry"
+  | "message"
+  | "wait"
+  | "condition"
+  | "handoff"
+  | "notify"
+  | "tag"
+  | "offer"
+  | "bot"
+  | "human"
+  | "approve"
+  | "audio"
+  | "webhook"
 export type SalesKind = MapKind | FlowKind
 
 export const MAP_KINDS: readonly MapKind[] = ["traffic", "landing", "split"]
@@ -21,6 +37,11 @@ export const FLOW_KINDS: readonly FlowKind[] = [
   "notify",
   "tag",
   "offer",
+  "bot",
+  "human",
+  "approve",
+  "audio",
+  "webhook",
 ]
 
 export function isMapKind(kind: string): kind is MapKind {
@@ -66,6 +87,10 @@ export type SalesNodeData = {
   steLine?: SteLine
   steTalk?: boolean
   dieAfter?: boolean
+  botPolicy?: BotNodePolicy
+  audioFallback?: "text" | "error"
+  webhookMethod?: "POST" | "PUT"
+  humanInstructions?: string
 }
 
 export type FlowEdge = {

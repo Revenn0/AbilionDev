@@ -1,4 +1,5 @@
 import { BANCA_FIXED, type SalesKind, type SalesNodeData, type SteLine } from "@/lib/types"
+import { LEGACY_BOT_ID, LEGACY_BRAIN_ID } from "@/lib/platform"
 
 export type SalesGroup = "map" | "flow"
 
@@ -137,6 +138,63 @@ export const SALES_CATALOG: SalesCatalogItem[] = [
     defaults: { title: "Sté · atendimento 1:1", handoffAgent: "ste" },
   },
   {
+    id: "bot",
+    kind: "bot",
+    group: "flow",
+    label: "Bot / IA",
+    hint: "Executa o Cérebro só neste passo",
+    defaults: {
+      title: "Bot / IA",
+      botPolicy: {
+        botId: LEGACY_BOT_ID,
+        brainVersionId: LEGACY_BRAIN_ID,
+        instruction: "",
+        mode: "respond",
+        runWhen: "message",
+        language: "pt-BR",
+        contextFields: ["name", "campaign", "temperature", "lastMessage"],
+        allowedActions: ["reply"],
+        outputBranches: ["next"],
+        readLeadMemory: true,
+        writeLeadMemory: false,
+        timeoutSeconds: 20,
+        retries: 1,
+      },
+    },
+  },
+  {
+    id: "human",
+    kind: "human",
+    group: "flow",
+    label: "Humano",
+    hint: "Pausa até o operador retomar",
+    defaults: { title: "Atendimento humano", humanInstructions: "" },
+  },
+  {
+    id: "approve",
+    kind: "approve",
+    group: "flow",
+    label: "Aprovar entrada",
+    hint: "Aceita o pedido do canal",
+    defaults: { title: "Aprovar entrada no canal" },
+  },
+  {
+    id: "audio",
+    kind: "audio",
+    group: "flow",
+    label: "Áudio",
+    hint: "Voz fixa deste passo",
+    defaults: { title: "Enviar áudio", body: "", audioFallback: "error" },
+  },
+  {
+    id: "webhook",
+    kind: "webhook",
+    group: "flow",
+    label: "Webhook",
+    hint: "Chamada autorizada pelo fluxo",
+    defaults: { title: "Chamar webhook", webhookMethod: "POST", url: "" },
+  },
+  {
     id: "notify",
     kind: "notify",
     group: "flow",
@@ -195,5 +253,32 @@ export function defaultSalesData(kind: SalesKind): SalesNodeData {
       return { title: "Marcar quente", tagKind: "temperature", temperature: "quente" }
     case "offer":
       return { title: "Oferta do produto", body: "O fluxo oferece o produto.", cta: "Ver oferta", url: "" }
+    case "bot":
+      return {
+        title: "Bot / IA",
+        botPolicy: {
+          botId: LEGACY_BOT_ID,
+          brainVersionId: LEGACY_BRAIN_ID,
+          instruction: "",
+          mode: "respond",
+          runWhen: "message",
+          language: "pt-BR",
+          contextFields: ["name", "campaign", "temperature", "lastMessage"],
+          allowedActions: ["reply"],
+          outputBranches: ["next"],
+          readLeadMemory: true,
+          writeLeadMemory: false,
+          timeoutSeconds: 20,
+          retries: 1,
+        },
+      }
+    case "human":
+      return { title: "Atendimento humano", humanInstructions: "" }
+    case "approve":
+      return { title: "Aprovar entrada no canal" }
+    case "audio":
+      return { title: "Enviar áudio", body: "", audioFallback: "error" }
+    case "webhook":
+      return { title: "Chamar webhook", webhookMethod: "POST", url: "" }
   }
 }

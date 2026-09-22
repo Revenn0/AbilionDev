@@ -174,6 +174,64 @@ export function HandoffNode({ data, selected }: NodeProps<SalesCanvasNode>) {
   )
 }
 
+export function BotNode({ data, selected }: NodeProps<SalesCanvasNode>) {
+  const policy = data.botPolicy
+  return (
+    <StudioCard title={data.title || "Bot / IA"} tone="violet" selected={selected} width="w-[300px]">
+      <div className="space-y-2">
+        <Field label="Modo">{policy?.mode || "responder"}</Field>
+        <Field label="Cérebro">{policy?.brainVersionId || "Escolhe uma versão"}</Field>
+        <Field label="Instrução">
+          <span className="line-clamp-4 whitespace-pre-wrap">{policy?.instruction || "Define o que o bot faz neste passo."}</span>
+        </Field>
+      </div>
+    </StudioCard>
+  )
+}
+
+export function HumanNode({ data, selected }: NodeProps<SalesCanvasNode>) {
+  return (
+    <StudioCard title={data.title || "Humano"} tone="pink" selected={selected}>
+      <div className="space-y-2">
+        <Field label="Estado">Bot pausado</Field>
+        <Field label="Orientação">{data.humanInstructions || "O operador assume esta conversa."}</Field>
+      </div>
+    </StudioCard>
+  )
+}
+
+export function ApproveNode({ data, selected }: NodeProps<SalesCanvasNode>) {
+  return (
+    <StudioCard title={data.title || "Aprovar entrada"} tone="emerald" selected={selected}>
+      <Field label="Automação">Aprova o pedido recebido neste canal.</Field>
+    </StudioCard>
+  )
+}
+
+export function AudioNode({ data, selected }: NodeProps<SalesCanvasNode>) {
+  return (
+    <StudioCard title={data.title || "Áudio"} tone="orange" selected={selected} width="w-[300px]">
+      <div className="space-y-2">
+        <Field label="Roteiro">
+          <span className="line-clamp-4 whitespace-pre-wrap">{data.body || "Escreve o roteiro do áudio."}</span>
+        </Field>
+        <Field label="Se falhar">{data.audioFallback === "text" ? "Enviar texto" : "Seguir caminho de erro"}</Field>
+      </div>
+    </StudioCard>
+  )
+}
+
+export function WebhookNode({ data, selected }: NodeProps<SalesCanvasNode>) {
+  return (
+    <StudioCard title={data.title || "Webhook"} tone="slate" selected={selected} width="w-[300px]">
+      <div className="space-y-2">
+        <Field label="Método">{data.webhookMethod || "POST"}</Field>
+        <Field label="Destino">{data.url || "Configura um URL HTTPS."}</Field>
+      </div>
+    </StudioCard>
+  )
+}
+
 export function NotifyNode({ data, selected }: NodeProps<SalesCanvasNode>) {
   return (
     <StudioCard title={data.title || "Aviso"} tone="amber" selected={selected}>
@@ -251,6 +309,11 @@ export const salesNodeTypes = {
   wait: WaitNode,
   condition: ConditionNode,
   handoff: HandoffNode,
+  bot: BotNode,
+  human: HumanNode,
+  approve: ApproveNode,
+  audio: AudioNode,
+  webhook: WebhookNode,
   notify: NotifyNode,
   tag: TagNode,
   offer: OfferNode,

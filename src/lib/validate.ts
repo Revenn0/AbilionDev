@@ -34,11 +34,45 @@ export function validatePublish(nodes: FlowNode[], edges: FlowEdge[]): PublishIs
 
   for (const node of flow) {
     const outgoing = outs.get(node.id) ?? []
+    if (node.type === "bot") {
+      const policy = node.data.botPolicy
+      if (!policy?.botId || !policy.brainVersionId) {
+        issues.push({ message: `O bloco “${node.data.title}” precisa de bot e versão do Cérebro.` })
+      }
+      if (!policy?.instruction.trim()) {
+        issues.push({ message: `O bloco “${node.data.title}” precisa de uma instrução.` })
+      }
+      if (!outgoing.length) {
+        issues.push({ message: `O bloco “${node.data.title}” precisa de pelo menos uma saída.` })
+      }
+      for (const branch of policy?.outputBranches ?? []) {
+        if (branch === "next") continue
+        if (!outgoing.some((edge) => edge.sourceHandle === branch)) {
+          issues.push({ message: `O bloco “${node.data.title}” não tem a saída “${branch}”.` })
+        }
+      }
+    }
+    if (node.type === "audio" && !node.data.body?.trim()) {
+      issues.push({ message: `O bloco “${node.data.title}” precisa do roteiro do áudio.` })
+    }
+    if (
+      node.type === "webhook" &&
+      (!node.data.url?.trim().toLowerCase().startsWith("https://") || !cleanHttpUrl(node.data.url))
+    ) {
+      issues.push({ message: `O bloco “${node.data.title}” precisa de um URL HTTPS válido.` })
+    }
     if (node.type === "condition") {
       if (!outgoing.some((edge) => edge.sourceHandle === "yes")) {
         issues.push({ message: `Condição “${node.data.title}” precisa do ramo Sim.` })
       }
-    } else if (node.type !== "offer" && outgoing.length === 0 && node.type !== "handoff" && !node.data.steLine) {
+    } else if (
+      node.type !== "offer" &&
+      node.type !== "bot" &&
+      outgoing.length === 0 &&
+      node.type !== "handoff" &&
+      node.type !== "human" &&
+      !node.data.steLine
+    ) {
       issues.push({ message: `O bloco “${node.data.title}” não liga a nenhum passo.` })
     }
   }

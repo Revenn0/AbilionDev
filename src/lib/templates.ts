@@ -221,7 +221,10 @@ export function leadFromCapture(
     updatedAt: now,
   }
   const walked = applyEvent(snapshot, base, eventFromOrigin(input.origin)).lead
-  if (walked.channel !== "telegram") return walked
+  if (walked.channel !== "telegram" || !snapshot) return walked
+  if (snapshot.nodes.some((node) => ["bot", "human", "approve", "audio", "webhook"].includes(node.type))) return walked
+  const hasExplicitSte = snapshot.nodes.some((node) => node.data.steLine || node.type === "handoff")
+  if (!hasExplicitSte) return walked
   return replySte(walked, null, Date.now(), steRuntimeFromSnapshot(snapshot)).lead
 }
 

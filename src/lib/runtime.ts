@@ -2,6 +2,7 @@ import { uid } from "./format.ts"
 import { campaignFor } from "./labels.ts"
 import { isImportedLead } from "./ops.ts"
 import { isFlowKind, isMapKind, BANCA_FIXED, type FlowEdge, type FlowNode, type Lead, type LeadEvent, type LeadOrigin, type LeadStage, type SalesFunnel, type SalesSnapshot } from "./types.ts"
+import type { BotNodePolicy } from "./platform.ts"
 
 export type RuntimeEvent =
   | { type: "capture" }
@@ -20,6 +21,11 @@ export type RuntimeEffect =
   | { kind: "notify_ester"; body: string }
   | { kind: "tag"; temperature?: Lead["temperature"]; campaign?: string }
   | { kind: "offer"; body?: string; url?: string; cta?: string }
+  | { kind: "invoke_bot"; nodeId: string; policy: BotNodePolicy }
+  | { kind: "handoff_human"; nodeId: string; instructions?: string }
+  | { kind: "approve_join"; nodeId: string }
+  | { kind: "send_audio"; nodeId: string; text: string; fallback: "text" | "error" }
+  | { kind: "call_webhook"; nodeId: string; url: string; method: "POST" | "PUT"; body?: string }
   | { kind: "blocked"; reason: string }
 
 export type RuntimeResult = {
@@ -142,6 +148,7 @@ function stageFrom(type: FlowNode["type"], lead: Lead): LeadStage {
   if (type === "notify") return lead.bancaAt ? "banca" : lead.printAt ? "print" : "attendance"
   if (type === "wait") return lead.bancaAt ? "banca" : lead.printAt ? "print" : "attendance"
   if (type === "offer") return "offer"
+  if (type === "bot" || type === "human") return "attendance"
   return lead.stage
 }
 
@@ -327,6 +334,110 @@ export function applyEvent(
       break
     }
 
+    if (node.type === "bot") {
+      if (!node.data.botPolicy) {
+        effects.push({ kind: "blocked", reason: "O nó Bot não tem Cérebro publicado." })
+        pushEvent(next, {
+          kind: "blocked",
+          nodeId: node.id,
+          title: node.data.title,
+          body: "O nó Bot não tem Cérebro publicado.",
+        }, at)
+        next.paused = true
+        break
+      }
+      if (node.data.botPolicy.runWhen === "message" && event.type !== "message") {
+        next.paused = true
+        next.stage = "attendance"
+        break
+      }
+      effects.push({ kind: "invoke_bot", nodeId: node.id, policy: node.data.botPolicy })
+      next.paused = true
+      next.stage = "attendance"
+      pushEvent(next, {
+        kind: "handoff",
+        nodeId: node.id,
+        title: node.data.title,
+        body: `Bot/IA · ${node.data.botPolicy.mode}`,
+        effect: node.data.botPolicy.brainVersionId,
+      }, at)
+      break
+    }
+
+    if (node.type === "human") {
+      effects.push({
+        kind: "handoff_human",
+        nodeId: node.id,
+        instructions: node.data.humanInstructions,
+      })
+      next.paused = true
+      next.stage = "attendance"
+      pushEvent(next, {
+        kind: "handoff",
+        nodeId: node.id,
+        title: node.data.title,
+        body: node.data.humanInstructions || "Atendimento humano.",
+        effect: "human",
+      }, at)
+      break
+    }
+
+    if (node.type === "approve") {
+      effects.push({ kind: "approve_join", nodeId: node.id })
+      pushEvent(next, {
+        kind: "advance",
+        nodeId: node.id,
+        title: node.data.title,
+        body: "Pedido de entrada aprovado pelo Fluxo.",
+        effect: "approve_join",
+      }, at)
+      const target = skipMap(nodes, outs, nextId(outs, node.id))
+      if (!target) break
+      next.nodeId = target
+      continue
+    }
+
+    if (node.type === "audio") {
+      effects.push({
+        kind: "send_audio",
+        nodeId: node.id,
+        text: node.data.body || "",
+        fallback: node.data.audioFallback === "text" ? "text" : "error",
+      })
+      pushEvent(next, {
+        kind: "message",
+        nodeId: node.id,
+        title: node.data.title,
+        body: node.data.body || "",
+        effect: "send_audio",
+      }, at)
+      const target = skipMap(nodes, outs, nextId(outs, node.id))
+      if (!target) break
+      next.nodeId = target
+      continue
+    }
+
+    if (node.type === "webhook") {
+      effects.push({
+        kind: "call_webhook",
+        nodeId: node.id,
+        url: node.data.url || "",
+        method: node.data.webhookMethod === "PUT" ? "PUT" : "POST",
+        body: node.data.body,
+      })
+      pushEvent(next, {
+        kind: "advance",
+        nodeId: node.id,
+        title: node.data.title,
+        body: node.data.url || "",
+        effect: "call_webhook",
+      }, at)
+      const target = skipMap(nodes, outs, nextId(outs, node.id))
+      if (!target) break
+      next.nodeId = target
+      continue
+    }
+
     if (node.type === "notify") {
       const kind = node.data.notifyKind ?? "ester"
       if (!next.printAt) {
@@ -388,6 +499,57 @@ export function applyEvent(
 
 export function dueWaits(leads: Lead[], nowMs = Date.now()) {
   return leads.filter((lead) => lead.waitUntil && new Date(lead.waitUntil).getTime() <= nowMs)
+}
+
+export function applyBotResult(
+  snapshot: SalesSnapshot | null,
+  lead: Lead,
+  input: { nodeId: string; text?: string; branch?: string; memory?: string },
+  nowMs = Date.now()
+): RuntimeResult {
+  if (!snapshot) return { lead, effects: [{ kind: "blocked", reason: "Sem Fluxo publicado." }] }
+  const node = snapshot.nodes.find((item) => item.id === input.nodeId)
+  if (!node || node.type !== "bot" || lead.nodeId !== node.id) {
+    return { lead, effects: [{ kind: "blocked", reason: "A resposta não pertence ao nó Bot activo." }] }
+  }
+  const next: Lead = {
+    ...lead,
+    facts: { ...lead.facts },
+    events: [...lead.events],
+    messages: [...lead.messages],
+    memory: input.memory !== undefined ? input.memory.slice(0, 4_000) : lead.memory,
+    paused: false,
+    updatedAt: new Date(nowMs).toISOString(),
+  }
+  const text = (input.text || "").trim()
+  const effects: RuntimeEffect[] = []
+  if (text) {
+    effects.push({ kind: "send_message", body: text })
+    next.lastMessage = text
+    next.messages.push({
+      id: uid(),
+      at: next.updatedAt,
+      role: "ste",
+      text,
+    })
+    pushEvent(next, {
+      kind: "message",
+      nodeId: node.id,
+      title: node.data.title,
+      body: text,
+      effect: "bot",
+    }, next.updatedAt)
+  }
+  const { nodes, outs } = graph(snapshot)
+  const branch = (input.branch || "next").trim()
+  const target = skipMap(nodes, outs, nextId(outs, node.id, branch), branch)
+  if (!target) {
+    next.paused = true
+    return { lead: next, effects }
+  }
+  next.nodeId = target
+  const continued = applyEvent(snapshot, next, { type: "resume" }, nowMs)
+  return { lead: continued.lead, effects: [...effects, ...continued.effects] }
 }
 
 /** Relê o KV antes de avançar: se outro cron já comeu a espera, esta cópia sai. Ficha velha sem espera não come a fila. */

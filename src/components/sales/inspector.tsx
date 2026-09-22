@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
-import { STE_LINE_LABELS } from "./catalog"
+import { defaultSalesData, STE_LINE_LABELS } from "./catalog"
 import { cleanHttpUrl } from "@/lib/migrate"
 import { isMapKind, type SalesNodeData, type SteLine } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -123,6 +123,165 @@ export function SalesInspector({
             <ToggleRow label="Sté fala neste funil" disabled={readOnly} checked={d.steTalk !== false} onChange={(checked) => set({ steTalk: checked })} />
             <ToggleRow label="Silenciar depois do remarketing" disabled={readOnly} checked={d.dieAfter !== false} onChange={(checked) => set({ dieAfter: checked })} />
           </>
+        )}
+        {node.type === "bot" && (() => {
+          const policy = d.botPolicy || defaultSalesData("bot").botPolicy!
+          const patchPolicy = (patch: Partial<typeof policy>) => set({ botPolicy: { ...policy, ...patch } })
+          return (
+            <>
+              <Field label="Bot">
+                <Input
+                  disabled={readOnly}
+                  className={BOX}
+                  value={policy.botId}
+                  onChange={(event) => patchPolicy({ botId: event.target.value.trim().slice(0, 80) })}
+                  placeholder="bot-…"
+                />
+              </Field>
+              <Field label="Versão do Cérebro">
+                <Input
+                  disabled={readOnly}
+                  className={BOX}
+                  value={policy.brainVersionId}
+                  onChange={(event) => patchPolicy({ brainVersionId: event.target.value.trim().slice(0, 80) })}
+                  placeholder="brain-…"
+                />
+              </Field>
+              <Field label="Modo">
+                <select
+                  disabled={readOnly}
+                  value={policy.mode}
+                  onChange={(event) =>
+                    patchPolicy({
+                      mode: event.target.value as "respond" | "classify" | "extract" | "decide" | "remember",
+                    })
+                  }
+                  className={BOX}
+                >
+                  <option value="respond">Responder</option>
+                  <option value="classify">Classificar</option>
+                  <option value="extract">Extrair dados</option>
+                  <option value="decide">Decidir caminho</option>
+                  <option value="remember">Actualizar memória</option>
+                </select>
+              </Field>
+              <Field label="Quando executar">
+                <select
+                  disabled={readOnly}
+                  value={policy.runWhen}
+                  onChange={(event) =>
+                    patchPolicy({ runWhen: event.target.value === "enter" ? "enter" : "message" })
+                  }
+                  className={BOX}
+                >
+                  <option value="message">Quando o lead responder</option>
+                  <option value="enter">Assim que chegar ao bloco</option>
+                </select>
+              </Field>
+              <Field label="Instrução deste passo">
+                <Textarea
+                  disabled={readOnly}
+                  rows={8}
+                  className="rounded-lg border-slate-200 bg-[#fbfcfd] text-[12.5px] text-slate-800"
+                  value={policy.instruction}
+                  onChange={(event) => patchPolicy({ instruction: event.target.value.slice(0, 8_000) })}
+                  placeholder="Diz exactamente o que este bot deve fazer quando o fluxo chegar aqui."
+                />
+              </Field>
+              <Field label="Idioma">
+                <Input
+                  disabled={readOnly}
+                  className={BOX}
+                  value={policy.language}
+                  onChange={(event) => patchPolicy({ language: event.target.value.slice(0, 16) })}
+                />
+              </Field>
+              <Field label="Acções permitidas (separadas por vírgula)">
+                <Input
+                  disabled={readOnly}
+                  className={BOX}
+                  value={policy.allowedActions.join(", ")}
+                  onChange={(event) =>
+                    patchPolicy({
+                      allowedActions: event.target.value.split(",").map((item) => item.trim()).filter(Boolean).slice(0, 20),
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Saídas (separadas por vírgula)">
+                <Input
+                  disabled={readOnly}
+                  className={BOX}
+                  value={policy.outputBranches.join(", ")}
+                  onChange={(event) =>
+                    patchPolicy({
+                      outputBranches: event.target.value.split(",").map((item) => item.trim()).filter(Boolean).slice(0, 20),
+                    })
+                  }
+                />
+              </Field>
+              <ToggleRow
+                label="Ler memória deste lead"
+                disabled={readOnly}
+                checked={policy.readLeadMemory}
+                onChange={(readLeadMemory) => patchPolicy({ readLeadMemory })}
+              />
+              <ToggleRow
+                label="Gravar memória deste lead"
+                disabled={readOnly}
+                checked={policy.writeLeadMemory}
+                onChange={(writeLeadMemory) => patchPolicy({ writeLeadMemory })}
+              />
+            </>
+          )
+        })()}
+        {node.type === "human" && (
+          <Field label="Orientação para o operador">
+            <Textarea
+              disabled={readOnly}
+              rows={5}
+              className="rounded-lg border-slate-200 bg-[#fbfcfd] text-[12.5px] text-slate-800"
+              value={d.humanInstructions || ""}
+              onChange={(event) => set({ humanInstructions: event.target.value.slice(0, 4_000) })}
+            />
+          </Field>
+        )}
+        {node.type === "audio" && (
+          <>
+            <Field label="Roteiro exacto">
+              <Textarea
+                disabled={readOnly}
+                rows={7}
+                className="rounded-lg border-slate-200 bg-[#fbfcfd] text-[12.5px] text-slate-800"
+                value={d.body || ""}
+                onChange={(event) => set({ body: event.target.value.slice(0, 8_000) })}
+              />
+            </Field>
+            <Field label="Se o áudio falhar">
+              <select
+                disabled={readOnly}
+                value={d.audioFallback || "error"}
+                onChange={(event) => set({ audioFallback: event.target.value === "text" ? "text" : "error" })}
+                className={BOX}
+              >
+                <option value="error">Seguir caminho de erro</option>
+                <option value="text">Enviar o roteiro como texto</option>
+              </select>
+            </Field>
+          </>
+        )}
+        {node.type === "webhook" && (
+          <Field label="Método">
+            <select
+              disabled={readOnly}
+              value={d.webhookMethod || "POST"}
+              onChange={(event) => set({ webhookMethod: event.target.value === "PUT" ? "PUT" : "POST" })}
+              className={BOX}
+            >
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+            </select>
+          </Field>
         )}
         {(node.type === "wait" || node.type === "offer") && d.steLine === "remarketing" && (
           <ToggleRow label="Silenciar depois desta fala" disabled={readOnly} checked={d.dieAfter !== false} onChange={(checked) => set({ dieAfter: checked })} />
@@ -303,7 +462,7 @@ export function SalesInspector({
             <Input disabled={readOnly} className={BOX} value={d.cta || ""} onChange={(e) => set({ cta: e.target.value })} />
           </Field>
         )}
-        {(node.type === "message" || node.type === "landing" || node.type === "offer") && (
+        {(node.type === "message" || node.type === "landing" || node.type === "offer" || node.type === "webhook") && (
           <UrlField label="URL / link real" readOnly={readOnly} value={d.url || ""} onChange={(url) => set({ url })} />
         )}
         {!readOnly && (

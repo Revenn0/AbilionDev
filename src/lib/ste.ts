@@ -305,14 +305,15 @@ export function steRuntimeFromSettings(settings?: Partial<Settings> | null): Ste
   }
 }
 
-export function steRuntimeFromFunnels(funnels?: SalesFunnel[], settings?: Partial<Settings> | null, funnelId?: string) {
+export function steRuntimeFromFunnels(funnels?: SalesFunnel[], _settings?: Partial<Settings> | null, funnelId?: string) {
   const chosen = funnelId ? funnels?.find((item) => item.id === funnelId) : undefined
   const published = chosen?.production ?? publishedFunnel(funnels ?? [])?.production
+  if (!published) return { talking: false }
   const fromFunnel = steRuntimeFromSnapshot(published)
   if (published && (fromFunnel.welcome || fromFunnel.remarketing || published.nodes.some((node) => node.data.steLine || node.type === "handoff"))) {
     return fromFunnel
   }
-  return steRuntimeFromSettings(settings)
+  return { talking: false }
 }
 
 export function isolateLead(lead: Lead): Lead {

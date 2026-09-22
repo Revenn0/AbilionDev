@@ -85,6 +85,7 @@ export type BotNodePolicy = {
   brainVersionId: string
   instruction: string
   mode: BotNodeMode
+  runWhen: "enter" | "message"
   language: string
   contextFields: string[]
   allowedActions: string[]

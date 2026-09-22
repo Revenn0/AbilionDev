@@ -169,6 +169,39 @@ function sanitizeGraph(nodes: unknown, edges: unknown) {
   }
 }
 
+function sanitizeBotPolicy(value: unknown) {
+  if (!value || typeof value !== "object") return undefined
+  const row = value as Record<string, unknown>
+  const botId = clipText(row.botId, 80)?.trim() || ""
+  const brainVersionId = clipText(row.brainVersionId, 80)?.trim() || ""
+  if (!botId || !brainVersionId) return undefined
+  const mode = ["respond", "classify", "extract", "decide", "remember"].includes(String(row.mode))
+    ? (row.mode as "respond" | "classify" | "extract" | "decide" | "remember")
+    : "respond"
+  return {
+    botId,
+    brainVersionId,
+    instruction: clipText(row.instruction, 8_000) || "",
+    mode,
+    runWhen: row.runWhen === "enter" ? ("enter" as const) : ("message" as const),
+    language: clipText(row.language, 16) || "pt-BR",
+    contextFields: Array.isArray(row.contextFields)
+      ? row.contextFields.filter((item): item is string => typeof item === "string").map((item) => item.slice(0, 40)).slice(0, 30)
+      : [],
+    allowedActions: Array.isArray(row.allowedActions)
+      ? row.allowedActions.filter((item): item is string => typeof item === "string").map((item) => item.slice(0, 40)).slice(0, 20)
+      : [],
+    outputBranches: Array.isArray(row.outputBranches)
+      ? row.outputBranches.filter((item): item is string => typeof item === "string").map((item) => item.slice(0, 40)).slice(0, 20)
+      : ["next"],
+    readLeadMemory: row.readLeadMemory === true,
+    writeLeadMemory: row.writeLeadMemory === true,
+    timeoutSeconds: Math.max(5, Math.min(60, Number(row.timeoutSeconds) || 20)),
+    retries: Math.max(0, Math.min(2, Number(row.retries) || 0)),
+    errorTarget: clipText(row.errorTarget, 80)?.trim() || undefined,
+  }
+}
+
 function clipFunnel(funnel: SalesFunnel): SalesFunnel {
   const clipNodes = (nodes: SalesFunnel["nodes"]) =>
     nodes.slice(0, 200).flatMap((node) => {
@@ -189,6 +222,10 @@ function clipFunnel(funnel: SalesFunnel): SalesFunnel {
             cta: clipText(data.cta, 80),
             conditionValue: clipText(data.conditionValue, 80),
             delayHours: data.delayHours === undefined ? undefined : clipDelayHours(data.delayHours),
+            botPolicy: sanitizeBotPolicy(data.botPolicy),
+            audioFallback: data.audioFallback === "text" ? "text" : data.audioFallback === "error" ? "error" : undefined,
+            webhookMethod: data.webhookMethod === "PUT" ? "PUT" : data.webhookMethod === "POST" ? "POST" : undefined,
+            humanInstructions: clipText(data.humanInstructions, 4_000),
           },
         },
       ]

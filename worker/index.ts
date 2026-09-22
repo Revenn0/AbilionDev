@@ -70,6 +70,7 @@ import { readJsonObject, readJsonStrict, type JsonFail } from "./json-body.ts"
 import { handlePlatformApi } from "./platform-api.ts"
 import { loadPlatformState, type StoredBotIntegration } from "./platform-store.ts"
 import type { PlatformEnvironment } from "../src/lib/platform.ts"
+import { executeStrictFlow, isStrictFlow } from "./flow-runner.ts"
 import { claimTelegramUpdate, forgetTelegramUpdate, telegramCall, telegramJoinActor, telegramJoinRequest, telegramUpdateActor } from "./telegram.ts"
 import { attachWorkspaceLeadEvents, fetchRemoteDueLeads, fetchRemoteLeadPage, fetchRemoteLeadsByIds, fetchRemotePageEvents, fillLeadHoles, findWorkspaceLead, hydrateWorkspaceLead, leadCatalogUnread, loadWorkspaceSettings, persistRemoteFunnels, persistRemoteLead, persistRemoteSettings, readInstallFunnelName, readWorkspaceFunnels, readWorkspaceSettings, resolveWorkspaceLeadWrite, rowToLead, searchWorkspaceLeads, summarizeWorkspaceTrack, type LeadRow } from "./workspace-settings.ts"
 import type { KvLike } from "./kv.ts"
@@ -1067,11 +1068,6 @@ async function deliverJoinRequest(
 ): Promise<{ sent: boolean } | null> {
   const request = telegramJoinRequest(update)
   if (!request?.from || typeof request.chat?.id !== "number") return null
-  const approved = await telegram(token, "approveChatJoinRequest", {
-    chat_id: request.chat.id,
-    user_id: request.from.id,
-  })
-  if (!approved.ok) return { sent: false }
 
   const from = request.from
   const contact = from.username ? `@${from.username}` : `tg:${from.id}`
@@ -1082,7 +1078,13 @@ async function deliverJoinRequest(
   )
   const invite = normalizeInviteLink(request.invite_link?.invite_link || "")
   const existing = await findLead(env, contact, from.id, dmChatId, scope?.integrationId)
-  if (existing && leadAlreadyTalked(existing)) return { sent: true }
+  if (existing && leadAlreadyTalked(existing)) {
+    const approved = await telegram(token, "approveChatJoinRequest", {
+      chat_id: request.chat.id,
+      user_id: request.from.id,
+    })
+    return { sent: approved.ok }
+  }
 
   const live = resolved ?? (await runtimeOf(env)).resolved
   let reservedId = ""
@@ -1094,7 +1096,13 @@ async function deliverJoinRequest(
   const raced =
     !existing && env.AUTH && reservedId ? await loadLead(env.AUTH, reservedId, await removedIdsForRead(env.AUTH)) : null
   const found = existing ?? raced
-  if (found && leadAlreadyTalked(found)) return { sent: true }
+  if (found && leadAlreadyTalked(found)) {
+    const approved = await telegram(token, "approveChatJoinRequest", {
+      chat_id: request.chat.id,
+      user_id: request.from.id,
+    })
+    return { sent: approved.ok }
+  }
 
   const telegramName = resolvePersonName([from.first_name, from.last_name].filter(Boolean).join(" "))
   const name = isResolvedPersonName(telegramName) ? telegramName : contact
@@ -1162,6 +1170,85 @@ async function deliverJoinRequest(
     lead.campaign = campaign
   }
   lead.telegramChatId = dmChatId
+
+  const snapshot = snapshotForLead(boards.funnels, lead)
+  if (!snapshot) {
+    if (!(await persistLeadAfterSend(env, lead))) console.error("telegram lead sem fluxo não gravou")
+    return { sent: true }
+  }
+  if (snapshot && isStrictFlow(snapshot) && env.AUTH) {
+    lead.flowVersionId = snapshot.id || snapshot.publishedAt
+    lead.brainVersionId = snapshot.brainVersionId
+    let integration: StoredBotIntegration | undefined
+    try {
+      integration = (await loadPlatformState(env.AUTH)).integrations.find(
+        (item) => item.id === (scope?.integrationId || lead.integrationId)
+      )
+    } catch {
+      integration = undefined
+    }
+    if (!integration) {
+      const createdAt = new Date().toISOString()
+      integration = {
+        id: scope?.integrationId || lead.integrationId || "integration-ste-telegram",
+        botId: scope?.botId || lead.botId || "bot-ste-production",
+        channel: "telegram",
+        environment: platformEnvironment(env),
+        status: "connected",
+        externalUsername: live.telegramBotUsername,
+        telegramBotToken: token,
+        webhookOk: true,
+        allowedUpdates: [],
+        createdAt,
+        updatedAt: createdAt,
+      }
+    }
+    const strict = await executeStrictFlow({
+      kv: env.AUTH,
+      snapshot,
+      lead,
+      event: { type: "join" },
+      environment: platformEnvironment(env),
+      delivery: {
+        sendText: async (body, url) => (await sendTelegramMarkup(token, dmChatId, body, url)).ok,
+        approveJoin: async () =>
+          (
+            await telegram(token, "approveChatJoinRequest", {
+              chat_id: request.chat!.id,
+              user_id: request.from!.id,
+            })
+          ).ok,
+        notify: async (body) => {
+          if (!env.ESTER_CHAT_ID) return false
+          return (await sendTelegramMarkup(token, env.ESTER_CHAT_ID, body || BANCA_FIXED)).ok
+        },
+      },
+      runtime: {
+        apiKey: live.openaiApiKey || undefined,
+        openRouterKey: live.openaiApiKey || undefined,
+        openCodeKey: live.opencodeApiKey || undefined,
+        model: live.opencodeApiKey ? live.fallbackModel : live.model,
+        fallbackModel: live.opencodeApiKey ? undefined : live.fallbackModel,
+        elevenApiKey: live.elevenApiKey || undefined,
+        elevenVoiceId: live.elevenVoiceId || undefined,
+        telegramToken: token,
+        chatId: dmChatId,
+        integration,
+      },
+    })
+    if (strict.ok) {
+      if (!(await persistLeadAfterSend(env, strict.lead))) console.error("telegram lead após fluxo não gravou")
+      return { sent: true }
+    }
+    if (!(await persistLeadAfterSend(env, lead))) console.error("telegram lead após fluxo falhado não gravou")
+    return { sent: false }
+  }
+
+  const approved = await telegram(token, "approveChatJoinRequest", {
+    chat_id: request.chat.id,
+    user_id: request.from.id,
+  })
+  if (!approved.ok) return { sent: false }
 
   const ste = steRuntimeFromFunnels(boards.funnels, settings, lead.funnelId)
   const pending = lead
@@ -1310,6 +1397,74 @@ async function deliverTelegram(
       if (!(await persistLeadAfterSend(env, lead))) console.error("telegram lead após recusa não gravou")
     }
     return { sent: true }
+  }
+  const snapshot = snapshotForLead(funnels, lead)
+  if (!snapshot) {
+    const recorded = rememberLeadTalk(lead, incoming)
+    if (!(await persistLeadAfterSend(env, recorded))) console.error("telegram lead sem fluxo não gravou")
+    return { sent: true }
+  }
+  if (snapshot && isStrictFlow(snapshot) && env.AUTH) {
+    lead.flowVersionId = snapshot.id || snapshot.publishedAt
+    lead.brainVersionId = snapshot.brainVersionId
+    let integration: StoredBotIntegration | undefined
+    try {
+      integration = (await loadPlatformState(env.AUTH)).integrations.find(
+        (item) => item.id === (scope?.integrationId || lead.integrationId)
+      )
+    } catch {
+      integration = undefined
+    }
+    if (!integration) {
+      const now = new Date().toISOString()
+      integration = {
+        id: scope?.integrationId || lead.integrationId || "integration-ste-telegram",
+        botId: scope?.botId || lead.botId || "bot-ste-production",
+        channel: "telegram",
+        environment: platformEnvironment(env),
+        status: "connected",
+        externalUsername: live.telegramBotUsername,
+        telegramBotToken: token,
+        webhookOk: true,
+        allowedUpdates: [],
+        createdAt: now,
+        updatedAt: now,
+      }
+    }
+    const strict = await executeStrictFlow({
+      kv: env.AUTH,
+      snapshot,
+      lead,
+      event: joinUser ? { type: "join" } : start.isStart ? { type: "start" } : { type: "message", text: incoming || undefined },
+      incoming: incoming || "",
+      environment: platformEnvironment(env),
+      delivery: {
+        sendText: async (body, url) => (await sendTelegramMarkup(token, chatId, body, url)).ok,
+        notify: async (body) => {
+          if (!env.ESTER_CHAT_ID) return false
+          return (await sendTelegramMarkup(token, env.ESTER_CHAT_ID, body || BANCA_FIXED)).ok
+        },
+      },
+      runtime: {
+        apiKey: live.openaiApiKey || undefined,
+        openRouterKey: live.openaiApiKey || undefined,
+        openCodeKey: live.opencodeApiKey || undefined,
+        model: live.opencodeApiKey ? live.fallbackModel : live.model,
+        fallbackModel: live.opencodeApiKey ? undefined : live.fallbackModel,
+        elevenApiKey: live.elevenApiKey || undefined,
+        elevenVoiceId: live.elevenVoiceId || undefined,
+        telegramToken: token,
+        chatId,
+        integration,
+      },
+    })
+    if (strict.ok) {
+      if (!(await persistLeadAfterSend(env, strict.lead))) console.error("telegram lead após fluxo não gravou")
+      return { sent: true }
+    }
+    const failed = rememberLeadTalk(lead, incoming)
+    if (!(await persistLeadAfterSend(env, failed))) console.error("telegram lead após fluxo falhado não gravou")
+    return { sent: false }
   }
   const ste = steRuntimeFromFunnels(funnels, settings, lead.funnelId)
   const shouldTalk = ste.talking !== false && !joinUser
