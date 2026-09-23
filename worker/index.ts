@@ -1212,6 +1212,13 @@ async function deliverJoinRequest(
     if (!(await persistLeadAfterSend(env, lead))) console.error("telegram lead sem fluxo não gravou")
     return { sent: true }
   }
+  if (isStrictFlow(snapshot) && !snapshot.nodes.some((node) => node.type === "approve")) {
+    const approved = await telegram(token, "approveChatJoinRequest", {
+      chat_id: request.chat.id,
+      user_id: request.from.id,
+    })
+    if (!approved.ok) return { sent: false }
+  }
   if (snapshot && isStrictFlow(snapshot) && env.AUTH) {
     lead.flowVersionId = snapshot.id || snapshot.publishedAt
     lead.brainVersionId = snapshot.brainVersionId
@@ -1243,7 +1250,7 @@ async function deliverJoinRequest(
       kv: env.AUTH,
       snapshot,
       lead,
-      event: { type: "join" },
+      event: { type: "start" },
       environment: platformEnvironment(env),
       delivery: {
         sendText: async (body, url) => (await sendTelegramMarkup(token, dmChatId, body, url)).ok,
@@ -1402,7 +1409,16 @@ async function deliverTelegram(
     }
   }
 
-  const incoming = joinUser || start.isStart ? null : (message?.text ?? null)
+  const fileId = message?.document?.file_id || message?.photo?.at(-1)?.file_id
+  const fileName = message?.document?.file_name || (message?.photo?.length ? "foto.jpg" : "")
+  const incoming = joinUser || start.isStart ? null : fileId ? message?.caption || `[arquivo] ${fileName || "arquivo"}` : (message?.text ?? null)
+  const flowEvent = joinUser
+    ? ({ type: "join" } as const)
+    : start.isStart
+      ? ({ type: "start" } as const)
+      : fileId
+        ? ({ type: "file", text: incoming || "", fileId, fileName } as const)
+        : ({ type: "message", text: incoming || undefined } as const)
   let boards: { funnels: SalesFunnel[]; unread: boolean }
   try {
     boards = await readWorkspaceFunnels(env)
@@ -1471,11 +1487,12 @@ async function deliverTelegram(
       kv: env.AUTH,
       snapshot,
       lead,
-      event: joinUser ? { type: "join" } : start.isStart ? { type: "start" } : { type: "message", text: incoming || undefined },
+      event: flowEvent,
       incoming: incoming || "",
       environment: platformEnvironment(env),
       delivery: {
         sendText: async (body, url) => (await sendTelegramMarkup(token, chatId, body, url)).ok,
+        sendFile: async (url, name) => (await sendTelegramFile(token, chatId, url, name)).ok,
         notify: async (body) => {
           if (!env.ESTER_CHAT_ID) return false
           return (await sendTelegramMarkup(token, env.ESTER_CHAT_ID, body || BANCA_FIXED)).ok
@@ -1494,9 +1511,9 @@ async function deliverTelegram(
         integration,
       },
     })
-    if (strict.ok) {
+    if (strict.ok || strict.lead.messages.length > lead.messages.length || strict.lead.nodeId !== lead.nodeId) {
       if (!(await persistLeadAfterSend(env, strict.lead))) console.error("telegram lead após fluxo não gravou")
-      return { sent: true }
+      return { sent: strict.ok }
     }
     const failed = rememberLeadTalk(lead, incoming)
     if (!(await persistLeadAfterSend(env, failed))) console.error("telegram lead após fluxo falhado não gravou")
@@ -1972,6 +1989,16 @@ async function sendSteReplies(
   return { ok: true }
 }
 
+async function sendTelegramFile(token: string, chatId: string, url: string, fileName?: string) {
+  const href = safeHttpUrl(url)
+  if (!href) return { ok: false }
+  return telegram(token, "sendDocument", {
+    chat_id: chatId,
+    document: href,
+    caption: (fileName || "arquivo").slice(0, 200),
+  })
+}
+
 async function sendTelegramMarkup(token: string, chatId: string, text: string, extraUrl?: string) {
   const href = extraUrl ? safeHttpUrl(extraUrl) : null
   const body = href && !text.includes(href) ? `${text.trim()}\n[abrir](${href})` : text
@@ -2041,6 +2068,9 @@ type TelegramUpdate = {
   message?: {
     chat: { id: number }
     text?: string
+    caption?: string
+    photo?: Array<{ file_id: string }>
+    document?: { file_id: string; file_name?: string }
     from?: TelegramUser
     new_chat_members?: TelegramUser[]
   }

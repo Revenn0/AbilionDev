@@ -13,7 +13,8 @@ import { funnelsWriteBlocked, hasConversation, leadCatalogClipped, leadsHydratin
 import { ORIGIN_LABEL, TEMP_LABEL } from "@/lib/labels"
 import { GeoBadge } from "@/components/crm/geo-badge"
 import { factsWithTrack } from "@/lib/geo"
-import { leadFunnelUnread, publishedFunnel } from "@/lib/runtime"
+import { isFlowBound, playFlow } from "@/lib/flow-fidelity"
+import { leadFunnelUnread, publishedFunnel, snapshotForLead } from "@/lib/runtime"
 import { advanceSteIfDue, canSimulateSte, canTickSteLocally, replySteLived, splitSteMarkup, steHeardChips, steRuntimeFromFunnels, steStepLabel, steWaitDelayMs } from "@/lib/ste"
 import { useTrackSummary } from "@/lib/use-track-summary"
 import { remoteSearchBlank, useRemoteLeadSearch } from "@/lib/use-lead-query"
@@ -167,7 +168,11 @@ export function ConversationsPage() {
     const text = draft.trim()
     if (!text) return
     sending.current = true
-    const result = replySteLived(lead, text, Date.now(), runtime)
+    const snapshot = snapshotForLead(state.funnels, lead)
+    const result =
+      snapshot && isFlowBound(snapshot)
+        ? playFlow(snapshot, lead, { type: "message", text })
+        : replySteLived(lead, text, Date.now(), runtime)
     saveLead(result.lead)
     setDraft("")
     void flushLeadNow()

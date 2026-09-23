@@ -208,6 +208,37 @@ export function SalesInspector({
                   }
                 />
               </Field>
+              <Field label="Regras do fluxo (uma por linha: padrão =&gt; saída)">
+                <Textarea
+                  disabled={readOnly}
+                  rows={6}
+                  className="rounded-lg border-slate-200 bg-[#fbfcfd] text-[12.5px] text-slate-800"
+                  value={(policy.branchRules ?? []).map((rule) => `${rule.match} => ${rule.branch}`).join("\n")}
+                  onChange={(event) =>
+                    patchPolicy({
+                      branchRules: event.target.value
+                        .split("\n")
+                        .map((line) => {
+                          const [match, branch] = line.split("=>")
+                          return { match: (match || "").trim().slice(0, 200), branch: (branch || "").trim().slice(0, 40) }
+                        })
+                        .filter((rule) => rule.match && rule.branch)
+                        .slice(0, 24),
+                    })
+                  }
+                  placeholder={"print|screenshot => leitura\n\\bcpf\\b => cpf"}
+                />
+              </Field>
+              <Field label="Texto de reserva">
+                <Textarea
+                  disabled={readOnly}
+                  rows={4}
+                  className="rounded-lg border-slate-200 bg-[#fbfcfd] text-[12.5px] text-slate-800"
+                  value={d.body || ""}
+                  onChange={(event) => set({ body: event.target.value.slice(0, 4_000) })}
+                  placeholder="Fala quando nenhuma saída do fluxo casar."
+                />
+              </Field>
               <Field label="Saídas (separadas por vírgula)">
                 <Input
                   disabled={readOnly}
@@ -286,6 +317,49 @@ export function SalesInspector({
         {(node.type === "wait" || node.type === "offer") && d.steLine === "remarketing" && (
           <ToggleRow label="Silenciar depois desta fala" disabled={readOnly} checked={d.dieAfter !== false} onChange={(checked) => set({ dieAfter: checked })} />
         )}
+        {node.type === "talk" && (
+          <Field label="Abertura (uma linha por bolha)">
+            <Textarea
+              disabled={readOnly}
+              rows={7}
+              className="rounded-lg border-slate-200 bg-[#fbfcfd] text-[12.5px] text-slate-800"
+              value={d.body || ""}
+              onChange={(event) => set({ body: event.target.value.slice(0, 8_000) })}
+            />
+          </Field>
+        )}
+        {node.type === "file" && (
+          <>
+            <Field label="Nome do arquivo">
+              <Input
+                disabled={readOnly}
+                className={BOX}
+                value={d.fileName || ""}
+                onChange={(event) => set({ fileName: event.target.value.slice(0, 120) })}
+              />
+            </Field>
+            <Field label="Mensagem junto do arquivo">
+              <Textarea
+                disabled={readOnly}
+                rows={3}
+                className="rounded-lg border-slate-200 bg-[#fbfcfd] text-[12.5px] text-slate-800"
+                value={d.body || ""}
+                onChange={(event) => set({ body: event.target.value.slice(0, 2_000) })}
+              />
+            </Field>
+          </>
+        )}
+        {node.type === "intake" && (
+          <Field label="O que este passo lê">
+            <Textarea
+              disabled={readOnly}
+              rows={3}
+              className="rounded-lg border-slate-200 bg-[#fbfcfd] text-[12.5px] text-slate-800"
+              value={d.body || ""}
+              onChange={(event) => set({ body: event.target.value.slice(0, 2_000) })}
+            />
+          </Field>
+        )}
         {(node.type === "message" || node.type === "handoff" || node.type === "offer") && (
           <Field label={d.steLine ? "O que a Sté diz (uma linha por bloco)" : "Texto"}>
             <Textarea
@@ -297,7 +371,7 @@ export function SalesInspector({
             />
             {d.steLine ? (
               <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
-                Este passo é o padrão. A Sté pode mudar o tom e mostrar que ouviu o lead, mas não troca de fase nem inventa link.
+                O Telegram envia este texto quando o fluxo chega aqui. Publicou a alteração, a próxima conversa usa esta versão.
               </p>
             ) : null}
           </Field>
@@ -462,7 +536,7 @@ export function SalesInspector({
             <Input disabled={readOnly} className={BOX} value={d.cta || ""} onChange={(e) => set({ cta: e.target.value })} />
           </Field>
         )}
-        {(node.type === "message" || node.type === "landing" || node.type === "offer" || node.type === "webhook") && (
+        {(node.type === "message" || node.type === "landing" || node.type === "offer" || node.type === "webhook" || node.type === "file") && (
           <UrlField label="URL / link real" readOnly={readOnly} value={d.url || ""} onChange={(url) => set({ url })} />
         )}
         {!readOnly && (

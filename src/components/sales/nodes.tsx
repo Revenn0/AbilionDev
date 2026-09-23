@@ -176,14 +176,67 @@ export function HandoffNode({ data, selected }: NodeProps<SalesCanvasNode>) {
 
 export function BotNode({ data, selected }: NodeProps<SalesCanvasNode>) {
   const policy = data.botPolicy
+  const branches = policy?.outputBranches?.length ? policy.outputBranches : ["next"]
   return (
-    <StudioCard title={data.title || "Bot / IA"} tone="violet" selected={selected} width="w-[300px]">
+    <StudioCard title={data.title || "IA iniciado"} tone="violet" selected={selected} width="w-[300px]" source={false}>
       <div className="space-y-2">
-        <Field label="Modo">{policy?.mode || "responder"}</Field>
-        <Field label="Cérebro">{policy?.brainVersionId || "Escolhe uma versão"}</Field>
+        <Field label="Modo">{policy?.mode === "decide" ? "Segue o fluxo" : policy?.mode || "responder"}</Field>
+        <Field label="Texto de reserva">
+          <span className="line-clamp-3 whitespace-pre-wrap">{data.body || "Sem texto de reserva."}</span>
+        </Field>
         <Field label="Instrução">
           <span className="line-clamp-4 whitespace-pre-wrap">{policy?.instruction || "Define o que o bot faz neste passo."}</span>
         </Field>
+        <div className="relative space-y-1 pt-1">
+          {branches.map((branch) => (
+            <div key={branch} className="relative pr-3 text-right text-[11px] text-slate-400">
+              {branch}
+              <Handle
+                type="source"
+                id={branch}
+                position={Position.Right}
+                className="!size-3 !border-2 !border-white !bg-violet-500"
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    </StudioCard>
+  )
+}
+
+export function TalkNode({ data, selected }: NodeProps<SalesCanvasNode>) {
+  return (
+    <StudioCard title={data.title || "Iniciar conversa"} tone="emerald" selected={selected} width="w-[300px]">
+      <Field label="Abertura">
+        <span className="line-clamp-4 whitespace-pre-wrap">{data.body || "Escreve a primeira fala."}</span>
+      </Field>
+    </StudioCard>
+  )
+}
+
+export function FileNode({ data, selected }: NodeProps<SalesCanvasNode>) {
+  return (
+    <StudioCard title={data.title || "Envio de arquivo"} tone="sky" selected={selected} width="w-[300px]">
+      <div className="space-y-2">
+        <Field label="Arquivo">{data.fileName || "Sem nome"}</Field>
+        <Field label="Link">{data.url || "Configura o URL do arquivo."}</Field>
+      </div>
+    </StudioCard>
+  )
+}
+
+export function IntakeNode({ data, selected }: NodeProps<SalesCanvasNode>) {
+  return (
+    <StudioCard title={data.title || "Leitura de arquivo"} tone="violet" selected={selected} source={false}>
+      <div className="space-y-2">
+        <Field label="Quando">{data.body || "Print, foto ou documento."}</Field>
+        <div className="relative flex justify-between px-1 text-[11px] text-slate-400">
+          <span>Sem arquivo</span>
+          <span>Recebido</span>
+          <Handle type="source" id="no" position={Position.Bottom} className="!left-6 !size-3 !border-2 !border-white !bg-slate-400" />
+          <Handle type="source" id="yes" position={Position.Right} className="!size-3 !border-2 !border-white !bg-emerald-500" />
+        </div>
       </div>
     </StudioCard>
   )
@@ -310,6 +363,9 @@ export const salesNodeTypes = {
   condition: ConditionNode,
   handoff: HandoffNode,
   bot: BotNode,
+  talk: TalkNode,
+  file: FileNode,
+  intake: IntakeNode,
   human: HumanNode,
   approve: ApproveNode,
   audio: AudioNode,

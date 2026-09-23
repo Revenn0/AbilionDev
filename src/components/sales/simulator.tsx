@@ -48,6 +48,7 @@ function effectLine(effect: RuntimeEffect) {
   if (effect.kind === "handoff_human") return "Humano · conversa pausada"
   if (effect.kind === "approve_join") return "Automação · aprovar entrada"
   if (effect.kind === "send_audio") return "Áudio · processar roteiro"
+  if (effect.kind === "send_file") return `Arquivo · ${effect.fileName || effect.url}`
   if (effect.kind === "call_webhook") return `Webhook · ${effect.method}`
   return `Bloqueado · ${effect.reason}`
 }

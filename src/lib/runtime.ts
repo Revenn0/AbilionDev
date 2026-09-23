@@ -9,6 +9,7 @@ export type RuntimeEvent =
   | { type: "join" }
   | { type: "start" }
   | { type: "message"; text?: string }
+  | { type: "file"; text?: string; fileId?: string; fileName?: string }
   | { type: "print" }
   | { type: "banca" }
   | { type: "timer" }
@@ -25,6 +26,7 @@ export type RuntimeEffect =
   | { kind: "handoff_human"; nodeId: string; instructions?: string }
   | { kind: "approve_join"; nodeId: string }
   | { kind: "send_audio"; nodeId: string; text: string; fallback: "text" | "error" }
+  | { kind: "send_file"; nodeId: string; url: string; fileName?: string }
   | { kind: "call_webhook"; nodeId: string; url: string; method: "POST" | "PUT"; body?: string }
   | { kind: "blocked"; reason: string }
 
@@ -136,6 +138,34 @@ function evalCondition(node: FlowNode, lead: Lead) {
   return false
 }
 
+function flowBound(snapshot: SalesSnapshot) {
+  return snapshot.nodes.some((node) => node.type === "talk" || node.type === "file" || node.type === "intake")
+}
+
+function bubbles(body: string) {
+  return body
+    .split(/\n+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function say(lead: Lead, text: string, at: string) {
+  const body = text.trim()
+  if (!body) return
+  const last = lead.messages.at(-1)
+  if (last?.role === "ste" && last.text === body) return
+  lead.messages.push({ id: uid(), at, role: "ste", text: body })
+  lead.lastMessage = body.slice(0, 400)
+}
+
+function lastLeadText(lead: Lead) {
+  for (let index = lead.messages.length - 1; index >= 0; index--) {
+    const item = lead.messages[index]
+    if (item?.role === "lead" && item.text.trim()) return item.text.trim()
+  }
+  return ""
+}
+
 function stageFrom(type: FlowNode["type"], lead: Lead): LeadStage {
   if (type === "entry") {
     if (lead.origin === "popup" || lead.origin === "import") return "capture"
@@ -231,6 +261,16 @@ export function applyEvent(
   }
 
   const { nodes, outs } = graph(snapshot)
+  const bound = flowBound(snapshot)
+  if (bound && (next.steBlocked || next.steQuiet)) {
+    next.updatedAt = at
+    return { lead: next, effects }
+  }
+  if (bound && next.nodeId && !nodes.get(next.nodeId)) {
+    const ai = snapshot.nodes.find((node) => node.type === "bot")
+    next.nodeId = ai?.id
+    next.paused = false
+  }
 
   if (!next.nodeId) {
     const entry = findEntry(snapshot, event, next.channel)
@@ -269,15 +309,69 @@ export function applyEvent(
       continue
     }
 
-    if (node.type === "message") {
-      const body = node.data.body || ""
-      if (!node.data.steLine) {
-        effects.push({ kind: "send_message", body, cta: node.data.cta, url: node.data.url })
-        next.lastMessage = body
-        pushEvent(next, { kind: "message", nodeId: node.id, title: node.data.title, body, effect: "send_message" }, at)
+    if (node.type === "message" || node.type === "talk") {
+      const speak = node.type === "talk" || !node.data.steLine
+      const lines = speak && (node.type === "talk" || bound) ? bubbles(node.data.body || "") : speak ? [node.data.body || ""].filter(Boolean) : []
+      if (speak) {
+        for (const line of lines) {
+          effects.push({ kind: "send_message", body: line, cta: node.data.cta, url: node.data.url })
+          say(next, line, at)
+          pushEvent(next, { kind: "message", nodeId: node.id, title: node.data.title, body: line, effect: "send_message" }, at)
+        }
+      }
+      if (bound && node.data.dieAfter) {
+        next.steBlocked = true
+        next.steQuiet = true
+        next.stePhase = "closed"
+        next.paused = true
+        break
       }
       const target = skipMap(nodes, outs, nextId(outs, node.id))
       if (!target || target === node.id) break
+      next.nodeId = target
+      continue
+    }
+
+    if (node.type === "file") {
+      const url = (node.data.url || "").trim()
+      if (!url) {
+        effects.push({ kind: "blocked", reason: "O bloco de arquivo não tem URL." })
+        pushEvent(next, { kind: "blocked", nodeId: node.id, title: node.data.title, body: "Configura o arquivo neste bloco." }, at)
+        next.paused = true
+        break
+      }
+      effects.push({ kind: "send_file", nodeId: node.id, url, fileName: node.data.fileName })
+      const label = node.data.fileName?.trim() || "arquivo"
+      say(next, node.data.body?.trim() || `Enviei o arquivo ${label}.`, at)
+      pushEvent(next, { kind: "message", nodeId: node.id, title: node.data.title, body: label, effect: "send_file" }, at)
+      const target = skipMap(nodes, outs, nextId(outs, node.id))
+      if (!target || target === node.id) break
+      next.nodeId = target
+      continue
+    }
+
+    if (node.type === "intake") {
+      const said = event.type === "file" ? event.text || event.fileName || lastLeadText(next) : lastLeadText(next)
+      const got =
+        event.type === "file" ||
+        event.type === "print" ||
+        /print|screenshot|arquivo|foto|document/i.test(said)
+      if (got) {
+        next.printAt = next.printAt ?? at
+        if (event.type === "file") {
+          next.facts = {
+            ...(next.facts ?? {}),
+            fileId: event.fileId || next.facts?.fileId,
+            fileName: event.fileName || event.text || next.facts?.fileName,
+          }
+        }
+        pushEvent(next, { kind: "print", nodeId: node.id, title: node.data.title, body: said || "Arquivo recebido." }, at)
+      }
+      const target = skipMap(nodes, outs, nextId(outs, node.id, got ? "yes" : "no"), got ? "yes" : "no")
+      if (!target) {
+        next.paused = true
+        break
+      }
       next.nodeId = target
       continue
     }
@@ -316,6 +410,12 @@ export function applyEvent(
     }
 
     if (node.type === "handoff") {
+      const ai = bound ? snapshot.nodes.find((item) => item.type === "bot") : undefined
+      if (ai && (event.type === "message" || event.type === "file")) {
+        next.nodeId = ai.id
+        next.paused = false
+        continue
+      }
       if (next.paused && event.type !== "print" && event.type !== "banca" && event.type !== "resume") {
         break
       }
@@ -346,9 +446,20 @@ export function applyEvent(
         next.paused = true
         break
       }
-      if (node.data.botPolicy.runWhen === "message" && event.type !== "message") {
+      if (node.data.botPolicy.runWhen === "message" && event.type !== "message" && event.type !== "file") {
         next.paused = true
         next.stage = "attendance"
+        if (!next.stePhase || next.stePhase === "entry") next.stePhase = "listen"
+        const tokens = (next.memory || "").split(/\s+/)
+        const wait = snapshot.nodes.find((item) => item.type === "wait" && item.data.steLine === "remarketing")
+        if (wait && !tokens.includes("ste:remarketing") && !next.steBlocked) {
+          const hours = wait.data.delayHours && wait.data.delayHours > 0 ? wait.data.delayHours : 7
+          const due = new Date(next.createdAt).getTime() + hours * 3_600_000
+          if (nowMs < due) {
+            next.memory = `${next.memory || ""} ste:remarketing`.trim()
+            next.waitUntil = new Date(due).toISOString()
+          }
+        }
         break
       }
       effects.push({ kind: "invoke_bot", nodeId: node.id, policy: node.data.botPolicy })
@@ -480,6 +591,9 @@ export function applyEvent(
       const already = next.events.some((item) => item.kind === "offer" && item.nodeId === node.id)
       if (!already) {
         effects.push({ kind: "offer", body: node.data.body, url: node.data.url, cta: node.data.cta })
+        if (bound) {
+          for (const line of bubbles(node.data.body || "")) say(next, line, at)
+        }
         next.lastMessage = node.data.body || node.data.cta || "Oferta do produto"
         next.stage = "offer"
         pushEvent(next, { kind: "offer", nodeId: node.id, title: node.data.title, body: next.lastMessage, effect: "offer" }, at)

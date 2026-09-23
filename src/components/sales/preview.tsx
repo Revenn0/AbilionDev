@@ -18,6 +18,9 @@ const KIND: Record<SalesKind, { label: string; pill: string; stroke: string }> =
   approve: { label: "Aprovar", pill: "#d1fae5", stroke: "#a7f3d0" },
   audio: { label: "Áudio", pill: "#ffedd5", stroke: "#fed7aa" },
   webhook: { label: "Webhook", pill: "#f1f5f9", stroke: "#e2e8f0" },
+  talk: { label: "Início", pill: "#d1fae5", stroke: "#a7f3d0" },
+  file: { label: "Arquivo", pill: "#e0f2fe", stroke: "#bae6fd" },
+  intake: { label: "Leitura", pill: "#ede9fe", stroke: "#ddd6fe" },
 }
 
 const NODE_W = 168

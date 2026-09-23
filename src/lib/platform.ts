@@ -80,6 +80,11 @@ export type BrainVersion = {
 
 export type BotNodeMode = "respond" | "classify" | "extract" | "decide" | "remember"
 
+export type FlowBranchRule = {
+  match: string
+  branch: string
+}
+
 export type BotNodePolicy = {
   botId: string
   brainVersionId: string
@@ -90,6 +95,7 @@ export type BotNodePolicy = {
   contextFields: string[]
   allowedActions: string[]
   outputBranches: string[]
+  branchRules?: FlowBranchRule[]
   readLeadMemory: boolean
   writeLeadMemory: boolean
   timeoutSeconds: number

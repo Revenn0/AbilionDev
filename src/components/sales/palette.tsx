@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { Bell, ChevronDown, Clock3, GitBranch, GitFork, Handshake, MessageSquare, Play, Search, Tag, Zap } from "lucide-react"
+import { Bell, ChevronDown, Clock3, FileSearch, FileUp, GitBranch, GitFork, Handshake, MessageSquare, MessagesSquare, Play, Search, Sparkles, Tag, Zap } from "lucide-react"
 import { MetaGlyph, YouTubeGlyph } from "@/components/canvas/icons"
 import { SALES_CATALOG, SALES_GROUPS, type SalesCatalogItem } from "./catalog"
 import type { SalesKind } from "@/lib/types"
@@ -12,6 +12,10 @@ function ItemIcon({ id, kind }: { id: string; kind: SalesKind }) {
   if (kind === "split") return <GitFork className="size-3.5 text-violet-500" />
   if (kind === "entry") return <Play className="size-3.5 text-emerald-500" />
   if (kind === "message") return <MessageSquare className="size-3.5 text-sky-500" />
+  if (kind === "talk") return <MessagesSquare className="size-3.5 text-emerald-500" />
+  if (id === "ai-started") return <Sparkles className="size-3.5 text-violet-500" />
+  if (kind === "file") return <FileUp className="size-3.5 text-sky-500" />
+  if (kind === "intake") return <FileSearch className="size-3.5 text-violet-500" />
   if (kind === "wait") return <Clock3 className="size-3.5 text-orange-500" />
   if (kind === "condition") return <GitBranch className="size-3.5 text-violet-500" />
   if (kind === "handoff") return <Handshake className="size-3.5 text-pink-500" />

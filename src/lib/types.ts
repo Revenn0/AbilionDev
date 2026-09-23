@@ -26,6 +26,9 @@ export type FlowKind =
   | "approve"
   | "audio"
   | "webhook"
+  | "talk"
+  | "file"
+  | "intake"
 export type SalesKind = MapKind | FlowKind
 
 export const MAP_KINDS: readonly MapKind[] = ["traffic", "landing", "split"]
@@ -43,6 +46,9 @@ export const FLOW_KINDS: readonly FlowKind[] = [
   "approve",
   "audio",
   "webhook",
+  "talk",
+  "file",
+  "intake",
 ]
 
 export function isMapKind(kind: string): kind is MapKind {
@@ -92,6 +98,7 @@ export type SalesNodeData = {
   audioFallback?: "text" | "error"
   webhookMethod?: "POST" | "PUT"
   humanInstructions?: string
+  fileName?: string
 }
 
 export type FlowEdge = {
@@ -174,6 +181,8 @@ export type LeadFacts = {
   results?: "losing" | "winning" | "unknown"
   hasSuperbet?: boolean
   heard?: string
+  fileName?: string
+  fileId?: string
   country?: string
   countryCode?: string
   city?: string

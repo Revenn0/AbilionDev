@@ -134,6 +134,7 @@ import { foldPublicPath, foldStudioPath, isWorkerPublicPath, safeAppPath, withSa
 import { firstInvalidPublishUrl, validatePublish } from "../src/lib/validate.ts"
 import { contactLookups, normalizeTelegramContact, sameLeadContact, validateCapture } from "../src/lib/capture.ts"
 import { displayContact, draftLeadField, formatPhoneContact, isPhoneLikeName, isResolvedPersonName, leadMatchesQuery, nameFromMessages, preferLeadName, resolveLeadName, resolvePersonName } from "../src/lib/lead-name.ts"
+import { playFlow } from "../src/lib/flow-fidelity.ts"
 import { cleanBotUsername, cleanHttpUrl, cleanTelegramGroupUrl, migrateLead, migrateLeadOrigin, migrateSettings, sanitizeIncomingFunnel, sanitizeIncomingLead } from "../src/lib/migrate.ts"
 import { adsDeepLink, campaignFromInvite, campaignFromStart, normalizeInviteLink, scriptIdFromStart, visitorIdFromStart } from "../src/lib/telegram-start.ts"
 import { authForgotDocument, authLoginDocument, authPrivacyDocument, authResetDocument, wantsAuthHtml } from "../src/lib/auth-pages.ts"
@@ -13085,5 +13086,34 @@ const brunoBearerDead = await sessionUser(
 assert(brunoBearerDead === null, "token cai depois do reset")
 const brunoStaleSession = await handleRequest(new Request("http://local.test/api/runtime", { headers: { cookie: brunoCookie } }), teamEnv, backgroundCtx())
 assert(brunoStaleSession.status === 401, "sessão antiga cai depois do reset")
+
+const faithful = sanitizeIncomingFunnel({ ...emptySalesFunnel("fiel"), id: "fiel-1" })
+assert(faithful?.nodes.some((node) => node.type === "talk" && node.data.title === "Iniciar conversa"), "fluxo fiel abre com Iniciar conversa")
+assert(faithful?.nodes.some((node) => node.type === "bot" && node.data.title === "IA iniciado"), "fluxo fiel tem IA iniciado")
+assert(faithful?.nodes.some((node) => node.type === "file"), "fluxo fiel envia arquivo")
+assert(faithful?.nodes.some((node) => node.type === "intake"), "fluxo fiel lê arquivo")
+const faithfulSnap = {
+  name: "fiel",
+  publishedAt: "2026-09-23T00:00:00.000Z",
+  nodes: faithful?.nodes || [],
+  edges: faithful?.edges || [],
+}
+const flowOpened = playFlow(faithfulSnap, lead("flow-open"), { type: "start" })
+assert(flowOpened.lead.messages.some((item) => item.role === "ste" && item.text.includes("bem-vindo")), "iniciar conversa manda a abertura do quadro")
+assert(flowOpened.lead.nodeId === "ai:fiel-1", "depois da abertura a conversa fica na IA")
+const flowCourse = playFlow(faithfulSnap, flowOpened.lead, { type: "message", text: "to começando agora e tô perdendo tudo" })
+assert(flowCourse.lead.messages.some((item) => item.role === "ste" && /minicurso/i.test(item.text)), "prejuízo segue o bloco de minicurso do fluxo")
+const flowCpf = playFlow(faithfulSnap, flowCourse.lead, { type: "message", text: "travou no cpf" })
+assert(flowCpf.lead.messages.some((item) => item.text.includes("CPF")), "CPF segue o bloco de ajuda do fluxo")
+const flowClosed = playFlow(faithfulSnap, flowCpf.lead, { type: "message", text: "vai se foder" })
+assert(flowClosed.lead.steBlocked, "ofensa segue o bloco de encerrar")
+const flowSilent = playFlow(faithfulSnap, flowClosed.lead, { type: "message", text: "oi" })
+assert(
+  flowSilent.lead.messages.filter((item) => item.role === "ste").length ===
+    flowClosed.lead.messages.filter((item) => item.role === "ste").length,
+  "conversa encerrada no fluxo não responde"
+)
+const faithfulAgain = sanitizeIncomingFunnel(faithful)
+assert(faithfulAgain?.nodes.filter((node) => node.type === "talk").length === 1, "migrar de novo não duplica o início")
 
 console.log("ste-flow ok")

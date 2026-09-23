@@ -90,6 +90,57 @@ export const SALES_CATALOG: SalesCatalogItem[] = [
     hint: "Texto + botão, qualquer canal",
   },
   {
+    id: "talk",
+    kind: "talk",
+    group: "flow",
+    label: "Iniciar conversa",
+    hint: "O que a Sté manda ao abrir",
+    defaults: { title: "Iniciar conversa", body: "Opa, seja muito bem-vindo! Aqui é a Sté." },
+  },
+  {
+    id: "ai-started",
+    kind: "bot",
+    group: "flow",
+    label: "IA iniciado",
+    hint: "Escolhe a saída desenhada no fluxo",
+    defaults: {
+      title: "IA iniciado",
+      body: "Oi! Me conta se você já joga ou está começando, e como têm sido os resultados.",
+      botPolicy: {
+        botId: LEGACY_BOT_ID,
+        brainVersionId: LEGACY_BRAIN_ID,
+        instruction: "Escolhe só uma saída deste bloco. Se nada casar, manda o texto de reserva e fica aqui.",
+        mode: "decide",
+        runWhen: "message",
+        language: "pt-BR",
+        contextFields: ["name", "lastMessage"],
+        allowedActions: ["reply"],
+        outputBranches: ["next"],
+        branchRules: [],
+        readLeadMemory: true,
+        writeLeadMemory: false,
+        timeoutSeconds: 20,
+        retries: 0,
+      },
+    },
+  },
+  {
+    id: "file",
+    kind: "file",
+    group: "flow",
+    label: "Envio de arquivo",
+    hint: "Manda um arquivo pelo link",
+    defaults: { title: "Envio de arquivo", body: "Segue o arquivo.", fileName: "material.pdf", url: "" },
+  },
+  {
+    id: "intake",
+    kind: "intake",
+    group: "flow",
+    label: "Leitura de arquivo",
+    hint: "Segue quando chega print ou arquivo",
+    defaults: { title: "Leitura de arquivo", body: "Espera o print ou o arquivo do lead." },
+  },
+  {
     id: "ste-welcome",
     kind: "message",
     group: "flow",
@@ -280,5 +331,11 @@ export function defaultSalesData(kind: SalesKind): SalesNodeData {
       return { title: "Enviar áudio", body: "", audioFallback: "error" }
     case "webhook":
       return { title: "Chamar webhook", webhookMethod: "POST", url: "" }
+    case "talk":
+      return { title: "Iniciar conversa", body: "Opa, seja muito bem-vindo! Aqui é a Sté." }
+    case "file":
+      return { title: "Envio de arquivo", body: "Segue o arquivo.", fileName: "material.pdf", url: "" }
+    case "intake":
+      return { title: "Leitura de arquivo", body: "Espera o print ou o arquivo do lead." }
   }
 }

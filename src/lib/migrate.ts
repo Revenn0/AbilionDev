@@ -4,6 +4,7 @@ import { isEmailName, resolveLeadName } from "./lead-name.ts"
 import { migrateLeadCategories, sanitizeLeadCategory, seedLeadGroups } from "./lead-category.ts"
 import { migratePageScripts, migrateRemovedPageScripts } from "./page-script.ts"
 import { LEGACY_BOT_ID, LEGACY_BRAIN_ID, LEGACY_INTEGRATION_ID } from "./platform.ts"
+import { upgradeFidelityFunnel } from "./flow-fidelity.ts"
 import { defaultSettings, isFlowKind, isMapKind, type Lead, type LeadOrigin, type SalesFunnel, type SalesKind, type SalesSnapshot, type Settings } from "./types.ts"
 
 export function migrateLeadOrigin(value?: string): LeadOrigin {
@@ -67,7 +68,7 @@ export function migrateFunnel(raw: SalesFunnel): SalesFunnel {
         })),
       }
     : raw.production
-  return { ...raw, botId: raw.botId || LEGACY_BOT_ID, nodes, production }
+  return upgradeFidelityFunnel({ ...raw, botId: raw.botId || LEGACY_BOT_ID, nodes, production })
 }
 
 export function migrateLead(raw: Partial<Lead> & { id: string }): Lead {
@@ -211,6 +212,17 @@ function sanitizeBotPolicy(value: unknown) {
     outputBranches: Array.isArray(row.outputBranches)
       ? row.outputBranches.filter((item): item is string => typeof item === "string").map((item) => item.slice(0, 40)).slice(0, 20)
       : ["next"],
+    branchRules: Array.isArray(row.branchRules)
+      ? row.branchRules
+          .flatMap((item) => {
+            if (!item || typeof item !== "object") return []
+            const rule = item as { match?: unknown; branch?: unknown }
+            const match = typeof rule.match === "string" ? rule.match.trim().slice(0, 200) : ""
+            const branch = typeof rule.branch === "string" ? rule.branch.trim().slice(0, 40) : ""
+            return match && branch ? [{ match, branch }] : []
+          })
+          .slice(0, 24)
+      : undefined,
     readLeadMemory: row.readLeadMemory === true,
     writeLeadMemory: row.writeLeadMemory === true,
     timeoutSeconds: Math.max(5, Math.min(60, Number(row.timeoutSeconds) || 20)),

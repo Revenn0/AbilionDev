@@ -1,4 +1,5 @@
 import { uid } from "../src/lib/format.ts"
+import { isFlowBound, matchFlowBranch } from "../src/lib/flow-fidelity.ts"
 import { applyBotResult, applyEvent, type RuntimeEvent, type RuntimeEffect } from "../src/lib/runtime.ts"
 import { cleanHttpUrl } from "../src/lib/migrate.ts"
 import {
@@ -20,6 +21,7 @@ import {
 
 export type StrictFlowDelivery = {
   sendText(body: string, url?: string): Promise<boolean>
+  sendFile?(url: string, fileName?: string): Promise<boolean>
   approveJoin?(): Promise<boolean>
   notify?(body: string): Promise<boolean>
 }
@@ -46,15 +48,11 @@ export type StrictFlowResult = {
 }
 
 export function isStrictFlow(snapshot: SalesSnapshot | null | undefined) {
-  return Boolean(
-    snapshot?.nodes.some((node) =>
-      ["bot", "human", "approve", "audio", "webhook"].includes(node.type)
-    )
-  )
+  return isFlowBound(snapshot)
 }
 
 function withIncoming(lead: Lead, event: RuntimeEvent, incoming: string, now: string) {
-  if (event.type !== "message" || !incoming.trim()) return lead
+  if ((event.type !== "message" && event.type !== "file") || !incoming.trim()) return lead
   const last = lead.messages.at(-1)
   if (last?.role === "lead" && last.text === incoming.trim()) return lead
   return {
@@ -158,13 +156,44 @@ export async function executeStrictFlow(input: {
 
     if (effect.kind === "send_message" || effect.kind === "offer") {
       const ok = await input.delivery.sendText(effect.body || "", effect.url)
-      if (!ok) return fail(effect, "O canal recusou a mensagem.", "channel_rejected_message")
+      if (!ok) {
+        const pending =
+          1 +
+          queue.filter((item) => item.kind === "send_message" || item.kind === "offer" || item.kind === "send_file").length
+        let left = pending
+        for (let index = lead.messages.length - 1; index >= 0 && left > 0; index--) {
+          if (lead.messages[index]?.role === "ste") {
+            lead.messages.splice(index, 1)
+            left -= 1
+          }
+        }
+        lead.lastMessage = lead.messages.at(-1)?.text?.slice(0, 400)
+        return fail(effect, "O canal recusou a mensagem.", "channel_rejected_message")
+      }
       sent = true
       run.steps.push(stepOf(effect, "completed"))
       continue
     }
 
     if (effect.kind === "invoke_bot") {
+      const node = input.snapshot.nodes.find((item) => item.id === effect.nodeId)
+      const branch = matchFlowBranch(effect.policy.branchRules, input.incoming || "")
+      if (branch || effect.policy.mode === "decide") {
+        result = applyBotResult(
+          input.snapshot,
+          lead,
+          {
+            nodeId: effect.nodeId,
+            text: branch ? "" : node?.data.body?.trim() || "",
+            branch: branch || "stay",
+          },
+          nowMs
+        )
+        lead = result.lead
+        queue.unshift(...result.effects)
+        run.steps.push(stepOf(effect, "completed", branch ? `Fluxo → ${branch}` : "Fluxo · texto deste bloco"))
+        continue
+      }
       const state = await loadPlatformState(input.kv)
       const brain = state.brains.find(
         (item) =>
@@ -215,6 +244,14 @@ export async function executeStrictFlow(input: {
       const ok = await input.delivery.approveJoin?.()
       if (!ok) return fail(effect, "O canal recusou a aprovação da entrada.", "channel_rejected_approval")
       run.steps.push(stepOf(effect, "completed"))
+      continue
+    }
+
+    if (effect.kind === "send_file") {
+      const ok = await input.delivery.sendFile?.(effect.url, effect.fileName)
+      if (!ok) return fail(effect, "O canal recusou o arquivo.", "channel_rejected_file")
+      sent = true
+      run.steps.push(stepOf(effect, "completed", effect.fileName || "Arquivo enviado."))
       continue
     }
 

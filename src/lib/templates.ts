@@ -3,6 +3,7 @@ import { uid } from "./format.ts"
 import { sanitizeLeadCategory } from "./lead-category.ts"
 import { campaignFor } from "./labels.ts"
 import { LEGACY_BOT_ID, LEGACY_BRAIN_ID, LEGACY_INTEGRATION_ID } from "./platform.ts"
+import { isFlowBound } from "./flow-fidelity.ts"
 import { applyEvent, eventFromOrigin, publishedSnapshot } from "./runtime.ts"
 import { replySte, steRuntimeFromSnapshot, STE_COURSE_BLOCK, STE_LIVE_BLOCK, STE_OFFER_BLOCK, STE_REMARKETING_BLOCK, STE_SUPERBET_BLOCK, STE_SUPERBET_RESCUE, STE_WELCOME } from "./ste.ts"
 import type { Lead, LeadChannel, LeadOrigin, SalesFunnel, SalesSnapshot } from "./types.ts"
@@ -223,6 +224,7 @@ export function leadFromCapture(
   const walked = applyEvent(snapshot, base, eventFromOrigin(input.origin)).lead
   if (walked.channel !== "telegram" || !snapshot) return walked
   if (snapshot.nodes.some((node) => ["bot", "human", "approve", "audio", "webhook"].includes(node.type))) return walked
+  if (isFlowBound(snapshot)) return walked
   const hasExplicitSte = snapshot.nodes.some((node) => node.data.steLine || node.type === "handoff")
   if (!hasExplicitSte) return walked
   return replySte(walked, null, Date.now(), steRuntimeFromSnapshot(snapshot)).lead

@@ -71,6 +71,8 @@ export function validatePublish(nodes: FlowNode[], edges: FlowEdge[]): PublishIs
       outgoing.length === 0 &&
       node.type !== "handoff" &&
       node.type !== "human" &&
+      node.type !== "intake" &&
+      !node.data.dieAfter &&
       !node.data.steLine
     ) {
       issues.push({ message: `O bloco “${node.data.title}” não liga a nenhum passo.` })
